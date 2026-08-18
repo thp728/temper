@@ -33,6 +33,8 @@ import hashlib
 import glob
 from pathlib import Path
 
+from thinking import MixedThinkingDataset, detect as detect_thinking
+
 JOB_DIR = Path(os.environ.get("JOB_DIR", "/job"))
 OUT_DIR = Path(os.environ.get("OUT_DIR", "/out"))
 CONFIG = OUT_DIR / "config.yaml"
@@ -81,7 +83,7 @@ def write_result(payload: dict) -> None:
     RESULT.write_text(json.dumps(payload, indent=2))
 
 
-def build_config(job: dict) -> dict:
+def build_config(job: dict, enable_thinking: bool = False) -> dict:
     """Job spec -> Axolotl config. Returns the config dict."""
     cfg = dict(DEFAULTS)
     applied, rejected = {}, {}
@@ -142,6 +144,11 @@ def build_config(job: dict) -> dict:
         # Let the model's own template decide. Hand-writing role delimiters is
         # the modal production bug in this category.
         "chat_template": "tokenizer_default",
+        # Detected from the dataset, never guessed and never exposed. Qwen3
+        # emits <think> blocks through its template by default; training data
+        # without them under that template is a silent train/infer mismatch.
+        # The SAME value must be applied at serving.
+        "chat_template_kwargs": {"enable_thinking": enable_thinking},
         # Train on the assistant turn only. Full-sequence loss on instruction
         # data teaches the model to recite prompts back.
         "train_on_inputs": False,
@@ -203,7 +210,8 @@ def main() -> int:
         ds = JOB_DIR / "dataset.jsonl"
         if not ds.exists():
             raise FileNotFoundError(f"dataset not found at {ds}")
-        rows = sum(1 for _ in ds.open())
+        parsed = [json.loads(line) for line in ds.open() if line.strip()]
+        rows = len(parsed)
         result["dataset_rows"] = rows
         # 10 is the hard floor adopted from OpenAI's enforced minimum; below it
         # a run cannot produce a meaningful adapter, so block rather than waste
@@ -212,7 +220,19 @@ def main() -> int:
             raise ValueError(f"dataset has {rows} rows; minimum is 10")
         log(f"dataset: {rows} rows")
 
-        cfg, applied, rejected = build_config(job)
+        # Decide thinking mode from the data before building the config.
+        # A mixed dataset is ambiguous by construction, so it blocks here
+        # rather than training half the rows against the wrong template.
+        try:
+            think = detect_thinking(parsed, job.get("messages_field", "messages"))
+        except MixedThinkingDataset as e:
+            result["error_code"] = "dataset_mixed_thinking"
+            raise
+        result["thinking"] = think.as_dict()
+        log(f"thinking mode: {think.enable_thinking} "
+            f"({think.with_think}/{think.assistant_turns} assistant turns have <think>)")
+
+        cfg, applied, rejected = build_config(job, enable_thinking=think.enable_thinking)
         result["applied_overrides"] = applied
         if rejected:
             # Not silently dropped: an override we refuse is something the
