@@ -1,0 +1,19 @@
+{
+  "job_id": "example-0001",
+  "base_model": "Qwen/Qwen3-4B",
+  "messages_field": "messages",
+
+  "_comment_hyperparameters": "Only keys in ALLOWED_OVERRIDES are honoured. Anything else is echoed back in result.json under rejected_overrides rather than silently ignored — an override the caller thinks is in effect but isn't is worse than a refusal.",
+  "hyperparameters": {
+    "lora_r": 16,
+    "learning_rate": 2e-4,
+    "num_epochs": 3
+  },
+
+  "_comment_max_steps": "Optional. Overrides num_epochs; used by smoke tests to keep a run to a handful of steps.",
+  "max_steps": null,
+  "save_steps": null,
+
+  "_comment_resume": "Set to a checkpoint path under /out/run to resume. The orchestrator sets this on retry after a preemption or crash.",
+  "resume_from_checkpoint": null
+}

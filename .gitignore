@@ -1,0 +1,14 @@
+# Secrets. This repo goes public at submission.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+id_rsa
+id_ed25519
+
+# Generated
+findings*.json
+__pycache__/
+*.pyc
+.venv/
