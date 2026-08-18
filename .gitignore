@@ -12,3 +12,6 @@ findings*.json
 __pycache__/
 *.pyc
 .venv/
+
+# Runtime state
+data/

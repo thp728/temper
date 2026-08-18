@@ -1,0 +1,197 @@
+"""Temper control plane.
+
+One FastAPI process. Upload a dataset, launch a job, watch it, take the adapter.
+
+Deliberately not here: auth, billing, a separate gateway process, a message
+broker. The brief sanctions cutting auth and billing; the rest are scaling
+answers to a problem this does not have. What *is* here is the full job
+lifecycle with every transition recorded, because explaining a run is the
+product.
+"""
+
+from __future__ import annotations
+
+import sys
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from api import catalog, db, orchestrator, validation  # noqa: E402
+
+UPLOADS = Path(__file__).parent.parent / "data" / "uploads"
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    db.init()
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    orchestrator.ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    # A job left non-terminal by a restart is not silently resumed -- it is
+    # surfaced. Pretending it is still running would be a lie the UI repeats,
+    # and the VM it created may still be billing.
+    for job in db.active_jobs():
+        db.set_state(job["id"], "failed",
+                     "Control plane restarted while this job was in flight",
+                     error_code="orphaned_by_restart",
+                     error_message="The process restarted mid-run. Any VM it "
+                                   "created may still exist -- check the "
+                                   "provider console.")
+    yield
+
+
+app = FastAPI(
+    title="Temper",
+    description="Fine-tuning platform. Dataset in, adapter out.",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+
+# ---------------------------------------------------------------------------
+# models
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/models", tags=["catalog"])
+def list_models():
+    """The curated base-model catalog.
+
+    An allow-list, not a limitation: detection of an arbitrary architecture is
+    easy, but *support* means testing its chat template, tokenizer quirks and
+    packing compatibility. This list is a promise about what has been tested.
+    """
+    return {"models": catalog.listing(), "default": catalog.DEFAULT_MODEL}
+
+
+# ---------------------------------------------------------------------------
+# datasets
+# ---------------------------------------------------------------------------
+
+@app.post("/v1/datasets", tags=["datasets"], status_code=201)
+async def upload_dataset(file: UploadFile = File(...)):
+    """Upload and validate a JSONL dataset.
+
+    Validation is synchronous and always returns a report. A dataset that fails
+    is still stored with its report attached, so the user can see exactly which
+    lines to fix rather than re-uploading blind.
+    """
+    if not file.filename.endswith((".jsonl", ".json")):
+        raise HTTPException(400, "Only .jsonl files are accepted.")
+
+    ds_id = db.new_id("ds")
+    path = UPLOADS / f"{ds_id}.jsonl"
+    path.write_bytes(await file.read())
+
+    with db.connect() as c:
+        import time as _t
+        c.execute("INSERT INTO datasets (id, filename, path, created_at, status) "
+                  "VALUES (?,?,?,?,?)",
+                  (ds_id, file.filename, str(path), _t.time(), "validating"))
+
+    report = validation.validate(path).to_dict()
+    db.finish_dataset(ds_id, report)
+    return {"id": ds_id, "filename": file.filename, **report}
+
+
+@app.get("/v1/datasets", tags=["datasets"])
+def list_datasets():
+    return {"datasets": db.list_datasets()}
+
+
+@app.get("/v1/datasets/{dataset_id}", tags=["datasets"])
+def get_dataset(dataset_id: str):
+    ds = db.get_dataset(dataset_id)
+    if not ds:
+        raise HTTPException(404, "No such dataset.")
+    return ds
+
+
+# ---------------------------------------------------------------------------
+# jobs
+# ---------------------------------------------------------------------------
+
+class JobRequest(BaseModel):
+    dataset_id: str
+    base_model: str = Field(default=catalog.DEFAULT_MODEL)
+    hyperparameters: dict = Field(default_factory=dict)
+
+
+@app.post("/v1/jobs", tags=["jobs"], status_code=201)
+def create_job(req: JobRequest):
+    """Launch a fine-tuning job.
+
+    Refuses an invalid dataset rather than discovering it on a GPU four minutes
+    later. The hyperparameters are frozen into the job row here: a run's spec is
+    immutable once launched, so a later change to a default cannot retroactively
+    alter what a finished run claims.
+    """
+    ds = db.get_dataset(req.dataset_id)
+    if not ds:
+        raise HTTPException(404, "No such dataset.")
+    if ds["status"] != "valid":
+        raise HTTPException(400, {
+            "code": "dataset_invalid",
+            "message": "This dataset failed validation and cannot be trained on.",
+            "errors": (ds.get("report") or {}).get("errors", []),
+        })
+    if not catalog.get(req.base_model):
+        raise HTTPException(400, {
+            "code": "unknown_model",
+            "message": f"'{req.base_model}' is not in the catalog.",
+            "available": [m["id"] for m in catalog.listing()],
+        })
+
+    job_id = db.create_job(req.dataset_id, req.base_model, req.hyperparameters)
+    orchestrator.launch(job_id)
+    return db.get_job(job_id)
+
+
+@app.get("/v1/jobs", tags=["jobs"])
+def list_jobs():
+    return {"jobs": db.list_jobs()}
+
+
+@app.get("/v1/jobs/{job_id}", tags=["jobs"])
+def get_job(job_id: str):
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "No such job.")
+    return job
+
+
+@app.get("/v1/jobs/{job_id}/events", tags=["jobs"])
+def get_events(job_id: str, after: int = 0):
+    """Durable event log. `after` is the last event id the client holds.
+
+    Polling against a monotonic id rather than streaming: a reconnecting client
+    catches up from the database instead of losing whatever happened while it
+    was away.
+    """
+    if not db.get_job(job_id):
+        raise HTTPException(404, "No such job.")
+    events = db.get_events(job_id, after_id=after)
+    return {"events": events, "last_id": events[-1]["id"] if events else after}
+
+
+@app.get("/v1/jobs/{job_id}/adapter", tags=["jobs"])
+def download_adapter(job_id: str):
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "No such job.")
+    if not job.get("adapter_path"):
+        raise HTTPException(409, {
+            "code": "no_artifact",
+            "message": f"Job is '{job['status']}'; no adapter is available yet.",
+        })
+    return FileResponse(job["adapter_path"],
+                        filename=f"{job_id}-adapter.safetensors",
+                        media_type="application/octet-stream")
+
+
+@app.get("/health", tags=["ops"])
+def health():
+    return {"ok": True}
