@@ -62,7 +62,7 @@ not a spec, and it was already cut by ratified decision.** It also accumulated 1
 corrections on contact with real hardware, so its authority is limited to the parts
 that survived.
 
-The actual spec is . **Every row in it is a user-facing flow;
+The actual spec is `scope-flow-table.md`. **Every row in it is a user-facing flow;
 none of them is infrastructure.** Parity moves when you build flows. It does not move
 when you swap SQLite for Postgres.
 
@@ -72,7 +72,7 @@ a thread per job is *defensible* -- single-tenant, one process, and the honest c
 (a restart orphans in-flight jobs) is already handled by marking them failed at
 startup rather than pretending they are alive.
 
-**Only if it demonstrably hurts:** SSE instead of  polling; a real queue if
+**Only if it demonstrably hurts:** SSE instead of `?after=` polling; a real queue if
 concurrency matters for the demo. Both are additive later, neither is a rewrite.
 
 **Not polish -- these are the bar:** failure paths as first-class flows, the
