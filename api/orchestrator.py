@@ -27,7 +27,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import catalog, db
+from . import catalog, config, db
 
 REPO_ROOT = Path(__file__).parent.parent
 TRAINER_DIR = REPO_ROOT / "trainer"
@@ -197,12 +197,35 @@ def _fetch_adapter(job_id: str, ssh_command: str, result: dict) -> str | None:
             f"downloaded file is {got[:16]}…")
     db.add_event(job_id, "log",
                  f"Adapter verified, {local.stat().st_size / 1e6:.1f} MB")
+
+    # A bare .safetensors is not a loadable adapter: PEFT needs
+    # adapter_config.json beside it to know the rank, alpha and target modules.
+    # Shipping only the weights would have handed the user a file that looks
+    # like the deliverable and cannot be used. The config is already inside
+    # result.json, so this costs no extra transfer.
+    adapter_config = result.get("adapter_config")
+    if adapter_config:
+        (dest / "adapter_config.json").write_text(
+            json.dumps(adapter_config, indent=2), encoding="utf-8")
+    else:
+        db.add_event(job_id, "error",
+                     "No adapter_config.json in the run result; the downloaded "
+                     "adapter will not load without one.")
     return str(local)
 
 
 def run_job(job_id: str) -> None:
     """Drive one job to a terminal state. Always tears down."""
     from jarvislabs import Client
+
+    if not config.provider_credentials_present():
+        db.set_state(job_id, "failed",
+                     "No provider credentials; nothing was provisioned",
+                     error_code="provider_unauthenticated",
+                     error_message="JL_API_KEY is not set and no jl config file "
+                                   "exists, so no VM could be created. Put the "
+                                   "key in spike/.env or export JL_API_KEY.")
+        return
 
     job = db.get_job(job_id)
     dataset = db.get_dataset(job["dataset_id"])

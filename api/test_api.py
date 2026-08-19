@@ -178,3 +178,68 @@ def test_event_polling_is_incremental(client, tmp_path):
 
 def test_missing_job_is_404(client):
     assert client.get("/v1/jobs/job_nope").status_code == 404
+
+
+def test_completed_job_downloads_a_loadable_adapter(client, tmp_path):
+    """The download is a zip, and the zip carries adapter_config.json.
+
+    Regression test for shipping a bare .safetensors: PEFT cannot load weights
+    without the config that records rank, alpha and target modules, so a
+    download missing it looks like the deliverable and is not one.
+    """
+    import io
+    import zipfile
+    from api import db, orchestrator
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+
+    art = orchestrator.ARTIFACTS / job["id"]
+    art.mkdir(parents=True)
+    (art / "adapter_model.safetensors").write_bytes(b"weights")
+    (art / "adapter_config.json").write_text('{"r": 16, "lora_alpha": 32}')
+    db.set_state(job["id"], "complete", "done",
+                 adapter_path=str(art / "adapter_model.safetensors"))
+
+    r = client.get(f"/v1/jobs/{job['id']}/adapter")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    assert job["id"] in r.headers["content-disposition"]
+
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        assert sorted(z.namelist()) == ["adapter_config.json",
+                                        "adapter_model.safetensors"]
+        assert z.read("adapter_model.safetensors") == b"weights"
+
+
+def test_adapter_selection_prefers_final_over_checkpoints(tmp_path, monkeypatch):
+    """`checkpoint-10` must beat `checkpoint-9`, and the final adapter beats both.
+
+    The original `sorted(rglob(...))[-1]` got this wrong twice over: it sorts
+    step numbers as strings, and it ranked any checkpoint above the
+    end-of-training adapter.
+    """
+    sys.path.insert(0, str(Path(__file__).parent.parent / "trainer"))
+    import entrypoint
+
+    out = tmp_path / "out"
+    run = out / "run"
+    for step in (2, 9, 10):
+        d = run / f"checkpoint-{step}"
+        d.mkdir(parents=True)
+        (d / "adapter_model.safetensors").write_bytes(f"ckpt{step}".encode())
+        (d / "adapter_config.json").write_text(json.dumps({"r": step}))
+    monkeypatch.setattr(entrypoint, "OUT_DIR", out)
+
+    # Only checkpoints so far: the numerically highest wins, not "9".
+    info = entrypoint.collect_artifacts()
+    assert info["adapter_source"] == "checkpoint-10"
+    assert info["adapter_config"] == {"r": 10}
+    assert info["checkpoints"] == ["checkpoint-2", "checkpoint-9", "checkpoint-10"]
+
+    # Once training writes the final adapter, that is the one shipped.
+    (run / "adapter_model.safetensors").write_bytes(b"final")
+    (run / "adapter_config.json").write_text(json.dumps({"r": 16}))
+    info = entrypoint.collect_artifacts()
+    assert info["adapter_source"] == "final"
+    assert info["adapter_config"] == {"r": 16}

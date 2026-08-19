@@ -34,7 +34,13 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # resolution problem this base exists to avoid. If something is genuinely
 # missing, it belongs in a pinned requirements file with its own review, not an
 # unpinned RUN pip install.
-COPY entrypoint.py /opt/trainer/entrypoint.py
+# Both modules, not just the entrypoint. `thinking.py` arrived after this
+# Dockerfile was written and after spike 4 last built the image, so the COPY
+# was never updated -- and because `from thinking import ...` is a top-level
+# import, the container would have died before the `finally` that writes
+# result.json, surfacing to the orchestrator as the useless
+# "trainer produced no result.json". Caught by reading, not by paying for it.
+COPY entrypoint.py thinking.py /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.

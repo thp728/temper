@@ -11,17 +11,19 @@ product.
 
 from __future__ import annotations
 
+import io
 import sys
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api import catalog, db, orchestrator, validation  # noqa: E402
+from api import catalog, config, db, orchestrator, validation  # noqa: E402
 
 UPLOADS = Path(__file__).parent.parent / "data" / "uploads"
 
@@ -31,6 +33,11 @@ async def lifespan(_app: FastAPI):
     db.init()
     UPLOADS.mkdir(parents=True, exist_ok=True)
     orchestrator.ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    # Fail loudly at boot rather than four seconds into someone's first job.
+    if not config.provider_credentials_present():
+        print("WARNING: no provider credentials (JL_API_KEY unset, no jl config "
+              "file). Datasets validate fine; jobs will fail at provisioning.",
+              file=sys.stderr)
     # A job left non-terminal by a restart is not silently resumed -- it is
     # surfaced. Pretending it is still running would be a lie the UI repeats,
     # and the VM it created may still be billing.
@@ -187,9 +194,21 @@ def download_adapter(job_id: str):
             "code": "no_artifact",
             "message": f"Job is '{job['status']}'; no adapter is available yet.",
         })
-    return FileResponse(job["adapter_path"],
-                        filename=f"{job_id}-adapter.safetensors",
-                        media_type="application/octet-stream")
+    # Zipped, because an adapter is a directory: the weights plus the
+    # adapter_config.json that makes them loadable. Built per request rather
+    # than cached -- it is a few MB, and a stale zip beside fresh weights is a
+    # worse failure than rebuilding it.
+    directory = Path(job["adapter_path"]).parent
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(directory.iterdir()):
+            if f.is_file():
+                z.write(f, arcname=f.name)
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/zip",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{job_id}-adapter.zip"'})
 
 
 @app.get("/health", tags=["ops"])

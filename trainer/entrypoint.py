@@ -115,7 +115,13 @@ def build_config(job: dict, enable_thinking: bool = False) -> dict:
         "base_model": job["base_model"],
         "output_dir": str(OUT_DIR / "run"),
 
-        # --- method: QLoRA. NF4 + double-quant, adapters in bf16 --------------
+        # --- method: QLoRA. NF4 + double-quant, bf16 compute -------------------
+        # This said "adapters in bf16" and that was wrong: measured from the
+        # first real run's safetensors header, all 504 adapter tensors are F32,
+        # which is why the artifact is 132 MB rather than ~66 MB. bf16 is the
+        # COMPUTE dtype; trainable parameters are kept in fp32 under 4-bit
+        # quantisation, which is standard and correct. The claim was the bug,
+        # not the behaviour.
         "adapter": "qlora",
         "load_in_4bit": True,
         "bnb_4bit_quant_type": "nf4",
@@ -172,18 +178,48 @@ def build_config(job: dict, enable_thinking: bool = False) -> dict:
     return cfg, applied, rejected
 
 
-def collect_artifacts() -> dict:
-    """Find what training produced, and fingerprint it."""
-    run = OUT_DIR / "run"
-    info: dict = {"checkpoints": sorted(
-        p.name for p in run.glob("checkpoint-*") if p.is_dir())}
+def _checkpoint_step(path: Path) -> int:
+    """Step number from a `checkpoint-N` directory name, -1 if unparseable."""
+    try:
+        return int(path.name.split("-", 1)[1])
+    except (IndexError, ValueError):
+        return -1
 
+
+def collect_artifacts() -> dict:
+    """Find what training produced, and fingerprint it.
+
+    Which adapter gets shipped is not a detail: it is the entire deliverable,
+    and "which weights did I actually download?" is a question the product has
+    to answer exactly. Two ways to get it wrong were both present here:
+
+    * `sorted(rglob(...))[-1]` sorts lexicographically, so once a run produces
+      ten checkpoints it picks `checkpoint-9` over `checkpoint-10`.
+    * It also preferred a checkpoint over the final adapter Axolotl writes at
+      the top of the output directory at the end of training, because
+      `run/checkpoint-N/...` sorts after `run/adapter_model.safetensors`.
+
+    The rule is explicit instead: the end-of-training adapter wins; failing
+    that, the numerically highest checkpoint. `adapter_source` records which,
+    so the answer is in result.json rather than inferred.
+    """
+    run = OUT_DIR / "run"
+    ckpt_dirs = sorted((p for p in run.glob("checkpoint-*") if p.is_dir()),
+                       key=_checkpoint_step)
+    info: dict = {"checkpoints": [p.name for p in ckpt_dirs]}
+
+    # Search order, most authoritative first: the final adapter, then
+    # checkpoints from the highest step down.
+    search_dirs = [run, *reversed(ckpt_dirs)]
     adapter = None
-    for cand in ("adapter_model.safetensors", "adapter_model.bin"):
-        hits = sorted(run.rglob(cand))
-        if hits:
-            adapter = hits[-1]
+    for d in search_dirs:
+        for cand in ("adapter_model.safetensors", "adapter_model.bin"):
+            if (d / cand).is_file():
+                adapter = d / cand
+                break
+        if adapter:
             break
+
     if adapter:
         raw = adapter.read_bytes()
         info.update({
@@ -191,10 +227,15 @@ def collect_artifacts() -> dict:
             "adapter_bytes": len(raw),
             "adapter_sha256": hashlib.sha256(raw).hexdigest(),
             "adapter_format": adapter.suffix.lstrip("."),
+            "adapter_source": ("final" if adapter.parent == run
+                               else adapter.parent.name),
         })
-    cfgs = sorted(run.rglob("adapter_config.json"))
-    if cfgs:
-        info["adapter_config"] = json.loads(cfgs[-1].read_text())
+        # The config that sits WITH the chosen adapter, not whichever one
+        # happened to sort last. A LoRA is not loadable without it, so the
+        # orchestrator ships it alongside the weights.
+        cfg_path = adapter.parent / "adapter_config.json"
+        if cfg_path.is_file():
+            info["adapter_config"] = json.loads(cfg_path.read_text())
     return info
 
 
