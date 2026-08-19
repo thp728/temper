@@ -83,7 +83,7 @@ Spike 4 also caught a real bug here: unknown keys at the **top level** of the jo
 
 ## Verified 2026-08-19 (first run through the product)
 
-Same image, driven by `api/orchestrator.py` rather than a spike script. **L4, 336s wall clock, ₹5.02 measured.**
+Same image, driven by `api/orchestrator.py` rather than a spike script. **L4, 336s job wall clock; the VM lived 363s, ≈₹4.8 derived from provision-to-teardown at ₹41.31/hr.**
 
 | | |
 | --- | --- |
