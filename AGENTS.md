@@ -50,6 +50,7 @@ Each of these has a decision entry with alternatives and tradeoffs. Changing one
 - **Unknown job keys are refused loudly** — at the top level *and* inside `hyperparameters` — and echoed back as `rejected_overrides`. An override the caller believes is in effect but isn't is worse than a refusal.
 - **Thinking mode is detected from the dataset**, applied identically at training and serving. Mixed datasets **block** with a line-numbered error, because they are ambiguous by construction.
 - **Curated is a default, not a boundary.** Phase B adds Hugging Face import for **both** datasets and base models. Imported datasets go through the identical validation pipeline — nothing gets a shortcut for arriving over the network. Imported models must pass a **compatibility probe** (pinned revision, dense not MoE, chat template present, tokenizer loads, `pad != eos`, licence resolved, predicted VRAM fits) whose result is **shown to the user, not just enforced**.
+- **Multi-GPU is provisioning, not architecture.** JarvisLabs VMs take **up to 8 GPUs** — `num_gpus` is a create parameter, and 8 devices are free on every VM-capable type. 8× H100 = 640 GB, which covers 70B full fine-tuning on one host via `accelerate` FSDP FULL_SHARD (Axolotl configures it). v1 ships single-GPU because the catalog is 4B and 8B. ⚠️ **Measured but unexercised — never describe it as proven.**
 - **Nothing is deployed.** Docker Compose is the deployment target; everything runs on localhost. The stack stays deploy-ready — S3-compatible storage, env-driven config — but deploying is out of scope and answered in `grilling-prep.md` instead.
 - **The trainer publishes no ports.** `ufw` does not filter Docker-published ports, and a `DOCKER-USER` rule matched on the published port never fires (the packet is already DNAT'd and carries the *container* port). Not publishing is the only mitigation that holds.
 - **Readiness distinguishes *unreachable* from *authentication failed*.** Opposite remedies; collapsing them into "no answer" is how the evening above was lost.
@@ -66,7 +67,9 @@ Current stack stays: FastAPI, SQLite, thread per job, plain server-rendered HTML
 
 ### Phase B — Sun 2026-08-23 to Mon 2026-08-31: production
 
-Everything after the checkpoint is polish and hardening, and it is the larger half of the build. Postgres with SQLAlchemy and Alembic, Celery and Redis, S3-compatible object storage, SSE over Redis pub/sub, Next.js with shadcn/ui, Ruff and mypy, GitHub Actions, Docker Compose, structured logging with correlation IDs, Sentry.
+Everything after the checkpoint is polish and hardening, and it is the larger half of the build. Postgres with SQLAlchemy and Alembic, **Temporal** for durable job orchestration, Redis for SSE pub/sub, MinIO for object storage, Next.js with shadcn/ui, Ruff and mypy, GitHub Actions, Docker Compose, structured logging with correlation IDs.
+
+**Temporal, not Celery.** A run is multi-step, takes hours, and holds an irreversible side effect — a billing VM — mid-workflow. That is what durable execution is for; Celery would mean hand-rolling idempotency and compensation per step. **The reconciler stays regardless** — durable execution recovers *the job*, the reconciler destroys any VM with no run that owns it and protects *the money*. Two mechanisms, two different failures.
 
 **Target spec: `technical-architecture.md` in the vault.** Not `reference-technical-architecture.md`, which is superseded — though its §0 corrections log stays useful as the record of what was assumed versus what turned out true.
 
@@ -75,7 +78,7 @@ Everything after the checkpoint is polish and hardening, and it is the larger ha
 This costs nothing now and saves a rewrite later:
 
 - **Keep validation pure.** Functions over parsed rows, no I/O, no framework imports.
-- **Keep the orchestrator a function over a job record.** It should not care whether the record came from SQLite or Postgres, or whether a thread or a Celery worker called it.
+- **Keep the orchestrator a function over a job record.** It should not care whether the record came from SQLite or Postgres, or whether a thread or a Temporal activity called it. In Phase B each step becomes an activity, so keep the steps separable and individually idempotent — creating a VM twice is the failure that costs money.
 - **No SQL in request handlers.** All persistence behind `db.py`-style functions.
 - **Domain logic carries over unchanged** — validation rules, the state machine, the orchestration sequence, thinking-mode detection. What changes in Phase B is what it persists to and what runs it.
 
