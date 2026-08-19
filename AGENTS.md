@@ -44,11 +44,13 @@ GPU work bills per minute against a ₹50,000 grant (~₹50 spent so far). Cheap
 
 Each of these has a decision entry with alternatives and tradeoffs. Changing one means writing a new entry, not editing the old.
 
-- **Correctness settings are never user-settable.** Chat-template resolution, EOS handling, loss masking, NF4 double-quant, all-linear LoRA targets, bf16, seed. These are the highest-frequency silent-failure surface — they pass every obvious health check and surface only as bad output. Exposing them buys a user nothing and costs correctness.
+- **Correctness settings are default-locked, not hidden.** Chat-template resolution, EOS handling, loss masking, NF4 double-quant, all-linear LoRA targets, bf16, seed. Defaults are hard-coded and the common path never touches them — they are the highest-frequency silent-failure surface. **But Advanced mode exposes every one of them**, with the failure mode named inline next to each, and overrides recorded in the run spec. Every serious platform in this space exposes these; hiding them permanently is a limitation dressed as a safety feature. **The export-time template probe is what makes exposure safe** — it catches a wrong override before the user does.
 - **α tracks r.** Change `lora_r` without `lora_alpha` and α recomputes as `2r`. Pairing a new rank with a stale scale is a silent quality bug.
 - **rsLoRA is inferred at `r >= 32`**, never exposed.
 - **Unknown job keys are refused loudly** — at the top level *and* inside `hyperparameters` — and echoed back as `rejected_overrides`. An override the caller believes is in effect but isn't is worse than a refusal.
 - **Thinking mode is detected from the dataset**, applied identically at training and serving. Mixed datasets **block** with a line-numbered error, because they are ambiguous by construction.
+- **Curated is a default, not a boundary.** Phase B adds Hugging Face import for **both** datasets and base models. Imported datasets go through the identical validation pipeline — nothing gets a shortcut for arriving over the network. Imported models must pass a **compatibility probe** (pinned revision, dense not MoE, chat template present, tokenizer loads, `pad != eos`, licence resolved, predicted VRAM fits) whose result is **shown to the user, not just enforced**.
+- **Nothing is deployed.** Docker Compose is the deployment target; everything runs on localhost. The stack stays deploy-ready — S3-compatible storage, env-driven config — but deploying is out of scope and answered in `grilling-prep.md` instead.
 - **The trainer publishes no ports.** `ufw` does not filter Docker-published ports, and a `DOCKER-USER` rule matched on the published port never fires (the packet is already DNAT'd and carries the *container* port). Not publishing is the only mitigation that holds.
 - **Readiness distinguishes *unreachable* from *authentication failed*.** Opposite remedies; collapsing them into "no answer" is how the evening above was lost.
 - **The trainer image is pinned by digest.** The tag is a comment. Never `pip install` inside it — that reintroduces the dependency-resolution problem the pinned base exists to avoid.
@@ -110,6 +112,7 @@ Reasoning and project state live in the private vault at `d:\Dev\life-os\project
 | --- | --- |
 | `decisions.md` | Decisions with Why/Alternatives/Tradeoffs/Rollback. **This is the deliverable** |
 | `technical-architecture.md` | **The spec.** Production stack, scoped. Phase B builds this |
+| `grilling-prep.md` | **Answers for everything cut** — auth, billing, deployment, multi-tenancy, why Axolotl, why not Ray. Living doc; update it as decisions land |
 | `reference-technical-architecture.md` §0 | Superseded — but §0's 17 corrections are the record of what was assumed vs true |
 | `scope-flow-table.md` | Ratified parity boundary — 75% of Together AI's user-facing flows |
 | `tasks.md` | Current status and full backlog |
