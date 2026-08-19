@@ -54,6 +54,38 @@ Each of these has a decision entry with alternatives and tradeoffs. Changing one
 - **The trainer image is pinned by digest.** The tag is a comment. Never `pip install` inside it — that reintroduces the dependency-resolution problem the pinned base exists to avoid.
 - **Axolotl owns the training loop; we own the contract.** Do not call TRL/PEFT directly — those APIs move underneath you (TRL 1.x dropped `warmup_ratio` from `SFTConfig`, which broke checkpoint resume outright).
 
+## ⚠️ Do not migrate the stack toward the reference architecture
+
+The reference architecture specifies PostgreSQL with Alembic, Celery and Redis, an
+outbox, object storage, and a Next.js/Tailwind/shadcn front end. **It is a reference,
+not a spec, and it was already cut by ratified decision.** It also accumulated 17
+corrections on contact with real hardware, so its authority is limited to the parts
+that survived.
+
+The actual spec is . **Every row in it is a user-facing flow;
+none of them is infrastructure.** Parity moves when you build flows. It does not move
+when you swap SQLite for Postgres.
+
+**Never, for this deadline:** Postgres/Alembic, Celery/Redis, object storage, hosted
+deploy, module boundaries. Each costs hours and moves the number by zero. SQLite plus
+a thread per job is *defensible* -- single-tenant, one process, and the honest cost
+(a restart orphans in-flight jobs) is already handled by marking them failed at
+startup rather than pretending they are alive.
+
+**Only if it demonstrably hurts:** SSE instead of  polling; a real queue if
+concurrency matters for the demo. Both are additive later, neither is a rewrite.
+
+**Not polish -- these are the bar:** failure paths as first-class flows, the
+chat-template assertion probe, the loss curve, the quote.
+
+**Front end:** plain server-rendered HTML, htmx if it helps. Not a React app. *"I chose
+a plain UI so every flow could be complete"* beats a pretty app with three broken
+paths.
+
+**Any stack change needs a decision entry naming the specific observed failure it
+fixes.** "The architecture says so" is not a reason. The founder grills decisions, not
+stacks -- an articulated SQLite beats an unexplained Postgres.
+
 ## Error handling
 
 - Every API error carries a **stable machine-readable code**, a user-safe message, and a line or field reference where one applies.
