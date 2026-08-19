@@ -54,37 +54,30 @@ Each of these has a decision entry with alternatives and tradeoffs. Changing one
 - **The trainer image is pinned by digest.** The tag is a comment. Never `pip install` inside it — that reintroduces the dependency-resolution problem the pinned base exists to avoid.
 - **Axolotl owns the training loop; we own the contract.** Do not call TRL/PEFT directly — those APIs move underneath you (TRL 1.x dropped `warmup_ratio` from `SFTConfig`, which broke checkpoint resume outright).
 
-## ⚠️ Do not migrate the stack toward the reference architecture
+## Two phases, split at the Friday checkpoint
 
-The reference architecture specifies PostgreSQL with Alembic, Celery and Redis, an
-outbox, object storage, and a Next.js/Tailwind/shadcn front end. **It is a reference,
-not a spec, and it was already cut by ratified decision.** It also accumulated 17
-corrections on contact with real hardware, so its authority is limited to the parts
-that survived.
+**The product ships production-ready. The scrappy slice is a means to the checkpoint, not the deliverable.**
 
-The actual spec is `scope-flow-table.md`. **Every row in it is a user-facing flow;
-none of them is infrastructure.** Parity moves when you build flows. It does not move
-when you swap SQLite for Postgres.
+### Phase A — until Fri 2026-08-21: prove the loop
 
-**Never, for this deadline:** Postgres/Alembic, Celery/Redis, object storage, hosted
-deploy, module boundaries. Each costs hours and moves the number by zero. SQLite plus
-a thread per job is *defensible* -- single-tenant, one process, and the honest cost
-(a restart orphans in-flight jobs) is already handled by marking them failed at
-startup rather than pretending they are alive.
+Current stack stays: FastAPI, SQLite, thread per job, plain server-rendered HTML. **Do not migrate anything during Phase A.** The checkpoint asks one question — *can a user go from dataset to adapter through the product?* — and hours spent on Postgres before the loop runs are hours not spent making the loop run. If the journey does not work by Friday evening, scope gets cut that day.
 
-**Only if it demonstrably hurts:** SSE instead of `?after=` polling; a real queue if
-concurrency matters for the demo. Both are additive later, neither is a rewrite.
+### Phase B — Sun 2026-08-23 to Mon 2026-08-31: production
 
-**Not polish -- these are the bar:** failure paths as first-class flows, the
-chat-template assertion probe, the loss curve, the quote.
+Everything after the checkpoint is polish and hardening, and it is the larger half of the build. Postgres with SQLAlchemy and Alembic, Celery and Redis, S3-compatible object storage, SSE over Redis pub/sub, Next.js with shadcn/ui, Ruff and mypy, GitHub Actions, Docker Compose, structured logging with correlation IDs, Sentry.
 
-**Front end:** plain server-rendered HTML, htmx if it helps. Not a React app. *"I chose
-a plain UI so every flow could be complete"* beats a pretty app with three broken
-paths.
+**Target spec: `technical-architecture.md` in the vault.** Not `reference-technical-architecture.md`, which is superseded — though its §0 corrections log stays useful as the record of what was assumed versus what turned out true.
 
-**Any stack change needs a decision entry naming the specific observed failure it
-fixes.** "The architecture says so" is not a reason. The founder grills decisions, not
-stacks -- an articulated SQLite beats an unexplained Postgres.
+### Write Phase A so Phase B is a migration, not a rewrite
+
+This costs nothing now and saves a rewrite later:
+
+- **Keep validation pure.** Functions over parsed rows, no I/O, no framework imports.
+- **Keep the orchestrator a function over a job record.** It should not care whether the record came from SQLite or Postgres, or whether a thread or a Celery worker called it.
+- **No SQL in request handlers.** All persistence behind `db.py`-style functions.
+- **Domain logic carries over unchanged** — validation rules, the state machine, the orchestration sequence, thinking-mode detection. What changes in Phase B is what it persists to and what runs it.
+
+**Production-grade is part of the deliverable, not a stretch goal.** The brief asks for 70–80% of what commercial products offer, and none of them runs on a thread pool and a local file. This repository is also the public portfolio artifact, read by a company whose own product is GPU infrastructure — **the orchestration layer is the work sample.**
 
 ## Error handling
 
@@ -116,7 +109,8 @@ Reasoning and project state live in the private vault at `d:\Dev\life-os\project
 | File | What it holds |
 | --- | --- |
 | `decisions.md` | Decisions with Why/Alternatives/Tradeoffs/Rollback. **This is the deliverable** |
-| `reference-technical-architecture.md` §0 | 17 corrections, 4 blocking. **Read §0 before trusting the body** |
+| `technical-architecture.md` | **The spec.** Production stack, scoped. Phase B builds this |
+| `reference-technical-architecture.md` §0 | Superseded — but §0's 17 corrections are the record of what was assumed vs true |
 | `scope-flow-table.md` | Ratified parity boundary — 75% of Together AI's user-facing flows |
 | `tasks.md` | Current status and full backlog |
 | `wiki/` | Plain-English concept pages; the explainability gate |
