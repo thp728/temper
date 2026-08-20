@@ -113,7 +113,7 @@ Reasoning and project state live in the private vault at `d:\Dev\life-os\project
 
 | File | What it holds |
 | --- | --- |
-| `decisions.md` | Decisions with Why/Alternatives/Tradeoffs/Rollback. **This is the deliverable** |
+| `decisions.md` | Decisions with Why/Alternatives/Tradeoffs/Rollback, through 2026-08-19. **Closed to new entries** — it stays untouched as the record of the build to that date. New decisions are ADRs in this repo; see below |
 | `technical-architecture.md` | **The spec.** Production stack, scoped. Phase B builds this |
 | `grilling-prep.md` | **Answers for everything cut** — auth, billing, deployment, multi-tenancy, why Axolotl, why not Ray. Living doc; update it as decisions land |
 | `reference-technical-architecture.md` §0 | Superseded — but §0's 17 corrections are the record of what was assumed vs true |
@@ -147,4 +147,8 @@ The five canonical roles, each label string equal to its name — `needs-triage`
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. Neither exists yet; skills proceed silently until `/domain-modeling` creates them. Note that the reasoning docs listed above live in the private vault and are separate from these. See `docs/agents/domain.md`.
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. Neither exists yet, and skills proceed silently until they do. `docs/adr/` is created by issue #4 along with ADR-0001 and the index; `CONTEXT.md` lands when the domain vocabulary is first written down.
+
+**ADRs in this repo are where new decisions go**, and they are public at submission — write them for that audience from the first entry. The vault's `decisions.md` is closed but not superseded: its thirteen entries get copied in before the repo goes public, so the record does not appear to start three-quarters of the way through the project.
+
+**Decision records are written as the change lands, not afterwards.** Each Phase A spec names the ADRs its work produces, for exactly this reason: entries written during the build record reasoning, entries written after it reconstruct reasoning, and reconstruction is what fails under questioning. See `docs/agents/domain.md`.
