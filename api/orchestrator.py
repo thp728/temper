@@ -3,15 +3,23 @@
 This is `spike/spike4.py` made durable. The sequence is unchanged because it is
 proven; what is added is a job row, state transitions, and events.
 
+Everything that touches the compute provider goes through the injected
+`Provider` protocol — one seam, so the whole money-spending path can be
+exercised with a fake and no GPU. The default is the real one, so callers that
+do not care about testing pass nothing.
+
 Three properties carried over from the spikes, each of which was learned the
 expensive way:
 
 * **Teardown runs in `finally`, then is independently confirmed** by listing
-  instances. Trusting a destroy call's return value is exactly the assumption
-  that leaves a GPU billing overnight.
+  machines. Trusting a destroy call's return value is exactly the assumption
+  that leaves a GPU billing overnight. It now runs **before** the terminal
+  state transition, so a client that stops polling once the job says it is
+  finished still sees the confirmation.
 * **Readiness distinguishes *unreachable* from *authentication failed*.** They
   have opposite remedies, and collapsing both into "no answer" cost an evening
-  and produced a wrongly-filed platform bug.
+  and produced a wrongly-filed platform bug. That logic lives in the default
+  provider now, with the two codes intact.
 * **The trainer publishes no ports.** `ufw` does not filter Docker-published
   ports and a `DOCKER-USER` rule on the published port never matches, because
   the packet is already DNAT'd. Not publishing is the mitigation that works.
@@ -19,15 +27,17 @@ expensive way:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
-import subprocess
 import tarfile
 import threading
 import time
 from pathlib import Path
 
-from . import catalog, config, db
+from . import catalog, db
+from .errors import OrchestratorError
+from .provider import Provider, new_provider
 
 REPO_ROOT = Path(__file__).parent.parent
 TRAINER_DIR = REPO_ROOT / "trainer"
@@ -35,72 +45,25 @@ ARTIFACTS = REPO_ROOT / "data" / "artifacts"
 
 GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
 STORAGE_GB = 100          # platform minimum for VM instances
-SSH_READY_TIMEOUT_S = 300
-BOOTSTRAP_TIMEOUT_S = 5400
 MAX_GPU_MINUTES = 90      # safety control, not billing
 
-
-class OrchestratorError(Exception):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-
-
-def _ssh(ssh_command: str) -> list[str]:
-    base = ssh_command.strip()
-    if base.startswith("ssh "):
-        base = base[4:]
-    return ["ssh", "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "ConnectTimeout=10",
-            "-o", "ServerAliveInterval=30",
-            "-o", "BatchMode=yes", *base.split()]
+TRAINER_TARBALL = "/tmp/trainer.tar.gz"
+# The machine emits this when it fails before the trainer ever runs, so that a
+# pre-training failure still arrives as a result document naming its own code
+# rather than as "the trainer produced nothing".
+SOURCE_UNPACK_FAILED = json.dumps({
+    "stage": "source", "ok": False, "error_code": "source_upload_failed",
+    "error": "The trainer sources reached the machine but did not unpack."})
+RESULT_MARKER = "---RESULT---"
+DESTROY_ATTEMPTS = 3
+DESTROY_RETRY_DELAY_S = 5
 
 
-def _wait_for_ssh(job_id: str, ssh_command: str) -> None:
-    """Poll until sshd answers.
-
-    `Running` from the provider is a claim about the VM, not about
-    reachability: measured, SSH refuses for ~40s after the status flips.
-    Authentication failures are reported separately from unreachability because
-    the fixes are unrelated -- one means wait or reprovision, the other means
-    the agent is not holding the key.
-    """
-    t0 = time.time()
-    last_auth_error = None
-    while time.time() - t0 < SSH_READY_TIMEOUT_S:
-        try:
-            r = subprocess.run(_ssh(ssh_command) + ["true"],
-                               capture_output=True, text=True, timeout=25)
-            if r.returncode == 0:
-                db.add_event(job_id, "log",
-                             f"SSH ready after {time.time() - t0:.0f}s")
-                return
-            err = (r.stderr or "").lower()
-            if "permission denied" in err or "publickey" in err:
-                last_auth_error = r.stderr.strip()
-        except subprocess.TimeoutExpired:
-            pass
-        time.sleep(5)
-
-    if last_auth_error:
-        raise OrchestratorError(
-            "ssh_auth_failed",
-            "The VM was reachable but rejected the SSH key. The key is "
-            "registered, so this is almost always a local agent problem: "
-            "check `ssh-add -l` lists the JarvisLabs key. "
-            f"Server said: {last_auth_error}")
-    raise OrchestratorError(
-        "ssh_unreachable",
-        f"VM never accepted SSH within {SSH_READY_TIMEOUT_S}s. It reached "
-        f"Running but is not usable; destroying and giving up.")
-
-
-def _push_sources(ssh_command: str) -> None:
-    """Ship trainer/ as a tar on stdin. One round trip, no scp dependency."""
+def _trainer_tarball() -> bytes:
+    """Ship trainer/ as one tar. One round trip, no scp dependency."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for p in TRAINER_DIR.iterdir():
+        for p in sorted(TRAINER_DIR.iterdir()):
             if not p.is_file() or p.suffix == ".pyc":
                 continue
             # Normalise line endings: a CRLF Dockerfile fails inside the
@@ -109,17 +72,12 @@ def _push_sources(ssh_command: str) -> None:
             info = tarfile.TarInfo(name=p.name)
             info.size, info.mode = len(data), 0o644
             tar.addfile(info, io.BytesIO(data))
-    r = subprocess.run(
-        _ssh(ssh_command) + ["mkdir -p /tmp/trainer && tar xzf - -C /tmp/trainer"],
-        input=buf.getvalue(), capture_output=True, timeout=180)
-    if r.returncode != 0:
-        raise OrchestratorError("source_upload_failed",
-                                r.stderr.decode("utf-8", "replace")[:300])
+    return buf.getvalue()
 
 
 def _remote_script(job: dict, dataset_path: Path, model: catalog.BaseModel,
                    enable_thinking: bool) -> bytes:
-    """The on-VM script: build the image, run the job, print the result."""
+    """The on-machine script: build the image, run the job, print the result."""
     job_spec = {
         "job_id": job["id"],
         "base_model": model.repo,
@@ -129,6 +87,14 @@ def _remote_script(job: dict, dataset_path: Path, model: catalog.BaseModel,
     script = f"""
 set -u
 say() {{ echo "[$(date +%H:%M:%S)] $*" >&2; }}
+
+mkdir -p /tmp/trainer
+tar xzf {TRAINER_TARBALL} -C /tmp/trainer || {{
+  say "SOURCE UNPACK FAILED"
+  echo "{RESULT_MARKER}"
+  echo '{SOURCE_UNPACK_FAILED}'
+  exit 0
+}}
 
 # The trainer needs no inbound port, so it publishes none. That is the only
 # firewall mitigation that actually holds for Docker on this platform.
@@ -161,7 +127,7 @@ sudo docker run --rm --gpus all \\
 tail -n 30 /tmp/run.log >&2
 
 if [ -f /tmp/out/result.json ]; then
-  echo "---RESULT---"
+  echo "{RESULT_MARKER}"
   sudo cat /tmp/out/result.json
 else
   echo '{{"stage":"train","ok":false,"error":"no result.json produced"}}'
@@ -170,25 +136,56 @@ fi
     return script.encode("utf-8")
 
 
-def _fetch_adapter(job_id: str, ssh_command: str, result: dict) -> str | None:
+def _consume(job_id: str, lines) -> dict:
+    """Turn the machine's output into events, and return the trainer's result.
+
+    Everything before the marker is the job's output and becomes a log event.
+    Everything after it is the trainer's result document, which is machinery
+    rather than output and is not logged as such.
+    """
+    result_lines: list[str] = []
+    seen_marker = False
+    for line in lines:
+        text = line.strip()
+        if not seen_marker:
+            if text == RESULT_MARKER:
+                seen_marker = True
+            elif text:
+                db.add_event(job_id, "log", text[:500])
+        else:
+            result_lines.append(line)
+
+    if not seen_marker:
+        raise OrchestratorError(
+            "training_failed",
+            "Trainer produced no result.json. See job events.")
+    try:
+        return json.loads("\n".join(result_lines))
+    except json.JSONDecodeError as e:
+        raise OrchestratorError(
+            "training_failed",
+            f"Trainer's result document did not parse: {e}")
+
+
+def _fetch_adapter(provider: Provider, machine, job_id: str,
+                   result: dict) -> str | None:
     rel = result.get("adapter_path")
     if not rel:
         return None
+    payload = provider.fetch(machine, f"/tmp/out/{rel}")
+    if not payload:
+        db.add_event(job_id, "error",
+                     "Adapter fetch failed; artifact left on the machine")
+        return None
+
     dest = ARTIFACTS / job_id
     dest.mkdir(parents=True, exist_ok=True)
     local = dest / "adapter_model.safetensors"
-    r = subprocess.run(
-        _ssh(ssh_command) + [f"sudo cat /tmp/out/{rel}"],
-        capture_output=True, timeout=600)
-    if r.returncode != 0 or not r.stdout:
-        db.add_event(job_id, "error", "Adapter fetch failed; artifact left on VM")
-        return None
-    local.write_bytes(r.stdout)
+    local.write_bytes(payload)
 
     # Verify against the hash the container computed. A silently truncated
     # transfer produces a file that looks fine and is not.
-    import hashlib
-    got = hashlib.sha256(local.read_bytes()).hexdigest()
+    got = hashlib.sha256(payload).hexdigest()
     want = result.get("adapter_sha256")
     if want and got != want:
         raise OrchestratorError(
@@ -214,114 +211,135 @@ def _fetch_adapter(job_id: str, ssh_command: str, result: dict) -> str | None:
     return str(local)
 
 
-def run_job(job_id: str) -> None:
-    """Drive one job to a terminal state. Always tears down."""
-    from jarvislabs import Client
+def _teardown(provider: Provider, job_id: str, machine) -> None:
+    """Destroy the machine, then confirm it independently.
 
-    if not config.provider_credentials_present():
-        db.set_state(job_id, "failed",
-                     "No provider credentials; nothing was provisioned",
-                     error_code="provider_unauthenticated",
-                     error_message="JL_API_KEY is not set and no jl config file "
-                                   "exists, so no VM could be created. Put the "
-                                   "key in spike/.env or export JL_API_KEY.")
-        return
+    A destroy call that returns cleanly is a claim. The evidence is the machine
+    no longer being listed, and a machine that is still listed is billing right
+    now — so it is reported as an error an operator cannot miss.
+    """
+    for attempt in range(DESTROY_ATTEMPTS):
+        try:
+            provider.destroy(machine.machine_id)
+            db.add_event(job_id, "log",
+                         f"Machine {machine.machine_id} destroyed")
+            break
+        except Exception as e:
+            db.add_event(job_id, "error", f"Destroy attempt failed: {e}")
+            if attempt < DESTROY_ATTEMPTS - 1:
+                time.sleep(DESTROY_RETRY_DELAY_S)
+    try:
+        if machine.machine_id in provider.list_machine_ids():
+            db.add_event(job_id, "error",
+                         f"STRAY MACHINE {machine.machine_id} still listed — "
+                         f"destroy it manually, it is billing")
+    except Exception as e:
+        db.add_event(job_id, "error",
+                     f"Could not confirm teardown of machine "
+                     f"{machine.machine_id}: {e}")
 
+
+def _attempt(provider: Provider, job_id: str, machines: list) -> tuple[str, str, dict]:
+    """Do the work. Returns the terminal state to record, but never records it.
+
+    Recording the outcome is the caller's job precisely so that teardown can
+    happen in between: the confirmation that the machine is gone must reach the
+    event log before the job reports that it is finished.
+
+    `machines` is the caller's handle on anything created, appended to the
+    moment it exists — a machine that exists but was never recorded is a
+    machine nobody destroys.
+    """
     job = db.get_job(job_id)
     dataset = db.get_dataset(job["dataset_id"])
     model = catalog.get(job["base_model"]) or catalog.get(catalog.DEFAULT_MODEL)
     enable_thinking = bool(dataset.get("enable_thinking"))
-    instance = None
-    started = time.time()
 
-    with Client() as client:
+    db.set_state(job_id, "provisioning", "Selecting a GPU")
+    gpu = provider.select_gpu(GPU_PREFERENCE)
+    db.set_state(job_id, "provisioning",
+                 f"Provisioning {gpu.gpu_type} at "
+                 f"{gpu.price_per_hour}{gpu.currency}/hr",
+                 gpu_type=gpu.gpu_type, price_per_hour=gpu.price_per_hour,
+                 currency=gpu.currency)
+
+    machine = provider.create(gpu.gpu_type, STORAGE_GB, f"temper-{job_id[:12]}")
+    machines.append(machine)
+    db.set_state(job_id, "preparing",
+                 f"Machine {machine.machine_id} running; waiting for SSH",
+                 machine_id=machine.machine_id)
+
+    db.add_event(job_id, "log", provider.await_ready(machine))
+    provider.push(machine, _trainer_tarball(), TRAINER_TARBALL)
+
+    db.set_state(job_id, "training", "Building image and training")
+    ds_path = Path(dataset["path"])
+    script = _remote_script(job, ds_path, model, enable_thinking)
+    result = _consume(job_id, provider.stream(machine, script))
+    if not result.get("ok"):
+        # The result document names its own failure where it can. A stage that
+        # failed before training started is not a training failure, and telling
+        # a user otherwise sends them to read the wrong logs.
+        raise OrchestratorError(
+            result.get("error_code") or "training_failed",
+            result.get("error") or "Training did not complete.")
+
+    db.set_state(job_id, "packaging", "Retrieving adapter")
+    adapter = _fetch_adapter(provider, machine, job_id, result)
+    return ("complete", "Training complete",
+            {"result_json": result, "adapter_path": adapter})
+
+
+def run_job(job_id: str, provider: Provider | None = None) -> None:
+    """Drive one job to a terminal state. Always tears down.
+
+    The provider is injected so the whole path is testable; omit it and the
+    real one is built, which is where a missing credential surfaces.
+    """
+    owns_provider = provider is None
+    if owns_provider:
         try:
-            db.set_state(job_id, "provisioning", "Selecting a GPU")
-            avail = {r.gpu_type: r for r in client.account.gpu_availability()
-                     if r.workload_type == "vm" and r.num_free_devices > 0}
-            gpu = next((g for g in GPU_PREFERENCE if g in avail), None)
-            if not gpu:
-                raise OrchestratorError(
-                    "provider_capacity_unavailable",
-                    f"No VM-capable GPU free. Note that availability is "
-                    f"per-workload-type: some GPUs exist only for containers.")
-            row = avail[gpu]
-            currency = client.account.currency()
-            db.set_state(job_id, "provisioning",
-                         f"Provisioning {gpu} at {row.price_per_hour}{currency}/hr",
-                         gpu_type=gpu, price_per_hour=row.price_per_hour,
-                         currency=currency)
-
-            instance = client.instances.create(
-                gpu_type=gpu, num_gpus=1, template="vm",
-                storage=STORAGE_GB, name=f"temper-{job_id[:12]}")
-            db.set_state(job_id, "preparing",
-                         f"VM {instance.machine_id} running; waiting for SSH",
-                         machine_id=instance.machine_id)
-
-            _wait_for_ssh(job_id, instance.ssh_command or "")
-            _push_sources(instance.ssh_command or "")
-
-            db.set_state(job_id, "training", "Building image and training")
-            ds_path = Path(dataset["path"])
-            proc = subprocess.run(
-                _ssh(instance.ssh_command) + ["bash -s"],
-                input=_remote_script(job, ds_path, model, enable_thinking),
-                capture_output=True, timeout=BOOTSTRAP_TIMEOUT_S)
-
-            for line in proc.stderr.decode("utf-8", "replace").splitlines():
-                if line.strip():
-                    db.add_event(job_id, "log", line.strip()[:500])
-
-            out = proc.stdout.decode("utf-8", "replace")
-            marker = "---RESULT---"
-            if marker not in out:
-                raise OrchestratorError("training_failed",
-                                        "Trainer produced no result.json. See job events.")
-            result = json.loads(out.split(marker, 1)[1])
-            if not result.get("ok"):
-                raise OrchestratorError(
-                    "training_failed",
-                    result.get("error") or "Training did not complete.")
-
-            db.set_state(job_id, "packaging", "Retrieving adapter")
-            adapter = _fetch_adapter(job_id, instance.ssh_command, result)
-            db.set_state(job_id, "complete", "Training complete",
-                         result_json=result, adapter_path=adapter)
-
+            provider = new_provider()
         except OrchestratorError as e:
             db.set_state(job_id, "failed", str(e),
                          error_code=e.code, error_message=str(e))
+            return
         except Exception as e:
+            # Nothing was provisioned, so there is nothing to tear down -- but
+            # the job still has to reach a terminal state rather than sit in
+            # `queued` forever because the SDK failed to import.
             db.set_state(job_id, "failed", f"{type(e).__name__}: {e}",
                          error_code="internal_error", error_message=str(e))
+            return
+
+    machines: list = []
+    started = time.time()
+    try:
+        try:
+            outcome = _attempt(provider, job_id, machines)
+        except OrchestratorError as e:
+            outcome = ("failed", str(e),
+                       {"error_code": e.code, "error_message": str(e)})
+        except Exception as e:
+            outcome = ("failed", f"{type(e).__name__}: {e}",
+                       {"error_code": "internal_error",
+                        "error_message": str(e)})
         finally:
-            # Teardown, then independent confirmation. The destroy call's
-            # return value is not evidence.
-            if instance is not None:
-                for attempt in range(3):
-                    try:
-                        client.instances.destroy(instance.machine_id)
-                        db.add_event(job_id, "log",
-                                     f"VM {instance.machine_id} destroyed")
-                        break
-                    except Exception as e:
-                        db.add_event(job_id, "error", f"Destroy attempt failed: {e}")
-                        time.sleep(5)
-                try:
-                    live = [i for i in client.instances.list()
-                            if i.machine_id == instance.machine_id]
-                    if live:
-                        db.add_event(job_id, "error",
-                                     f"STRAY INSTANCE {instance.machine_id} still "
-                                     f"listed — destroy manually, it is billing")
-                except Exception:
-                    pass
+            # Before the terminal transition, and on every path including one
+            # nobody anticipated.
+            for machine in machines:
+                _teardown(provider, job_id, machine)
             db.add_event(job_id, "log",
                          f"Job finished in {time.time() - started:.0f}s")
 
+        state, message, fields = outcome
+        db.set_state(job_id, state, message, **fields)
+    finally:
+        if owns_provider:
+            provider.close()
 
-def launch(job_id: str) -> None:
+
+def launch(job_id: str, provider: Provider | None = None) -> None:
     """Start a job on a background thread.
 
     A thread rather than Celery: one process is the whole deployment, and a
@@ -329,5 +347,5 @@ def launch(job_id: str) -> None:
     -- a process restart orphans in-flight jobs, which `db.active_jobs()`
     surfaces at startup rather than hiding.
     """
-    threading.Thread(target=run_job, args=(job_id,), daemon=True,
+    threading.Thread(target=run_job, args=(job_id, provider), daemon=True,
                      name=f"job-{job_id[:8]}").start()
