@@ -132,3 +132,19 @@ spike/     infrastructure probes against the live account
 ```
 
 `python -m pytest -q` from the repo root.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `thp728/temper`, driven through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. Neither exists yet; skills proceed silently until `/domain-modeling` creates them. Note that the reasoning docs listed above live in the private vault and are separate from these. See `docs/agents/domain.md`.
