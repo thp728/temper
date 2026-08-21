@@ -90,11 +90,24 @@ class Event:
 
 
 def _finite_number(payload: str, key: str) -> float | None:
-    """The value of `key`, or None if it is absent, malformed or non-finite."""
-    m = re.search(rf"['\"]{re.escape(key)}['\"]\s*:\s*({_NUMBER})", payload)
+    """The value of `key`, or None if it is absent, malformed or non-finite.
+
+    The number may be quoted or bare. Plain transformers writes the log dict
+    with live values -- ``{'loss': 1.9042, 'epoch': 0.13}`` -- but Axolotl's
+    callback formats every value to a fixed precision first and hands on the
+    **strings**: ``{'loss': '0.7157', 'epoch': '0.1333'}``. Reading only the
+    bare form promoted nothing at all on a real run while every unit test that
+    fed it transformers-shaped lines went on passing.
+
+    The quote is captured and required again after the number, so a value that
+    merely starts with digits (``'0.7 (est)'``) matches nothing rather than
+    being silently truncated into a measurement.
+    """
+    m = re.search(rf"['\"]{re.escape(key)}['\"]\s*:\s*(['\"]?)({_NUMBER})\1",
+                  payload)
     if not m:
         return None
-    value = float(m.group(1))
+    value = float(m.group(2))
     return value if math.isfinite(value) else None
 
 

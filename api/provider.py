@@ -245,8 +245,18 @@ class JarvisLabsProvider:
             encoding="utf-8", errors="replace", bufsize=1)
 
         def feed() -> None:
+            # Written as bytes, through the text wrapper rather than to it.
+            # `text=True` puts a TextIOWrapper on stdin, and on Windows that
+            # wrapper translates every "\n" handed to it into "\r\n" -- so a
+            # script written as text reaches the remote `bash -s` with a
+            # carriage return on every line, and bash answers
+            # `$'\r': command not found` before running a thing. The script is
+            # already bytes; decoding it only to have it re-encoded with
+            # different newlines was the whole defect. stdout stays in text
+            # mode, which is the direction the translation is wanted in.
             try:
-                proc.stdin.write(script.decode("utf-8"))
+                proc.stdin.buffer.write(script)
+                proc.stdin.buffer.flush()
                 proc.stdin.close()
             except Exception:      # the process died; the read loop reports it
                 pass

@@ -117,3 +117,34 @@ def test_a_machine_that_never_answers_is_reported_as_unreachable(monkeypatch):
     with pytest.raises(provider_mod.OrchestratorError) as e:
         p.await_ready(Machine(1))
     assert e.value.code == "ssh_unreachable"
+
+
+# Reports the exact bytes it was fed, so the test can see newline translation.
+REPORT_STDIN = (
+    "import sys\n"
+    "data = sys.stdin.buffer.read()\n"
+    "print('CR' if bytes([13]) in data else 'CLEAN')\n"
+    "print(repr(data))\n"
+)
+
+
+def test_the_script_arrives_with_the_newlines_it_was_given(monkeypatch):
+    """No carriage returns, on any platform.
+
+    `text=True` wraps stdin in a TextIOWrapper, and on Windows that wrapper
+    turns every "\n" into "\r\n". The remote shell then reads a script whose
+    every line ends in a carriage return and refuses the first one with
+    `$'\r': command not found` -- before running any of it.
+
+    The fake provider cannot catch this. It never crosses a pipe, so the
+    translation that breaks a real run does not happen to it, and the whole
+    suite stayed green while no job could train. This test exists because that
+    is exactly what happened.
+    """
+    p = transport(monkeypatch, REPORT_STDIN)
+    script = b"set -euo pipefail\necho one\necho two\n"
+
+    out = list(p.stream(Machine(1), script))
+
+    assert out[0] == "CLEAN", f"newlines were translated: {out[1]}"
+    assert repr(script) in out[1]

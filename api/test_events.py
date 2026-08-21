@@ -134,3 +134,51 @@ def test_ordinary_output_is_log_output():
     assert is_log("[10:03:04] building trainer image")
     assert is_log("#8 [4/6] RUN pip install -r requirements.txt")
     assert is_log("")
+
+
+# --- what Axolotl actually emits, captured from job_05300098085f ------------
+#
+# Every line below is verbatim from a real run on an L4. They are here because
+# the suite above was written against plain transformers, which logs live
+# values; Axolotl formats each value to a fixed precision first and logs the
+# *strings*. Nothing in the suite noticed, and a real job produced 24 of these
+# lines and not one metric event.
+
+AXOLOTL_STEP = (
+    "{'loss': '0.7157', 'grad_norm': '12.79', 'learning_rate': '0', "
+    "'ppl': '2.046', 'memory/max_active (GiB)': '2.98', "
+    "'memory/max_allocated (GiB)': '2.98', "
+    "'memory/device_reserved (GiB)': '4.12', 'tokens/trainable': 93, "
+    "'tokens/total': 512, 'epoch': '0.1333'}"
+)
+
+AXOLOTL_SUMMARY = (
+    "{'train_runtime': '55.71', 'train_samples_per_second': '3.303', "
+    "'train_steps_per_second': '0.413', 'train_loss': '0.06318', "
+    "'memory/max_active (GiB)': '2.86', 'epoch': '3.0'}"
+)
+
+
+def test_axolotl_writes_its_numbers_as_strings_and_they_still_promote():
+    assert metric(AXOLOTL_STEP) == {"loss": 0.7157, "epoch": 0.1333}
+
+
+def test_a_quoted_number_in_exponent_form_promotes():
+    """Loss goes exponential on an easy dataset; this run reached 5.866e-06."""
+    assert metric("{'loss': '5.866e-06', 'epoch': '2.933'}") == {
+        "loss": 5.866e-06, "epoch": 2.933}
+
+
+def test_the_quoted_summary_line_is_still_not_a_training_step():
+    """`train_loss`, not `loss` -- and its epoch must not become a data point."""
+    assert is_log(AXOLOTL_SUMMARY)
+
+
+def test_a_quoted_value_that_only_starts_with_a_number_is_not_a_measurement():
+    """The closing quote is required, so a prefix cannot be truncated into one."""
+    assert is_log("{'loss': '0.7 (estimated)'}")
+
+
+def test_a_quoted_non_finite_loss_drops_out_but_its_epoch_does_not():
+    """The same rule as the unquoted form, which the quoting must not change."""
+    assert metric("{'loss': 'nan', 'epoch': '1.0'}") == {"epoch": 1.0}
