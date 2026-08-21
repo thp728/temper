@@ -23,38 +23,15 @@ from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api import catalog, config, db, feasibility, orchestrator, validation  # noqa: E402
-
-UPLOADS = Path(__file__).parent.parent / "data" / "uploads"
-
-
-def _fmt_size(n: int) -> str:
-    if n >= 1024 ** 3:
-        return f"{n / 1024 ** 3:.1f} GB"
-    if n >= 1024 ** 2:
-        return f"{n / 1024 ** 2:.1f} MB"
-    return f"{n / 1024:.1f} KB"
-
-
-def _too_large(actual: int, limit: int) -> HTTPException:
-    return HTTPException(413, {
-        "code": "dataset_too_large",
-        "message": (
-            f"This dataset is {_fmt_size(actual)} ({actual:,} bytes); "
-            f"the current upload limit is {_fmt_size(limit)} "
-            f"({limit:,} bytes). The limit exists because validation "
-            f"holds the whole dataset in memory (about 4.8x its size), "
-            f"so it is a limit of the current in-memory validation path, "
-            f"not a product rule -- streaming validation will remove it."),
-        "limit_bytes": limit,
-        "actual_bytes": actual,
-    })
+from api import catalog, config, db, feasibility, orchestrator  # noqa: E402
+from api import datasets  # noqa: E402
+from api.web import router as web_router  # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db.init()
-    UPLOADS.mkdir(parents=True, exist_ok=True)
+    datasets.UPLOADS.mkdir(parents=True, exist_ok=True)
     orchestrator.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     # Fail loudly at boot rather than four seconds into someone's first job.
     if not config.provider_credentials_present():
@@ -80,6 +57,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+app.include_router(web_router)
 
 
 # ---------------------------------------------------------------------------
@@ -113,45 +91,16 @@ def upload_dataset(request: Request, file: UploadFile = File(...)):
     its own request. Regression-tested by
     `test_upload_limits.test_large_upload_does_not_block_concurrent_requests`.
 
-    Validation is synchronous and always returns a report. A dataset that fails
-    is still stored with its report attached, so the user can see exactly which
-    lines to fix rather than re-uploading blind.
+    Storage and validation live in `datasets.store_and_validate`, shared with
+    the browser's upload form, so the two surfaces cannot drift apart.
 
     Datasets over `config.MAX_DATASET_BYTES` are refused before validation --
     an unbounded upload fails as an out-of-memory crash rather than a typed
     error, which is worse for the user and for the process.
     """
-    if not file.filename.endswith((".jsonl", ".json")):
-        raise HTTPException(400, "Only .jsonl files are accepted.")
-
-    limit = config.MAX_DATASET_BYTES
-
-    # Refuse on the declared body size before reading: reading first would
-    # load an arbitrarily large file into memory, which is the failure the
-    # limit exists to prevent. The declared length is the multipart body, so
-    # it slightly overstates the file itself -- close enough to refuse on,
-    # and it never understates it. The header can be absent or lying, which
-    # is why the authoritative check after the read remains.
-    declared = request.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > limit:
-        raise _too_large(int(declared), limit)
-
+    datasets.refuse_before_read(request.headers.get("content-length"))
     data = file.file.read()
-    if len(data) > limit:
-        raise _too_large(len(data), limit)
-
-    ds_id = db.new_id("ds")
-    path = UPLOADS / f"{ds_id}.jsonl"
-    path.write_bytes(data)
-
-    with db.connect() as c:
-        import time as _t
-        c.execute("INSERT INTO datasets (id, filename, path, created_at, status) "
-                  "VALUES (?,?,?,?,?)",
-                  (ds_id, file.filename, str(path), _t.time(), "validating"))
-
-    report = validation.validate(path).to_dict()
-    db.finish_dataset(ds_id, report)
+    ds_id, report = datasets.store_and_validate(file.filename, data)
     return {"id": ds_id, "filename": file.filename, **report}
 
 

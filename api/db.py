@@ -138,8 +138,10 @@ def init() -> None:
 # datasets
 # --------------------------------------------------------------------------
 
-def create_dataset(filename: str, path: Path) -> str:
-    ds_id = new_id("ds")
+def create_dataset(filename: str, path: Path, ds_id: str | None = None) -> str:
+    """Insert a dataset row. `ds_id` lets the caller own the id -- the upload
+    path names the stored file after it, so the id must exist before the row."""
+    ds_id = ds_id or new_id("ds")
     with connect() as c:
         c.execute(
             "INSERT INTO datasets (id, filename, path, created_at, status) "

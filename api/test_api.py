@@ -10,22 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-from fastapi.testclient import TestClient
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    from api import db, main, orchestrator
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(main, "UPLOADS", tmp_path / "uploads")
-    monkeypatch.setattr(orchestrator, "ARTIFACTS", tmp_path / "artifacts")
-    # Never launch a real VM from a test.
-    monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
-    with TestClient(main.app) as c:
-        yield c
 
 
 def jsonl(tmp_path, rows, name="d.jsonl"):

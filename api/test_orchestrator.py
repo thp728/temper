@@ -149,10 +149,10 @@ class Harness:
 
 @pytest.fixture()
 def harness(tmp_path, monkeypatch):
-    from api import db, main, orchestrator
+    from api import db, datasets, main, orchestrator
 
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(main, "UPLOADS", tmp_path / "uploads")
+    monkeypatch.setattr(datasets, "UPLOADS", tmp_path / "uploads")
     monkeypatch.setattr(orchestrator, "ARTIFACTS", tmp_path / "artifacts")
     # Teardown retries sleep between attempts. Tests do not need to.
     monkeypatch.setattr(orchestrator, "DESTROY_RETRY_DELAY_S", 0)

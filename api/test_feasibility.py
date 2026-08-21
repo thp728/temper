@@ -121,13 +121,13 @@ def test_default_epochs_is_pinned_to_the_trainer_default():
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    from api import db, main, orchestrator
+    from api import db, datasets, main, orchestrator
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(main, "UPLOADS", tmp_path / "uploads")
+    monkeypatch.setattr(datasets, "UPLOADS", tmp_path / "uploads")
     monkeypatch.setattr(orchestrator, "ARTIFACTS", tmp_path / "artifacts")
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
     db.init()
-    main.UPLOADS.mkdir(parents=True, exist_ok=True)
+    datasets.UPLOADS.mkdir(parents=True, exist_ok=True)
     with TestClient(main.app) as c:
         yield c
 

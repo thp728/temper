@@ -11,7 +11,7 @@ A fine-tuning platform. Upload a dataset, pick a base model, get a trained adapt
 
 Fine-tunes open-weight LLMs on user-supplied instruction data, on real GPUs, end to end — dataset in, adapter out.
 
-**Working as of 2026-08-19:** upload and validate a dataset, launch a job, watch it provision a VM, train, and return a downloadable adapter, with the machine destroyed and confirmed gone. **Not working yet:** any visibility into a running job (see below), cancellation, an enforced spend cap, and a UI — the surface today is an HTTP API.
+**Working as of 2026-08-21:** upload and validate a dataset, launch a job, watch it provision a VM, train, and return a downloadable adapter, with the machine destroyed and confirmed gone. Upload and its validation report are usable from a browser (server-rendered pages, no JavaScript); the rest of the journey — model choice, live watch, download — is still API-only. **Not working yet:** any visibility into a running job (see below), cancellation, an enforced spend cap.
 
 - **Method:** supervised fine-tuning via QLoRA — NF4 double-quant base, bf16 compute, rank 16, α=32, **all linear layers**. Adapter weights save as **fp32**, which is what `prepare_model_for_kbit_training` does and is why the artifact is 132 MB rather than ~66 MB
 - **Models:** curated and pinned — `Qwen/Qwen3-4B`, `Qwen/Qwen3-8B`

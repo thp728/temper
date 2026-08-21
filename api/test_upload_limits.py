@@ -30,13 +30,13 @@ from api import config  # noqa: E402
 @pytest.fixture()
 def server(tmp_path, monkeypatch):
     """The app with storage redirected to tmp_path and the GPU stubbed out."""
-    from api import db, main, orchestrator
+    from api import db, datasets, main, orchestrator
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(main, "UPLOADS", tmp_path / "uploads")
+    monkeypatch.setattr(datasets, "UPLOADS", tmp_path / "uploads")
     monkeypatch.setattr(orchestrator, "ARTIFACTS", tmp_path / "artifacts")
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
     db.init()
-    main.UPLOADS.mkdir(parents=True, exist_ok=True)
+    datasets.UPLOADS.mkdir(parents=True, exist_ok=True)
     return main
 
 
