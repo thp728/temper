@@ -9,6 +9,8 @@ is not behaviour. The one exception is teardown, where the observable outcome
 
 import hashlib
 import json
+import re
+import time
 from pathlib import Path
 
 import pytest
@@ -53,7 +55,24 @@ class Harness:
         self._monkeypatch.setattr(
             orchestrator, "launch",
             lambda job_id: orchestrator.run_job(job_id, provider=provider))
+        return self._create(hyperparameters)
 
+    def run_on_a_thread(self, provider, hyperparameters=None) -> str:
+        """Start the job and return while it is still going.
+
+        The inline form above cannot answer this ticket's question: output that
+        appears only once a job has finished is indistinguishable from output
+        that appeared while it was working, unless the test reads mid-flight.
+        """
+        from api import orchestrator
+
+        on_a_thread = orchestrator.launch      # before it is replaced below
+        self._monkeypatch.setattr(
+            orchestrator, "launch",
+            lambda job_id: on_a_thread(job_id, provider=provider))
+        return self._create(hyperparameters)
+
+    def _create(self, hyperparameters=None) -> str:
         path = self._tmp_path / "d.jsonl"
         path.write_text(
             "\n".join(json.dumps(chat(f"q{i}", f"a{i}")) for i in range(12)),
@@ -75,6 +94,39 @@ class Harness:
 
     def messages(self, job_id) -> list[str]:
         return [e["message"] for e in self.events(job_id)]
+
+    def poll_until_terminal(self, job_id) -> tuple[list[dict], list[dict]]:
+        """Read events the way a client does: incrementally, by last id seen.
+
+        Returns the events that were provably appended while the job was still
+        working, and everything that was polled. A client that has to wait for
+        a terminal status before it can read anything is exactly the four
+        minutes of silence being fixed.
+
+        The status is read *after* each page, not before: an event in a page
+        fetched before a status that still said "working" was appended before
+        that status was read, so it cannot be output that only arrived at the
+        end. Reading the status first proves nothing -- the job may have
+        finished in between.
+        """
+        from api import db
+
+        during, everything, last = [], [], 0
+        deadline = time.time() + POLL_DEADLINE_S
+        while time.time() < deadline:
+            page = self._client.get(
+                f"/v1/jobs/{job_id}/events", params={"after": last}).json()
+            batch = page["events"]
+            assert all(e["id"] > last for e in batch), \
+                "after= re-delivered events the client already held"
+            last = page["last_id"]
+            everything += batch
+            if self.job(job_id)["status"] not in db.TERMINAL_STATES:
+                during += batch
+            elif not batch:
+                return during, everything
+            time.sleep(0.01)
+        raise AssertionError(f"job never reached a terminal state: {everything}")
 
 
 @pytest.fixture()
@@ -362,3 +414,101 @@ def test_the_suite_refuses_to_build_a_real_provider_client():
             provider.new_provider()
     finally:
         config.provider_credentials_present = original
+
+
+# --- the output channel: lines arrive while the job is running --------------
+
+# Slow enough that a test can read between lines, fast enough that the suite
+# does not notice. Real output is minutes apart; the shape is what matters.
+LINE_DELAY_S = 0.05
+POLL_DEADLINE_S = 20
+
+
+def _command_block(script: str, command: str) -> str:
+    """The named command with its line continuations, as one string."""
+    lines = script.splitlines()
+    start = next(i for i, l in enumerate(lines) if command in l)
+    block = [lines[start]]
+    while block[-1].rstrip().endswith("\\"):
+        block.append(lines[start + len(block)])
+    return "\n".join(block)
+
+
+def streaming_provider():
+    """A provider whose output is spaced out in time, as real output is."""
+    return FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                        adapter_bytes=ADAPTER_BYTES, line_delay=LINE_DELAY_S)
+
+
+def test_output_reaches_the_control_plane_while_the_job_is_still_running(harness):
+    """The ticket, in one assertion.
+
+    Before this, the whole build-and-train phase was one blocking call: 251
+    measured seconds in which a user could not tell a working job from a hung
+    one, because nothing left the machine until it was over.
+    """
+    job_id = harness.run_on_a_thread(streaming_provider())
+
+    during, _ = harness.poll_until_terminal(job_id)
+    arrived_early = [e["message"] for e in during]
+    assert set(TRAINING_LINES) & set(arrived_early), \
+        f"no training output arrived before the job ended: {arrived_early}"
+    assert harness.job(job_id)["status"] == "complete"
+
+
+def test_events_are_retrievable_incrementally_while_the_job_runs(harness):
+    """`after=` is a cursor, not a snapshot: nothing repeated, nothing lost."""
+    job_id = harness.run_on_a_thread(streaming_provider())
+
+    _, polled = harness.poll_until_terminal(job_id)
+    ids = [e["id"] for e in polled]
+    assert ids == sorted(ids) and len(ids) == len(set(ids))
+    # What a client assembled by polling is what one arriving at the end sees.
+    assert polled == harness.events(job_id)
+
+
+def test_each_event_is_stamped_when_its_line_was_read(harness):
+    """Every event used to carry the same timestamp.
+
+    They were all written after the remote command returned, so the record
+    could not say how long anything took — which is a second failure on top of
+    the silence, and the one that survives into the job's history.
+    """
+    job_id = harness.run(streaming_provider())
+
+    events = harness.events(job_id)
+    stamps = [e["ts"] for e in events]
+    assert stamps == sorted(stamps), "the log is not in the order it happened"
+
+    output = [e["ts"] for e in events if e["message"] in TRAINING_LINES]
+    assert len(output) == len(TRAINING_LINES)
+    assert len(set(output)) == len(output), "output lines share a timestamp"
+    assert all(b - a >= LINE_DELAY_S * 0.5 for a, b in zip(output, output[1:])), \
+        "timestamps do not reflect when each line actually arrived"
+
+
+def test_the_machine_does_not_park_container_output_in_a_file(harness):
+    """The outermost redirection, asserted because it silently undoes the rest.
+
+    Normally the remote script's text is not something to assert on. This is
+    the exception, and it is recorded as one in ADR-0001: a `> /tmp/run.log`
+    reintroduced here would hold every line on the machine until the job was
+    over, and every test above would still pass, because the fake provider
+    yields lines the script never touched.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES)
+    harness.run(provider)
+    script = provider.script.decode("utf-8")
+
+    # A redirection to a path is the thing that closes the channel. `1>&2` and
+    # `2>&1` are not redirections to a file -- they fold the container's two
+    # streams into the one the provider reads.
+    to_a_file = re.compile(r">\s*(?![&\s])")
+    for command in ("docker build", "docker run"):
+        block = _command_block(script, command)
+        assert not to_a_file.search(block), \
+            f"{command} output is being parked in a file on the machine: {block}"
+
+    assert "PYTHONUNBUFFERED=1" in _command_block(script, "docker run"), \
+        "without this the container buffers and the channel is closed again"

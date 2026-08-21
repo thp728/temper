@@ -54,6 +54,21 @@ TRAINER_TARBALL = "/tmp/trainer.tar.gz"
 SOURCE_UNPACK_FAILED = json.dumps({
     "stage": "source", "ok": False, "error_code": "source_upload_failed",
     "error": "The trainer sources reached the machine but did not unpack."})
+# Each of these is echoed *after* the result marker, so a failure that never
+# reached the trainer still arrives as a result document naming its own cause
+# rather than as "the trainer produced nothing". Each names its own code for the
+# same reason the unpack failure does: a build that never produced an image is
+# not a training failure, and telling a user otherwise sends them to read the
+# wrong output. Single quotes are forbidden in these strings -- the script
+# echoes them inside a single-quoted shell literal.
+BUILD_FAILED = json.dumps({
+    "stage": "build", "ok": False, "error_code": "image_build_failed",
+    "error": "The trainer image failed to build; the build output is in the "
+             "job events."})
+NO_RESULT = json.dumps({
+    "stage": "train", "ok": False, "error_code": "trainer_no_result",
+    "error": "The trainer produced no result.json; its output is in the job "
+             "events."})
 RESULT_MARKER = "---RESULT---"
 DESTROY_ATTEMPTS = 3
 DESTROY_RETRY_DELAY_S = 5
@@ -77,7 +92,22 @@ def _trainer_tarball() -> bytes:
 
 def _remote_script(job: dict, dataset_path: Path, model: catalog.BaseModel,
                    enable_thinking: bool) -> bytes:
-    """The on-machine script: build the image, run the job, print the result."""
+    """The on-machine script: build the image, run the job, print the result.
+
+    Nothing here is redirected to a file. That was the outermost of three
+    redirections between the training framework and the user, and while any one
+    of them stood the others bought nothing: output written to `/tmp/run.log`
+    reaches the control plane when the run ends, which is the silence this
+    channel exists to remove — and the machine is destroyed immediately after,
+    taking the file with it.
+
+    The container's output goes to **stderr**, which the provider folds into the
+    same ordered stream. Two reasons: stdout carries the result protocol, so a
+    training line that happened to equal the result marker could otherwise
+    corrupt the document the orchestrator parses; and the script's own narration
+    already goes there, so phase markers and the output they bracket stay in
+    order.
+    """
     job_spec = {
         "job_id": job["id"],
         "base_model": model.repo,
@@ -114,23 +144,32 @@ JOBSPEC
 
 say "building trainer image"
 t0=$(date +%s)
-sudo docker build -t temper-trainer:job /tmp/trainer >/tmp/build.log 2>&1 || {{
-  say "BUILD FAILED"; tail -n 20 /tmp/build.log >&2
-  echo '{{"stage":"build","ok":false}}'; exit 0
+# --progress=plain: the default renderer redraws a live display, which is
+# unreadable once it is a line-oriented event log rather than a terminal.
+sudo docker build --progress=plain -t temper-trainer:job /tmp/trainer 1>&2 || {{
+  say "BUILD FAILED"
+  echo "{RESULT_MARKER}"
+  echo '{BUILD_FAILED}'
+  exit 0
 }}
 say "image built in $(( $(date +%s) - t0 ))s"
 
 say "running training"
+# PYTHONUNBUFFERED is the innermost of the three redirections. The trainer and
+# the framework beneath it are both Python, and Python buffers its stdout
+# whenever it is a pipe rather than a terminal -- so without this the container
+# holds minutes of output and the two layers outside it relay nothing.
 sudo docker run --rm --gpus all \\
   -v /tmp/job:/job:ro -v /tmp/out:/out -e HF_HOME=/out/hf \\
-  temper-trainer:job >/tmp/run.log 2>&1 || say "TRAINER EXITED NONZERO"
-tail -n 30 /tmp/run.log >&2
+  -e PYTHONUNBUFFERED=1 \\
+  temper-trainer:job 1>&2 || say "TRAINER EXITED NONZERO"
 
 if [ -f /tmp/out/result.json ]; then
   echo "{RESULT_MARKER}"
   sudo cat /tmp/out/result.json
 else
-  echo '{{"stage":"train","ok":false,"error":"no result.json produced"}}'
+  echo "{RESULT_MARKER}"
+  echo '{NO_RESULT}'
 fi
 """
     return script.encode("utf-8")
@@ -142,6 +181,11 @@ def _consume(job_id: str, lines) -> dict:
     Everything before the marker is the job's output and becomes a log event.
     Everything after it is the trainer's result document, which is machinery
     rather than output and is not logged as such.
+
+    `lines` is consumed lazily and each event is written the moment its line is
+    read, which is what stamps it with the time it actually happened. Reading
+    the stream into a list first would put every event back on the same
+    timestamp -- which is exactly what the log looked like before.
     """
     result_lines: list[str] = []
     seen_marker = False

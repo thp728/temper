@@ -40,7 +40,7 @@ Changing either is a deliberate act that re-runs the GPU smoke test. Our layer a
 | `/out/config.yaml` | out | the rendered Axolotl config, for auditability |
 | `/out/run/` | out | checkpoints and the adapter |
 | `/out/result.json` | out | **always written, including on failure** — see the boundary below |
-| `/out/train.log` | out | full training output |
+| `/out/train.log` | out | full training output — also relayed to the container's stdout as it is produced |
 
 ⚠️ **The boundary of "always written".** The guarantee comes from a `try/finally` inside `main()`, so it holds only from the moment `main()` is entered. **An import-time failure escapes it entirely** — the container exits with no `result.json`, and the orchestrator reports `training_failed: "Trainer produced no result.json"`, an error that points at training and says nothing about the image. That is exactly what a missing COPY produces. A guarantee whose boundary is undocumented is one you will over-trust.
 
@@ -103,4 +103,5 @@ Same image, driven by `api/orchestrator.py` rather than a spike script. **L4, 33
 - **`sample_packing`** stays off pending a per-model varlen-attention check.
 - **Not pushed to GHCR.** The image builds per-VM today. Pushing needs a token and belongs in CI. At 87–183s per run it is also the largest remaining slice of cold start.
 - **No assertion that the shipped adapter matches the run's final step.** `adapter_source` records the choice but nothing cross-checks it against the trainer's last step — that is the check that would have caught the selection bug above, and it is not written.
-- **Training output never leaves the container.** `axolotl` writes to `/out/train.log`, which dies with the VM, so **no loss value is retrievable during or after a run.** A channel for it is the prerequisite for the loss curve.
+- ~~**Training output never leaves the container.**~~ ✅ **Closed 2026-08-21.** The entrypoint now relays `axolotl`'s output to the container's stdout line by line as it is produced, and the machine no longer parks it in a file — so it reaches the control plane during the run. `/out/train.log` is still written as the copy that survives on the machine if the stream breaks. Splitting on `\r` as well as `\n` is load-bearing: tqdm redraws a progress bar without ever sending a newline, and a reader that waits for one sees nothing for the whole bar. See [ADR-0001](../docs/adr/0001-event-channel-over-ssh-stdout.md).
+- **The loss is in the stream but not yet structured.** Lines carrying step, loss and epoch arrive as ordinary log events; promoting them to metric events is issue #5, and the loss curve is Phase B.

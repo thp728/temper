@@ -8,6 +8,8 @@ What it can be told to do, because these are the paths worth testing:
 
 * yield a scripted sequence of output lines;
 * stop producing output part-way through;
+* space its lines out in time, so that a test can tell output arriving while
+  a job is working from output arriving once it has finished;
 * fail at any stage, with a chosen error code — or with an exception nobody
   anticipated;
 * fail the destroy call a chosen number of times, and go on being listed
@@ -17,6 +19,7 @@ What it can be told to do, because these are the paths worth testing:
 from __future__ import annotations
 
 import json
+import time
 from typing import Iterator, Sequence
 
 from .errors import OrchestratorError
@@ -40,6 +43,7 @@ class FakeProvider:
         fail_code: str = "training_failed",
         fail_unexpectedly: bool = False,
         stop_after: int | None = None,
+        line_delay: float = 0.0,
         destroy_failures: int = 0,
         stays_listed: bool = False,
         adapter_bytes: bytes = b"weights",
@@ -52,6 +56,7 @@ class FakeProvider:
         self._fail_code = fail_code
         self._fail_unexpectedly = fail_unexpectedly
         self._stop_after = stop_after
+        self._line_delay = line_delay
         self._destroy_failures = destroy_failures
         self._stays_listed = stays_listed
         self._adapter_bytes = adapter_bytes
@@ -96,6 +101,11 @@ class FakeProvider:
         if self._stop_after is not None:
             emitted = emitted[:self._stop_after]
         for line in emitted:
+            if self._line_delay:
+                # Real output arrives spread over minutes. A double that
+                # emits everything in one instant cannot show whether the
+                # channel is open or merely fast.
+                time.sleep(self._line_delay)
             yield line
         if self._stop_after is not None or self._result is None:
             return

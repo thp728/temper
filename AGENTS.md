@@ -147,7 +147,7 @@ The five canonical roles, each label string equal to its name — `needs-triage`
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. Neither exists yet, and skills proceed silently until they do. `docs/adr/` is created by issue #4 along with ADR-0001 and the index; `CONTEXT.md` lands when the domain vocabulary is first written down.
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. Both exist. `docs/adr/README.md` is the index, and it explains why the numbering starts partway through the project: the first thirteen decisions were logged in the private vault and are copied in before the repo goes public.
 
 **ADRs in this repo are where new decisions go**, and they are public at submission — write them for that audience from the first entry. The vault's `decisions.md` is closed but not superseded: its thirteen entries get copied in before the repo goes public, so the record does not appear to start three-quarters of the way through the project.
 

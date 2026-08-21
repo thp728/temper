@@ -26,12 +26,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 import hashlib
 import glob
+from collections import deque
 from pathlib import Path
+from typing import IO, Iterator
 
 from thinking import MixedThinkingDataset, detect as detect_thinking
 
@@ -81,6 +84,81 @@ def log(msg: str) -> None:
 def write_result(payload: dict) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     RESULT.write_text(json.dumps(payload, indent=2))
+
+
+# How much of a failed job's output is carried back inside result.json. The
+# lines were already streamed; this is so the orchestrator never has to
+# reassemble a failure from the event log.
+TAIL_LINES = 40
+
+# A line ends at a newline OR a carriage return; see iter_output_lines.
+RB_LINE_END = re.compile(rb"[\r\n]")
+
+
+def iter_output_lines(stream: "IO[bytes]", chunk_size: int = 4096) -> "Iterator[str]":
+    """Yield the framework's output a line at a time, as it is produced.
+
+    Not `for line in stream`, for two reasons:
+
+    * **Progress bars never send a newline.** tqdm — which transformers uses
+      for every epoch — redraws with a carriage return. A reader that waits
+      for `\n` sees nothing for the whole length of a bar, which on a training
+      phase that *is* one bar is indistinguishable from the silence this
+      channel exists to remove. So `\r` ends a line here too.
+    * **Iterating a pipe in text mode buffers.** Python reads ahead, so lines
+      arrive in blocks rather than as they happen.
+
+    Blank lines are dropped: each one would otherwise become an event, and a
+    framework that prints a spacer between epochs would triple the log.
+    """
+    buf = b""
+    while True:
+        chunk = stream.read(chunk_size)
+        if not chunk:
+            break
+        buf += chunk
+        parts = re.split(RB_LINE_END, buf)
+        buf = parts.pop()          # whatever follows the last terminator
+        for part in parts:
+            text = part.decode("utf-8", "replace").strip()
+            if text:
+                yield text
+    tail = buf.decode("utf-8", "replace").strip()
+    if tail:
+        yield tail
+
+
+def run_streaming(cmd: list[str]) -> tuple[int, list[str]]:
+    """Run `cmd`, relaying its output to stdout as it arrives.
+
+    Returns its exit code and the tail of what it said.
+
+    Three things here are load-bearing, and dropping any one of them
+    reintroduces the silence:
+
+    * `bufsize=0` so the pipe is read raw — a buffered reader waits to fill a
+      block before handing us anything.
+    * `PYTHONUNBUFFERED` in the child's environment, because the child is
+      itself Python and will otherwise buffer its own stdout when it sees a
+      pipe rather than a terminal. This is the innermost of the redirections;
+      the two outside it are worthless if this one holds output back.
+    * `flush=True` on every relayed line, for the same reason one layer up.
+
+    train.log is still written. It costs nothing, and it is the only copy that
+    survives on the machine if the stream itself breaks.
+    """
+    env = dict(os.environ, PYTHONUNBUFFERED="1")
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, bufsize=0, env=env)
+    tail: deque[str] = deque(maxlen=TAIL_LINES)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    with LOG.open("w", encoding="utf-8", errors="replace") as lf:
+        for line in iter_output_lines(proc.stdout):
+            print(line, flush=True)
+            lf.write(line + "\n")
+            lf.flush()
+            tail.append(line)
+    return proc.wait(), list(tail)
 
 
 def build_config(job: dict, enable_thinking: bool = False) -> dict:
@@ -289,17 +367,19 @@ def main() -> int:
         cmd = ["axolotl", "train", str(CONFIG)]
         log(f"running: {' '.join(cmd)}")
         t0 = time.time()
-        with LOG.open("wb") as lf:
-            proc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT)
+        code, tail = run_streaming(cmd)
         result["train_seconds"] = round(time.time() - t0, 1)
-        result["exit_code"] = proc.returncode
+        result["exit_code"] = code
 
-        if proc.returncode != 0:
-            tail = LOG.read_text(errors="replace").splitlines()[-40:]
+        if code != 0:
             result["error"] = "axolotl train failed"
+            # The tail is kept in result.json even though every one of these
+            # lines was already streamed: the result document is what the
+            # orchestrator reads, and it should never have to go back and
+            # reassemble a failure out of the event log.
             result["log_tail"] = tail
-            log(f"training FAILED (exit {proc.returncode})")
-            return proc.returncode
+            log(f"training FAILED (exit {code})")
+            return code
 
         result.update(collect_artifacts())
         result["ok"] = True
