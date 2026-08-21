@@ -8,8 +8,10 @@ is not behaviour. The one exception is teardown, where the observable outcome
 """
 
 import hashlib
+import io
 import json
 import re
+import tarfile
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -215,8 +217,107 @@ def test_the_job_spec_reaches_the_machine(harness):
     script = provider.script.decode("utf-8")
     assert job_id in script
     assert '"lora_r": 32' in script
-    # Trainer sources travel as one payload rather than one round trip per file.
-    assert len(provider.pushed) == 1
+    # Sources and dataset each travel as one binary payload rather than one
+    # round trip per file or an inline encoding.
+    assert len(provider.pushed) == 2
+
+
+# --- dataset transport: bytes, not hex ---------------------------------------
+
+def upload_raw(harness, data: bytes, name="d.jsonl") -> str:
+    """Upload arbitrary bytes and return the dataset id, asserting validity."""
+    r = harness._client.post("/v1/datasets", files={"file": (name, data)})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["valid"], body["errors"]
+    return body["id"]
+
+
+def launch_dataset(harness, provider, dataset_id) -> str:
+    from api import orchestrator
+
+    harness._monkeypatch.setattr(
+        orchestrator, "launch",
+        lambda job_id: orchestrator.run_job(job_id, provider=provider))
+    r = harness._client.post("/v1/jobs", json={"dataset_id": dataset_id})
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def pushed_dataset_bytes(provider) -> bytes:
+    """What arrived at the far end of the transport, as the machine sees it.
+
+    Scans everything that was pushed for an archive carrying the dataset,
+    rather than assuming which push or which member name — the assertion is
+    about the bytes, not about the container they travelled in.
+    """
+    found = []
+    for _dest, payload in provider.pushed:
+        try:
+            with tarfile.open(fileobj=io.BytesIO(payload), mode="r:*") as tar:
+                for member in tar.getmembers():
+                    if member.name.endswith(".jsonl"):
+                        found.append(tar.extractfile(member).read())
+        except tarfile.ReadError:
+            continue
+    assert len(found) == 1, \
+        f"expected exactly one dataset in the pushed payloads, got {len(found)}"
+    return found[0]
+
+
+def crlf_dataset() -> bytes:
+    rows = [json.dumps(chat(f"q{i}", f"a{i}")) for i in range(12)]
+    return ("\r\n".join(rows) + "\r\n").encode("utf-8")
+
+
+def run_dataset(harness, data: bytes):
+    """Upload bytes, launch a job on a fresh fake provider, finish it."""
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES)
+    job_id = launch_dataset(harness, provider, upload_raw(harness, data))
+    assert harness.job(job_id)["status"] == "complete"
+    return provider
+
+
+def test_the_dataset_reaches_the_machine_byte_identical(harness):
+    """The ticket: user bytes arrive exactly as uploaded."""
+    data = crlf_dataset().replace(b"a11", "a11 ☕ café".encode("utf-8"))
+    provider = run_dataset(harness, data)
+    assert pushed_dataset_bytes(provider) == data
+
+
+def test_a_dataset_containing_carriage_returns_arrives_unmodified(harness):
+    """The line-ending hazard, pinned.
+
+    The sources archive normalises CRLF, and rightly so -- a stray carriage
+    return breaks a Dockerfile in ways that read as anything but a
+    line-ending bug. The same rewriting applied to user data silently changes
+    every row of it.
+    """
+    data = crlf_dataset()
+    provider = run_dataset(harness, data)
+
+    arrived = pushed_dataset_bytes(provider)
+    assert arrived == data
+    assert b"\r\n" in arrived, "the fixture itself carried no carriage returns"
+
+
+def test_a_dataset_containing_non_ascii_text_arrives_unmodified(harness):
+    data = ("\n".join(json.dumps(chat(f"frage {i}?", f"Antwort ☕ 日本語 {i}"))
+                      for i in range(12)) + "\n").encode("utf-8")
+    provider = run_dataset(harness, data)
+    assert pushed_dataset_bytes(provider) == data
+
+
+def test_the_dataset_is_not_embedded_in_the_remote_script(harness):
+    """Hex-in-script was the defect: twice the size as text, several copies
+    in memory, and a mechanism forty lines away already shipping binaries."""
+    data = crlf_dataset()
+    provider = run_dataset(harness, data)
+
+    script = provider.script.decode("utf-8")
+    assert data.hex() not in script
+    assert data.decode("utf-8") not in script
 
 
 def test_training_numbers_arrive_as_metric_events(harness):

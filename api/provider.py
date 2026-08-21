@@ -234,8 +234,9 @@ class JarvisLabsProvider:
         stderr is folded into stdout because the remote script's progress
         narration goes to stderr and its result to stdout, and a single ordered
         channel is what a push transport would also deliver. The script is fed
-        from a thread: it carries the dataset inline, so writing it inside the
-        read loop deadlocks as soon as it exceeds the pipe buffer.
+        from a thread: writing standard input inside the read loop deadlocks
+        whenever the payload exceeds the pipe buffer, and nothing guarantees
+        the script stays small forever.
         """
         proc = subprocess.Popen(
             _ssh(machine.handle) + ["bash -s"],

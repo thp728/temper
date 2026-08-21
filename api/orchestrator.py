@@ -61,6 +61,7 @@ GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
 STORAGE_GB = 100          # platform minimum for VM instances
 
 TRAINER_TARBALL = "/tmp/trainer.tar.gz"
+DATASET_TARBALL = "/tmp/dataset.tar.gz"
 # The machine emits this when it fails before the trainer ever runs, so that a
 # pre-training failure still arrives as a result document naming its own code
 # rather than as "the trainer produced nothing".
@@ -117,9 +118,32 @@ def _trainer_tarball() -> bytes:
     return buf.getvalue()
 
 
-def _remote_script(job: dict, dataset_path: Path, model: catalog.BaseModel,
+def _dataset_tarball(dataset_path: Path) -> bytes:
+    """Ship the dataset as one tar of raw bytes.
+
+    The same transport as the sources above, with one deliberate difference:
+    **no line-ending normalisation.** Rewriting CRLF is correct for a shell
+    script and a Dockerfile and wrong for user data, which must arrive
+    byte-identical -- a dataset silently edited in transit is a bug
+    that looks like anything else.
+    """
+    data = dataset_path.read_bytes()
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        info = tarfile.TarInfo(name="dataset.jsonl")
+        info.size, info.mode = len(data), 0o644
+        tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def _remote_script(job: dict, model: catalog.BaseModel,
                    enable_thinking: bool) -> bytes:
     """The on-machine script: build the image, run the job, print the result.
+
+    Nothing here carries the dataset. It arrived ahead of this script as its
+    own archive on standard input, so the script stays a fixed few kilobytes
+    however large the dataset is -- it is never doubled into hex text, held in
+    memory several times over, or fed through a pipe sized for commands.
 
     Nothing here is redirected to a file. That was the outermost of three
     redirections between the training framework and the user, and while any one
@@ -140,7 +164,6 @@ def _remote_script(job: dict, dataset_path: Path, model: catalog.BaseModel,
         "base_model": model.repo,
         "hyperparameters": job["hyperparameters"] or {},
     }
-    dataset_b64 = dataset_path.read_bytes().hex()
     script = f"""
 set -u
 say() {{ echo "[$(date +%H:%M:%S)] $*" >&2; }}
@@ -160,11 +183,7 @@ sudo ufw default deny incoming >/dev/null 2>&1
 sudo ufw --force enable >/dev/null 2>&1
 
 mkdir -p /tmp/job /tmp/out
-python3 -c "
-import binascii, pathlib
-pathlib.Path('/tmp/job/dataset.jsonl').write_bytes(
-    binascii.unhexlify('{dataset_b64}'))
-"
+tar xzf {DATASET_TARBALL} -C /tmp/job
 cat > /tmp/job/job.json <<'JOBSPEC'
 {json.dumps(job_spec, indent=2)}
 JOBSPEC
@@ -414,6 +433,8 @@ def _attempt(provider: Provider, job_id: str, machines: list,
     db.add_event(job_id, "log", provider.await_ready(machine))
     cancelled()
     provider.push(machine, _trainer_tarball(), TRAINER_TARBALL)
+    provider.push(machine, _dataset_tarball(Path(dataset["path"])),
+                  DATASET_TARBALL)
 
     # Checked between stages as well as inside the stream: the guard below can
     # only notice the ceiling while lines are arriving, and everything above
@@ -422,8 +443,7 @@ def _attempt(provider: Provider, job_id: str, machines: list,
     cancelled()
 
     db.set_state(job_id, "training", "Building image and training")
-    ds_path = Path(dataset["path"])
-    script = _remote_script(job, ds_path, model, enable_thinking)
+    script = _remote_script(job, model, enable_thinking)
     # The guard sits between the transport and the reader, so both limits hold
     # for any provider rather than for the SSH one only.
     lines = guard(provider.stream(machine, script), limits,
