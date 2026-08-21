@@ -7,11 +7,15 @@ A fine-tuning platform. Upload a dataset, pick a base model, get a trained adapt
 
 **Status: in development.** Built as a take-home for [JarvisLabs.ai](https://jarvislabs.ai), August 2026.
 
+> ⚠️ **This README is a holding version** — accurate, but not the pass it gets before the repo goes public.
+
 ## What it does
 
 Fine-tunes open-weight LLMs on user-supplied instruction data, on real GPUs, end to end — dataset in, adapter out.
 
-**Working as of 2026-08-21:** upload and validate a dataset, launch a job, watch it provision a VM, train, and return a downloadable adapter, with the machine destroyed and confirmed gone. Upload and its validation report are usable from a browser (server-rendered pages, no JavaScript); the rest of the journey — model choice, live watch, download — is still API-only. **Not working yet:** any visibility into a running job (see below), cancellation, an enforced spend cap.
+**The whole journey runs from a browser**, on server-rendered pages: upload and validate a dataset, choose a base model, watch the run as it provisions and trains, and download the adapter — with the machine destroyed afterwards and confirmed gone. The same journey is available over the API. Cancellation and the runaway-job limits are in place.
+
+**Deliberately absent:** auth and billing, which the brief sanctions cutting. **Not built yet:** a pre-run cost quote, an inference endpoint, and imports from Hugging Face.
 
 - **Method:** supervised fine-tuning via QLoRA — NF4 double-quant base, bf16 compute, rank 16, α=32, **all linear layers**. Adapter weights save as **fp32**, which is what `prepare_model_for_kbit_training` does and is why the artifact is 132 MB rather than ~66 MB
 - **Models:** curated and pinned — `Qwen/Qwen3-4B`, `Qwen/Qwen3-8B`
@@ -40,7 +44,7 @@ On an NVIDIA L4 (24 GB), Qwen3-4B:
 | Trainable parameters | **33,030,144** (predicted from `config.json`, confirmed by the run) |
 | Cold start | **2–4 min** — 10–13s provision, 40–47s to SSH, **87–183s image pull** (same digest; the spread is registry throughput) |
 | Checkpoint resume | verified |
-| End-to-end job through the API | **336s**, VM alive 363s, ≈**₹4.8** derived from provision-to-teardown |
+| End-to-end job | **336s**, VM alive 363s, ≈**₹4.8** derived from provision-to-teardown |
 
 ⚠️ **Derived is not measured.** The cost line is computed from the event log against the stored hourly price; nothing here reads an invoice, and nothing in the product computes a job cost yet.
 
@@ -52,11 +56,14 @@ trainer/    the pinned training container and its /job -> /out contract
 spike/      infrastructure probes against the live JarvisLabs account
 ```
 
-## The largest known gap
+## Known gaps
 
-**A training job is 251 seconds of total silence.** The orchestrator makes one blocking call over SSH for the whole build-and-train phase and turns its output into events only after it returns — every log event from the first real run carries an identical timestamp. Axolotl's own output never leaves the machine at all: the entrypoint redirects it to a file inside the container, which is destroyed with the VM.
+Named here rather than left for a reader to find.
 
-**So there is no loss value retrievable anywhere, during or after a run.** Streaming the loss curve is therefore not a parsing task; the channel has to be built first. It is the next thing being built, and it is named here rather than discovered by a reader because *"no visibility into the run"* is the hello-world version this was explicitly not meant to be.
+- **The loss curve is verified, not observed.** The classifier promotes the loss and epoch from a real run's training output, checked line by line against one — but no run has yet been watched rendering the chart live.
+- **A finished job's page truncates its log** before the end, so it does not show its own final events. Live watching is unaffected.
+- **The job log is mostly build noise.** A real run writes several hundred events, the large majority of them container-build progress, which buries the trainer's own output.
+- **Costs are derived, never invoiced.** See the note above.
 
 ## License
 
