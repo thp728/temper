@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     currency      TEXT,
     error_code    TEXT,
     error_message TEXT,
+    -- Warnings attached at creation, frozen like the hyperparameters: what
+    -- the user was told before launching is part of the run's record.
+    warnings_json TEXT,
     result_json   TEXT,
     adapter_path  TEXT
 );
@@ -117,6 +120,7 @@ def connect():
 # Phase B; until then, four lines beat a silent divergence.
 ADDED_COLUMNS = (
     ("jobs", "cancel_requested", "INTEGER NOT NULL DEFAULT 0"),
+    ("jobs", "warnings_json", "TEXT"),
 )
 
 
@@ -174,14 +178,16 @@ def list_datasets(limit: int = 50) -> list[dict]:
 # jobs
 # --------------------------------------------------------------------------
 
-def create_job(dataset_id: str, base_model: str, hyperparams: dict) -> str:
+def create_job(dataset_id: str, base_model: str, hyperparams: dict,
+               warnings: list | None = None) -> str:
     job_id = new_id("job")
     with connect() as c:
         c.execute(
             "INSERT INTO jobs (id, dataset_id, base_model, hyperparams_json, "
-            "status, created_at) VALUES (?,?,?,?,?,?)",
+            "status, warnings_json, created_at) VALUES (?,?,?,?,?,?,?)",
             (job_id, dataset_id, base_model, json.dumps(hyperparams),
-             "queued", time.time()))
+             "queued", json.dumps(warnings) if warnings else None,
+             time.time()))
         _append_event(c, job_id, "state", "queued")
     return job_id
 
@@ -270,18 +276,29 @@ def _append_event(conn, job_id, kind, message, data=None) -> None:
          json.dumps(data) if data is not None else None))
 
 
+def _with_warnings(job: dict | None) -> dict | None:
+    if job is not None and job["warnings"] is None:
+        # An absent list reads as empty, so no client special-cases null.
+        job["warnings"] = []
+    return job
+
+
 def get_job(job_id: str) -> dict | None:
     with connect() as c:
         r = c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-    return _row(r, {"hyperparams_json": "hyperparameters", "result_json": "result"})
+    return _with_warnings(
+        _row(r, {"hyperparams_json": "hyperparameters",
+                 "result_json": "result", "warnings_json": "warnings"}))
 
 
 def list_jobs(limit: int = 50) -> list[dict]:
     with connect() as c:
         rows = c.execute(
             "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
-    return [_row(r, {"hyperparams_json": "hyperparameters", "result_json": "result"})
-            for r in rows]
+    return [_with_warnings(
+        _row(r, {"hyperparams_json": "hyperparameters",
+                 "result_json": "result", "warnings_json": "warnings"}))
+        for r in rows]
 
 
 def get_events(job_id: str, after_id: int = 0, limit: int = 500) -> list[dict]:

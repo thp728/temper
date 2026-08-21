@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api import catalog, config, db, orchestrator, validation  # noqa: E402
+from api import catalog, config, db, feasibility, orchestrator, validation  # noqa: E402
 
 UPLOADS = Path(__file__).parent.parent / "data" / "uploads"
 
@@ -186,6 +186,13 @@ def create_job(req: JobRequest):
     later. The hyperparameters are frozen into the job row here: a run's spec is
     immutable once launched, so a later change to a default cannot retroactively
     alter what a finished run claims.
+
+    A dataset that plainly cannot finish inside the maximum duration gets a
+    **warning attached, not a refusal** (spec 002): the estimate is crude --
+    measured throughput on one real run -- and a wrong block is worse than a
+    wrong warning. The warning is frozen onto the job row like the
+    hyperparameters, so what the user was told before launching stays part of
+    the run's record.
     """
     ds = db.get_dataset(req.dataset_id)
     if not ds:
@@ -203,7 +210,18 @@ def create_job(req: JobRequest):
             "available": [m["id"] for m in catalog.listing()],
         })
 
-    job_id = db.create_job(req.dataset_id, req.base_model, req.hyperparameters)
+    # The ceiling is read at request time, not import: an operator changing
+    # TEMPER_MAX_JOB_DURATION_S should not need a restart for the warning to
+    # reflect it.
+    warn = feasibility.warning(feasibility.usable_rows(ds),
+                               req.hyperparameters, config.MAX_JOB_DURATION_S)
+    warnings = [warn] if warn else []
+
+    job_id = db.create_job(req.dataset_id, req.base_model, req.hyperparameters,
+                           warnings=warnings)
+    if warn:
+        db.add_event(job_id, "log", warn["message"], {
+            k: v for k, v in warn.items() if k != "message"})
     orchestrator.launch(job_id)
     return db.get_job(job_id)
 

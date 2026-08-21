@@ -37,6 +37,7 @@ repository becomes public at submission.
 | [0004](0004-the-machine-is-a-pure-compute-node.md) | The machine is a pure compute node, and everything it receives is pushed by the control plane | accepted | 2026-08-21 |
 | [0005](0005-the-dataset-size-limit-is-derived-from-measured-memory.md) | The dataset size limit is derived from measured memory, not chosen | accepted | 2026-08-21 |
 | [0006](0006-validation-runs-off-the-event-loop.md) | Validation runs off the event loop | accepted | 2026-08-21 |
+| [0007](0007-the-feasibility-warning-is-an-estimate-and-warns-rather-than-blocks.md) | The feasibility warning is an estimate from one measured run, and warns rather than blocks | accepted | 2026-08-21 |
 
 ## Format
 
