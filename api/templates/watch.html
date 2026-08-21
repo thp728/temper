@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.id }} · Temper{% endblock %}
+{% block content %}
+<h1>Job {{ job.id }}</h1>
+<p>Dataset <a href="/datasets/{{ job.dataset_id }}">{{ dataset_filename }}</a>
+· base model <code>{{ job.base_model }}</code></p>
+
+<section aria-labelledby="status-h">
+  <h2 id="status-h">Status</h2>
+  <dl>
+    <dt>State</dt>
+    <dd><strong id="job-state" aria-live="polite">{{ job.status }}</strong></dd>
+    <dt>Elapsed</dt>
+    <dd id="elapsed" data-started="{{ started_at }}">{{ elapsed }}</dd>
+    <dt>Machine</dt>
+    <dd>{% if job.gpu_type %}{{ job.gpu_type }} at {{ job.price_per_hour }} {{ job.currency }}/hr{% else %}—{% endif %}</dd>
+    <dt>Latest loss</dt>
+    <dd id="loss">{% if loss %}{{ loss.value }} at step {{ loss.step }}{% else %}—{% endif %}</dd>
+  </dl>
+</section>
+
+{% if job.status == "complete" %}
+<section aria-labelledby="result-h">
+  <h2 id="result-h">Your adapter</h2>
+  {% if job.adapter_path %}
+  <p><a href="/v1/jobs/{{ job.id }}/adapter">Download the adapter</a> — a zip
+  of the trained weights together with the <code>adapter_config.json</code>
+  that makes them loadable.</p>
+  {% else %}
+  <p>Training finished, but no adapter could be retrieved. The log below says
+  what happened to it.</p>
+  {% endif %}
+</section>
+{% elif job.status == "failed" %}
+<section class="issues" aria-labelledby="failure-h">
+  <h2 id="failure-h">Failed</h2>
+  <div class="issue">
+    <p><code>{{ job.error_code }}</code></p>
+    {% if job.error_code == "gpu_stalled" %}
+    <p class="explain">The job was stopped by a safety limit: it produced no
+    output for longer than the stall timeout allows.</p>
+    {% elif job.error_code == "gpu_max_duration_exceeded" %}
+    <p class="explain">The job was stopped by a safety limit: it ran past the
+    maximum duration a single job may use.</p>
+    {% endif %}
+    <p class="message">{{ job.error_message }}</p>
+  </div>
+</section>
+{% elif job.status == "cancelled" %}
+<section aria-labelledby="cancelled-h">
+  <h2 id="cancelled-h">Cancelled</h2>
+  <p>This job was cancelled at your request. No adapter was produced — that is
+  what cancelling means here, not a failure of the run.</p>
+</section>
+{% endif %}
+
+{% if not terminal %}
+<section class="issues warnings" aria-labelledby="cancel-h">
+  <h2 id="cancel-h">Cancel this job?</h2>
+  <form action="/jobs/{{ job.id }}/cancel" method="post">
+    <p>Cancelling destroys the machine and <strong>no adapter will be
+    produced</strong>. This cannot be undone.</p>
+    <button type="submit">Cancel job</button>
+  </form>
+</section>
+{% endif %}
+
+<section aria-labelledby="log-h">
+  <h2 id="log-h">Output</h2>
+  <div id="log" class="log" tabindex="0">
+    {%- for e in events -%}
+    <div>{{ e.message }}</div>
+    {%- endfor -%}
+  </div>
+</section>
+
+{% if not terminal %}
+<script>
+(function () {
+  var stateEl = document.getElementById("job-state");
+  var lossEl = document.getElementById("loss");
+  var logEl = document.getElementById("log");
+  var elapsedEl = document.getElementById("elapsed");
+  // Seconds since the run began, kept ticking between reloads so elapsed time
+  // is usable for judging progress, not frozen at the page load.
+  var startedMs = parseFloat(elapsedEl.dataset.started) * 1000;
+  function fmt(s) {
+    s = Math.max(0, Math.floor(s));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    function two(n) { return (n < 10 ? "0" : "") + n; }
+    return h ? h + "h " + two(m) + "m " + two(s % 60) + "s"
+         : m ? m + "m " + two(s % 60) + "s"
+         : s + "s";
+  }
+  var after = {{ last_event_id }};
+  var timer = setInterval(function () {
+    Promise.all([
+      fetch("/v1/jobs/{{ job.id }}/events?after=" + after),
+      fetch("/v1/jobs/{{ job.id }}")
+    ]).then(function (rs) {
+      return Promise.all([rs[0].json(), rs[1].json()]);
+    }).then(function (both) {
+      var page = both[0], job = both[1];
+      after = page.last_id;
+      page.events.forEach(function (e) {
+        if (e.kind === "metric" && e.data && typeof e.data.loss === "number") {
+          lossEl.textContent = e.data.loss +
+            (e.data.step !== undefined ? " at step " + e.data.step : "");
+        }
+        if (e.message) {
+          var div = document.createElement("div");
+          div.textContent = e.message;
+          logEl.appendChild(div);
+        }
+      });
+      // The status word is taken from the job record, not from an event's
+      // prose, so what is announced to a screen reader is exactly what a
+      // fresh page load would show.
+      if (stateEl && job.status) { stateEl.textContent = job.status; }
+      if (!job.finished_at) {
+        elapsedEl.textContent = fmt((Date.now() - startedMs) / 1000);
+      }
+      if (["complete", "failed", "cancelled"].indexOf(job.status) !== -1) {
+        clearInterval(timer);
+        location.reload();
+      }
+    }).catch(function () {});
+  }, 2000);
+})();
+</script>
+{% endif %}
+
+<p><a href="/">Upload another dataset</a></p>
+{% endblock %}

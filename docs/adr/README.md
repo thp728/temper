@@ -38,6 +38,10 @@ repository becomes public at submission.
 | [0005](0005-the-dataset-size-limit-is-derived-from-measured-memory.md) | The dataset size limit is derived from measured memory, not chosen | accepted | 2026-08-21 |
 | [0006](0006-validation-runs-off-the-event-loop.md) | Validation runs off the event loop | accepted | 2026-08-21 |
 | [0007](0007-the-feasibility-warning-is-an-estimate-and-warns-rather-than-blocks.md) | The feasibility warning is an estimate from one measured run, and warns rather than blocks | accepted | 2026-08-21 |
+| [0008](0008-adapters-ship-as-fp32.md) | Adapters ship as fp32 — the artifact is exactly the weights that were trained | accepted | 2026-08-21 |
+
+Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
+private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
 
 ## Format
 

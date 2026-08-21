@@ -27,3 +27,17 @@ dl dd { margin: 0; }
   padding: 0.5rem;
 }
 code { background: #f4f4f4; padding: 0 0.25rem; }
+
+/* The job's output. column-reverse puts the newest line at the visual top of
+   a bounded box, so a reader sees the current state first whether or not
+   scripting is available to scroll for them. */
+.log {
+  display: flex;
+  flex-direction: column-reverse;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  max-height: 24rem;
+  overflow-y: auto;
+  background: #f4f4f4;
+  padding: 0.5rem;
+}

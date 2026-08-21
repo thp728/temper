@@ -1,11 +1,12 @@
 """Server-rendered pages: the browser surface over the existing control plane.
 
 Spec 003. Deliberately disposable -- Phase B replaces this with a typed SPA --
-so there is no JavaScript at all on these pages: every journey works by plain
-HTML forms and links, and live updates (the watch page) will poll rather than
-stream until Phase B. The interface exists to answer the checkpoint's question
--- *can a user go from dataset to adapter through the product?* -- and its
-replacement is already specified.
+so there is no framework, build step or component library here. Every journey
+works by plain HTML forms and links; the one exception to "no JavaScript" is
+the watch page's poller, and it is emitted only while there is something live
+to follow: a terminal job's page carries no scripting at all. The interface
+exists to answer the checkpoint's question -- *can a user go from dataset to
+adapter through the product?* -- and its replacement is already specified.
 
 The validation report is the point of the page set. The API already produces
 line-numbered, coded, actionable errors; these pages exist so that a user who
@@ -14,6 +15,7 @@ cannot read raw JSON can still act on them.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
@@ -21,6 +23,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from api import catalog, config, db, datasets, feasibility, hyperparams, jobs
+from api import orchestrator
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -117,6 +120,73 @@ def create_job_form(request: Request, dataset_id: str = Form(...),
         job_id = jobs.create(dataset_id, base_model, {})
     except HTTPException as exc:
         return _error_from_exception(request, exc, "The job could not be launched")
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
+@router.get("/jobs/{job_id}", name="watch_job_page")
+def watch_job_page(request: Request, job_id: str):
+    """Watch a running job -- and collect its result. One page, both jobs.
+
+    A job's record is the same thing during and after the run, so there is no
+    separate finished-job page to drift out of agreement with this one. The
+    page renders the current state server-side on every load: everything but
+    live log updates works without JavaScript.
+
+    The polling script is emitted **only while the job is non-terminal**.
+    Polling that stops once terminal is thus a property of the page itself,
+    not a promise made in script a reader must trust; and a finished job's
+    page carries no scripting at all.
+    """
+    job = db.get_job(job_id)
+    if not job:
+        return _render_error(request, 404, "not_found",
+                             f"No job with id '{job_id}'.", "Not found")
+    events = db.get_events(job_id)
+    loss = None
+    for e in events:
+        data = e.get("data") or {}
+        if e["kind"] == "metric" and "loss" in data:
+            loss = {"value": data["loss"], "step": data.get("step")}
+
+    start = job["started_at"] or job["created_at"]
+    end = job["finished_at"] or time.time()
+    ds = db.get_dataset(job["dataset_id"])
+    return templates.TemplateResponse(
+        request, "watch.html",
+        {"job": job,
+         "dataset_filename": ds["filename"] if ds else job["dataset_id"],
+         "events": events,
+         "last_event_id": events[-1]["id"] if events else 0,
+         "loss": loss,
+         "elapsed": _fmt_duration(max(end - start, 0)),
+         "started_at": start,
+         "terminal": job["status"] in db.TERMINAL_STATES})
+
+
+def _fmt_duration(seconds: float) -> str:
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m:02d}m {s:02d}s"
+    if m:
+        return f"{m}m {s:02d}s"
+    return f"{s}s"
+
+
+@router.post("/jobs/{job_id}/cancel", name="cancel_job_form")
+def cancel_job_form(request: Request, job_id: str):
+    """The form twin of `POST /v1/jobs/{id}/cancel`, through the same path.
+
+    The consequence -- no adapter will be produced -- is stated on the page
+    beside the button, before the request exists. Every outcome lands back on
+    the watch page, which shows the job as it actually is rather than as the
+    click wished it.
+    """
+    outcome = db.request_cancel(job_id, note=orchestrator.CANCEL_ACK)
+    if outcome == "missing":
+        return _render_error(request, 404, "not_found",
+                             f"No job with id '{job_id}'.", "Not found")
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 

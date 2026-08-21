@@ -199,3 +199,282 @@ def test_create_page_renders_without_javascript(client, tmp_path):
     ds = valid_dataset(client, tmp_path)
     body = create_page(client, ds).text.lower()
     assert "<script" not in body
+
+
+# --- the watch page ----------------------------------------------------------
+# Issue #13. The watch page and the finished-job page are the same page: a
+# job's record is the same thing during and after the run. What is asserted is
+# what a user can see -- state, spend, loss, outcome, teardown proof -- never
+# markup structure.
+
+import hashlib  # noqa: E402
+import time  # noqa: E402
+
+from dataclasses import replace  # noqa: E402
+
+from api.fake_provider import FakeProvider, simulated_limits  # noqa: E402
+from api.limits import RunLimits  # noqa: E402
+
+WEIGHTS = b"weights"
+RESULT = {
+    "ok": True,
+    "stage": "train",
+    "adapter_path": "run/adapter_model.safetensors",
+    "adapter_sha256": hashlib.sha256(WEIGHTS).hexdigest(),
+    "adapter_config": {"r": 16, "lora_alpha": 32},
+}
+OUTPUT_LINES = [
+    "[10:00:01] building trainer image",
+    "[10:03:04] image built in 183s",
+    "[10:03:04] running training",
+    "{'loss': 1.9042, 'step': 10, 'epoch': 0.5}",
+]
+
+# The guard's poll interval is a second in production; small here so that a
+# cancellation lands within the run rather than after it.
+def responsive_limits():
+    return replace(RunLimits.from_config(), poll_interval_s=0.005)
+
+
+def launch_from_form(client, tmp_path) -> str:
+    """The one launch block all three helpers share; they differ only in what
+    `orchestrator.launch` has been patched to do."""
+    ds = valid_dataset(client, tmp_path)
+    r = client.post("/jobs/new", data={"dataset_id": ds,
+                                       "base_model": "qwen3-4b"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    return r.headers["location"]
+
+
+def launch_running_job(client, monkeypatch, tmp_path, provider,
+                       limits=None) -> str:
+    """Launch from the browser form and let the job run on its thread."""
+    import threading
+
+    from api import orchestrator
+
+    def start(job_id):
+        threading.Thread(target=orchestrator.run_job, args=(job_id,),
+                         kwargs={"provider": provider, "limits": limits},
+                         daemon=True, name=f"job-{job_id[:8]}").start()
+
+    monkeypatch.setattr(orchestrator, "launch", start)
+    return launch_from_form(client, tmp_path)
+
+
+def launch_unstarted_job(client, monkeypatch, tmp_path) -> str:
+    """A job created but not yet picked up: `queued`, as one is between the
+    form post and the thread."""
+    from api import orchestrator
+    monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
+    return launch_from_form(client, tmp_path)
+
+
+def run_finished_job(client, monkeypatch, tmp_path, provider,
+                     limits=None) -> str:
+    """Launch and drive the job to a terminal state before returning."""
+    from api import orchestrator
+    monkeypatch.setattr(
+        orchestrator, "launch",
+        lambda job_id: orchestrator.run_job(job_id, provider=provider,
+                                            limits=limits))
+    path = launch_from_form(client, tmp_path)
+    wait_until_terminal(client, path)
+    return path
+
+
+def watch(client, path):
+    return client.get(path)
+
+
+def wait_until_terminal(client, path):
+    """Block until the job behind a watch path ends.
+
+    A test that leaves its job thread running leaks it into the next test's
+    database, so every test that starts a job also waits it out.
+    """
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        if client.get(f"/v1/jobs/{path.rsplit('/', 1)[-1]}").json()["status"] \
+                in ("complete", "failed", "cancelled"):
+            return
+        time.sleep(0.01)
+    raise AssertionError("job never reached a terminal state")
+
+
+def test_watch_page_shows_state_elapsed_machine_and_price(client, monkeypatch,
+                                                          tmp_path):
+    provider = FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                            adapter_bytes=WEIGHTS)
+    path = run_finished_job(client, monkeypatch, tmp_path, provider)
+    body = watch(client, path).text
+    assert "complete" in body.lower()
+    assert "elapsed" in body.lower()
+    assert "L4" in body                      # machine type
+    assert "41.31" in body and "INR" in body  # hourly price, in account currency
+
+
+def test_watch_page_shows_the_latest_loss_with_its_step(client, monkeypatch,
+                                                        tmp_path):
+    provider = FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                            adapter_bytes=WEIGHTS)
+    path = run_finished_job(client, monkeypatch, tmp_path, provider)
+    body = watch(client, path).text
+    assert "1.9042" in body                  # the number itself
+    assert "10" in body                      # ...at its step
+    assert "<svg" not in body.lower() and "<canvas" not in body.lower(), \
+        "a chart is Phase B; the number is what Phase A shows"
+
+
+def test_watch_page_for_a_queued_job_offers_cancel_and_warns_first(
+        client, monkeypatch, tmp_path):
+    path = launch_unstarted_job(client, monkeypatch, tmp_path)
+    body = watch(client, path).text
+    assert 'action="' + path + '/cancel"' in body
+    assert "no adapter" in body.lower(), \
+        "the consequence must be stated before cancelling happens"
+
+
+def test_watch_page_offers_cancel_in_every_working_state(client, monkeypatch,
+                                                         tmp_path):
+    # provisioning (before the machine exists), preparing (waiting for SSH),
+    # training (mid-stream): one pause point per working state.
+    providers = [
+        FakeProvider(pause_at_stage="select_gpu"),
+        FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                     pause_at_stage="await_ready"),
+        FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                     adapter_bytes=WEIGHTS, pause_at_line=2),
+    ]
+    for i, provider in enumerate(providers):
+        path = launch_running_job(client, monkeypatch, tmp_path, provider,
+                                  limits=responsive_limits())
+        assert provider.wait_until_paused(), "the job never reached its pause"
+        body = watch(client, path).text
+        assert 'action="' + path + '/cancel"' in body
+        assert "no adapter" in body.lower()
+        if i == 1:
+            # Provisioned but not yet training: spend is visible while it
+            # accrues, not only once the run is over.
+            assert "L4" in body and "41.31" in body
+        provider.resume.set()
+        wait_until_terminal(client, path)
+
+
+def test_terminal_jobs_hide_the_cancel_control(client, monkeypatch, tmp_path):
+    cases = [
+        FakeProvider(lines=OUTPUT_LINES, result=RESULT, adapter_bytes=WEIGHTS),
+        FakeProvider(fail_at="push", fail_code="source_upload_failed"),
+    ]
+    for provider in cases:
+        path = run_finished_job(client, monkeypatch, tmp_path, provider)
+        body = watch(client, path).text
+        assert 'action="' + path + '/cancel"' not in body
+
+
+def test_completed_job_offers_the_adapter_with_its_config(client, monkeypatch,
+                                                          tmp_path):
+    provider = FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                            adapter_bytes=WEIGHTS)
+    path = run_finished_job(client, monkeypatch, tmp_path, provider)
+    job_id = path.rsplit("/", 1)[-1]
+    body = watch(client, path).text
+    assert f"/v1/jobs/{job_id}/adapter" in body
+    assert "adapter_config" in body.lower(), \
+        "the download must promise the file that makes it loadable"
+
+
+def test_failed_job_shows_its_code_and_keeps_its_log(client, monkeypatch,
+                                                     tmp_path):
+    provider = FakeProvider(lines=OUTPUT_LINES,
+                            result={"ok": False, "stage": "train",
+                                    "error": "CUDA out of memory"})
+    path = run_finished_job(client, monkeypatch, tmp_path, provider)
+    body = watch(client, path).text
+    assert "training_failed" in body         # the stable code
+    assert "CUDA out of memory" in body      # the reason, in plain language
+    for line in OUTPUT_LINES:                # output from before the failure
+        # Jinja escapes the quotes in a framework log-dict line; the fact
+        # under test is retention of the line, not its entity encoding.
+        assert line in body.replace("&#39;", "'")
+
+
+def test_a_cancelled_job_is_described_distinctly_from_a_failure(
+        client, monkeypatch, tmp_path):
+    provider = FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                            pause_at_line=2)
+    path = launch_running_job(client, monkeypatch, tmp_path, provider,
+                              limits=responsive_limits())
+    assert provider.wait_until_paused()
+    r = client.post(path + "/cancel")
+    assert r.status_code == 200              # the form redirects to the page
+    provider.resume.set()
+    wait_until_terminal(client, path)
+    assert client.get(f"/v1/jobs/{path.rsplit('/', 1)[-1]}").json()["status"] \
+        == "cancelled"
+    body = watch(client, path).text
+    assert "your request" in body.lower(), \
+        "the user's own decision must not read as a defect"
+    assert "training_failed" not in body and "gpu_stalled" not in body
+
+
+def test_a_stalled_job_says_it_was_stalled(client, monkeypatch, tmp_path):
+    provider = FakeProvider(lines=OUTPUT_LINES, result=RESULT, silent_after=2)
+    path = run_finished_job(client, monkeypatch, tmp_path, provider,
+                            limits=simulated_limits(step=60.0, stall=900.0))
+    body = watch(client, path).text
+    assert "gpu_stalled" in body
+    assert "stall" in body.lower() or "silence" in body.lower()
+
+
+def test_an_over_long_job_says_it_hit_the_ceiling(client, monkeypatch,
+                                                  tmp_path):
+    provider = FakeProvider(lines=[f"step {i}" for i in range(200)],
+                            result=RESULT)
+    path = run_finished_job(
+        client, monkeypatch, tmp_path, provider,
+        limits=simulated_limits(step=300.0, stall=900.0, maximum=3600.0))
+    body = watch(client, path).text
+    assert "gpu_max_duration_exceeded" in body
+    assert "duration" in body.lower() or "ceiling" in body.lower() \
+        or "limit" in body.lower()
+
+
+def test_the_machine_destroyed_confirmation_is_visible(client, monkeypatch,
+                                                       tmp_path):
+    provider = FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                            adapter_bytes=WEIGHTS)
+    path = run_finished_job(client, monkeypatch, tmp_path, provider)
+    body = watch(client, path).text
+    assert "destroyed" in body.lower(), \
+        "proof that billing stopped must reach the page"
+
+
+def test_the_state_change_is_announced_to_screen_readers(client, monkeypatch,
+                                                         tmp_path):
+    path = launch_unstarted_job(client, monkeypatch, tmp_path)
+    body = watch(client, path).text
+    assert "aria-live" in body
+
+
+def test_only_live_updates_need_javascript(client, monkeypatch, tmp_path):
+    """The core view is server-rendered; the script exists only while there is
+    something live to follow, and is gone once the job is terminal."""
+    provider = FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                            adapter_bytes=WEIGHTS, pause_at_line=2)
+    running = launch_running_job(client, monkeypatch, tmp_path, provider,
+                                 limits=responsive_limits())
+    assert provider.wait_until_paused()
+    assert "<script" in watch(client, running).text.lower()
+    provider.resume.set()
+    wait_until_terminal(client, running)
+
+    finished = run_finished_job(client, monkeypatch, tmp_path,
+                                FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                                             adapter_bytes=WEIGHTS))
+    assert "<script" not in watch(client, finished).text.lower()
+
+
+def test_watch_page_for_an_unknown_job_404s(client):
+    assert client.get("/jobs/job_nosuchthing").status_code == 404
