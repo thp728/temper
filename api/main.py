@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api import catalog, config, db, feasibility, orchestrator  # noqa: E402
+from api import catalog, config, db, jobs, orchestrator  # noqa: E402
 from api import datasets  # noqa: E402
 from api.web import router as web_router  # noqa: E402
 
@@ -131,47 +131,13 @@ class JobRequest(BaseModel):
 def create_job(req: JobRequest):
     """Launch a fine-tuning job.
 
-    Refuses an invalid dataset rather than discovering it on a GPU four minutes
-    later. The hyperparameters are frozen into the job row here: a run's spec is
-    immutable once launched, so a later change to a default cannot retroactively
-    alter what a finished run claims.
-
-    A dataset that plainly cannot finish inside the maximum duration gets a
-    **warning attached, not a refusal** (spec 002): the estimate is crude --
-    measured throughput on one real run -- and a wrong block is worse than a
-    wrong warning. The warning is frozen onto the job row like the
-    hyperparameters, so what the user was told before launching stays part of
-    the run's record.
+    The whole creation path lives in `api.jobs.create`, shared with the
+    browser's launch form so the two surfaces cannot drift apart. The
+    hyperparameters are frozen into the job row there: a run's spec is
+    immutable once launched, so a later change to a default cannot
+    retroactively alter what a finished run claims.
     """
-    ds = db.get_dataset(req.dataset_id)
-    if not ds:
-        raise HTTPException(404, "No such dataset.")
-    if ds["status"] != "valid":
-        raise HTTPException(400, {
-            "code": "dataset_invalid",
-            "message": "This dataset failed validation and cannot be trained on.",
-            "errors": (ds.get("report") or {}).get("errors", []),
-        })
-    if not catalog.get(req.base_model):
-        raise HTTPException(400, {
-            "code": "unknown_model",
-            "message": f"'{req.base_model}' is not in the catalog.",
-            "available": [m["id"] for m in catalog.listing()],
-        })
-
-    # The ceiling is read at request time, not import: an operator changing
-    # TEMPER_MAX_JOB_DURATION_S should not need a restart for the warning to
-    # reflect it.
-    warn = feasibility.warning(feasibility.usable_rows(ds),
-                               req.hyperparameters, config.MAX_JOB_DURATION_S)
-    warnings = [warn] if warn else []
-
-    job_id = db.create_job(req.dataset_id, req.base_model, req.hyperparameters,
-                           warnings=warnings)
-    if warn:
-        db.add_event(job_id, "log", warn["message"], {
-            k: v for k, v in warn.items() if k != "message"})
-    orchestrator.launch(job_id)
+    job_id = jobs.create(req.dataset_id, req.base_model, req.hyperparameters)
     return db.get_job(job_id)
 
 

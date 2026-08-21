@@ -16,12 +16,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from api import db
-from api import datasets
+from api import catalog, config, db, datasets, feasibility, hyperparams, jobs
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -77,6 +76,48 @@ def dataset_report(request: Request, ds_id: str):
     return templates.TemplateResponse(
         request, "report.html",
         {"ds": ds, "report": ds.get("report") or {}})
+
+
+@router.get("/jobs/new", name="create_job_page")
+def create_job_page(request: Request, dataset_id: str):
+    """Everything the user is about to commit to, before they commit to it.
+
+    The models with their licences and pinned revisions, the hyperparameters
+    that will be frozen, any feasibility warning -- all rendered ahead of the
+    one action that starts the spending. A dataset that is not valid is
+    refused here with its stable code rather than at launch.
+    """
+    try:
+        ds = jobs.usable_dataset(dataset_id)
+    except HTTPException as exc:
+        return _error_from_exception(request, exc, "Dataset not usable")
+    # Estimated against the default hyperparameters, which is what this form
+    # launches with: the estimate must describe the job the button will start.
+    warn = feasibility.warning(feasibility.usable_rows(ds), {},
+                               config.MAX_JOB_DURATION_S)
+    return templates.TemplateResponse(
+        request, "create_job.html",
+        {"ds": ds,
+         "models": catalog.listing(),
+         "default_model": catalog.DEFAULT_MODEL,
+         "spec": hyperparams.effective({}),
+         "warning": warn})
+
+
+@router.post("/jobs/new", name="create_job_form")
+def create_job_form(request: Request, dataset_id: str = Form(...),
+                    base_model: str = Form(...)):
+    """The form twin of `POST /v1/jobs`, through the same creation path.
+
+    A refusal renders as a page carrying its stable code, like every other
+    refusal on these pages. Success redirects to the job's own page, which is
+    where the run is watched and, later, collected.
+    """
+    try:
+        job_id = jobs.create(dataset_id, base_model, {})
+    except HTTPException as exc:
+        return _error_from_exception(request, exc, "The job could not be launched")
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
 @router.get("/static/styles.css", name="stylesheet")

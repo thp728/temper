@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Choose a base model · Temper{% endblock %}
+{% block content %}
+<h1>Choose a base model</h1>
+<p>For dataset <strong>{{ ds.filename }}</strong>
+({{ ds.report.usable_rows }} usable rows).</p>
+
+{% if warning %}
+<section class="issues warnings" aria-labelledby="feasibility-h">
+  <h2 id="feasibility-h">Before you launch</h2>
+  <div class="issue">
+    <p><code>{{ warning.code }}</code></p>
+    <p class="message">{{ warning.message }}</p>
+  </div>
+</section>
+{% endif %}
+
+<form action="/jobs/new" method="post">
+  <input type="hidden" name="dataset_id" value="{{ ds.id }}">
+
+  <fieldset>
+    <legend>Base model</legend>
+    {% for m in models %}
+    <p>
+      <label>
+        <input type="radio" name="base_model" value="{{ m.id }}"
+               {% if m.id == default_model %}checked{% endif %}>
+        <strong>{{ m.repo }}</strong> — {{ m.good_for }}
+      </label>
+      <br>
+      <small>
+        Licence {{ m.license }} · revision <code>{{ m.revision }}</code> ·
+        {{ m.params_b }}B parameters · {{ m.context_length }} context ·
+        needs at least a {{ m.min_gpu }}
+      </small>
+    </p>
+    {% endfor %}
+  </fieldset>
+
+  <section aria-labelledby="spec-h">
+    <h2 id="spec-h">The job specification</h2>
+    <p>This job will train with the following hyperparameters. They are
+    <strong>frozen at launch</strong>: the job runs with exactly these, and a
+    later change to defaults cannot retroactively alter what the run did.</p>
+    <dl>
+      {% for k, v in spec.items() %}
+      <dt><code>{{ k }}</code></dt>
+      <dd>{{ v }}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <button type="submit">Launch job</button>
+</form>
+
+<p><a href="/datasets/{{ ds.id }}">Back to the validation report</a></p>
+{% endblock %}

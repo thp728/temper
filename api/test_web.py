@@ -113,3 +113,89 @@ def test_no_page_uses_scripting(client, tmp_path):
     for path in paths:
         body = client.get(path).text.lower()
         assert "<script" not in body, f"{path} must render without JavaScript"
+
+
+# --- the create-job page ----------------------------------------------------
+# Issue #12. A user with a valid dataset must be able to choose a model and
+# launch from the browser, and must see everything they are committing to --
+# models and licences, the frozen hyperparameters, any feasibility warning --
+# before the single action that starts them spending.
+
+def valid_dataset(client, tmp_path):
+    rows = [chat(f"q{i}", f"a{i}") for i in range(12)]
+    r = form_upload(client, jsonl(tmp_path, rows))
+    return r.headers["location"].rsplit("/", 1)[-1]
+
+
+def create_page(client, ds_id):
+    return client.get(f"/jobs/new?dataset_id={ds_id}")
+
+
+def test_create_page_lists_models_with_licence_and_revision(client, tmp_path):
+    ds = valid_dataset(client, tmp_path)
+    body = create_page(client, ds).text
+    assert "Qwen/Qwen3-4B" in body
+    assert "Qwen/Qwen3-8B" in body
+    assert "Apache-2.0" in body              # licence, per model
+    # The pinned revision, rendered as the code element the template wraps it in.
+    assert "<code>main</code>" in body
+
+
+def test_create_page_shows_the_frozen_hyperparameters(client, tmp_path):
+    ds = valid_dataset(client, tmp_path)
+    body = create_page(client, ds).text
+    assert "lora_r" in body and "16" in body
+    assert "lora_alpha" in body and "32" in body
+    assert "num_epochs" in body
+    assert "learning_rate" in body
+
+
+def test_create_page_says_the_spec_freezes_at_launch(client, tmp_path):
+    ds = valid_dataset(client, tmp_path)
+    body = create_page(client, ds).text.lower()
+    assert "frozen" in body
+    assert "cannot" in body                  # ...and cannot be changed after
+
+
+def test_create_page_has_a_single_launch_action(client, tmp_path):
+    ds = valid_dataset(client, tmp_path)
+    body = create_page(client, ds).text.lower()
+    assert body.count("<button") == 1, "launching must be unambiguous"
+    assert "launch" in body
+
+
+def test_feasibility_warning_appears_before_launch(client, tmp_path, monkeypatch):
+    from api import config
+    monkeypatch.setattr(config, "MAX_JOB_DURATION_S", 10)
+    ds = valid_dataset(client, tmp_path)
+    body = create_page(client, ds).text
+    assert "duration_feasibility" in body    # before launch, while actionable
+    assert "<form" in body                   # ...and launching is still offered
+
+
+def test_form_launch_creates_the_job_and_redirects_to_it(client, tmp_path):
+    ds = valid_dataset(client, tmp_path)
+    r = client.post("/jobs/new", data={"dataset_id": ds,
+                                       "base_model": "qwen3-8b"},
+                    follow_redirects=False)
+    assert r.status_code == 303, "a form post must redirect, not return JSON"
+    assert "/jobs/" in r.headers["location"]
+
+
+def test_create_page_for_an_invalid_dataset_refuses(client, tmp_path):
+    p = jsonl(tmp_path, [chat("q", "a")])    # too few rows: invalid
+    r = form_upload(client, p)
+    ds = r.headers["location"].rsplit("/", 1)[-1]
+    resp = create_page(client, ds)
+    assert resp.status_code == 400
+    assert "dataset_invalid" in resp.text
+
+
+def test_create_page_for_an_unknown_dataset_404s(client):
+    assert create_page(client, "ds_nope").status_code == 404
+
+
+def test_create_page_renders_without_javascript(client, tmp_path):
+    ds = valid_dataset(client, tmp_path)
+    body = create_page(client, ds).text.lower()
+    assert "<script" not in body
