@@ -17,7 +17,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from api.fake_provider import MACHINE_ID, FakeClock, FakeProvider
+from api.fake_provider import (MACHINE_ID, FakeClock, FakeProvider,
+                               simulated_limits)
 from api.limits import RunLimits
 
 ADAPTER_BYTES = b"weights"
@@ -550,26 +551,16 @@ def test_the_machine_does_not_park_container_output_in_a_file(harness):
 
 # --- runtime limits: a job that stops making progress stops itself ----------
 
-# The guard blocks for at most this long before looking at the clock again.
-# Small here so that simulated time, which only moves when the clock is read,
-# moves quickly in real time too.
-GUARD_SLICE_S = 0.005
-
-
-def limits_for(clock, *, stall=900.0, maximum=86400.0):
-    return RunLimits(stall_timeout_s=stall, max_duration_s=maximum,
-                     now=clock, poll_interval_s=GUARD_SLICE_S)
-
-
 def test_a_silent_job_is_killed_and_reports_that_it_stalled(harness):
     """The machine is up and the connection is open; nothing is coming.
 
     This is what a wedged trainer looks like from the control plane, and it is
     the case a wall-clock constant nobody read used to pretend to cover.
     """
-    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT, hang_after=2)
-    job_id = harness.run(provider, limits=limits_for(FakeClock(step=60.0),
-                                                      stall=900.0))
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            silent_after=2)
+    job_id = harness.run(provider,
+                         limits=simulated_limits(step=60.0, stall=900.0))
 
     job = harness.job(job_id)
     assert job["status"] == "failed"
@@ -587,8 +578,8 @@ def test_a_job_that_runs_too_long_is_killed_and_says_so_differently(harness):
     """
     provider = FakeProvider(lines=[f"step {i}" for i in range(200)],
                             result=RESULT)
-    job_id = harness.run(provider, limits=limits_for(
-        FakeClock(step=300.0), stall=900.0, maximum=3600.0))
+    job_id = harness.run(provider, limits=simulated_limits(
+        step=300.0, stall=900.0, maximum=3600.0))
 
     job = harness.job(job_id)
     assert job["status"] == "failed"
@@ -607,11 +598,11 @@ def test_the_two_limits_are_configuration_not_constants(harness, monkeypatch):
 
     monkeypatch.setattr(config, "STALL_TIMEOUT_S", 120.0)
     monkeypatch.setattr(config, "MAX_JOB_DURATION_S", 86400.0)
-    limits = RunLimits.from_config(now=FakeClock(step=60.0))
-    limits = replace(limits, poll_interval_s=GUARD_SLICE_S)
+    limits = replace(RunLimits.from_config(now=FakeClock(step=60.0)),
+                     poll_interval_s=0.005)
 
     job_id = harness.run(FakeProvider(lines=TRAINING_LINES, result=RESULT,
-                                      hang_after=2), limits=limits)
+                                      silent_after=2), limits=limits)
 
     job = harness.job(job_id)
     assert job["error_code"] == "gpu_stalled"
@@ -627,8 +618,8 @@ def test_the_stall_detector_says_so_when_a_long_silence_ends(harness):
     """
     provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
                             adapter_bytes=ADAPTER_BYTES)
-    job_id = harness.run(provider, limits=limits_for(FakeClock(step=400.0),
-                                                      stall=900.0))
+    job_id = harness.run(provider,
+                         limits=simulated_limits(step=400.0, stall=900.0))
 
     assert harness.job(job_id)["status"] == "complete"
     resumed = [e for e in harness.events(job_id)
@@ -643,7 +634,7 @@ def test_the_stall_detector_says_so_when_a_long_silence_ends(harness):
 def test_a_healthy_run_is_not_narrated_by_the_stall_detector(harness):
     provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
                             adapter_bytes=ADAPTER_BYTES)
-    job_id = harness.run(provider, limits=limits_for(FakeClock(step=1.0)))
+    job_id = harness.run(provider, limits=simulated_limits(step=1.0))
 
     assert harness.job(job_id)["status"] == "complete"
     assert not any("Output resumed" in (e["message"] or "")
@@ -660,3 +651,41 @@ def test_the_unread_wall_clock_constant_is_gone(harness):
     from api import orchestrator
 
     assert not hasattr(orchestrator, "MAX_GPU_MINUTES")
+
+
+def test_a_job_stopped_by_a_limit_does_not_claim_teardown_it_has_not_done(
+        harness):
+    """The message is written before the machine is destroyed, so it cannot
+    say the machine *has been* destroyed.
+
+    The stray-machine path is real and tested: a destroy call can fail and the
+    machine can go on being listed. A failure message asserting teardown as a
+    completed fact would then be the one thing an operator trusted and the one
+    thing that was false.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            silent_after=2)
+    job_id = harness.run(provider,
+                         limits=simulated_limits(step=60.0, stall=900.0))
+
+    message = harness.job(job_id)["error_message"]
+    assert "has been destroyed" not in message
+    assert "being destroyed" in message
+    # And the confirmation it points at is really there, before the job ends.
+    events = harness.events(job_id)
+    destroyed = index_of(events, lambda e: "destroyed" in (e["message"] or ""))
+    assert destroyed < terminal_index(events)
+
+
+def test_the_transport_backstop_cannot_pre_empt_the_duration_ceiling(harness):
+    """The limit that fires must be the one that has a name.
+
+    The SSH transport carries its own watchdog on the streaming subprocess. It
+    was 90 minutes -- below a 24-hour ceiling -- so against a real machine the
+    ceiling could never have fired, and a long job would have failed with an
+    uncoded `TimeoutExpired` instead of `gpu_max_duration_exceeded`. The fake
+    provider has no watchdog, so no other test here can see this.
+    """
+    from api import config, provider as provider_module
+
+    assert provider_module._stream_timeout() > config.MAX_JOB_DURATION_S

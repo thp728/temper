@@ -75,10 +75,14 @@ before they launched. These are derived from what a healthy run looks like.
   order of magnitude above the worst observed silence, and far below an
   unattended overnight, which is the loss this exists to prevent. It is a
   measured floor with a wide margin, not a guess.
-- **24 hours.** The industry default for managed fine-tuning jobs, so the figure
-  is borrowed rather than invented. Nothing on the current 4B/8B catalog comes
-  close — the measured training phase was **161 seconds** — which is the point:
-  the ceiling should never be what a legitimate run meets first.
+- **24 hours.** An **adopted convention, not a measured or cited figure** — it
+  is the ceiling commonly used for managed fine-tuning jobs, and it is recorded
+  here as borrowed rather than derived so that nobody later mistakes it for
+  evidence. What supports it is weaker and sufficient: nothing on the current
+  4B/8B catalog comes close, the measured training phase being **161 seconds**,
+  and a backstop that never fires on a legitimate run does its job either way.
+  This is the number to revisit when the catalog grows, which is why it is
+  configuration.
 
 ### Time is injected
 
@@ -104,11 +108,28 @@ executing is not something Python permits, and it is unnecessary here — the
 caller's next act is to destroy the machine, which drops the connection the
 thread is waiting on. The thread is a daemon either way.
 
-### The ceiling counts from the start of the job
+### The two limits measure from different origins
 
-Provisioning and waiting for SSH are part of a job's elapsed time, so they are
-part of its budget. The clock starts when the job starts, not when the first
-line arrives.
+**The ceiling counts from the start of the job.** Provisioning and waiting for
+SSH are part of a job's elapsed time, so they are part of its budget.
+
+**The stall budget counts from the start of the stream.** This is the opposite
+choice and it is deliberate: the stall timeout is a statement about the stream,
+and charging four minutes of provisioning against the first line's grace period
+would silently shorten the timeout by however long the machine took to arrive —
+so a slow provision would present as a stall. The first version of this change
+had both counting from job start, which is the bug described; review caught it
+before it shipped, and both origins now have a test naming which one they are.
+
+**What the ceiling does *not* cover, stated rather than implied.** The guard can
+only observe the ceiling while it is reading lines, and the between-stage checks
+(`RunLimits.check_duration`) only fire between provider calls. A job blocked
+*inside* a single provider call is bounded by that call's own timeout — 300s for
+SSH readiness, 180s for the source push, 600s for a fetch — not by the ceiling.
+Those bounds are short and the ceiling is long, so in practice the gap does not
+matter; it is written down because the alternative is a record claiming a
+coverage the code does not have, which is the failure mode this whole change
+exists to correct.
 
 ## Deviation from the acceptance criteria, stated plainly
 
@@ -127,11 +148,22 @@ end. Short gaps pass silently. The threshold is a constant in `limits.py`
 ## Alternatives considered
 
 **Enforce it in the SSH provider's existing subprocess watchdog.** It already
-kills the process at 90 minutes, so this looked close to free. Rejected: it is
+killed the process at 90 minutes, so this looked close to free. Rejected: it is
 one provider's implementation detail, a push transport would not inherit it, it
 cannot distinguish silence from length, and it surfaces as `TimeoutExpired`
 rather than as a coded, user-facing outcome. The seam exists precisely so that
 orchestration policy does not live inside one transport.
+
+**That watchdog could not simply be left alone, and the first version of this
+change left it alone.** A 90-minute transport timeout sitting *below* a 24-hour
+ceiling means the ceiling can never fire against a real machine: the transport
+kills first, and the job fails with an uncoded `TimeoutExpired` mapped to
+`internal_error` — precisely the unnamed outcome this record objects to. No test
+could catch it, because the fake provider has no watchdog. It is now derived
+from the ceiling and sits ten minutes above it, so it is a genuine backstop for
+a stream that outlives even the guard, and the coded outcome always wins the
+race. Recorded because it is the kind of error the rest of this document is
+about: a control that was correct until a second control appeared beside it.
 
 **A single limit — total duration only.** Simpler, and it would have caught the
 overnight case. Rejected: it is the slowest possible detector of the most common
@@ -163,6 +195,12 @@ behind it. Spec 002 adds a warning at job creation; a real estimate is Phase B.
 
 ## Consequences
 
+- Neither failure message claims the machine **has been** destroyed. Both say it
+  is *being* destroyed and point at the teardown confirmation in the job's
+  events, because the message is constructed before teardown runs and the
+  stray-machine path — a destroy call that fails and a machine that stays
+  listed — is real and tested. A message asserting teardown as a completed fact
+  would be the one thing an operator trusted and the one thing that was false.
 - Two new stable error codes: `gpu_stalled`, `gpu_max_duration_exceeded`. Both
   end the job `failed`, not `cancelled` — the platform stopped it, the user did
   not, and a job stopped by a safety limit is a failure by this project's own
@@ -180,6 +218,15 @@ behind it. Spec 002 adds a warning at job creation; a real estimate is Phase B.
   cannot produce that; a larger catalog might, and the fix is configuration
   rather than code. This is the tradeoff accepted, and the reason the value is
   not a constant.
+
+### A misconfigured limit refuses to start
+
+`TEMPER_STALL_TIMEOUT_S=15m` is the realistic typo. Falling back to the default
+would leave an operator believing a limit was in force that was not — the same
+shape as the unread constant above, and *less* visible, because there would be
+nothing wrong in the source to find. A value that cannot be honoured raises at
+import, which is one legible line at boot. There is deliberately no value
+meaning "no limit": a limit that a typo can switch off is not a limit.
 
 ## Rollback
 

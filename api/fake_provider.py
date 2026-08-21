@@ -14,7 +14,7 @@ What it can be told to do, because these are the paths worth testing:
   anticipated;
 * fail the destroy call a chosen number of times, and go on being listed
   afterwards;
-* go silent mid-stream without ending, which is what a wedged job looks like
+* go silent mid-stream without ending, which is what a stalled job looks like
   from here and is not the same thing as a stream that stops.
 
 It ships with a clock for the same reason: the limits that catch a silent job
@@ -30,6 +30,7 @@ import time
 from typing import Iterator, Sequence
 
 from .errors import OrchestratorError
+from .limits import RunLimits
 from .provider import GpuChoice, Machine
 
 STAGES = ("select_gpu", "create", "await_ready", "push", "fetch", "stream")
@@ -39,9 +40,9 @@ STAGES = ("select_gpu", "create", "await_ready", "push", "fetch", "stream")
 MACHINE_ID = 4242
 GPU = GpuChoice("L4", 41.31, "INR")
 
-# How long a hung stream stays hung. Long enough that no limit under test can
-# lose the race, short enough that a suite which somehow reaches it still ends.
-HANG_S = 10.0
+# How long a silent stream stays silent. Long enough that no limit under test
+# can lose the race, short enough that a suite which somehow reaches it ends.
+SILENCE_S = 10.0
 
 
 class FakeClock:
@@ -62,6 +63,22 @@ class FakeClock:
         return self.t
 
 
+def simulated_limits(*, step: float, stall: float = 900.0,
+                     maximum: float = 86400.0) -> RunLimits:
+    """Limits whose minutes and hours pass in milliseconds.
+
+    `step` is how much simulated time one trip round the guard's loop costs.
+    `poll_interval_s` is how long the guard will really block before looking at
+    the clock again — small here only so that simulated time, which moves when
+    the clock is read, moves quickly in real time too. It is not a limit.
+
+    Already started, because a test asking about a limit is asking about a job
+    that is already running.
+    """
+    return RunLimits(stall_timeout_s=stall, max_duration_s=maximum,
+                     now=FakeClock(step=step), poll_interval_s=0.005).start()
+
+
 class FakeProvider:
     def __init__(
         self,
@@ -72,7 +89,7 @@ class FakeProvider:
         fail_code: str = "training_failed",
         fail_unexpectedly: bool = False,
         stop_after: int | None = None,
-        hang_after: int | None = None,
+        silent_after: int | None = None,
         line_delay: float = 0.0,
         destroy_failures: int = 0,
         stays_listed: bool = False,
@@ -86,7 +103,7 @@ class FakeProvider:
         self._fail_code = fail_code
         self._fail_unexpectedly = fail_unexpectedly
         self._stop_after = stop_after
-        self._hang_after = hang_after
+        self._silent_after = silent_after
         self._line_delay = line_delay
         self._destroy_failures = destroy_failures
         self._stays_listed = stays_listed
@@ -128,11 +145,11 @@ class FakeProvider:
     def stream(self, machine: Machine, script: bytes) -> Iterator[str]:
         self._enter("stream")
         self.script = script
-        emitted = self._lines
-        if self._stop_after is not None:
-            emitted = emitted[:self._stop_after]
-        if self._hang_after is not None:
-            emitted = emitted[:self._hang_after]
+        # `stop_after` and `silent_after` truncate identically and differ only
+        # in what happens at the end -- one ends the stream, the other does
+        # not, and that difference is the whole point of having both.
+        cut = self._stop_after if self._stop_after is not None else self._silent_after
+        emitted = self._lines[:cut] if cut is not None else self._lines
         for line in emitted:
             if self._line_delay:
                 # Real output arrives spread over minutes. A double that
@@ -140,11 +157,11 @@ class FakeProvider:
                 # channel is open or merely fast.
                 time.sleep(self._line_delay)
             yield line
-        if self._hang_after is not None:
-            # Silence, not an ending. A generator that returns tells its
-            # reader the run is over; a wedged machine tells it nothing, and
-            # only one of those two is what the stall detector exists for.
-            threading.Event().wait(HANG_S)
+        if self._silent_after is not None:
+            # Silence, not an ending. A generator that returns tells its reader
+            # the run is over; a stalled machine tells it nothing, and only one
+            # of those two is what the stall detector exists for.
+            threading.Event().wait(SILENCE_S)
             return
         if self._stop_after is not None or self._result is None:
             return

@@ -65,15 +65,31 @@ def _seconds(name: str, default: float) -> float:
     Read at import and exposed as a module attribute rather than looked up per
     use: the value is part of the process's configuration, and a limit that can
     change halfway through a run is a limit nobody can explain afterwards.
+
+    **A value that cannot be honoured stops the process.** Falling back to the
+    default would be the failure this whole module exists to remove: an
+    operator who set `TEMPER_STALL_TIMEOUT_S=15m` believes a limit is in force
+    that is not, which is the same shape as the unread constant, and this time
+    it would be invisible in the source as well. Refusing at import means one
+    legible line at boot rather than a control that quietly is not the one
+    anybody configured.
     """
     raw = os.environ.get(name)
-    if not raw:
+    if raw is None or raw.strip() == "":
         return default
     try:
         value = float(raw)
     except ValueError:
-        return default
-    return value if value > 0 else default
+        raise ValueError(
+            f"{name}={raw!r} is not a number of seconds. It configures a "
+            f"safety limit, so it is refused rather than ignored.") from None
+    if value <= 0:
+        raise ValueError(
+            f"{name}={raw!r} must be greater than zero. To disable the limit, "
+            f"set it to a value large enough to be unreachable — there is no "
+            f"value that means 'no limit', because a limit that can be "
+            f"switched off by a typo is not a limit.")
+    return value
 
 
 # --- runtime limits --------------------------------------------------------
@@ -87,7 +103,10 @@ def _seconds(name: str, default: float) -> float:
 # which is the failure it exists to prevent.
 STALL_TIMEOUT_S = _seconds("TEMPER_STALL_TIMEOUT_S", 15 * 60)
 
-# 24 hours, matching the industry default for managed training jobs rather than
-# a figure invented here. No run on the current 4B/8B catalog comes close: the
-# measured training phase was 161 seconds.
+# 24 hours. **Adopted convention, not a measured or cited figure** -- it is the
+# ceiling commonly used for managed training jobs, taken as a starting point
+# because a backstop that never fires on a legitimate run is doing its job
+# either way. Nothing on the current 4B/8B catalog comes close: the measured
+# training phase on 2026-08-19 was 161 seconds. The number to revisit when the
+# catalog grows is this one, and it is configuration for that reason.
 MAX_JOB_DURATION_S = _seconds("TEMPER_MAX_JOB_DURATION_S", 24 * 60 * 60)

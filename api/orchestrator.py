@@ -319,7 +319,7 @@ def _stall_reporter(job_id: str, limits: RunLimits):
 
 
 def _attempt(provider: Provider, job_id: str, machines: list,
-             limits: RunLimits, started: float) -> tuple[str, str, dict]:
+             limits: RunLimits) -> tuple[str, str, dict]:
     """Do the work. Returns the terminal state to record, but never records it.
 
     Recording the outcome is the caller's job precisely so that teardown can
@@ -335,6 +335,7 @@ def _attempt(provider: Provider, job_id: str, machines: list,
     model = catalog.get(job["base_model"]) or catalog.get(catalog.DEFAULT_MODEL)
     enable_thinking = bool(dataset.get("enable_thinking"))
 
+    limits.check_duration()
     db.set_state(job_id, "provisioning", "Selecting a GPU")
     gpu = provider.select_gpu(GPU_PREFERENCE)
     db.set_state(job_id, "provisioning",
@@ -352,12 +353,17 @@ def _attempt(provider: Provider, job_id: str, machines: list,
     db.add_event(job_id, "log", provider.await_ready(machine))
     provider.push(machine, _trainer_tarball(), TRAINER_TARBALL)
 
+    # Checked between stages as well as inside the stream: the guard below can
+    # only notice the ceiling while lines are arriving, and everything above
+    # this line happened before any line existed.
+    limits.check_duration()
+
     db.set_state(job_id, "training", "Building image and training")
     ds_path = Path(dataset["path"])
     script = _remote_script(job, ds_path, model, enable_thinking)
     # The guard sits between the transport and the reader, so both limits hold
     # for any provider rather than for the SSH one only.
-    lines = guard(provider.stream(machine, script), limits, started,
+    lines = guard(provider.stream(machine, script), limits,
                   on_reset=_stall_reporter(job_id, limits))
     result = _consume(job_id, lines)
     if not result.get("ok"):
@@ -385,7 +391,9 @@ def run_job(job_id: str, provider: Provider | None = None,
     clock: a fifteen-minute silence and a twenty-four-hour run are both things
     the suite has to be able to reach, and it cannot reach them by waiting.
     """
-    limits = limits or RunLimits.from_config()
+    # Stamped here, so the ceiling counts from the moment the job began rather
+    # than from the moment output started.
+    limits = (limits or RunLimits.from_config()).start()
     owns_provider = provider is None
     if owns_provider:
         try:
@@ -404,12 +412,9 @@ def run_job(job_id: str, provider: Provider | None = None,
 
     machines: list = []
     wall_started = time.time()
-    # The ceiling counts from here, not from when output starts: provisioning
-    # and waiting for SSH are part of a job's elapsed time.
-    started = limits.now()
     try:
         try:
-            outcome = _attempt(provider, job_id, machines, limits, started)
+            outcome = _attempt(provider, job_id, machines, limits)
         except OrchestratorError as e:
             outcome = ("failed", str(e),
                        {"error_code": e.code, "error_message": str(e)})

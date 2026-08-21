@@ -44,7 +44,22 @@ from .errors import OrchestratorError
 SSH_READY_TIMEOUT_S = 300
 PUSH_TIMEOUT_S = 180
 FETCH_TIMEOUT_S = 600
-STREAM_TIMEOUT_S = 5400
+
+# The backstop for a stream that never ends, and deliberately *above* the
+# orchestrator's duration ceiling rather than below it. It used to be 90
+# minutes, which was fine while it was the only bound on a run and wrong the
+# moment there was a real one: a 24-hour ceiling that a transport detail kills
+# at 90 minutes is not a 24-hour ceiling, and the job would have failed with an
+# uncoded `TimeoutExpired` instead of the named outcome the user is owed. This
+# now only fires if the guard somehow does not, and the margin is what keeps
+# the coded outcome the one that wins the race.
+STREAM_BACKSTOP_MARGIN_S = 600
+
+
+def _stream_timeout() -> float:
+    from . import config
+
+    return config.MAX_JOB_DURATION_S + STREAM_BACKSTOP_MARGIN_S
 
 
 @dataclass(frozen=True)
@@ -244,7 +259,8 @@ class JarvisLabsProvider:
             timed_out.set()
             proc.kill()
 
-        watchdog = threading.Timer(STREAM_TIMEOUT_S, kill)
+        timeout = _stream_timeout()
+        watchdog = threading.Timer(timeout, kill)
         watchdog.start()
         try:
             for raw in proc.stdout:
@@ -259,8 +275,7 @@ class JarvisLabsProvider:
                 proc.kill()
             proc.wait()
         if timed_out.is_set():
-            raise subprocess.TimeoutExpired(
-                cmd="bash -s", timeout=STREAM_TIMEOUT_S)
+            raise subprocess.TimeoutExpired(cmd="bash -s", timeout=timeout)
 
     # -- teardown -----------------------------------------------------------
 

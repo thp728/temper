@@ -52,9 +52,15 @@ def test_stream_does_not_deadlock_on_a_script_larger_than_the_pipe_buffer(
     assert len(list(p.stream(Machine(1), script))) == 1000
 
 
-def test_stream_kills_a_command_that_outlives_the_timeout(monkeypatch):
+def test_stream_kills_a_command_that_outlives_the_backstop(monkeypatch):
+    """The backstop, not the limit anyone is meant to meet.
+
+    It is derived from the duration ceiling and sits above it, so that a long
+    job fails with the named outcome the orchestrator produces rather than with
+    an uncoded transport error. Turned down here to prove it still fires.
+    """
     p = transport(monkeypatch, SLEEP)
-    monkeypatch.setattr(provider_mod, "STREAM_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(provider_mod, "_stream_timeout", lambda: 0.5)
     with pytest.raises(subprocess.TimeoutExpired):
         list(p.stream(Machine(1), b"ignored\n"))
 
