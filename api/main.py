@@ -17,7 +17,7 @@ import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,29 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from api import catalog, config, db, orchestrator, validation  # noqa: E402
 
 UPLOADS = Path(__file__).parent.parent / "data" / "uploads"
+
+
+def _fmt_size(n: int) -> str:
+    if n >= 1024 ** 3:
+        return f"{n / 1024 ** 3:.1f} GB"
+    if n >= 1024 ** 2:
+        return f"{n / 1024 ** 2:.1f} MB"
+    return f"{n / 1024:.1f} KB"
+
+
+def _too_large(actual: int, limit: int) -> HTTPException:
+    return HTTPException(413, {
+        "code": "dataset_too_large",
+        "message": (
+            f"This dataset is {_fmt_size(actual)} ({actual:,} bytes); "
+            f"the current upload limit is {_fmt_size(limit)} "
+            f"({limit:,} bytes). The limit exists because validation "
+            f"holds the whole dataset in memory (about 4.8x its size), "
+            f"so it is a limit of the current in-memory validation path, "
+            f"not a product rule -- streaming validation will remove it."),
+        "limit_bytes": limit,
+        "actual_bytes": actual,
+    })
 
 
 @asynccontextmanager
@@ -79,19 +102,47 @@ def list_models():
 # ---------------------------------------------------------------------------
 
 @app.post("/v1/datasets", tags=["datasets"], status_code=201)
-async def upload_dataset(file: UploadFile = File(...)):
+def upload_dataset(request: Request, file: UploadFile = File(...)):
     """Upload and validate a JSONL dataset.
+
+    **Deliberately a sync handler.** It was `async def`, which ran the
+    CPU-bound validation on the event loop and froze every other request for
+    as long as it ran -- measured at roughly 80 ms per megabyte, so a 200 MB
+    upload blocked the whole server for ~16 seconds. Declared `def` instead,
+    FastAPI dispatches it to its worker pool and a long validation blocks only
+    its own request. Regression-tested by
+    `test_upload_limits.test_large_upload_does_not_block_concurrent_requests`.
 
     Validation is synchronous and always returns a report. A dataset that fails
     is still stored with its report attached, so the user can see exactly which
     lines to fix rather than re-uploading blind.
+
+    Datasets over `config.MAX_DATASET_BYTES` are refused before validation --
+    an unbounded upload fails as an out-of-memory crash rather than a typed
+    error, which is worse for the user and for the process.
     """
     if not file.filename.endswith((".jsonl", ".json")):
         raise HTTPException(400, "Only .jsonl files are accepted.")
 
+    limit = config.MAX_DATASET_BYTES
+
+    # Refuse on the declared body size before reading: reading first would
+    # load an arbitrarily large file into memory, which is the failure the
+    # limit exists to prevent. The declared length is the multipart body, so
+    # it slightly overstates the file itself -- close enough to refuse on,
+    # and it never understates it. The header can be absent or lying, which
+    # is why the authoritative check after the read remains.
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > limit:
+        raise _too_large(int(declared), limit)
+
+    data = file.file.read()
+    if len(data) > limit:
+        raise _too_large(len(data), limit)
+
     ds_id = db.new_id("ds")
     path = UPLOADS / f"{ds_id}.jsonl"
-    path.write_bytes(await file.read())
+    path.write_bytes(data)
 
     with db.connect() as c:
         import time as _t

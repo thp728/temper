@@ -110,3 +110,49 @@ STALL_TIMEOUT_S = _seconds("TEMPER_STALL_TIMEOUT_S", 15 * 60)
 # training phase on 2026-08-19 was 161 seconds. The number to revisit when the
 # catalog grows is this one, and it is configuration for that reason.
 MAX_JOB_DURATION_S = _seconds("TEMPER_MAX_JOB_DURATION_S", 24 * 60 * 60)
+
+
+def _megabytes(name: str, default: float) -> float:
+    """A size in megabytes from the environment, or its default.
+
+    Same contract as `_seconds`: read once at import, and a value that cannot
+    be honoured stops the process rather than falling back silently.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name}={raw!r} is not a number of megabytes. It configures a "
+            f"safety limit, so it is refused rather than ignored.") from None
+    if value <= 0:
+        raise ValueError(
+            f"{name}={raw!r} must be greater than zero. There is no value "
+            f"that means 'no limit': an unbounded upload fails as an "
+            f"out-of-memory crash instead of a typed error.")
+    return value
+
+
+# --- dataset size limit -----------------------------------------------------
+# **1 GB, derived rather than chosen.** Validation holds the whole dataset in
+# memory, and its peak resident memory was measured across five dataset sizes,
+# one fresh process each (method and table in docs/adr/0004, "The measured
+# memory multiplier"): it converges to **4.8x the file size** -- 10 MB -> 67.6 MB
+# up to 200 MB -> 959.4 MB, the higher ratios at small sizes being fixed
+# interpreter overhead. At 4.8x, a 1 GB dataset peaks around 4.8 GB: roughly
+# 15% of the development machine's memory, with headroom for concurrent work.
+# One gigabyte is approximately 577,000 conversational rows.
+#
+# This is deliberately below the 25 GB named baseline, which is a property of a
+# multi-node fleet; on a single-GPU job with a 24-hour ceiling a dataset that
+# size cannot finish anyway. Advertising a limit the system cannot honour is
+# worse than being visibly below it.
+#
+# It is a limit of the current *in-memory* validation path, not a product rule:
+# streaming validation (Phase B, with the storage work) removes it.
+#
+# Configurable because the right number depends on the machine's memory, not on
+# this code. TEMPER_MAX_DATASET_MB, in megabytes.
+MAX_DATASET_BYTES = int(_megabytes("TEMPER_MAX_DATASET_MB", 1024) * 1024 * 1024)

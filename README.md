@@ -17,6 +17,7 @@ Fine-tunes open-weight LLMs on user-supplied instruction data, on real GPUs, end
 - **Models:** curated and pinned — `Qwen/Qwen3-4B`, `Qwen/Qwen3-8B`
 - **Compute:** JarvisLabs VMs, provisioned and destroyed per job
 - **Trainer:** Axolotl in a digest-pinned container
+- **Dataset limit:** 1 GB per upload (`TEMPER_MAX_DATASET_MB`). This is a limit of the current in-memory validation path, which holds about 4.8× the file size — not a product rule. Streaming validation removes it; until then, uploads over the limit are refused immediately with both sizes named.
 
 ## Why these choices
 
