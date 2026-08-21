@@ -30,7 +30,8 @@ TRAINING_LINES = [
     "[10:00:01] building trainer image",
     "[10:03:04] image built in 183s",
     "[10:03:04] running training",
-    "{'loss': 1.9042, 'epoch': 0.5}",
+    "33%|###       | 10/30 [00:20<00:40,  2.00s/it]",
+    "{'loss': 1.9042, 'grad_norm': 1.5, 'epoch': 0.5}",
 ]
 
 
@@ -201,6 +202,36 @@ def test_the_job_spec_reaches_the_machine(harness):
     assert '"lora_r": 32' in script
     # Trainer sources travel as one payload rather than one round trip per file.
     assert len(provider.pushed) == 1
+
+
+def test_training_numbers_arrive_as_metric_events(harness):
+    """The loss has to be a number in a field, not a substring of a log line.
+
+    Kept distinct from log output so that a chart is a read-only addition
+    later, rather than a second pass over prose that has since changed shape.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES)
+    job_id = harness.run(provider)
+
+    metrics = [e["data"] for e in harness.events(job_id) if e["kind"] == "metric"]
+    assert metrics == [{"loss": 1.9042, "epoch": 0.5}]
+
+
+def test_narration_and_progress_bars_stay_log_output(harness):
+    """Only the framework's own log dict is a measurement.
+
+    The bar is in the scripted output on purpose: an undescribed tqdm bar is
+    the line most likely to be promoted by mistake, because the evaluation bar
+    looks exactly like the training one.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES)
+    job_id = harness.run(provider)
+
+    kinds = {e["message"]: e["kind"] for e in harness.events(job_id)}
+    assert kinds["[10:03:04] running training"] == "log"
+    assert kinds["33%|###       | 10/30 [00:20<00:40,  2.00s/it]"] == "log"
 
 
 # --- teardown ordering: the bug this ticket fixes ---------------------------

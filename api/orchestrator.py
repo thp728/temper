@@ -35,7 +35,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import catalog, db
+from . import catalog, db, events
 from .errors import OrchestratorError
 from .provider import Provider, new_provider
 
@@ -178,9 +178,15 @@ fi
 def _consume(job_id: str, lines) -> dict:
     """Turn the machine's output into events, and return the trainer's result.
 
-    Everything before the marker is the job's output and becomes a log event.
-    Everything after it is the trainer's result document, which is machinery
-    rather than output and is not logged as such.
+    Everything before the marker is the job's output and is classified: a line
+    carrying step, loss or epoch becomes a `metric` event with those numbers in
+    structured fields, and everything else becomes a `log` event. Classifying
+    here rather than when the log is read is what makes a chart possible later
+    without re-parsing prose — by then the job is over and the format the line
+    was written in is whatever the framework happened to use that day.
+
+    Everything after the marker is the trainer's result document, which is
+    machinery rather than output and is not logged as such.
 
     `lines` is consumed lazily and each event is written the moment its line is
     read, which is what stamps it with the time it actually happened. Reading
@@ -195,7 +201,13 @@ def _consume(job_id: str, lines) -> dict:
             if text == RESULT_MARKER:
                 seen_marker = True
             elif text:
-                db.add_event(job_id, "log", text[:500])
+                # Classify the whole line, then truncate what is stored.
+                # Truncating first would cut a long log dict short of its
+                # closing brace, and a metric would be dropped for being a
+                # partial line that the transport, not the framework, cut.
+                event = events.classify(text)
+                db.add_event(job_id, event.kind, event.message[:500],
+                             event.data)
         else:
             result_lines.append(line)
 
