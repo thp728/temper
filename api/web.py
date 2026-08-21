@@ -29,6 +29,20 @@ router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
+def _fmt_ts(ts: float) -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+
+
+templates.env.filters["datetimeformat"] = _fmt_ts
+
+
+def _dataset_label(ds: dict | None, dataset_id: str) -> str:
+    """The name a dataset goes by on a page: its filename, or its id when the
+    row has gone -- which can happen to nothing except a deleted file, but a
+    page that renders an id beats a page that renders a traceback."""
+    return ds["filename"] if ds else dataset_id
+
+
 def _render_error(request: Request, status: int, code: str, message: str,
                   title: str):
     """Every refusal renders as a page carrying its stable code -- the same
@@ -123,6 +137,22 @@ def create_job_form(request: Request, dataset_id: str = Form(...),
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
+@router.get("/jobs", name="jobs_list_page")
+def jobs_list_page(request: Request):
+    """Every job, newest first, each with its outcome and a link to its record.
+
+    The record is the watch page -- the same page during and after the run --
+    so a user who closed the tab finds their adapter by following one link
+    from here. The list itself is static HTML: nothing on it needs JavaScript.
+    """
+    listing = []
+    for j in db.list_jobs():
+        ds = db.get_dataset(j["dataset_id"])
+        listing.append({"job": j,
+                        "dataset_filename": _dataset_label(ds, j["dataset_id"])})
+    return templates.TemplateResponse(request, "jobs.html", {"listing": listing})
+
+
 @router.get("/jobs/{job_id}", name="watch_job_page")
 def watch_job_page(request: Request, job_id: str):
     """Watch a running job -- and collect its result. One page, both jobs.
@@ -153,8 +183,8 @@ def watch_job_page(request: Request, job_id: str):
     ds = db.get_dataset(job["dataset_id"])
     return templates.TemplateResponse(
         request, "watch.html",
-        {"job": job,
-         "dataset_filename": ds["filename"] if ds else job["dataset_id"],
+         {"job": job,
+          "dataset_filename": _dataset_label(ds, job["dataset_id"]),
          "events": events,
          "last_event_id": events[-1]["id"] if events else 0,
          "loss": loss,

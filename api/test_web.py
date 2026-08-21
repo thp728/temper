@@ -478,3 +478,76 @@ def test_only_live_updates_need_javascript(client, monkeypatch, tmp_path):
 
 def test_watch_page_for_an_unknown_job_404s(client):
     assert client.get("/jobs/job_nosuchthing").status_code == 404
+
+
+# --- the jobs list ------------------------------------------------------------
+# Issue #14. A user who closes the tab must be able to find their adapter
+# again: the list shows every job with its outcome and links to its record,
+# which is the watch page -- already carrying the full event history and the
+# download for a finished job.
+
+def test_jobs_list_shows_each_job_with_its_outcome(client, monkeypatch,
+                                                   tmp_path):
+    done = run_finished_job(client, monkeypatch, tmp_path,
+                            FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                                         adapter_bytes=WEIGHTS))
+    failed = run_finished_job(
+        client, monkeypatch, tmp_path,
+        FakeProvider(fail_at="push", fail_code="source_upload_failed"))
+    # A cancelled job too: "cancelled" appears in no error code, so its
+    # presence on the page can only come from the outcome column.
+    provider = FakeProvider(lines=OUTPUT_LINES, result=RESULT, pause_at_line=2)
+    cancelled = launch_running_job(client, monkeypatch, tmp_path, provider,
+                                   limits=responsive_limits())
+    assert provider.wait_until_paused()
+    client.post(cancelled + "/cancel")
+    provider.resume.set()
+    wait_until_terminal(client, cancelled)
+
+    body = client.get("/jobs").text
+    for path in (done, failed, cancelled):
+        assert path.rsplit("/", 1)[-1] in body   # every job appears...
+    assert "complete" in body.lower()            # ...with its outcome beside it
+    assert "cancelled" in body.lower()
+    assert "failed" in body.lower()
+    assert "source_upload_failed" in body        # a failure names its code
+
+
+def test_jobs_list_links_to_each_jobs_record(client, monkeypatch, tmp_path):
+    path = run_finished_job(client, monkeypatch, tmp_path,
+                            FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                                         adapter_bytes=WEIGHTS))
+    body = client.get("/jobs").text
+    assert f'href="{path}"' in body, "an entry must lead to the full record"
+
+
+def test_jobs_list_is_reachable_from_the_upload_page(client):
+    body = client.get("/").text
+    assert 'href="/jobs"' in body, \
+        "a user who closes the tab needs a way back to their jobs"
+
+
+def test_empty_jobs_list_says_so_and_offers_the_way_in(client):
+    body = client.get("/jobs").text
+    assert "no jobs yet" in body.lower()
+    assert 'href="/"' in body
+
+
+def test_a_finished_jobs_record_shows_its_full_event_history(
+        client, monkeypatch, tmp_path):
+    path = run_finished_job(client, monkeypatch, tmp_path,
+                            FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                                         adapter_bytes=WEIGHTS))
+    body = watch(client, path).text
+    # The lifecycle's early states are on the page even though the job ended
+    # elsewhere: a finished run is as inspectable as a running one.
+    assert "queued" in body.lower()
+    assert "provisioning" in body.lower()
+
+
+def test_jobs_list_renders_without_javascript(client, monkeypatch, tmp_path):
+    run_finished_job(client, monkeypatch, tmp_path,
+                     FakeProvider(lines=OUTPUT_LINES, result=RESULT,
+                                  adapter_bytes=WEIGHTS))
+    body = client.get("/jobs").text.lower()
+    assert "<script" not in body
