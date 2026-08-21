@@ -32,6 +32,7 @@ repository becomes public at submission.
 | ADR | Decision | Status | Date |
 | --- | --- | --- | --- |
 | [0001](0001-event-channel-over-ssh-stdout.md) | The event channel is the machine's stdout, pulled over SSH | accepted | 2026-08-21 |
+| [0002](0002-stall-detection-and-a-duration-ceiling.md) | A stalled job and an over-long job are stopped separately, and named separately | accepted | 2026-08-21 |
 
 ## Format
 

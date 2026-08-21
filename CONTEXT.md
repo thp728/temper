@@ -20,6 +20,14 @@ _Avoid_: run spec, config, settings
 A job that ended because the user asked it to stop. Distinct from failure: the user's own decision is not a defect, and a cancelled job produces no adapter.
 _Avoid_: aborted, stopped, killed
 
+**Stalled**:
+A job that has stopped producing output without ending. It is not the same as a job that failed and said so, and not the same as one that is merely slow — from the control plane a wedged machine and a working one look identical, which is why the silence itself is what is measured.
+_Avoid_: hung, frozen, stuck, timed out
+
+**Duration ceiling**:
+The longest a job is permitted to run, whether or not it is still making progress. A circuit breaker against a job nobody is watching rather than a limit on what a user may legitimately train — which is also why it is set from what a healthy run looks like, not from a budget.
+_Avoid_: timeout, time limit, max runtime
+
 **Failed**:
 A job that ended for a reason nobody chose — including one stopped by a safety limit, which the user did not ask for even though the platform did it deliberately.
 _Avoid_: errored, crashed, broken

@@ -57,3 +57,37 @@ def provider_credentials_present() -> bool:
 
 
 load_env()
+
+
+def _seconds(name: str, default: float) -> float:
+    """A duration from the environment, or its default.
+
+    Read at import and exposed as a module attribute rather than looked up per
+    use: the value is part of the process's configuration, and a limit that can
+    change halfway through a run is a limit nobody can explain afterwards.
+    """
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+# --- runtime limits --------------------------------------------------------
+# Both are circuit breakers against a wedged job, not a cap on what a user may
+# legitimately train. Both are configuration, because the right number depends
+# on the catalog and the catalog will grow.
+
+# 15 minutes. The longest legitimately quiet stretch measured on a real run
+# (2026-08-19) was a 183-second image build, so this is an order of magnitude
+# above the worst observed silence -- and far below an unattended overnight,
+# which is the failure it exists to prevent.
+STALL_TIMEOUT_S = _seconds("TEMPER_STALL_TIMEOUT_S", 15 * 60)
+
+# 24 hours, matching the industry default for managed training jobs rather than
+# a figure invented here. No run on the current 4B/8B catalog comes close: the
+# measured training phase was 161 seconds.
+MAX_JOB_DURATION_S = _seconds("TEMPER_MAX_JOB_DURATION_S", 24 * 60 * 60)

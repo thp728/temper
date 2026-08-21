@@ -11,12 +11,14 @@ import hashlib
 import json
 import re
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from api.fake_provider import MACHINE_ID, FakeProvider
+from api.fake_provider import MACHINE_ID, FakeClock, FakeProvider
+from api.limits import RunLimits
 
 ADAPTER_BYTES = b"weights"
 RESULT = {
@@ -48,14 +50,15 @@ class Harness:
         self._monkeypatch = monkeypatch
         self._tmp_path = tmp_path
 
-    def run(self, provider, hyperparameters=None) -> str:
+    def run(self, provider, hyperparameters=None, limits=None) -> str:
         from api import orchestrator
 
         # Run inline rather than on a thread: the job is the system under test,
         # so the test should observe its finished state rather than race it.
         self._monkeypatch.setattr(
             orchestrator, "launch",
-            lambda job_id: orchestrator.run_job(job_id, provider=provider))
+            lambda job_id: orchestrator.run_job(job_id, provider=provider,
+                                                limits=limits))
         return self._create(hyperparameters)
 
     def run_on_a_thread(self, provider, hyperparameters=None) -> str:
@@ -543,3 +546,117 @@ def test_the_machine_does_not_park_container_output_in_a_file(harness):
 
     assert "PYTHONUNBUFFERED=1" in _command_block(script, "docker run"), \
         "without this the container buffers and the channel is closed again"
+
+
+# --- runtime limits: a job that stops making progress stops itself ----------
+
+# The guard blocks for at most this long before looking at the clock again.
+# Small here so that simulated time, which only moves when the clock is read,
+# moves quickly in real time too.
+GUARD_SLICE_S = 0.005
+
+
+def limits_for(clock, *, stall=900.0, maximum=86400.0):
+    return RunLimits(stall_timeout_s=stall, max_duration_s=maximum,
+                     now=clock, poll_interval_s=GUARD_SLICE_S)
+
+
+def test_a_silent_job_is_killed_and_reports_that_it_stalled(harness):
+    """The machine is up and the connection is open; nothing is coming.
+
+    This is what a wedged trainer looks like from the control plane, and it is
+    the case a wall-clock constant nobody read used to pretend to cover.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT, hang_after=2)
+    job_id = harness.run(provider, limits=limits_for(FakeClock(step=60.0),
+                                                      stall=900.0))
+
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    assert job["error_code"] == "gpu_stalled"
+    assert "900" in job["error_message"]
+    assert provider.destroyed, "a stalled job must not leave a machine billing"
+    assert job["adapter_path"] is None
+
+
+def test_a_job_that_runs_too_long_is_killed_and_says_so_differently(harness):
+    """Still talking, just far past the ceiling. A different code on purpose.
+
+    The clock advances well under the stall timeout per line, so the stall
+    detector keeps resetting and this can only be the ceiling firing.
+    """
+    provider = FakeProvider(lines=[f"step {i}" for i in range(200)],
+                            result=RESULT)
+    job_id = harness.run(provider, limits=limits_for(
+        FakeClock(step=300.0), stall=900.0, maximum=3600.0))
+
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    assert job["error_code"] == "gpu_max_duration_exceeded"
+    assert "3600" in job["error_message"]
+    assert provider.destroyed
+
+
+def test_the_two_limits_are_configuration_not_constants(harness, monkeypatch):
+    """Turning the knob down changes the behaviour, with nothing else touched.
+
+    A limit that can only be changed by editing the module is the constant this
+    ticket deleted, wearing a different name.
+    """
+    from api import config
+
+    monkeypatch.setattr(config, "STALL_TIMEOUT_S", 120.0)
+    monkeypatch.setattr(config, "MAX_JOB_DURATION_S", 86400.0)
+    limits = RunLimits.from_config(now=FakeClock(step=60.0))
+    limits = replace(limits, poll_interval_s=GUARD_SLICE_S)
+
+    job_id = harness.run(FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                                      hang_after=2), limits=limits)
+
+    job = harness.job(job_id)
+    assert job["error_code"] == "gpu_stalled"
+    assert "120" in job["error_message"], "the configured value is the one used"
+
+
+def test_the_stall_detector_says_so_when_a_long_silence_ends(harness):
+    """Observable rather than silent: a survived gap leaves a record.
+
+    Not one event per line. The event log is the user's view of their own run,
+    and a bookkeeping entry per training step would bury the training output it
+    exists to make legible.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES)
+    job_id = harness.run(provider, limits=limits_for(FakeClock(step=400.0),
+                                                      stall=900.0))
+
+    assert harness.job(job_id)["status"] == "complete"
+    resumed = [e for e in harness.events(job_id)
+               if "Output resumed" in (e["message"] or "")]
+    assert resumed, "a silence longer than a quarter of the budget went unsaid"
+    assert resumed[0]["data"]["stall_timeout_s"] == 900.0
+    assert resumed[0]["data"]["silence_s"] >= 400.0
+    # That it reports *only* long gaps is the companion test below, and the
+    # threshold itself is pinned in the guard's own tests.
+
+
+def test_a_healthy_run_is_not_narrated_by_the_stall_detector(harness):
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES)
+    job_id = harness.run(provider, limits=limits_for(FakeClock(step=1.0)))
+
+    assert harness.job(job_id)["status"] == "complete"
+    assert not any("Output resumed" in (e["message"] or "")
+                   for e in harness.events(job_id))
+
+
+def test_the_unread_wall_clock_constant_is_gone(harness):
+    """A control that looks implemented and is not is worse than none at all.
+
+    Asserted rather than trusted to review: the constant was readable, plausibly
+    named, and never once consulted, and nothing about reading the module said
+    so.
+    """
+    from api import orchestrator
+
+    assert not hasattr(orchestrator, "MAX_GPU_MINUTES")

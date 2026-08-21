@@ -8,8 +8,8 @@ Everything that touches the compute provider goes through the injected
 exercised with a fake and no GPU. The default is the real one, so callers that
 do not care about testing pass nothing.
 
-Three properties carried over from the spikes, each of which was learned the
-expensive way:
+Four properties of this path, three of them carried over from the spikes and
+each learned the expensive way:
 
 * **Teardown runs in `finally`, then is independently confirmed** by listing
   machines. Trusting a destroy call's return value is exactly the assumption
@@ -20,6 +20,12 @@ expensive way:
   have opposite remedies, and collapsing both into "no answer" cost an evening
   and produced a wrongly-filed platform bug. That logic lives in the default
   provider now, with the two codes intact.
+* **A job that stops making progress stops itself.** Two limits, in
+  `limits.py`: silence beyond the stall timeout and elapsed time beyond the
+  duration ceiling. They are circuit breakers against a wedged job on a billing
+  machine, not a cap on what a user may legitimately train, and they replace a
+  single wall-clock constant that no code path ever read — a control that looks
+  implemented and is not is worse than none at all.
 * **The trainer publishes no ports.** `ufw` does not filter Docker-published
   ports and a `DOCKER-USER` rule on the published port never matches, because
   the packet is already DNAT'd. Not publishing is the mitigation that works.
@@ -37,6 +43,7 @@ from pathlib import Path
 
 from . import catalog, db, events
 from .errors import OrchestratorError
+from .limits import RunLimits, guard
 from .provider import Provider, new_provider
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -45,7 +52,6 @@ ARTIFACTS = REPO_ROOT / "data" / "artifacts"
 
 GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
 STORAGE_GB = 100          # platform minimum for VM instances
-MAX_GPU_MINUTES = 90      # safety control, not billing
 
 TRAINER_TARBALL = "/tmp/trainer.tar.gz"
 # The machine emits this when it fails before the trainer ever runs, so that a
@@ -295,7 +301,25 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
                      f"{machine.machine_id}: {e}")
 
 
-def _attempt(provider: Provider, job_id: str, machines: list) -> tuple[str, str, dict]:
+def _stall_reporter(job_id: str, limits: RunLimits):
+    """Say so when a long silence ends, so the detector is visible working.
+
+    Deliberately not one event per line: the event log is the user's view of
+    their own run, and a bookkeeping entry per training step would bury the
+    output it exists to make legible. What is worth an event is a gap long
+    enough that the next one might not have come back at all.
+    """
+    def reset(gap: float) -> None:
+        db.add_event(job_id, "log",
+                     f"Output resumed after {gap:.0f}s of silence "
+                     f"(stall limit {limits.stall_timeout_s:.0f}s)",
+                     {"silence_s": round(gap, 1),
+                      "stall_timeout_s": limits.stall_timeout_s})
+    return reset
+
+
+def _attempt(provider: Provider, job_id: str, machines: list,
+             limits: RunLimits, started: float) -> tuple[str, str, dict]:
     """Do the work. Returns the terminal state to record, but never records it.
 
     Recording the outcome is the caller's job precisely so that teardown can
@@ -331,7 +355,11 @@ def _attempt(provider: Provider, job_id: str, machines: list) -> tuple[str, str,
     db.set_state(job_id, "training", "Building image and training")
     ds_path = Path(dataset["path"])
     script = _remote_script(job, ds_path, model, enable_thinking)
-    result = _consume(job_id, provider.stream(machine, script))
+    # The guard sits between the transport and the reader, so both limits hold
+    # for any provider rather than for the SSH one only.
+    lines = guard(provider.stream(machine, script), limits, started,
+                  on_reset=_stall_reporter(job_id, limits))
+    result = _consume(job_id, lines)
     if not result.get("ok"):
         # The result document names its own failure where it can. A stage that
         # failed before training started is not a training failure, and telling
@@ -346,12 +374,18 @@ def _attempt(provider: Provider, job_id: str, machines: list) -> tuple[str, str,
             {"result_json": result, "adapter_path": adapter})
 
 
-def run_job(job_id: str, provider: Provider | None = None) -> None:
+def run_job(job_id: str, provider: Provider | None = None,
+            limits: RunLimits | None = None) -> None:
     """Drive one job to a terminal state. Always tears down.
 
     The provider is injected so the whole path is testable; omit it and the
     real one is built, which is where a missing credential surfaces.
+
+    The limits are injected for the same reason, and they carry their own
+    clock: a fifteen-minute silence and a twenty-four-hour run are both things
+    the suite has to be able to reach, and it cannot reach them by waiting.
     """
+    limits = limits or RunLimits.from_config()
     owns_provider = provider is None
     if owns_provider:
         try:
@@ -369,10 +403,13 @@ def run_job(job_id: str, provider: Provider | None = None) -> None:
             return
 
     machines: list = []
-    started = time.time()
+    wall_started = time.time()
+    # The ceiling counts from here, not from when output starts: provisioning
+    # and waiting for SSH are part of a job's elapsed time.
+    started = limits.now()
     try:
         try:
-            outcome = _attempt(provider, job_id, machines)
+            outcome = _attempt(provider, job_id, machines, limits, started)
         except OrchestratorError as e:
             outcome = ("failed", str(e),
                        {"error_code": e.code, "error_message": str(e)})
@@ -386,7 +423,7 @@ def run_job(job_id: str, provider: Provider | None = None) -> None:
             for machine in machines:
                 _teardown(provider, job_id, machine)
             db.add_event(job_id, "log",
-                         f"Job finished in {time.time() - started:.0f}s")
+                         f"Job finished in {time.time() - wall_started:.0f}s")
 
         state, message, fields = outcome
         db.set_state(job_id, state, message, **fields)
@@ -395,7 +432,8 @@ def run_job(job_id: str, provider: Provider | None = None) -> None:
             provider.close()
 
 
-def launch(job_id: str, provider: Provider | None = None) -> None:
+def launch(job_id: str, provider: Provider | None = None,
+           limits: RunLimits | None = None) -> None:
     """Start a job on a background thread.
 
     A thread rather than Celery: one process is the whole deployment, and a
@@ -403,5 +441,5 @@ def launch(job_id: str, provider: Provider | None = None) -> None:
     -- a process restart orphans in-flight jobs, which `db.active_jobs()`
     surfaces at startup rather than hiding.
     """
-    threading.Thread(target=run_job, args=(job_id, provider), daemon=True,
-                     name=f"job-{job_id[:8]}").start()
+    threading.Thread(target=run_job, args=(job_id, provider, limits),
+                     daemon=True, name=f"job-{job_id[:8]}").start()

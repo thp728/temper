@@ -13,12 +13,19 @@ What it can be told to do, because these are the paths worth testing:
 * fail at any stage, with a chosen error code — or with an exception nobody
   anticipated;
 * fail the destroy call a chosen number of times, and go on being listed
-  afterwards.
+  afterwards;
+* go silent mid-stream without ending, which is what a wedged job looks like
+  from here and is not the same thing as a stream that stops.
+
+It ships with a clock for the same reason: the limits that catch a silent job
+are minutes and hours long, and a suite that waits for them is a suite nobody
+runs.
 """
 
 from __future__ import annotations
 
 import json
+import threading
 import time
 from typing import Iterator, Sequence
 
@@ -32,6 +39,28 @@ STAGES = ("select_gpu", "create", "await_ready", "push", "fetch", "stream")
 MACHINE_ID = 4242
 GPU = GpuChoice("L4", 41.31, "INR")
 
+# How long a hung stream stays hung. Long enough that no limit under test can
+# lose the race, short enough that a suite which somehow reaches it still ends.
+HANG_S = 10.0
+
+
+class FakeClock:
+    """Monotonic time under the test's control.
+
+    It advances a fixed step on every *reading* rather than per second, which
+    is what makes a stall test deterministic: the guard reads the clock exactly
+    once per iteration, so the step says how much simulated time one trip round
+    its loop costs, and the answer is the same on every machine.
+    """
+
+    def __init__(self, step: float = 0.0) -> None:
+        self.t = 0.0
+        self.step = step
+
+    def __call__(self) -> float:
+        self.t += self.step
+        return self.t
+
 
 class FakeProvider:
     def __init__(
@@ -43,6 +72,7 @@ class FakeProvider:
         fail_code: str = "training_failed",
         fail_unexpectedly: bool = False,
         stop_after: int | None = None,
+        hang_after: int | None = None,
         line_delay: float = 0.0,
         destroy_failures: int = 0,
         stays_listed: bool = False,
@@ -56,6 +86,7 @@ class FakeProvider:
         self._fail_code = fail_code
         self._fail_unexpectedly = fail_unexpectedly
         self._stop_after = stop_after
+        self._hang_after = hang_after
         self._line_delay = line_delay
         self._destroy_failures = destroy_failures
         self._stays_listed = stays_listed
@@ -100,6 +131,8 @@ class FakeProvider:
         emitted = self._lines
         if self._stop_after is not None:
             emitted = emitted[:self._stop_after]
+        if self._hang_after is not None:
+            emitted = emitted[:self._hang_after]
         for line in emitted:
             if self._line_delay:
                 # Real output arrives spread over minutes. A double that
@@ -107,6 +140,12 @@ class FakeProvider:
                 # channel is open or merely fast.
                 time.sleep(self._line_delay)
             yield line
+        if self._hang_after is not None:
+            # Silence, not an ending. A generator that returns tells its
+            # reader the run is over; a wedged machine tells it nothing, and
+            # only one of those two is what the stall detector exists for.
+            threading.Event().wait(HANG_S)
+            return
         if self._stop_after is not None or self._result is None:
             return
         yield "---RESULT---"
