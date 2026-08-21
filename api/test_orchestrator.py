@@ -62,20 +62,31 @@ class Harness:
                                                 limits=limits))
         return self._create(hyperparameters)
 
-    def run_on_a_thread(self, provider, hyperparameters=None) -> str:
+    def run_on_a_thread(self, provider, hyperparameters=None,
+                        limits=None) -> str:
         """Start the job and return while it is still going.
 
         The inline form above cannot answer this ticket's question: output that
         appears only once a job has finished is indistinguishable from output
         that appeared while it was working, unless the test reads mid-flight.
+        It is also the only form in which a job can be cancelled at all — a
+        request that cancels one has to arrive while it is running.
         """
         from api import orchestrator
 
         on_a_thread = orchestrator.launch      # before it is replaced below
         self._monkeypatch.setattr(
             orchestrator, "launch",
-            lambda job_id: on_a_thread(job_id, provider=provider))
+            lambda job_id: on_a_thread(job_id, provider=provider,
+                                       limits=limits))
         return self._create(hyperparameters)
+
+    def queued_job(self) -> str:
+        """A job created and never started, as one is between the two."""
+        from api import orchestrator
+
+        self._monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
+        return self._create()
 
     def _create(self, hyperparameters=None) -> str:
         path = self._tmp_path / "d.jsonl"
@@ -689,3 +700,247 @@ def test_the_transport_backstop_cannot_pre_empt_the_duration_ceiling(harness):
     from api import config, provider as provider_module
 
     assert provider_module._stream_timeout() > config.MAX_JOB_DURATION_S
+
+
+# --- cancellation: the user's own decision to stop --------------------------
+
+# The guard looks at the clock, the limits and the cancel flag once per trip
+# round its loop, and blocks for a poll interval in between. In production that
+# is a second; here it is small only so that these tests do not each spend one
+# proving something that has nothing to do with time.
+def responsive_limits() -> RunLimits:
+    return replace(RunLimits.from_config(), poll_interval_s=0.005)
+
+
+def cancel(harness, job_id):
+    return harness._client.post(f"/v1/jobs/{job_id}/cancel")
+
+
+def cancelled_at(harness, provider) -> dict:
+    """Run a job, cancel it where the provider is paused, read it back.
+
+    Paused rather than timed: a test that sleeps and hopes it caught the job
+    mid-flight passes on an idle machine and fails on a loaded one, and the
+    three points this exercises are minutes apart on a real run.
+    """
+    job_id = harness.run_on_a_thread(provider, limits=responsive_limits())
+    assert provider.wait_until_paused(), "the provider never reached its pause"
+    r = cancel(harness, job_id)
+    assert r.status_code == 200, r.text
+    provider.resume.set()
+    harness.poll_until_terminal(job_id)
+    return harness.job(job_id)
+
+
+def test_cancelling_before_a_machine_exists_stops_the_job_cleanly(harness):
+    """Cancellation is not a privilege of jobs that got as far as training."""
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            pause_at_stage="select_gpu")
+    job = cancelled_at(harness, provider)
+
+    assert job["status"] == "cancelled"
+    assert job["adapter_path"] is None
+    assert provider.created == [], "no machine should have been provisioned"
+    assert "destroy" not in provider.calls, "there was nothing to destroy"
+
+
+def test_cancelling_during_provisioning_destroys_the_machine(harness):
+    """The request lands inside the call that creates the machine.
+
+    Nothing is interruptible inside a provider call, so this is the case that
+    costs money: `create` runs to completion and hands back a machine that is
+    already unwanted. What must not happen is that machine outliving the
+    request, and the check at the next boundary is what stops it.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            pause_at_stage="create")
+    job = cancelled_at(harness, provider)
+
+    assert job["status"] == "cancelled"
+    assert provider.created, "the paused call still returned a machine"
+    assert provider.destroyed, "a cancelled job must not leave a machine billing"
+    assert job["adapter_path"] is None
+
+
+def test_cancelling_while_waiting_for_ssh_destroys_the_machine(harness):
+    """The longest wait before any output: minutes, with the machine billing.
+
+    Cancellation has to be available here, or it is unavailable during the
+    slowest part of a job that has not produced a single line yet.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            pause_at_stage="await_ready")
+    job = cancelled_at(harness, provider)
+
+    assert job["status"] == "cancelled"
+    assert job["machine_id"] == MACHINE_ID
+    assert provider.destroyed, "a cancelled job must not leave a machine billing"
+    assert "push" not in provider.calls, \
+        "a cancelled job does not go on setting itself up"
+
+
+def test_cancelling_during_the_image_build_destroys_the_machine(harness):
+    """Two lines in, the machine is building the image and nothing is trained."""
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            pause_at_line=2)
+    job = cancelled_at(harness, provider)
+
+    assert job["status"] == "cancelled"
+    assert provider.destroyed
+    assert job["adapter_path"] is None
+    assert "fetch" not in provider.calls, \
+        "nothing is retrieved from a cancelled job"
+    assert TRAINING_LINES[-1] not in harness.messages(job["id"]), \
+        "the job went on producing output after it was cancelled"
+
+
+def test_cancelling_during_training_destroys_the_machine(harness):
+    """Past the build, with the trainer talking and lines still to come.
+
+    Deliberately not the last line: a pause at the end of the scripted output
+    leaves the streaming loop one trip from finishing on its own, and a test
+    that cannot tell cancellation from arriving at the end proves nothing. The
+    final line never being logged is what says the job was abandoned.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES, pause_at_line=3)
+    job = cancelled_at(harness, provider)
+
+    assert job["status"] == "cancelled"
+    assert provider.destroyed
+    assert job["adapter_path"] is None
+    assert job["result"] is None, \
+        "a cancelled job has no result document to report"
+    assert TRAINING_LINES[-1] not in harness.messages(job["id"])
+
+
+def test_cancelling_while_the_adapter_is_being_retrieved_produces_none(harness):
+    """The last window in which an adapter could still appear.
+
+    Training is over, and packaging is a download from a machine that is still
+    billing — so `packaging` is a state a cancellation genuinely arrives in. A
+    request answered with "no adapter will be produced" that then produced one
+    would be the worst thing this path could tell a user, so what was already
+    fetched is discarded rather than kept.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES,
+                            pause_at_stage="fetch")
+    job = cancelled_at(harness, provider)
+
+    assert job["status"] == "cancelled"
+    assert job["adapter_path"] is None
+    assert provider.destroyed
+    assert not list((harness._tmp_path / "artifacts").rglob("*.safetensors")), \
+        "a cancelled job left an adapter on disk"
+
+
+def test_a_cancelled_job_is_not_recorded_as_a_failure(harness):
+    """The user's own decision is not a defect, and must not read as one."""
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            pause_at_line=2)
+    job = cancelled_at(harness, provider)
+
+    assert job["status"] == "cancelled"
+    assert job["error_code"] is None
+    assert job["error_message"] is None
+
+
+def test_the_teardown_confirmation_precedes_a_cancelled_job_ending(harness):
+    """The same ordering guarantee as every other terminal outcome.
+
+    A user who cancels is the one most likely to stop reading the moment the
+    job says it is over, and the most likely to want proof billing stopped.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            pause_at_line=2)
+    job_id = harness.run_on_a_thread(provider, limits=responsive_limits())
+    assert provider.wait_until_paused()
+    cancel(harness, job_id)
+    provider.resume.set()
+    harness.poll_until_terminal(job_id)
+
+    events = harness.events(job_id)
+    destroyed = index_of(events, lambda e: "destroyed" in (e["message"] or ""))
+    assert destroyed < terminal_index(events)
+
+
+def test_cancelling_says_plainly_that_no_adapter_will_be_produced(harness):
+    """The consequence is stated where it is chosen, not discovered later.
+
+    Cancellation is destructive by decision: a partially trained adapter handed
+    to someone who asked to stop invites them to mistake it for a finished
+    model. Saying so is what makes that defensible rather than surprising.
+    """
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            pause_at_line=2)
+    job_id = harness.run_on_a_thread(provider, limits=responsive_limits())
+    assert provider.wait_until_paused()
+
+    body = cancel(harness, job_id).json()
+    assert "no adapter" in body["message"].lower()
+    assert body["cancel_requested"] is True
+    assert body["status"] in ("queued", "provisioning", "preparing",
+                              "training", "cancelled")
+
+    provider.resume.set()
+    harness.poll_until_terminal(job_id)
+
+
+def test_cancelling_twice_succeeds_quietly(harness):
+    """A double-clicked button is not an error condition."""
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            pause_at_line=2)
+    job_id = harness.run_on_a_thread(provider, limits=responsive_limits())
+    assert provider.wait_until_paused()
+
+    first, second = cancel(harness, job_id), cancel(harness, job_id)
+    assert first.status_code == second.status_code == 200
+    assert second.json()["cancel_requested"] is True
+
+    provider.resume.set()
+    harness.poll_until_terminal(job_id)
+    assert harness.job(job_id)["status"] == "cancelled"
+    # The request is idempotent; its record is not repeated either.
+    requests = [e for e in harness.events(job_id)
+                if "Cancellation requested" in (e["message"] or "")]
+    assert len(requests) == 1
+
+
+def test_cancelling_a_finished_job_is_refused_with_a_stable_code(harness):
+    """Nothing was undone, and the refusal says so in a code, not in prose."""
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT,
+                            adapter_bytes=ADAPTER_BYTES)
+    job_id = harness.run(provider)
+    assert harness.job(job_id)["status"] == "complete"
+
+    r = cancel(harness, job_id)
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "job_already_terminal"
+
+    job = harness.job(job_id)
+    assert job["status"] == "complete"
+    assert job["adapter_path"], \
+        "a refused cancellation must not have touched the finished job"
+
+
+def test_cancelling_an_unknown_job_is_a_404(harness):
+    assert cancel(harness, "job_nosuchthing").status_code == 404
+
+
+def test_a_job_cancelled_before_it_starts_never_provisions_anything(harness):
+    """The flag is honoured before the provider is even built.
+
+    A job sitting in `queued` behind a thread that has not started is the one
+    moment at which cancelling could plausibly still cost money.
+    """
+    from api import db, orchestrator
+
+    provider = FakeProvider(lines=TRAINING_LINES, result=RESULT)
+    job_id = harness.queued_job()
+    assert db.request_cancel(job_id) == "accepted"
+    orchestrator.run_job(job_id, provider=provider, limits=responsive_limits())
+
+    job = db.get_job(job_id)
+    assert job["status"] == "cancelled"
+    assert provider.calls == [], "a cancelled job touched the provider"

@@ -170,6 +170,36 @@ def get_job(job_id: str):
     return job
 
 
+@app.post("/v1/jobs/{job_id}/cancel", tags=["jobs"])
+def cancel_job(job_id: str):
+    """Ask a running job to stop. Destructive, and says so.
+
+    The request records the user's decision; the thread running the job sees it
+    within a poll interval, destroys the machine and ends the job `cancelled`.
+    So this returns the state the job is in *now*, which is usually still a
+    working one — reporting `cancelled` here would claim a teardown that has
+    not happened yet, and teardown is the whole point of cancelling.
+
+    Repeating it succeeds quietly: a double-clicked button is not an error.
+    Cancelling a job that has already ended is refused with a stable code,
+    because nothing was undone and the user should not think otherwise.
+    """
+    outcome = db.request_cancel(job_id, note=orchestrator.CANCEL_ACK)
+    if outcome == "missing":
+        raise HTTPException(404, "No such job.")
+    if outcome == "terminal":
+        job = db.get_job(job_id)
+        raise HTTPException(409, {
+            "code": "job_already_terminal",
+            "message": f"Job is already '{job['status']}'; there is nothing to "
+                       f"cancel and nothing has been undone.",
+            "status": job["status"],
+        })
+    job = db.get_job(job_id)
+    return {"id": job_id, "status": job["status"], "cancel_requested": True,
+            "message": orchestrator.CANCEL_ACK}
+
+
 @app.get("/v1/jobs/{job_id}/events", tags=["jobs"])
 def get_events(job_id: str, after: int = 0):
     """Durable event log. `after` is the last event id the client holds.

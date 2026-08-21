@@ -33,6 +33,7 @@ repository becomes public at submission.
 | --- | --- | --- | --- |
 | [0001](0001-event-channel-over-ssh-stdout.md) | The event channel is the machine's stdout, pulled over SSH | accepted | 2026-08-21 |
 | [0002](0002-stall-detection-and-a-duration-ceiling.md) | A stalled job and an over-long job are stopped separately, and named separately | accepted | 2026-08-21 |
+| [0003](0003-cancellation-is-destructive.md) | Cancelling destroys the machine, produces no adapter, and is not a failure | accepted | 2026-08-21 |
 
 ## Format
 

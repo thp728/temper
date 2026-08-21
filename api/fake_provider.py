@@ -15,7 +15,12 @@ What it can be told to do, because these are the paths worth testing:
 * fail the destroy call a chosen number of times, and go on being listed
   afterwards;
 * go silent mid-stream without ending, which is what a stalled job looks like
-  from here and is not the same thing as a stream that stops.
+  from here and is not the same thing as a stream that stops;
+* hold still at a named stage or after a chosen number of lines, so that a
+  test can act on a job at a known point in its run rather than sleeping and
+  hoping — the difference between cancelling during the image build and
+  cancelling during training is minutes on a real machine and microseconds
+  here, and only a pause makes the two distinguishable.
 
 It ships with a clock for the same reason: the limits that catch a silent job
 are minutes and hours long, and a suite that waits for them is a suite nobody
@@ -43,6 +48,12 @@ GPU = GpuChoice("L4", 41.31, "INR")
 # How long a silent stream stays silent. Long enough that no limit under test
 # can lose the race, short enough that a suite which somehow reaches it ends.
 SILENCE_S = 10.0
+
+# How long a pause waits to be released, and how long a test waits to reach
+# one. Both are ceilings on a wait that normally ends in microseconds: they
+# exist so that a mistake in a test fails it rather than hanging the suite.
+PAUSE_S = 10.0
+REACH_S = 5.0
 
 
 class FakeClock:
@@ -94,9 +105,13 @@ class FakeProvider:
         destroy_failures: int = 0,
         stays_listed: bool = False,
         adapter_bytes: bytes = b"weights",
+        pause_at_stage: str | None = None,
+        pause_at_line: int | None = None,
     ) -> None:
         if fail_at is not None and fail_at not in STAGES:
             raise ValueError(f"unknown stage {fail_at!r}")
+        if pause_at_stage is not None and pause_at_stage not in STAGES:
+            raise ValueError(f"unknown stage {pause_at_stage!r}")
         self._lines = list(lines)
         self._result = result
         self._fail_at = fail_at
@@ -108,6 +123,16 @@ class FakeProvider:
         self._destroy_failures = destroy_failures
         self._stays_listed = stays_listed
         self._adapter_bytes = adapter_bytes
+        self._pause_at_stage = pause_at_stage
+        self._pause_at_line = pause_at_line
+
+        # A pause the test drives: `paused` is set when the job reaches the
+        # chosen point, and it stays there until the test sets `resume`. The
+        # job's own thread is the one held, so whatever the test does in
+        # between happens at a known point in the run rather than a hoped-for
+        # one.
+        self.paused = threading.Event()
+        self.resume = threading.Event()
 
         # Observable afterwards.
         self.calls: list[str] = []
@@ -150,13 +175,15 @@ class FakeProvider:
         # not, and that difference is the whole point of having both.
         cut = self._stop_after if self._stop_after is not None else self._silent_after
         emitted = self._lines[:cut] if cut is not None else self._lines
-        for line in emitted:
+        for n, line in enumerate(emitted, start=1):
             if self._line_delay:
                 # Real output arrives spread over minutes. A double that
                 # emits everything in one instant cannot show whether the
                 # channel is open or merely fast.
                 time.sleep(self._line_delay)
             yield line
+            if n == self._pause_at_line:
+                self._hold()
         if self._silent_after is not None:
             # Silence, not an ending. A generator that returns tells its reader
             # the run is over; a stalled machine tells it nothing, and only one
@@ -184,10 +211,27 @@ class FakeProvider:
     def close(self) -> None:
         self.closed = True
 
+    # -- the test's grip on a running job -----------------------------------
+
+    def wait_until_paused(self, timeout: float = REACH_S) -> bool:
+        """Block until the job reaches its pause. False if it never did."""
+        return self.paused.wait(timeout)
+
     # -- internals ----------------------------------------------------------
+
+    def _hold(self) -> None:
+        """Stop here until the test lets go, then carry on as if nothing did.
+
+        Bounded rather than indefinite: a test that forgets to release the
+        pause should fail on its own assertions, not wedge the suite.
+        """
+        self.paused.set()
+        self.resume.wait(PAUSE_S)
 
     def _enter(self, stage: str) -> None:
         self.calls.append(stage)
+        if stage == self._pause_at_stage:
+            self._hold()
         if stage != self._fail_at:
             return
         if self._fail_unexpectedly:

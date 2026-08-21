@@ -142,3 +142,61 @@ def test_a_limit_that_cannot_be_honoured_stops_the_process(monkeypatch, raw):
     monkeypatch.setenv("TEMPER_STALL_TIMEOUT_S", raw)
     with pytest.raises(ValueError, match="TEMPER_STALL_TIMEOUT_S"):
         config._seconds("TEMPER_STALL_TIMEOUT_S", 900)
+
+
+# --- the check hook: somewhere for a decision that is not a limit -----------
+
+def test_the_check_runs_on_every_iteration_and_can_stop_the_stream():
+    """The guard's loop is where anything that wants to interrupt a run looks.
+
+    It is the only code running while a job trains, so cancellation borrows it
+    rather than growing a second loop beside it. The guard stays ignorant of
+    what the check means: it raises, and whoever supplied it decides what the
+    job's outcome is.
+    """
+    class Stop(Exception):
+        pass
+
+    calls = []
+
+    def check():
+        calls.append(len(calls))
+        if len(calls) > 2:
+            raise Stop()
+
+    with pytest.raises(Stop):
+        list(guard(iter(["one", "two", "three", "four"]),
+                   simulated_limits(step=1.0), check=check))
+    assert len(calls) == 3, "the check is asked once per trip round the loop"
+
+
+def test_the_check_is_heard_even_when_no_output_is_arriving():
+    """A cancelled job that has gone quiet must still stop promptly.
+
+    This is the case that decides where the check belongs. Asking once per
+    arriving line would mean a wedged machine could not be cancelled at all --
+    the request would wait out the stall timeout on a billing GPU, which is
+    the exact bill cancelling exists to stop.
+    """
+    release = threading.Event()
+
+    def goes_quiet():
+        yield "training started"
+        release.wait(30)          # never set: the check must fire first
+
+    class Stop(Exception):
+        pass
+
+    seen = []
+
+    def check():
+        seen.append(1)
+        if len(seen) > 3:
+            raise Stop()
+
+    # A stall budget far beyond anything this test reaches, so the only thing
+    # that can end it is the check.
+    with pytest.raises(Stop):
+        list(guard(goes_quiet(),
+                   simulated_limits(step=1.0, stall=90000.0), check=check))
+    release.set()

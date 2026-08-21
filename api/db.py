@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- Frozen at creation. The run spec is immutable after launch.
     hyperparams_json TEXT NOT NULL,
     status        TEXT NOT NULL,
+    -- The user has asked for this job to stop. Set by a request, read by the
+    -- thread running the job: the two are not in the same call stack, and a
+    -- row is the one place both can see.
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
     created_at    REAL NOT NULL,
     started_at    REAL,
     finished_at   REAL,
@@ -105,9 +109,25 @@ def connect():
         conn.close()
 
 
+# Columns added after a database already existed somewhere. `CREATE TABLE IF
+# NOT EXISTS` is a no-op against a table that is already there, so a column
+# added to SCHEMA alone would exist on a fresh machine and be missing on the
+# one that has been running all week — and the failure would be a stray
+# `no such column` from inside a request handler. Alembic does this properly in
+# Phase B; until then, four lines beat a silent divergence.
+ADDED_COLUMNS = (
+    ("jobs", "cancel_requested", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
 def init() -> None:
     with connect() as c:
         c.executescript(SCHEMA)
+        for table, column, decl in ADDED_COLUMNS:
+            present = {r["name"] for r in
+                       c.execute(f"PRAGMA table_info({table})").fetchall()}
+            if column not in present:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 # --------------------------------------------------------------------------
@@ -186,6 +206,56 @@ def set_state(job_id: str, state: str, message: str | None = None, **fields) -> 
     with connect() as c:
         c.execute(f"UPDATE jobs SET {', '.join(cols)} WHERE id=?", vals)
         _append_event(c, job_id, "state", message or state)
+
+
+def request_cancel(job_id: str, note: str = "Cancellation requested") -> str:
+    """Ask a job to stop. Says what it found, and never raises for it.
+
+    Returns one of `accepted`, `already_cancelling`, `terminal` or `missing`.
+    Strings rather than exceptions because none of the four is exceptional —
+    they are the four honest answers to the request, and each maps to a
+    different thing to tell the user.
+
+    The read and the write are one transaction, so a job that reaches a
+    terminal state between them cannot be flagged after the fact: the
+    orchestrator would have stopped looking at the flag by then, and the row
+    would claim a cancellation that will never happen.
+
+    `note` is the event recorded against the job. It is the caller's words on
+    purpose: the same sentence is what the request answers with, and one string
+    said in both places is what stops the button and the run's own history from
+    drifting apart.
+
+    The event is written only on the transition. Cancelling is idempotent, and
+    a second request that appended a second "cancellation requested" would make
+    a double-clicked button look like two decisions in the job's own history.
+    """
+    with connect() as c:
+        row = c.execute(
+            "SELECT status, cancel_requested FROM jobs WHERE id=?",
+            (job_id,)).fetchone()
+        if row is None:
+            return "missing"
+        if row["status"] in TERMINAL_STATES:
+            return "terminal"
+        if row["cancel_requested"]:
+            return "already_cancelling"
+        c.execute("UPDATE jobs SET cancel_requested=1 WHERE id=?", (job_id,))
+        _append_event(c, job_id, "log", note)
+    return "accepted"
+
+
+def cancel_requested(job_id: str) -> bool:
+    """Whether the user has asked this job to stop.
+
+    Read from the row on every check rather than cached: the request arrives on
+    a different thread than the one running the job, and a value read once at
+    the start is a value that can never say yes.
+    """
+    with connect() as c:
+        row = c.execute("SELECT cancel_requested FROM jobs WHERE id=?",
+                        (job_id,)).fetchone()
+    return bool(row and row["cancel_requested"])
 
 
 def add_event(job_id: str, kind: str, message: str, data: dict | None = None) -> None:

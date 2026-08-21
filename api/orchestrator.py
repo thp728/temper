@@ -8,7 +8,7 @@ Everything that touches the compute provider goes through the injected
 exercised with a fake and no GPU. The default is the real one, so callers that
 do not care about testing pass nothing.
 
-Four properties of this path, three of them carried over from the spikes and
+Five properties of this path, three of them carried over from the spikes and
 each learned the expensive way:
 
 * **Teardown runs in `finally`, then is independently confirmed** by listing
@@ -26,6 +26,12 @@ each learned the expensive way:
   machine, not a cap on what a user may legitimately train, and they replace a
   single wall-clock constant that no code path ever read — a control that looks
   implemented and is not is worse than none at all.
+* **Cancellation is destructive, and is checked where it can be honoured.**
+  The user's request sets a flag on the job row; this path reads it at every
+  boundary between stages and on every trip round the streaming loop, then
+  destroys the machine and produces no adapter. Handing back a half-trained
+  adapter would invite the user to mistake it for a finished model. The
+  outcome is `cancelled`, never `failed` -- a decision is not a defect.
 * **The trainer publishes no ports.** `ufw` does not filter Docker-published
   ports and a `DOCKER-USER` rule on the published port never matches, because
   the packet is already DNAT'd. Not publishing is the mitigation that works.
@@ -36,13 +42,14 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import shutil
 import tarfile
 import threading
 import time
 from pathlib import Path
 
 from . import catalog, db, events
-from .errors import OrchestratorError
+from .errors import Cancelled, OrchestratorError
 from .limits import RunLimits, guard
 from .provider import Provider, new_provider
 
@@ -78,6 +85,20 @@ NO_RESULT = json.dumps({
 RESULT_MARKER = "---RESULT---"
 DESTROY_ATTEMPTS = 3
 DESTROY_RETRY_DELAY_S = 5
+
+# Cancellation says the same thing twice, at the two moments a user is
+# listening. The acknowledgement is one string used both as the API's answer
+# and as the event recorded against the job, so what the button said and what
+# the run's own history says cannot drift apart.
+#
+# It promises nothing it has not done: the machine is *being* destroyed, not
+# destroyed, because the destroy call can fail and the stray-machine path is
+# real. The confirmation is a separate event, and it arrives before the job
+# reports that it is over.
+CANCEL_ACK = (
+    "Cancellation requested. The machine is being destroyed and no adapter "
+    "will be produced.")
+CANCEL_MESSAGE = "Cancelled at your request. No adapter was produced."
 
 
 def _trainer_tarball() -> bytes:
@@ -273,6 +294,22 @@ def _fetch_adapter(provider: Provider, machine, job_id: str,
     return str(local)
 
 
+def _discard_if_cancelled(job_id: str, check) -> None:
+    """Throw away an adapter that arrived after the user asked to stop.
+
+    The alternative -- keeping it, since it is trained and paid for -- would
+    mean the answer a user got when they clicked depended on how many seconds
+    the download took, which is the one thing about their own decision they
+    cannot see. Cancellation is destructive by decision (ADR-0003), and a
+    decision that holds only outside a race is not one.
+    """
+    try:
+        check()
+    except Cancelled:
+        shutil.rmtree(ARTIFACTS / job_id, ignore_errors=True)
+        raise
+
+
 def _teardown(provider: Provider, job_id: str, machine) -> None:
     """Destroy the machine, then confirm it independently.
 
@@ -318,6 +355,21 @@ def _stall_reporter(job_id: str, limits: RunLimits):
     return reset
 
 
+def _cancellation_check(job_id: str):
+    """A callable that raises the moment the user has asked this job to stop.
+
+    Shaped as a check rather than a signal because the request and the run are
+    on different threads and nothing connects them but the row: the job asks,
+    it is not told. Cheap enough to ask often — one indexed read by primary key
+    against a local file, once per stage boundary and once per trip round the
+    streaming loop.
+    """
+    def check() -> None:
+        if db.cancel_requested(job_id):
+            raise Cancelled(CANCEL_MESSAGE)
+    return check
+
+
 def _attempt(provider: Provider, job_id: str, machines: list,
              limits: RunLimits) -> tuple[str, str, dict]:
     """Do the work. Returns the terminal state to record, but never records it.
@@ -335,9 +387,17 @@ def _attempt(provider: Provider, job_id: str, machines: list,
     model = catalog.get(job["base_model"]) or catalog.get(catalog.DEFAULT_MODEL)
     enable_thinking = bool(dataset.get("enable_thinking"))
 
+    # Checked at every boundary between stages, for the same reason the
+    # duration ceiling is: inside a provider call nothing is interruptible, so
+    # the boundaries are where a request to stop can actually be honoured. The
+    # cheapest place to notice one is before the machine exists at all.
+    cancelled = _cancellation_check(job_id)
+
+    cancelled()
     limits.check_duration()
     db.set_state(job_id, "provisioning", "Selecting a GPU")
     gpu = provider.select_gpu(GPU_PREFERENCE)
+    cancelled()
     db.set_state(job_id, "provisioning",
                  f"Provisioning {gpu.gpu_type} at "
                  f"{gpu.price_per_hour}{gpu.currency}/hr",
@@ -350,13 +410,16 @@ def _attempt(provider: Provider, job_id: str, machines: list,
                  f"Machine {machine.machine_id} running; waiting for SSH",
                  machine_id=machine.machine_id)
 
+    cancelled()
     db.add_event(job_id, "log", provider.await_ready(machine))
+    cancelled()
     provider.push(machine, _trainer_tarball(), TRAINER_TARBALL)
 
     # Checked between stages as well as inside the stream: the guard below can
     # only notice the ceiling while lines are arriving, and everything above
     # this line happened before any line existed.
     limits.check_duration()
+    cancelled()
 
     db.set_state(job_id, "training", "Building image and training")
     ds_path = Path(dataset["path"])
@@ -364,7 +427,7 @@ def _attempt(provider: Provider, job_id: str, machines: list,
     # The guard sits between the transport and the reader, so both limits hold
     # for any provider rather than for the SSH one only.
     lines = guard(provider.stream(machine, script), limits,
-                  on_reset=_stall_reporter(job_id, limits))
+                  on_reset=_stall_reporter(job_id, limits), check=cancelled)
     result = _consume(job_id, lines)
     if not result.get("ok"):
         # The result document names its own failure where it can. A stage that
@@ -374,8 +437,15 @@ def _attempt(provider: Provider, job_id: str, machines: list,
             result.get("error_code") or "training_failed",
             result.get("error") or "Training did not complete.")
 
+    # Cancellation is honoured to the last moment an adapter could appear, not
+    # only while the stream is open. Packaging is not instantaneous -- it is a
+    # download from a machine that is still billing -- and a request answered
+    # with "no adapter will be produced" that then produced one would be the
+    # single worst thing this path could tell a user.
+    cancelled()
     db.set_state(job_id, "packaging", "Retrieving adapter")
     adapter = _fetch_adapter(provider, machine, job_id, result)
+    _discard_if_cancelled(job_id, cancelled)
     return ("complete", "Training complete",
             {"result_json": result, "adapter_path": adapter})
 
@@ -394,6 +464,15 @@ def run_job(job_id: str, provider: Provider | None = None,
     # Stamped here, so the ceiling counts from the moment the job began rather
     # than from the moment output started.
     limits = (limits or RunLimits.from_config()).start()
+
+    # Before the provider is even built. A job cancelled while it sat in
+    # `queued` -- which is where it is between the request that created it and
+    # the thread that picks it up -- should cost nothing at all, and building a
+    # client is the first thing on this path that can talk to the account.
+    if db.cancel_requested(job_id):
+        db.set_state(job_id, "cancelled", CANCEL_MESSAGE)
+        return
+
     owns_provider = provider is None
     if owns_provider:
         try:
@@ -415,6 +494,11 @@ def run_job(job_id: str, provider: Provider | None = None,
     try:
         try:
             outcome = _attempt(provider, job_id, machines, limits)
+        except Cancelled as e:
+            # No error code and no error message: the user's own decision is
+            # not a defect, and a `cancelled` job carrying an error code would
+            # be read as one by every client that branches on codes.
+            outcome = ("cancelled", str(e), {})
         except OrchestratorError as e:
             outcome = ("failed", str(e),
                        {"error_code": e.code, "error_message": str(e)})

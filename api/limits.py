@@ -113,8 +113,18 @@ class RunLimits:
 
 
 def guard(source: Iterator[str], limits: RunLimits,
-          on_reset: Callable[[float], None] | None = None) -> Iterator[str]:
+          on_reset: Callable[[float], None] | None = None,
+          check: Callable[[], None] | None = None) -> Iterator[str]:
     """Yield lines from `source`, refusing to wait forever for the next one.
+
+    `check` is called once per iteration and may raise to abandon the run. It
+    is how cancellation gets a hearing: this loop is the only thing running
+    while a job trains, and it comes round whether or not a line arrived, so a
+    request to stop is noticed within a poll interval even on a silent stream.
+    The guard does not know what the check is for — it does not import the
+    database, and it does not decide what stopping means. That keeps the two
+    limits here and the user's decision elsewhere, which is right, because one
+    of the three ends the job `failed` and the other does not.
 
     The two limits are measured from different origins on purpose. The ceiling
     counts from when the *job* began, because provisioning and waiting for SSH
@@ -149,6 +159,10 @@ def guard(source: Iterator[str], limits: RunLimits,
     last_line = limits.now()
 
     while True:
+        # First, because a user who has asked to stop is owed that answer
+        # before the machine is given another poll interval to bill for.
+        if check is not None:
+            check()
         # Read exactly once per iteration: every check below is answering a
         # question about the same instant, and a clock read twice is a clock
         # that can move between two halves of one decision.
