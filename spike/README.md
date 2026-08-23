@@ -195,10 +195,504 @@ Attempts 1 and 2 reported *"ssh ready — no answer within 240s"*. I logged that
 2. Log any forced decision in [decisions.md](../decisions.md) — **the same evening**, per the brief's standard that reasoning gets recorded, not reconstructed.
 3. Record the measured boot time. It feeds the duration estimate in the quote, which is the product's differentiator, and a guessed boot time makes the quote wrong from day one.
 
+---
+
+# Phase B spikes — 2026-08-23
+
+Spec: [`docs/specs/004-phase-b-spikes.md`](../docs/specs/004-phase-b-spikes.md).
+Issues [#16](https://github.com/thp728/temper/issues/16)–[#20](https://github.com/thp728/temper/issues/20).
+
+Phase B's scope changed shape on 2026-08-23: the catalog stops being two dense
+models and becomes anything the provider can hold, multi-GPU and full
+fine-tuning move from cut to in, and the hyperparameter surface becomes whatever
+the pinned Axolotl accepts. **Every one of those rested on a number nobody had
+measured.** These five spikes take the measurements before the tickets assume
+them.
+
+Unlike spikes 1–4, **their findings files are committed** — see the negations in
+[`.gitignore`](../.gitignore). The spike directory is the evidence base, and a
+finding that exists only in a terminal scrollback is not evidence. None of the
+five records a credential or a balance; spike 8 deliberately records that the
+balance was *readable* and withholds the figure.
+
+| # | Question | GPU | Answer |
+| --- | --- | --- | --- |
+| 5 | How much disk, and how fast do weights arrive? | yes | **7200 GB ceiling, 364 MB/s.** 70B is not disk-bound |
+| 6 | Does the pinned image see 2 GPUs, and does FSDP run? | yes | **shards, checkpoints and resumes — and the loss is `nan`** |
+| 7 | How wide is Axolotl's config schema? | no | **388 fields, and only 12% of its constraints are in the schema** |
+| 8 | What does the SDK actually expose? | no | **pause exists.** ADR-0003 flagged for reopening |
+| 9 | How fast does validation stream? | no | **file x20 -> memory x1.14**, and token counting must split off |
+
+**What they produced beyond the findings:**
+[ADR-0009](../docs/adr/0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md)
+(supersedes ADR-0004's property 2, on spike 5 and 6's measured sizes),
+a correction to [ADR-0005](../docs/adr/0005-the-dataset-size-limit-is-derived-from-measured-memory.md)
+(4.8x was measured again as 5.93x), and a reopening flag on
+[ADR-0003](../docs/adr/0003-cancellation-is-destructive.md) (the provider can pause).
+
+## Spike 5 — disk and download throughput
+
+`spike5.py` + `bootstrap5.sh` → [`findings-spike5.json`](findings-spike5.json).
+Two runs, a few rupees. **The kill criterion did not fire.**
+
+| Question | Answer |
+| --- | --- |
+| Storage ceiling | **7200 GB** — and the platform *names it*: requesting 8000 returns `hdd: ensure this value is less than or equal to 7200` |
+| Ceiling honoured? | ✅ 4000 GB requested, **3877 GiB usable**, writable at **149 MB/s** |
+| Is storage inside the GPU-hour? | ❌ **No.** The L4 rate stayed at ₹41.31/hr with a 40× larger disk |
+| Download rate | ✅ Qwen3-8B, **16.4 GB in 45s = 364 MB/s**, 2.7s per GB |
+| Steady or bursty? | ⚠️ **Bursty** — window rates 0–730 MB/s, CoV 0.59 |
+| Teardown | ✅ destroyed first attempt, absent in 3 consecutive listings |
+
+**The ceiling is measured, not bisected.** The spec said to *"bisect to find
+what is"* accepted. No bisect was needed: the platform names its own bound in
+the refusal, which is a better answer than the largest value a ladder happened
+to try. The first version of this finding recorded *"between 4000 GB and 8000
+GB"* — bracketing from the ladder while the exact figure sat in the rejection
+text the same run had already stored. Corrected in `findings-spike5.json`, with
+the correction kept.
+
+**The ceiling is not the constraint anybody expected.** Planning assumed the
+100 GB VM floor was close to the ceiling and that 70B might not fit. It is 72×
+the floor. **70B full fine-tuning is not disk-bound on this provider**, and the
+catalog claim stands without a caveat about disk.
+
+**The download rate is 7–30× better than the range the spec was reasoning
+about.** The spec's own framing was *"at 200 MB/s that is 12 minutes; at
+50 MB/s it is 47"*, and the whole `preparing` ETA hung on which. Measured at
+364 MB/s, **a 141 GB 70B model arrives in about 6 minutes** — so the preparing
+phase is not the dominant term in the quote, and the trainer image pull
+(87–183s, measured in spike 4) is now comparable to it.
+
+⚠️ **Two things that number is not.** It is a **floor**: `hf_transfer` was
+deliberately left off, because the trainer image does not use it and quoting a
+rate the product does not take would be dishonest. And it is **one region, one
+repo, one time of day** — a range, not a promise.
+
+⚠️ **Bursty matters more than the mean.** Windows ranged from 0 to 730 MB/s
+over a 45-second download. A live ETA computed from a 30-second window will
+oscillate badly. The quote must smooth it or show a range; it must not show a
+number that jumps.
+
+### What the first run got wrong
+
+Two of my own bugs, both worth keeping:
+
+- **`pip3: command not found`.** The download step never ran. A `--vm` instance
+  has `python3` and no `pip3`, and spike 1's note (*"Python 3.10.12 and git
+  present, no `uv`"*) never checked for pip. `bootstrap5.sh` now resolves it in
+  three steps — binary, module, `apt-get` — and puts `~/.local/bin` on PATH,
+  because that is where the console script lands and it is not on a non-login
+  PATH.
+- **An inverted verdict.** The first version recorded
+  `storage_billed_in_the_gpu_rate: true` *because the rate did not move* —
+  which is exactly backwards. A rate that ignores disk size means storage is
+  billed **separately**, and a quote derived only from GPU-hours understates a
+  large-disk job. The field is now named
+  `storage_billed_separately_from_the_gpu_hour`.
+
+And one unit conflation: the platform's "4000" is decimal GB, `df`'s "3877G" is
+GiB. Both are recorded now, because reporting one alone reads as a discrepancy.
+
+## Spike 6 — two devices and sharded training
+
+`spike6.py` + `bootstrap6.sh` → [`findings-spike6.json`](findings-spike6.json).
+Three runs on 2× L4 at ~₹82/hr, about ₹20 in total. Two of the three failed on
+my own tooling, and both failures are kept below because each one very nearly
+became a wrong finding about the platform.
+
+**The verdict is split, and the split is the point.**
+
+| Claim | Result |
+| --- | --- |
+| 1. `num_gpus=2` attaches two devices | ✅ 2× NVIDIA L4 on the host |
+| 2. **The pinned image sees both** | ✅ `torch.cuda.device_count() == 2` in the container |
+| 3a. FSDP FULL_SHARD shards and steps | ✅ 3 of 3 steps, `rc=0`, on Qwen3-0.6B |
+| 3b. Checkpoint format | ✅ **`torch.distributed.checkpoint` — `.distcp` shards** |
+| 3c. **Sharded resume** | ✅ **resumed to step 4, `rc=0`** |
+| 3d. **Did it actually train?** | ❌ **loss `12.16 → 0 → 0`, `grad_norm: nan` on every step** |
+
+Claim 2 was the one with no evidence at all — the image was built and
+digest-locked before multi-GPU was in scope, so nothing asserted the toolkit
+passed more than one device through. It does.
+
+Claim 3c was the one expected to fail. Sharded checkpoints are a format this
+product has never written, and resume is proven at single-GPU (spike 4) with no
+reason to carry over. **It carried over.**
+
+### 🚨 Taking steps is not training
+
+In **both** model cases the loss starts plausible and collapses to zero on step
+2, with `grad_norm: nan` reported on every step including the first.
+
+**I nearly shipped this as "capstone is a go."** The first version of the
+interpretation asked only whether the step counter moved and whether a
+checkpoint appeared — and a run that shards correctly, steps, checkpoints,
+resumes, and learns nothing passes that test completely. The check now asks
+about the loss, and the verdict reads: *the mechanism works and the numerics do
+not.*
+
+**The 8B full-FT capstone does not go on the calendar on this evidence.** A
+sharded run that produces a plausible-looking artifact from garbage weights is a
+*more* expensive failure than one that will not launch, because it produces an
+artifact — and nothing downstream would catch it. The `nan` gets explained
+first.
+
+Three candidates, none of them tested here, and recorded as candidates rather
+than as a cause: bf16 with FSDP2 and gradient checkpointing; the synthetic
+dataset carrying only ~28 trainable tokens per step under assistant-only loss
+masking; or `flash_attention: false` forcing an eager attention path.
+
+### The numbers the predictor did not have
+
+**Peak VRAM per device, measured from `nvidia-smi` during training** — the
+predictor's sharding arithmetic had zero real anchors and now has two:
+
+| Model | Peak per device | Of 23,034 MiB |
+| --- | --- | --- |
+| Qwen3-0.6B full FT | **4,678 MiB** | 20% |
+| Qwen3-4B full FT | **21,162 MiB** | **92%** |
+
+The 4B case did not complete, and that is a **capacity** result rather than a
+mechanism one — the small case had proved the mechanism on the same machine
+minutes earlier. **48 GB across two cards is not enough for a 4B full fine-tune
+with `adamw_torch`.** Running two models exists precisely so those two failures
+cannot be confused; the earlier single-model runs could not tell them apart.
+
+**Sharded checkpoints are large.** 3.9 GB for 0.6B and 13.6 GB for 4B — the
+optimiser state is two thirds of it. Extrapolated (and marked as extrapolated),
+a 70B sharded checkpoint is in the hundreds of GB, which is a question for
+ADR-0004's transport rules and not only for the disk ceiling.
+
+### Two failures that were mine, not the platform's
+
+**Run 1 — `permission denied ... /var/run/docker.sock`.** Recorded as *"FSDP
+does not run in the pinned image"*. The probe had never reached the image. The
+`ubuntu` user on a `--vm` instance is not in the `docker` group, and
+[bootstrap4.sh](bootstrap4.sh) already used `sudo docker` — the knowledge simply
+did not carry over. **This is correction C16 repeating: a tooling failure filed
+as a platform one.** The fix is not only `sudo`; the probe now refuses to report
+anything about FSDP when the container reports no devices, because *a probe that
+could not run is not evidence about what it would have found.*
+
+**Run 2 — "0 steps completed" beside "a checkpoint was written".** A
+self-contradicting finding. The step counter grepped the training log for a
+pattern the log did not use, while 25 GB of `.distcp` shards sat on disk. Steps
+now come from `trainer_state.json`, and a written sharded checkpoint is treated
+as proof the mechanism ran regardless of the exit code. The same run reported
+`ChildFailedError, exitcode 1` with no cause, because `torchrun` swallows child
+stderr — `--tee 3` now captures it, and it is how the loss collapse was found
+at all.
+
+**Run 3** is the one whose numbers are above.
+
+### One more footgun, closed
+
+A `--dry-run` wrote its preflight over `findings-spike6.json`, destroying a
+completed run's measurements. **A preflight that costs nothing must not be able
+to delete evidence that cost money.** Dry runs now write to
+`findings-spike6-dryrun.json` and say that the real file was left alone.
+
+The verdict in the findings file was recomputed from the *same* captured probe
+report after the interpretation gained the numerics check. No machine was
+provisioned a second time — the measurements are unchanged and only the reading
+of them moved.
+
+## Spike 7 — Axolotl's config schema
+
+`spike7.py` + `introspect_axolotl.py` → [`findings-spike7.json`](findings-spike7.json)
+and [`docs/data/axolotl-field-tiers.json`](../docs/data/axolotl-field-tiers.json).
+No GPU, no VM, no money. Runs the **pinned digest** locally — reading the schema
+from a pip-installed Axolotl would measure a different trainer than the one that
+runs jobs.
+
+Axolotl `0.19.0.dev0`, `axolotl.utils.schemas.config.AxolotlInputConfig`.
+
+| | |
+| --- | --- |
+| Total fields | **388** |
+| After excluding infrastructure | **344** |
+| Carrying a default | 386 |
+| Required | **2** |
+| Free-form (`Any` / bare dict) | 19 |
+| Fields with schema bounds (`ge`/`le`/pattern) | **1** |
+| Fields typed as an enum or `Literal` | 19 |
+| `model_validator` hooks | **113** |
+| `field_validator` hooks | 27 |
+
+The spec asked *"forty is a UI, four hundred is a different product"*. **It is
+344.** Tiering is mandatory, not a nicety.
+
+### 🚨 The risk the spike existed to surface, and it fired
+
+**Roughly 12% of Axolotl's constraints are visible to a schema reader.** One
+field carries a numeric bound. Nineteen are enums. **113 `model_validator`
+hooks** hold the rest — and a `model_validator` is arbitrary Python, so a form
+generated from the schema cannot know what it will refuse until the job is
+already running. That is precisely the failure the spec named: *a generated form
+will happily accept combinations that fail four minutes into a paid job.*
+
+That 12% is a **ceiling, not an estimate** — it counts each validator as one
+rule, and one validator commonly encodes several.
+
+**Verdict: DERIVE THE FORM, HAND-WRITE THE RULES.** Not the clean derivation the
+Advanced-mode design assumed, and not the hand-enumerated fallback either. The
+field list, types and defaults are generated from the pinned digest, so they
+cannot drift from the trainer. The cross-field rules are hand-enumerated and
+reviewable in a diff, because the schema does not contain them.
+
+**All twelve correctness settings from `AGENTS.md` are expressible in the
+config**, under names now recorded. One is thinner than expected: loss masking
+resolves to `train_on_inputs` alone — `roles_to_train` and `train_on_eos` are
+not top-level fields in this version.
+
+### The tier classification, and the number that actually sizes the ticket
+
+Twenty fields, drawn as a **seeded random sample** of the 344 — random rather
+than hand-picked on purpose, because a sample of fields the product already uses
+would be quick to classify and would underestimate the rest. **27 minutes of
+real work, 1.35 min/field**, which projects to **7.7 hours** for a full pass.
+
+But the field count is the wrong number to estimate from. **13 of 20 came out
+`known_but_unsupported`** — DPO, Q-GaLore, LISA, EAFT: whole methods this
+product does not do, each needing a one-line reason rather than a design. If 65%
+holds across the 344, **the surface needing real design work is about 120
+fields, not 344**, and that is the number the ticket should carry.
+
+The highest-value entry in the sample is `special_tokens`: set `pad_token` equal
+to `eos_token` and the loss mask hides every end-of-sequence token, so the model
+is trained never to stop. Training completes, the loss curve looks fine, and the
+failure is invisible until inference.
+
+## Spike 8 — the SDK surface
+
+`spike8.py` → [`findings-spike8.json`](findings-spike8.json). No GPU, no money;
+every live call is a read. 37 capabilities across 7 namespaces and 43 public
+methods, each marked **separately** for documented / in-SDK / tested-here —
+because *"documented"* and *"works on VMs"* have already been shown to be
+different claims here (C11: startup scripts accepted and silently ignored).
+
+The `documented` column is transcribed from the vendor's own `SKILL.md`, which
+ships **inside the wheel** — so unlike the website it cannot drift away from the
+code under test between one reading and the next. Six of its claims are asserted
+as substrings, so a reworded doc fails loudly instead of leaving a stale
+transcription looking current.
+
+### 🚨 Pause exists
+
+`instances.pause()` and `instances.resume()` are both in the SDK, and `SKILL.md`
+states: **Paused (compute billing stopped, storage billing continues, data
+persists)**. A paused machine was observed in the live account, so the backend
+holds the state — it is not merely an attribute.
+
+**[ADR-0003](../docs/adr/0003-cancellation-is-destructive.md) is flagged for
+reopening**, and the flag says why it is not a simple win: a paused machine
+still bills for storage and has no run that owns it, which is exactly the shape
+the reconciler exists to destroy. "Pause instead of destroy" is only cheaper if
+somebody eventually destroys it.
+
+Two caveats the docs are explicit about and that any implementation must handle:
+**resume is region-locked**, and **resume may return a new `machine_id`** — so a
+stored id must be re-read.
+
+### The rest, briefly
+
+- **Nothing pushes.** No webhooks, no event stream, and no server-side log API —
+  the CLI's own `logs` command SSHes in. Every state change is discovered by
+  polling. [ADR-0001](../docs/adr/0001-event-channel-over-ssh-stdout.md) chose
+  stdout-over-SSH; it turns out there was no provider alternative to reject.
+- **Spot is containers-only.** `is_spot` with `template="vm"` raises. A product
+  that needs VMs for Docker cannot have spot pricing. That closes a cost avenue
+  rather than opening one, and it is better closed on paper.
+- **Persistent filesystems exist** (`create` / `list` / `edit` / `remove`,
+  attachable at create or resume) — the obvious home for a model cache that
+  would otherwise be re-downloaded per job.
+- **Serverless deployments exist** (`jl deploy`), and they are the one place the
+  platform reports cost per resource. Out of scope for this submission, recorded
+  so the cut is informed rather than accidental.
+
+### What I got wrong, found by running it
+
+The first version of the table recorded *"per-instance cost to date"* as
+**absent**, reasoning that no call is named `cost`. **The live probe disproved
+it**: every `Instance` row carries a `cost` float and a `runtime` string. The
+product computes spend from uptime × hourly rate and never reads the provider's
+own figure — so there is a second, independent number available to reconcile
+against, which is worth having when the first is an estimate. The row is
+corrected in place and labelled as a correction.
+
+## Spike 9 — streaming validation throughput
+
+`spike9.py` + `streaming.py` + `test_streaming.py` →
+[`findings-spike9.json`](findings-spike9.json). No GPU, no money.
+
+`streaming.py` is a streaming rewrite of `api/validation.py`, written so the
+measurement is of the real work rather than of a benchmark. **26 tests pin it
+against the shipped validator** — for any dataset small enough to validate both
+ways, both must reach the same verdict, the same counts and the same line
+numbers. Without that, a streaming pass that is fast because it checks less
+would report a throughput that means nothing.
+
+| Dataset | in-memory (shipped) peak RSS | streaming peak RSS | streaming MB/s |
+| --- | --- | --- | --- |
+| 1 GB | **+5,930 MB — 5.93× the file** | **+4.1 MB** | 23 |
+| 5 GB | not run — would need ~30 GB | **+3.8 MB** | 18 |
+| 20 GB | not run — would need ~96 GB | **+3.6 MB** | 24 |
+
+**File size ×20 → peak memory ×1.14.** That is the whole claim, and it holds:
+the retained memory does not merely stay flat, it drifts *down*, because what
+is retained is a fixed set of caps and not a function of the file at all.
+
+**Streaming is also faster than the in-memory path** — 23 MB/s against 15 MB/s
+at 1 GB. The ceiling is not a memory-versus-speed trade; the in-memory path
+spends its time allocating. It is simply a property of code that predates the
+need.
+
+### 🚨 Token counting has to become its own phase
+
+The quote is priced per training token, so counting is a hard prerequisite of
+the quote. **Tokenisation is 79–88% of a tokenising pass**, and it drags the
+throughput from ~22 MB/s to **3.4 MB/s**.
+
+| | |
+| --- | --- |
+| Validate alone | ~21.6 MB/s → **1.3 GB inside a 60s wait** |
+| Validate + tokenise | **3.4 MB/s** → 5 GB takes **1,485s** |
+
+The kill criterion in the spec fires. **Validation and token counting split into
+two phases**: validate on upload, count tokens asynchronously before the quote,
+and the quote gains a `counting` state.
+
+The 60-second budget is a judgement, not a measurement, and is labelled as one
+in the findings — it is the point at which a synchronous upload page stops
+reading as a wait and starts reading as a hang.
+
+### ⚠️ This run shared the machine, and why the verdict survives it
+
+These passes ran on a laptop that was concurrently pulling a multi-GB Docker
+image for spike 7 and orchestrating spikes 5 and 6. **The MB/s figures are a
+floor, not a rate** — visible in the data, where the same pass reports 18 MB/s
+at 5 GB and 24 MB/s at 20 GB, and no larger file is genuinely faster.
+
+Rather than assert the number is good enough, the findings ask how much faster
+the machine would have to be to change the answer:
+
+| If tokenisation were | 5 GB takes |
+| --- | --- |
+| as measured | 1,485s |
+| 2× faster | 743s |
+| 4× faster | 371s |
+| **10× faster** | **149s** |
+
+**A 24.8× speed-up would be needed to fit the 60s budget.** The split
+recommendation does not depend on the contended measurement. Re-running on an
+idle machine would sharpen the number and would not move the decision.
+
+**The memory numbers are unaffected** — peak RSS does not care what else is on
+the CPU, and that is the half of this spike that carries the claim.
+
+
+### ⚠️ Correction to ADR-0005
+
+[ADR-0005](../docs/adr/0005-the-dataset-size-limit-is-derived-from-measured-memory.md)
+derives the 1 GB limit from a measured **4.8×** memory multiplier. Measured
+again at a real 1 GB file, it is **5.93×** — so a 1 GB dataset peaks near 6 GB,
+not 4.8 GB. **The multiplier was extrapolated from small files and the
+extrapolation was optimistic.** The limit is still defensible on the development
+machine, with less headroom than the record claims. Corrected in place rather
+than quietly fixed.
+
+### Where the streaming path would have leaked
+
+The line-number guarantee is free while streaming — a line number is a counter.
+**The samples are not.** `trainer/thinking.py`'s `detect()` accumulates one line
+number per assistant turn before capping them at the end, which is bounded by
+the file rather than by the cap. The streaming path caps as it goes, and a test
+drives 2,000 rows through it to prove the retained list stays at five.
+
+Everything retained is capped: the first N errors, the first N warnings, a
+three-row preview, twenty key sets, and ten sample line numbers. `error_count`
+is exact while the list is capped, because *"every line is broken"* is a
+different problem from *"line 4,102 is broken"*.
+
+### Two deliberate divergences, recorded rather than hidden
+
+- **Encoding errors name a line.** The in-memory path decodes the whole file at
+  once, so it can only report a byte offset with `line: null`. Decoding a line
+  at a time can say which line — strictly better for the user.
+- **Rows split on newline only.** `str.splitlines()` also splits on U+000B,
+  U+000C, U+001C–U+001E, U+0085, U+2028 and U+2029, so a JSON string containing
+  a literal U+2028 is two rows to the shipped validator and one row here. JSONL
+  is newline-delimited by definition; this is the shipped code's accident, not
+  its intent.
+
+### A bug found by reading, not by a failing test
+
+`_iter_lines` tested the **chunk** for a byte-order mark rather than the
+accumulated buffer. At `chunk_bytes=1` a BOM is split across three reads, so two
+of its bytes stayed at the head of line 1 and every row failed to parse. The
+parametrised chunk-size tests now go down to 1 byte for exactly this reason.
+
+
+## Phase B spikes — what is still open
+
+Each of these is a known gap, not an oversight, and each is written down
+because the alternative is remembering it.
+
+1. **The `nan` in spike 6.** The single highest-value open question here: FSDP
+   shards, checkpoints and resumes, and the loss collapses to zero. Candidates,
+   untested: bf16 with FSDP2 plus gradient checkpointing; a synthetic dataset
+   with ~28 trainable tokens per step under assistant-only masking;
+   `flash_attention: false` forcing an eager path. **The 8B capstone is blocked
+   on this.**
+2. **8 devices is not 2 devices.** Spike 6 proved a 2-device NCCL topology on
+   one card type. The architecture's claim about 8 cards on one host stays
+   *measured but unexercised* — do not upgrade the wording on this evidence.
+3. **ADR-0009 is written but unexercised.** Spikes 5 and 6 supplied the sizes
+   that force it — a 7200 GB ceiling and a 13.6 GB sharded checkpoint at 4B —
+   and [ADR-0009](../docs/adr/0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md)
+   supersedes ADR-0004's property 2 on that evidence. **Nothing has yet written
+   an artifact to a pre-signed URL from a JarvisLabs VM.**
+4. **The storage line item is unmeasured.** Spike 5 established that the
+   GPU-hour rate does not move with disk size, so storage bills separately. The
+   documented figure is $0.10/GB-month; a spike lasting minutes cannot observe
+   a GB-month. The quote needs the real number.
+5. **Pause is documented, not measured.** Spike 8 read the vendor's claim that
+   pausing stops compute billing and keeps storage billing. Nobody has paused a
+   machine here and watched the meter. Reopening ADR-0003 should start by doing
+   that.
+6. **324 of 344 Axolotl fields are unclassified.** Spike 7 classified a
+   20-field sample to time the pass. `docs/data/axolotl-field-tiers.json` says
+   so in its `_status`.
+7. **Spike 9's throughput was measured on a busy machine.** A floor, not a
+   rate. The findings show the verdict survives a 10x speed-up, so this is
+   worth sharpening rather than urgent.
+8. **The on-VM probes are silent while they run.** `subprocess.run` captures
+   stderr and prints it only on return, so a spike that provisions a billing
+   machine shows nothing for twenty minutes. Streaming it would make cost
+   exposure visible as it accrues. Deliberately not changed after the fact —
+   the committed scripts are the ones that produced the committed findings.
+
 ## Files
+
+**Phase 0 (spikes 1-4)**
 
 - [spike.py](spike.py) — orchestration, run from your machine
 - [probe.sh](probe.sh) — runs **on** the VM as a startup script; writes `/root/probe-report.json`
-- `findings.json` — generated output, git-ignored in the real repo
+- `findings.json` — generated output, git-ignored (it records the account balance)
+
+**Phase B (spikes 5-9)**
+
+- [spike5.py](spike5.py) + [bootstrap5.sh](bootstrap5.sh) — disk ceiling, download throughput
+- [spike6.py](spike6.py) + [bootstrap6.sh](bootstrap6.sh) — two devices, FSDP, sharded resume
+- [spike7.py](spike7.py) + [introspect_axolotl.py](introspect_axolotl.py) — Axolotl's config schema
+- [spike8.py](spike8.py) — the provider SDK surface
+- [spike9.py](spike9.py) + [streaming.py](streaming.py) — streaming validation throughput
+- [teardown.py](teardown.py) — shared by 5 and 6. Destroy, then **prove it** across
+  consecutive listings (C17). The one thing that must not vary between two
+  spikes that both provision GPUs is the code that turns them off
+- [test_streaming.py](test_streaming.py), [test_spike5.py](test_spike5.py) —
+  the parts that can be tested without spending money. `python -m pytest spike/ -q`
+- `findings-spike5.json` … `findings-spike9.json` — **committed**, deliberately
 
 ⚠️ **This directory is a diagnostic artifact, not the product.** When the real repo exists, the spike moves to it (or to `infra/jarvislabs/` per §6) — it should not stay in the vault long-term.

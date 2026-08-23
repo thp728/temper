@@ -1,0 +1,678 @@
+{
+  "spike": "spike8-sdk-surface",
+  "run_at": "2026-08-23T15:41:34.159933+00:00",
+  "sdk_path": "D:\\Dev\\life-os\\.venv\\Lib\\site-packages\\jarvislabs",
+  "documentation": {
+    "present": true,
+    "path": "D:\\Dev\\life-os\\.venv\\Lib\\site-packages\\jarvislabs\\skills\\SKILL.md",
+    "assertions": {
+      "pause stops compute billing": true,
+      "resume is region-locked": true,
+      "resume may return a new machine_id": true,
+      "spot is containers-only": true,
+      "VM disks persist whole": true,
+      "deployments have no pause/resume": true
+    }
+  },
+  "generated_surface": {
+    "account": [
+      "balance() -> 'Balance'",
+      "currency() -> 'str'",
+      "gpu_availability() -> 'list[ServerMetaGPU]'",
+      "gpu_availability_from(meta: 'ServerMetaResponse') -> 'list[ServerMetaGPU]'",
+      "resource_metrics() -> 'ResourceMetrics'",
+      "resources() -> 'ServerMetaResponse'",
+      "templates() -> 'list[Template]'",
+      "user_info() -> 'UserInfo'"
+    ],
+    "deployments": [
+      "create(*, name: 'str', region: 'str', framework: 'str', gpu: 'str', model: 'str', gpus_per_worker: 'int', min_workers: 'int', max_workers: 'int', idle_timeout: 'int', wait_time: 'int', storage: 'int', concurrent: 'int | None' = None, args: 'dict[str, str] | None' = None, env: 'dict[str, str] | None' = None) -> 'str'",
+      "delete(deployment_id: 'str', *, region: 'str | None' = None) -> 'bool'",
+      "get(deployment_id: 'str', *, region: 'str | None' = None) -> 'Deployment'",
+      "list() -> 'DeploymentListResult'",
+      "logs(deployment_id: 'str', *, region: 'str | None' = None, tail: 'int' = 100, follow: 'bool' = True, worker: 'int | None' = None) -> 'Iterator[tuple[str, str]]'",
+      "openai_base_url(deployment_id: 'str', *, region: 'str | None' = None) -> 'str'",
+      "status(deployment_id: 'str', *, region: 'str | None' = None) -> 'DeploymentStatus'",
+      "update(deployment_id: 'str', *, name: 'str | None' = None, idle_timeout: 'int | None' = None, wait_time: 'int | None' = None, region: 'str | None' = None) -> 'Deployment'",
+      "wait_until_running(deployment_id: 'str', *, region: 'str | None' = None, timeout: 'float' = 4500) -> 'Deployment'"
+    ],
+    "filesystems": [
+      "create(fs_name: 'str', storage: 'int', *, region: 'str | None' = None, deployment_id: 'str | None' = None) -> 'int'",
+      "edit(fs_id: 'int', storage: 'int') -> 'int'",
+      "list() -> 'list[Filesystem]'",
+      "remove(fs_id: 'int') -> 'bool'"
+    ],
+    "instances": [
+      "create(*, gpu_type: 'str | None' = None, num_gpus: 'int' = 1, template: 'str' = 'pytorch', cpu: 'bool' = False, vcpus: 'int | None' = None, ram: 'int | None' = None, storage: 'int' = 100, name: 'str' = 'Name me', disk_type: 'str' = 'ssd', http_ports: 'str' = '', script_id: 'str | None' = None, script_args: 'str' = '', fs_id: 'int | None' = None, arguments: 'str' = '', region: 'str | None' = None, is_spot: 'bool' = False, vpc_id: 'str | None' = None) -> 'Instance'",
+      "create_cpu_vm(*, vcpus: 'int | None', ram: 'int | None', storage: 'int', name: 'str', region: 'str | None', vpc_id: 'str | None' = None) -> 'Instance'",
+      "destroy(machine_id: 'int') -> 'bool'",
+      "get(machine_id: 'int') -> 'Instance'",
+      "list() -> 'list[Instance]'",
+      "pause(machine_id: 'int') -> 'bool'",
+      "rename(machine_id: 'int', name: 'str') -> 'bool'",
+      "resolve_cpu_vm_plan(*, vcpus: 'int | None' = None, ram: 'int | None' = None, region: 'str | None' = None) -> 'tuple[int, int, str]'",
+      "resume(machine_id: 'int', *, gpu_type: 'str | None' = None, num_gpus: 'int | None' = None, storage: 'int | None' = None, name: 'str | None' = None, http_ports: 'str' = '', script_id: 'str | None' = None, script_args: 'str | None' = None, fs_id: 'int | None' = None, vcpus: 'int | None' = None, ram: 'int | None' = None, is_spot: 'bool' = False, vpc_id: 'str | None' = None) -> 'Instance'",
+      "resume_cpu_vm(instance: 'Instance', *, machine_id: 'int', storage: 'int | None', name: 'str | None', vcpus: 'int | None', ram: 'int | None', vpc_id: 'str | None' = None) -> 'Instance'"
+    ],
+    "scripts": [
+      "add(script: 'bytes | bytearray | str', name: 'str' = '') -> 'bool'",
+      "list() -> 'list[StartupScript]'",
+      "remove(script_id: 'int') -> 'bool'",
+      "update(script_id: 'int', script: 'bytes | bytearray | str') -> 'bool'"
+    ],
+    "ssh_keys": [
+      "add(ssh_key: 'str', key_name: 'str') -> 'bool'",
+      "list() -> 'list[SSHKey]'",
+      "remove(key_id: 'str') -> 'bool'"
+    ],
+    "vpcs": [
+      "create(name: 'str', cidr: 'str', region: 'str') -> 'Vpc'",
+      "delete(vpc_id: 'str') -> 'bool'",
+      "get(vpc_id: 'str') -> 'Vpc'",
+      "ips(vpc_id: 'str') -> 'list[VpcIP]'",
+      "list() -> 'list[Vpc]'"
+    ]
+  },
+  "capabilities": [
+    {
+      "capability": "create instance",
+      "group": "lifecycle",
+      "sdk_path": "instances.create",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl create'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "create(*, gpu_type: 'str | None' = None, num_gpus: 'int' = 1, template: 'str' = 'pytorch', cpu: 'bool' = False, vcpus: 'int | None' = None, ram: 'int | None' = None, storage: 'int' = 100, name: 'str' = 'Name me', disk_type: 'str' = 'ssd', http_ports: 'str' = '', script_id: 'str | None' = None, script_args: 'str' = '', fs_id: 'int | None' = None, arguments: 'str' = '', region: 'str | None' = None, is_spot: 'bool' = False, vpc_id: 'str | None' = None) -> 'Instance'",
+      "tested_here": true,
+      "tested_in": "spike1-4, api/provider.py",
+      "notes": ""
+    },
+    {
+      "capability": "destroy instance",
+      "group": "lifecycle",
+      "sdk_path": "instances.destroy",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl destroy'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "destroy(machine_id: 'int') -> 'bool'",
+      "tested_here": true,
+      "tested_in": "spike1-4, api/provider.py",
+      "notes": ""
+    },
+    {
+      "capability": "list instances",
+      "group": "lifecycle",
+      "sdk_path": "instances.list",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl list'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "list() -> 'list[Instance]'",
+      "tested_here": true,
+      "tested_in": "spike1-4, api/provider.py",
+      "notes": ""
+    },
+    {
+      "capability": "get one instance",
+      "group": "lifecycle",
+      "sdk_path": "instances.get",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl get'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "get(machine_id: 'int') -> 'Instance'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "Polled indirectly through create(); never called directly here."
+    },
+    {
+      "capability": "PAUSE instance",
+      "group": "lifecycle",
+      "sdk_path": "instances.pause",
+      "documented": true,
+      "doc_reference": "SKILL.md: 'Paused (compute billing stopped, storage billing continues, data persists)'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "pause(machine_id: 'int') -> 'bool'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "THE FINDING. Compute billing stops, storage billing continues, the whole VM disk persists. Untested here - pricing below is the vendor's claim, not a measurement."
+    },
+    {
+      "capability": "resume instance",
+      "group": "lifecycle",
+      "sdk_path": "instances.resume",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl resume'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "resume(machine_id: 'int', *, gpu_type: 'str | None' = None, num_gpus: 'int | None' = None, storage: 'int | None' = None, name: 'str | None' = None, http_ports: 'str' = '', script_id: 'str | None' = None, script_args: 'str | None' = None, fs_id: 'int | None' = None, vcpus: 'int | None' = None, ram: 'int | None' = None, is_spot: 'bool' = False, vpc_id: 'str | None' = None) -> 'Instance'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "Region-locked; MAY RETURN A NEW machine_id, so any caller that stores the id must re-read it. GPU type and storage can both change on resume, within the original region."
+    },
+    {
+      "capability": "rename instance",
+      "group": "lifecycle",
+      "sdk_path": "instances.rename",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl rename'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "rename(machine_id: 'int', name: 'str') -> 'bool'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "Cosmetic. No product use."
+    },
+    {
+      "capability": "resize a running instance",
+      "group": "lifecycle",
+      "sdk_path": null,
+      "documented": false,
+      "doc_reference": "absent from SKILL.md",
+      "in_sdk": false,
+      "via": "absent",
+      "signature": "",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "No resize call. Changing GPU or disk goes through pause then resume with new parameters - which is the same mechanism, at the cost of an interruption."
+    },
+    {
+      "capability": "CPU-only VM",
+      "group": "lifecycle",
+      "sdk_path": "instances.create_cpu_vm",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl cpus'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "create_cpu_vm(*, vcpus: 'int | None', ram: 'int | None', storage: 'int', name: 'str', region: 'str | None', vpc_id: 'str | None' = None) -> 'Instance'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "A separate backend path with its own rejections. Not useful for training; possibly useful as a cheap holder of a filesystem."
+    },
+    {
+      "capability": "spot instances",
+      "group": "lifecycle",
+      "sdk_path": null,
+      "documented": true,
+      "doc_reference": "SKILL.md: 'Spot prices are shown only for GPU containers'",
+      "in_sdk": false,
+      "via": "parameter",
+      "signature": "",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "is_spot is a create/resume PARAMETER, not a call - and the SDK raises ValidationError for is_spot with template='vm'. Spot is containers only, so it is unavailable to this product, which needs VMs for Docker."
+    },
+    {
+      "capability": "instance disk sizing",
+      "group": "storage",
+      "sdk_path": null,
+      "documented": true,
+      "doc_reference": "SKILL.md '--storage (default: 100GB)'",
+      "in_sdk": false,
+      "via": "parameter",
+      "signature": "",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "`storage` is a create parameter with NO client-side upper bound, so the ceiling is discovered by rejection. Spike 5 measures where that rejection falls."
+    },
+    {
+      "capability": "persistent filesystem: create",
+      "group": "storage",
+      "sdk_path": "filesystems.create",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl filesystem create'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "create(fs_name: 'str', storage: 'int', *, region: 'str | None' = None, deployment_id: 'str | None' = None) -> 'int'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "Outlives any instance. The obvious home for a model cache that would otherwise be re-downloaded per job."
+    },
+    {
+      "capability": "persistent filesystem: list",
+      "group": "storage",
+      "sdk_path": "filesystems.list",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl filesystem list'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "list() -> 'list[Filesystem]'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": ""
+    },
+    {
+      "capability": "persistent filesystem: resize",
+      "group": "storage",
+      "sdk_path": "filesystems.edit",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl filesystem'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "edit(fs_id: 'int', storage: 'int') -> 'int'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "Grows a filesystem in place - the resize the instance disk does not have."
+    },
+    {
+      "capability": "persistent filesystem: remove",
+      "group": "storage",
+      "sdk_path": "filesystems.remove",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl filesystem'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "remove(fs_id: 'int') -> 'bool'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": ""
+    },
+    {
+      "capability": "attach filesystem to instance",
+      "group": "storage",
+      "sdk_path": null,
+      "documented": true,
+      "doc_reference": "SKILL.md: 'Attach a filesystem at creation with --fs-id'",
+      "in_sdk": false,
+      "via": "parameter",
+      "signature": "",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "fs_id is a create/resume parameter, not a call."
+    },
+    {
+      "capability": "list templates",
+      "group": "images",
+      "sdk_path": "account.templates",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl templates --json'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "templates() -> 'list[Template]'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "Templates are container images the provider offers. A VM takes template='vm' and no image - which is why this product ships its own image through Docker rather than as a template."
+    },
+    {
+      "capability": "supply a custom image",
+      "group": "images",
+      "sdk_path": null,
+      "documented": false,
+      "doc_reference": "absent from SKILL.md",
+      "in_sdk": false,
+      "via": "absent",
+      "signature": "",
+      "tested_here": true,
+      "tested_in": "spike1 (established by absence)",
+      "notes": "No such call. This is the whole reason the product runs Docker on a VM instead of using a container instance."
+    },
+    {
+      "capability": "startup scripts: add/list/update/remove",
+      "group": "images",
+      "sdk_path": "scripts.list",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl scripts add'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "list() -> 'list[StartupScript]'",
+      "tested_here": true,
+      "tested_in": "spike1",
+      "notes": "DOCUMENTED AND IN THE SDK, BUT SILENTLY IGNORED ON VMs. create() accepts script_id without error and cloud-init never runs it (correction C11). This row is why the three columns are kept separate."
+    },
+    {
+      "capability": "SSH keys: list",
+      "group": "keys",
+      "sdk_path": "ssh_keys.list",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl ssh-key'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "list() -> 'list[SSHKey]'",
+      "tested_here": true,
+      "tested_in": "spike1-4 preflight",
+      "notes": "A hard prerequisite of VM creation, and the SDK enforces it before spending money."
+    },
+    {
+      "capability": "SSH keys: add",
+      "group": "keys",
+      "sdk_path": "ssh_keys.add",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl ssh-key add'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "add(ssh_key: 'str', key_name: 'str') -> 'bool'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": ""
+    },
+    {
+      "capability": "SSH keys: remove",
+      "group": "keys",
+      "sdk_path": "ssh_keys.remove",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl ssh-key'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "remove(key_id: 'str') -> 'bool'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": ""
+    },
+    {
+      "capability": "VPC: create/list/get/delete/ips",
+      "group": "keys",
+      "sdk_path": "vpcs.list",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl vpc'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "list() -> 'list[Vpc]'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "Private networking. The mitigation for spike 2's finding that VMs come up with a public IP and no firewall - worth revisiting if serving is ever exposed."
+    },
+    {
+      "capability": "GPU availability and pricing",
+      "group": "pricing",
+      "sdk_path": "account.gpu_availability",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl gpus'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "gpu_availability() -> 'list[ServerMetaGPU]'",
+      "tested_here": true,
+      "tested_in": "spike1-4 preflight, api/provider.py",
+      "notes": "Availability for containers and for VMs is reported separately. A GPU free for containers may not be free for VMs."
+    },
+    {
+      "capability": "raw resource metadata",
+      "group": "pricing",
+      "sdk_path": "account.resources",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl gpus --json'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "resources() -> 'ServerMetaResponse'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "The unaggregated payload gpu_availability() is derived from - where per-GPU price fields live."
+    },
+    {
+      "capability": "CPU VM availability and pricing",
+      "group": "pricing",
+      "sdk_path": "account.resources",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl cpus'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "resources() -> 'ServerMetaResponse'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": ""
+    },
+    {
+      "capability": "account balance",
+      "group": "pricing",
+      "sdk_path": "account.balance",
+      "documented": true,
+      "doc_reference": "SKILL.md",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "balance() -> 'Balance'",
+      "tested_here": true,
+      "tested_in": "spike1-4 preflight",
+      "notes": ""
+    },
+    {
+      "capability": "account currency",
+      "group": "pricing",
+      "sdk_path": "account.currency",
+      "documented": true,
+      "doc_reference": "SKILL.md",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "currency() -> 'str'",
+      "tested_here": true,
+      "tested_in": "spike1-4, api/provider.py",
+      "notes": "Returns INR on this account. Reading it rather than assuming USD is the difference between a correct quote and one off by ~85x."
+    },
+    {
+      "capability": "resource metrics",
+      "group": "pricing",
+      "sdk_path": "account.resource_metrics",
+      "documented": true,
+      "doc_reference": "SKILL.md",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "resource_metrics() -> 'ResourceMetrics'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": ""
+    },
+    {
+      "capability": "user info",
+      "group": "pricing",
+      "sdk_path": "account.user_info",
+      "documented": true,
+      "doc_reference": "SKILL.md",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "user_info() -> 'UserInfo'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": ""
+    },
+    {
+      "capability": "per-instance cost to date",
+      "group": "pricing",
+      "sdk_path": "instances.list",
+      "documented": false,
+      "doc_reference": "absent from SKILL.md",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "list() -> 'list[Instance]'",
+      "tested_here": true,
+      "tested_in": "spike8 live probe",
+      "notes": "CORRECTION, FOUND BY RUNNING THIS SPIKE. This row was first written as absent, on the reasoning that no CALL is named 'cost'. The live probe disproved it: every Instance row carries `cost` (a float, currency per account.currency()) and `runtime` alongside it. The product computes spend from uptime x hourly rate and never reads the provider's own figure -- so it has a second, independent number available to reconcile against, which is worth having when the first one is an estimate."
+    },
+    {
+      "capability": "invoices / billing history",
+      "group": "pricing",
+      "sdk_path": null,
+      "documented": false,
+      "doc_reference": "absent from SKILL.md",
+      "in_sdk": false,
+      "via": "absent",
+      "signature": "",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "balance() and the per-instance `cost` field are the only billing reads. Nothing returns a statement or a line-itemised history, so anything resembling per-user billing has to be accumulated by this product as it goes."
+    },
+    {
+      "capability": "webhooks or an event stream",
+      "group": "events",
+      "sdk_path": null,
+      "documented": false,
+      "doc_reference": "absent from SKILL.md",
+      "in_sdk": false,
+      "via": "absent",
+      "signature": "",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "NOTHING PUSHES. Every state change is discovered by polling, which is why the orchestrator's event channel is the machine's own stdout over SSH (ADR-0001) rather than anything the provider offers."
+    },
+    {
+      "capability": "instance logs via the API",
+      "group": "events",
+      "sdk_path": null,
+      "documented": false,
+      "doc_reference": "SKILL.md: 'jl run logs' reads over SSH",
+      "in_sdk": false,
+      "via": "absent",
+      "signature": "",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "The CLI's log command SSHes in; there is no server-side log API. Confirms ADR-0001 had no alternative to reject."
+    },
+    {
+      "capability": "serverless deployments",
+      "group": "serving",
+      "sdk_path": "deployments.create",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl deploy = beta serverless model serving'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "create(*, name: 'str', region: 'str', framework: 'str', gpu: 'str', model: 'str', gpus_per_worker: 'int', min_workers: 'int', max_workers: 'int', idle_timeout: 'int', wait_time: 'int', storage: 'int', concurrent: 'int | None' = None, args: 'dict[str, str] | None' = None, env: 'dict[str, str] | None' = None) -> 'str'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "An OpenAI-compatible endpoint with autoscaling and no instance to manage. Directly relevant to serving a trained adapter, and out of scope for this submission - recorded so the scope cut is informed rather than accidental."
+    },
+    {
+      "capability": "deployment logs",
+      "group": "serving",
+      "sdk_path": "deployments.logs",
+      "documented": true,
+      "doc_reference": "SKILL.md 'jl deploy'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "logs(deployment_id: 'str', *, region: 'str | None' = None, tail: 'int' = 100, follow: 'bool' = True, worker: 'int | None' = None) -> 'Iterator[tuple[str, str]]'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": ""
+    },
+    {
+      "capability": "deployment cost readout",
+      "group": "serving",
+      "sdk_path": "deployments.get",
+      "documented": true,
+      "doc_reference": "SKILL.md: 'jl deploy list - compact table with cost'",
+      "in_sdk": true,
+      "via": "method",
+      "signature": "get(deployment_id: 'str', *, region: 'str | None' = None) -> 'Deployment'",
+      "tested_here": false,
+      "tested_in": "",
+      "notes": "Deployments DO report cost, while instances do not. The one place the platform exposes spend per resource."
+    }
+  ],
+  "pause": {
+    "pause_exists": true,
+    "evidence": "measured: introspected on the installed SDK",
+    "observed_paused_instances": [],
+    "pricing": {
+      "claim": "compute billing stops; storage billing continues; data persists",
+      "source": "vendor SKILL.md shipped in the wheel",
+      "kind": "DOCUMENTED, NOT MEASURED -- no paused instance has been billed and observed by this repo"
+    },
+    "caveats": [
+      "resume is region-locked",
+      "resume may return a NEW machine_id -- any stored id must be re-read",
+      "a paused VM keeps its whole disk, so a paused 400 GB machine keeps paying for 400 GB"
+    ],
+    "reopens": [
+      {
+        "record": "ADR-0003 cancellation is destructive",
+        "why": "the ADR's premise is that stopping a run has only one cheap outcome. Pause is a second one: stop paying for the GPU, keep the checkpoint on disk, let the user resume or discard. That is a different product behaviour, not a cheaper implementation of the same one -- so the ADR is FLAGGED FOR REOPENING, not silently amended.",
+        "counterweight": "pause leaves storage billing running with no run that owns it. The reconciler exists to destroy machines nothing owns, and a paused machine is exactly that shape. Reopening the ADR means deciding who eventually kills a paused machine, and that is not obviously cheaper than destroying it now."
+      },
+      {
+        "record": "the OOM-retry cost model",
+        "why": "retry is specified around paying a 2-4 minute cold start per attempt. Pausing instead of destroying removes that per-attempt cost -- but only if the retry is on the same machine, and OOM retries typically want a BIGGER machine, which resume can provide within the same region."
+      }
+    ]
+  },
+  "live_probes": {
+    "skipped": "--offline"
+  },
+  "steps": [
+    {
+      "step": "SKILL.md present",
+      "ok": true,
+      "detail": "429 lines at D:\\Dev\\life-os\\.venv\\Lib\\site-packages\\jarvislabs\\skills\\SKILL.md"
+    },
+    {
+      "step": "doc says: pause stops compute billing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "doc says: resume is region-locked",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "doc says: resume may return a new machine_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "doc says: spot is containers-only",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "doc says: VM disks persist whole",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "doc says: deployments have no pause/resume",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "SDK surface enumerated",
+      "ok": true,
+      "detail": "7 namespaces, 43 public methods"
+    },
+    {
+      "step": "methods not in the curated table",
+      "ok": null,
+      "detail": "account.gpu_availability_from, deployments.delete, deployments.list, deployments.openai_base_url, deployments.status, deployments.update, deployments.wait_until_running, instances.resolve_cpu_vm_plan, instances.resume_cpu_vm, scripts.add, scripts.remove, scripts.update, vpcs.create, vpcs.delete, vpcs.get, vpcs.ips",
+      "uncovered_methods": [
+        "account.gpu_availability_from",
+        "deployments.delete",
+        "deployments.list",
+        "deployments.openai_base_url",
+        "deployments.status",
+        "deployments.update",
+        "deployments.wait_until_running",
+        "instances.resolve_cpu_vm_plan",
+        "instances.resume_cpu_vm",
+        "scripts.add",
+        "scripts.remove",
+        "scripts.update",
+        "vpcs.create",
+        "vpcs.delete",
+        "vpcs.get",
+        "vpcs.ips"
+      ]
+    },
+    {
+      "step": "docs/SDK disagreement",
+      "ok": null,
+      "detail": "startup scripts: add/list/update/remove: documented=True in_sdk=True"
+    },
+    {
+      "step": "docs/SDK disagreement",
+      "ok": null,
+      "detail": "per-instance cost to date: documented=False in_sdk=True"
+    },
+    {
+      "step": "capabilities enumerated",
+      "ok": true,
+      "detail": "37 rows, 29 in SDK, 10 exercised here, 2 disagreement(s)"
+    },
+    {
+      "step": "pause exists",
+      "ok": true,
+      "detail": "compute billing stops, storage continues (documented, unmeasured)"
+    },
+    {
+      "step": "ADR-0003 flagged for reopening",
+      "ok": null,
+      "detail": "pause is a second cheap outcome for a stopped run"
+    }
+  ]
+}

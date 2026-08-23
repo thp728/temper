@@ -1,0 +1,288 @@
+{
+  "spike": "spike5-disk-and-download",
+  "run_at": "2026-08-23T14:49:48.477296+00:00",
+  "storage_parameter": {
+    "default_storage_gb": 100,
+    "client_side_upper_bound": false,
+    "ceiling_is": "discovered by rejection",
+    "ladder_gb": [
+      8000,
+      4000,
+      2000,
+      1000,
+      600,
+      400,
+      300,
+      200,
+      150,
+      100
+    ]
+  },
+  "preflight": {
+    "currency": "INR",
+    "chosen": "L4",
+    "hourly_rate_at_100gb": 41.31,
+    "vm_capable_free": {
+      "L4": {
+        "price": 41.31,
+        "free": 8,
+        "region": "india-noida-01",
+        "vram_gb": "24"
+      },
+      "RTX-PRO6000": {
+        "price": 179.01,
+        "free": 4,
+        "region": "india-chennai-01",
+        "vram_gb": "96"
+      },
+      "H100": {
+        "price": 255.15,
+        "free": 8,
+        "region": "india-noida-01",
+        "vram_gb": "80"
+      },
+      "H200": {
+        "price": 378.27,
+        "free": 8,
+        "region": "india-noida-01",
+        "vram_gb": "141"
+      }
+    },
+    "balance_read": true
+  },
+  "storage_ladder": [
+    {
+      "storage_gb": 8000,
+      "accepted": false,
+      "error": "APIError: hdd: ensure this value is less than or equal to 7200; vcpus: field required; ram_gb: field required; __root__: Either cpus or gpus should be provided, not both or neither.; hdd: ensure this value is less than or equal to 7200; hdd: ensure this value is less than or equal to 7200"
+    },
+    {
+      "storage_gb": 4000,
+      "accepted": true,
+      "create_seconds": 16.2,
+      "ceiling_named_by_the_api_gb": 7200
+    }
+  ],
+  "machine": {
+    "gpu": "L4",
+    "storage_gb": 4000,
+    "region": "india-noida-01"
+  },
+  "pricing": {
+    "currency": "INR",
+    "hourly_rate_reported_at_100gb": 41.31,
+    "hourly_rate_reported_with_extra_storage": 41.31,
+    "gpu_hour_rate_unchanged_by_disk_size": true,
+    "storage_billed_separately_from_the_gpu_hour": true,
+    "note": "The availability surface reports ONE rate per GPU type, and it did not move when a 10x larger disk was attached. So storage is billed on a separate line and THE QUOTE MUST ADD IT EXPLICITLY rather than deriving everything from GPU-hours. The documented figure is $0.10/GB-month; the instance row's `cost` field is where the real number appears over time. MEASURED: the rate. NOT MEASURED: the storage line itself -- this spike ran for minutes and a GB-month bill does not resolve in minutes."
+  },
+  "probe_report": {
+    "root_device": "/dev/vda1",
+    "df_total_kb": 4064821284,
+    "df_available_kb": 4048172048,
+    "df_available_after_download_kb": 4032031596,
+    "df_human": "/dev/vda1 3.8T 16G 3.8T 1% /",
+    "lsblk": "NAME SIZE TYPE MOUNTPOINT\nloop0 66871296 loop /snap/core20/2717\nloop1 96096256 loop /snap/lxd/37982\nloop2 50421760 loop /snap/snapd/25935\nloop3 66879488 loop /snap/core20/2866\nsr0 376832 rom \nvda 4294967296000 disk \n\u251c\u2500vda1 4294850887168 part /\n\u251c\u2500vda14 4194304 part \n\u2514\u2500vda15 111149056 part /boot/efi\n",
+    "write_test_ok": true,
+    "write_test_rate": "149 MB/s",
+    "write_test_error": "\n",
+    "fill_test_ok": null,
+    "fill_test_detail": "",
+    "download_repo": "Qwen/Qwen3-8B",
+    "download_ok": true,
+    "download_bytes": 16397486450,
+    "download_seconds": 45.092264853,
+    "download_error": "\n",
+    "download_samples": [
+      {
+        "t": 5.004803006,
+        "bytes": 272565503
+      },
+      {
+        "t": 10.015073013,
+        "bytes": 2110410756
+      },
+      {
+        "t": 15.024379472,
+        "bytes": 4433589955
+      },
+      {
+        "t": 20.03373547,
+        "bytes": 7248674777
+      },
+      {
+        "t": 25.049187287,
+        "bytes": 9632841131
+      },
+      {
+        "t": 30.05752689,
+        "bytes": 12465508804
+      },
+      {
+        "t": 35.06664858,
+        "bytes": 16120103310
+      },
+      {
+        "t": 40.075988931,
+        "bytes": 16397486076
+      },
+      {
+        "t": 45.085101579,
+        "bytes": 16397486450
+      }
+    ],
+    "hf_transfer_enabled": false
+  },
+  "disk": {
+    "requested_gb": 4000,
+    "usable_gb_decimal": 4162.4,
+    "usable_gib_binary": 3876.5,
+    "honoured": true,
+    "writable": true,
+    "df_human": "/dev/vda1 3.8T 16G 3.8T 1% /",
+    "root_device": "/dev/vda1"
+  },
+  "download": {
+    "kind": "measured",
+    "repo": "Qwen/Qwen3-8B",
+    "bytes": 16397486450,
+    "seconds": 45.1,
+    "mean_mb_per_s": 363.6,
+    "seconds_per_gb": 2.7,
+    "window_count": 8,
+    "window_mb_per_s_min": 0.0,
+    "window_mb_per_s_max": 729.6,
+    "coefficient_of_variation": 0.59,
+    "bursty": true,
+    "hf_transfer_enabled": false,
+    "hf_transfer_note": "hf_transfer was deliberately NOT enabled. The measured rate is the plain python client's, which is the path the trainer image takes today. Treat it as a FLOOR: turning hf_transfer on would raise it, and the quote should not promise a rate the product does not actually use."
+  },
+  "verdict": {
+    "usable_disk_gb": 4162,
+    "supports_70b_full_finetune": true,
+    "above_the_200gb_kill_line": true,
+    "statement": "70B full fine-tuning has the disk it needs on this provider.",
+    "preparing_phase_eta": {
+      "kind": "derived from the measured rate",
+      "seconds_per_gb": 2.7,
+      "eta_for_8b_bf16_16gb_s": 43,
+      "eta_for_70b_bf16_141gb_s": 381,
+      "caveat": "one measurement, one region, one repo, one time of day. A range, not a promise."
+    }
+  },
+  "steps": [
+    {
+      "step": "storage is a create parameter",
+      "ok": true,
+      "detail": "storage: int = 100"
+    },
+    {
+      "step": "where the storage ceiling lives",
+      "ok": null,
+      "detail": "no client-side upper bound -- the ceiling is DISCOVERED BY REJECTION at the API, so this spike walks a ladder downwards from a size a 70B job needs"
+    },
+    {
+      "step": "auth + balance",
+      "ok": true,
+      "detail": "currency=INR"
+    },
+    {
+      "step": "ssh key registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "a VM-capable GPU is free",
+      "ok": true,
+      "detail": "L4 at 41.31 INR/hr, 8 free in india-noida-01"
+    },
+    {
+      "step": "8000 GB rejected",
+      "ok": null,
+      "detail": "APIError: hdd: ensure this value is less than or equal to 7200; vcpus: field required; ram_gb: field required; __root__: Either cpus or gpus should be provided, not both or neither.; hdd: ensure this value is less than or equal to 7200; hdd: ensure this value is less than or equal to 7200"
+    },
+    {
+      "step": "storage ceiling found",
+      "ok": true,
+      "detail": "7200 GB, stated by the API itself in its refusal of 8000 GB. 4000 GB was provisioned to confirm the parameter is honoured, not to locate the bound."
+    },
+    {
+      "step": "the GPU-hour rate is independent of disk size",
+      "ok": true,
+      "detail": "41.31 -> 41.31 INR/hr with 4000 GB attached"
+    },
+    {
+      "step": "what that means for the quote",
+      "ok": null,
+      "detail": "storage is billed on a SEPARATE line from the GPU-hour, so a quote derived only from GPU-hours understates a large-disk job"
+    },
+    {
+      "step": "ssh ready",
+      "ok": true,
+      "detail": "68s after Running",
+      "ssh_ready_seconds": 68
+    },
+    {
+      "step": "probe executed",
+      "ok": true,
+      "detail": "131s"
+    },
+    {
+      "step": "the disk the API accepted is the disk that exists",
+      "ok": true,
+      "detail": "requested 4000 GB, df reports 4162 GB (3877 GiB) usable"
+    },
+    {
+      "step": "the disk is writable",
+      "ok": true,
+      "detail": "149 MB/s"
+    },
+    {
+      "step": "download measured",
+      "ok": true,
+      "detail": "16.4 GB in 45s = 364 MB/s (2.7s per GB)"
+    },
+    {
+      "step": "throughput is BURSTY",
+      "ok": null,
+      "detail": "window rates 0.0-729.6 MB/s, CoV 0.59. A live ETA from a short window will oscillate; smooth it or show a range."
+    },
+    {
+      "step": "70B has the disk it needs",
+      "ok": true,
+      "detail": "70B full fine-tuning has the disk it needs on this provider."
+    },
+    {
+      "step": "destroy called",
+      "ok": true,
+      "detail": "attempt 1"
+    },
+    {
+      "step": "teardown confirmed",
+      "ok": true,
+      "detail": "absent in 3 consecutive listings",
+      "teardown_trace": [
+        {
+          "at_seconds": 1,
+          "status": "ABSENT"
+        },
+        {
+          "at_seconds": 21,
+          "status": "ABSENT"
+        },
+        {
+          "at_seconds": 42,
+          "status": "ABSENT"
+        }
+      ]
+    }
+  ],
+  "storage_ceiling": {
+    "kind": "measured -- stated by the API itself, not bisected",
+    "ceiling_gb": 7200,
+    "how": "requesting 8000 GB was refused with `hdd: ensure this value is less than or equal to 7200`. The platform names its own bound, so no bisect was needed and none was run.",
+    "provisioned_gb": 4000,
+    "why_provision_at_all": "to confirm the parameter is HONOURED -- a create call's return value is not evidence that the disk exists. 4000 GB was requested and the filesystem reported 3877 GiB usable and writable.",
+    "correction": "This record first said 'the ceiling is between 4000 GB and 8000 GB'. That was bracketing from the ladder while the exact figure sat in the rejection text the same run had already stored. The ladder is the fallback; reading the refusal is the measurement."
+  }
+}

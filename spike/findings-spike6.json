@@ -1,0 +1,348 @@
+{
+  "spike": "spike6-multi-gpu-fsdp",
+  "run_at": "2026-08-23T15:12:37.039226+00:00",
+  "image": "axolotlai/axolotl:main-20260817-py3.12-cu130-2.12.0@sha256:29327e75d7ae0348e001809df5c11151887fdeec63fe4bc5c4330917777c701e",
+  "num_gpus_requested": 2,
+  "small_model": "Qwen/Qwen3-0.6B",
+  "large_model": "Qwen/Qwen3-4B",
+  "steps": [
+    {
+      "step": "digest pin found",
+      "ok": true,
+      "detail": "axolotlai/axolotl:main-20260817-py3.12-cu130-2.12.0@sha256:29327e75d7ae0348e001809df5c11151887fdeec63fe4bc5c4330917777c701e"
+    },
+    {
+      "step": "auth + balance",
+      "ok": true,
+      "detail": "currency=INR"
+    },
+    {
+      "step": "ssh key registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "a GPU with 2 free devices exists",
+      "ok": true,
+      "detail": "L4: 8 free at 41.31 INR/hr each -- 2 will cost about 82.62 INR/hr"
+    },
+    {
+      "step": "instance created",
+      "ok": true,
+      "detail": "2x L4, machine 479486, 16s to Running"
+    },
+    {
+      "step": "ssh ready",
+      "ok": true,
+      "detail": "76s after Running",
+      "ssh_ready_seconds": 76
+    },
+    {
+      "step": "probe executed",
+      "ok": true,
+      "detail": "524s"
+    },
+    {
+      "step": "host reports 2 devices",
+      "ok": true,
+      "detail": "GPU 0: NVIDIA L4 (UUID: GPU-f10cb433-ddcd-6f53-c5e3-50f2f16a6aee)\nGPU 1: NVIDIA L4 (UUID: GPU-bd05e82a-abcf-10a4-0c12-c56f9532cc70)\n"
+    },
+    {
+      "step": "the pinned image sees both devices",
+      "ok": true,
+      "detail": "torch.cuda.device_count() == 2 inside the container"
+    },
+    {
+      "step": "capacity, not mechanism",
+      "ok": null,
+      "detail": "Qwen/Qwen3-4B full fine-tune did not complete on 2x L4. The mechanism is not in question -- the small case proved it on the same machine minutes earlier -- so this is a CAPACITY result: 48 GB across two cards is not enough for a 4B full fine-tune with adamw_torch. Measured peak: {'gpu0_peak_mib': 21162, 'gpu1_peak_mib': 21162}."
+    },
+    {
+      "step": "destroy called",
+      "ok": true,
+      "detail": "attempt 1"
+    },
+    {
+      "step": "teardown confirmed",
+      "ok": true,
+      "detail": "absent in 3 consecutive listings",
+      "teardown_trace": [
+        {
+          "at_seconds": 1,
+          "status": "ABSENT"
+        },
+        {
+          "at_seconds": 21,
+          "status": "ABSENT"
+        },
+        {
+          "at_seconds": 42,
+          "status": "ABSENT"
+        }
+      ]
+    },
+    {
+      "step": "host reports 2 devices",
+      "ok": true,
+      "detail": "GPU 0: NVIDIA L4 (UUID: GPU-f10cb433-ddcd-6f53-c5e3-50f2f16a6aee)\nGPU 1: NVIDIA L4 (UUID: GPU-bd05e82a-abcf-10a4-0c12-c56f9532cc70)\n"
+    },
+    {
+      "step": "the pinned image sees both devices",
+      "ok": true,
+      "detail": "torch.cuda.device_count() == 2 inside the container"
+    },
+    {
+      "step": "[small] FSDP FULL_SHARD actually sharded and stepped",
+      "ok": true,
+      "detail": "3 step(s) of 3, checkpoint: torch.distributed.checkpoint (.distcp shards), rc=0"
+    },
+    {
+      "step": "[small] the run completed cleanly",
+      "ok": true,
+      "detail": "rc=0"
+    },
+    {
+      "step": "[small] sharded checkpoint size",
+      "ok": null,
+      "detail": "3.9 GB"
+    },
+    {
+      "step": "[small] checkpoint contents",
+      "ok": null,
+      "detail": "\t4096\noptimizer_0\t4096\noptimizer_0/__0_0.distcp\t1193079157\noptimizer_0/.metadata\t472051\noptimizer_0/__1_0.distcp\t1193611611\ntokens_state.json\t32\nscheduler.pt\t1465\ntrainer_state.json\t1846\npytorch_model_fsdp_0\t4096\npytorch_model_fsdp_0/__0_0.distcp\t752122831\npytorch_model_fsdp_0/.metadata\t165708\npytorch_model_fsdp_0/__1_0.distcp\t752122831\nrng_state_1.pth\t14917\nrng_state_0.pth\t14917\n"
+    },
+    {
+      "step": "[small] peak VRAM per device (measured, nvidia-smi)",
+      "ok": null,
+      "detail": "gpu0_peak_mib=4678 MiB, gpu1_peak_mib=4678 MiB"
+    },
+    {
+      "step": "[small] the loss behaved like training",
+      "ok": false,
+      "detail": "losses ['12.16', '0', '0'], grad_norms ['nan', 'nan', 'nan']"
+    },
+    {
+      "step": "[small] NUMERICS ARE NOT PROVEN",
+      "ok": null,
+      "detail": "the run sharded, stepped and checkpointed, and the loss collapsed to zero with a nan grad_norm. Mechanism and numerics are different claims and only the first is demonstrated here."
+    },
+    {
+      "step": "[small] sharded resume worked",
+      "ok": true,
+      "detail": "resumed to step 4 (target 4), rc=0"
+    },
+    {
+      "step": "[large] FSDP FULL_SHARD actually sharded and stepped",
+      "ok": true,
+      "detail": "0 step(s) of 3, checkpoint: torch.distributed.checkpoint (.distcp shards), rc=1"
+    },
+    {
+      "step": "[large] the run completed cleanly",
+      "ok": false,
+      "detail": "rc=1 after 0 step(s) -- the mechanism ran, the run did not finish"
+    },
+    {
+      "step": "[large] sharded checkpoint size",
+      "ok": null,
+      "detail": "13.6 GB"
+    },
+    {
+      "step": "[large] checkpoint contents",
+      "ok": null,
+      "detail": "\t4096\noptimizer_0\t4096\noptimizer_0/__0_0.distcp\t2426789888\noptimizer_0/__1_0.distcp\t2388365312\ntokens_state.json\t32\npytorch_model_fsdp_0\t4096\npytorch_model_fsdp_0/__0_0.distcp\t4412053479\npytorch_model_fsdp_0/.metadata\t212921\npytorch_model_fsdp_0/__1_0.distcp\t4412053479\n"
+    },
+    {
+      "step": "[large] peak VRAM per device (measured, nvidia-smi)",
+      "ok": null,
+      "detail": "gpu0_peak_mib=21162 MiB, gpu1_peak_mib=21162 MiB"
+    },
+    {
+      "step": "[large] the loss behaved like training",
+      "ok": false,
+      "detail": "losses ['7.625', '0', '0'], grad_norms ['nan', 'nan', 'nan']"
+    },
+    {
+      "step": "[large] NUMERICS ARE NOT PROVEN",
+      "ok": null,
+      "detail": "the run sharded, stepped and checkpointed, and the loss collapsed to zero with a nan grad_norm. Mechanism and numerics are different claims and only the first is demonstrated here."
+    },
+    {
+      "step": "[large] sharded resume worked",
+      "ok": false,
+      "detail": "resumed to step 0 (target 4), rc=1"
+    },
+    {
+      "step": "capacity, not mechanism",
+      "ok": null,
+      "detail": "Qwen/Qwen3-4B full fine-tune did not complete on 2x L4. The mechanism is not in question -- the small case proved it on the same machine minutes earlier -- so this is a CAPACITY result: 48 GB across two cards is not enough for a 4B full fine-tune with adamw_torch. Measured peak: {'gpu0_peak_mib': 21162, 'gpu1_peak_mib': 21162}."
+    },
+    {
+      "step": "capstone is a go",
+      "ok": false,
+      "detail": "THE MECHANISM WORKS AND THE NUMERICS DO NOT. Two devices are visible in the pinned image, FSDP FULL_SHARD shards, steps, writes a .distcp checkpoint and resumes from it -- and the loss collapses to zero with a nan grad_norm from the first step. Taking steps is not training. THE CAPSTONE DOES NOT GO ON THE CALENDAR on this evidence: a run that shards perfectly and learns nothing is a MORE expensive failure than one that will not launch, because it produces an artifact that looks like a success. Explain the nan before scheduling anything."
+    }
+  ],
+  "preflight": {
+    "currency": "INR",
+    "chosen": "L4",
+    "hourly_rate_per_device": 41.31,
+    "estimated_hourly_rate": 82.62,
+    "candidates": {
+      "L4": {
+        "price": 41.31,
+        "free": 8,
+        "region": "india-noida-01",
+        "vram_gb": "24"
+      },
+      "RTX-PRO6000": {
+        "price": 179.01,
+        "free": 4,
+        "region": "india-chennai-01",
+        "vram_gb": "96"
+      },
+      "H100": {
+        "price": 255.15,
+        "free": 8,
+        "region": "india-noida-01",
+        "vram_gb": "80"
+      },
+      "H200": {
+        "price": 378.27,
+        "free": 8,
+        "region": "india-noida-01",
+        "vram_gb": "141"
+      }
+    }
+  },
+  "machine": {
+    "gpu": "L4",
+    "num_gpus": 2,
+    "region": "india-noida-01",
+    "num_gpus_reported": 2
+  },
+  "probe_report": {
+    "host_gpu_count": 2,
+    "host_gpu_list": "GPU 0: NVIDIA L4 (UUID: GPU-f10cb433-ddcd-6f53-c5e3-50f2f16a6aee)\nGPU 1: NVIDIA L4 (UUID: GPU-bd05e82a-abcf-10a4-0c12-c56f9532cc70)\n",
+    "image": "axolotlai/axolotl:main-20260817-py3.12-cu130-2.12.0@sha256:29327e75d7ae0348e001809df5c11151887fdeec63fe4bc5c4330917777c701e",
+    "image_pull_ok": true,
+    "image_pull_seconds": 131,
+    "container_torch_report": "{\"device_count\": 2, \"names\": [\"NVIDIA L4\", \"NVIDIA L4\"], \"total_vram_bytes\": [23659151360, 23659151360], \"torch\": \"2.12.0+cu130\", \"nccl_available\": true}\n",
+    "container_torch_stderr": "",
+    "container_gpu_count": 2,
+    "fsdp_attempted": true,
+    "nvidia_smi_total_memory": "23034 MiB;23034 MiB;",
+    "cases": [
+      {
+        "case": "small",
+        "model": "Qwen/Qwen3-0.6B",
+        "launch_rc": 0,
+        "seconds": 122,
+        "steps_requested": 3,
+        "steps_completed": 3,
+        "checkpoint_format": "torch.distributed.checkpoint (.distcp shards)",
+        "checkpoint_bytes": 3891619654,
+        "checkpoint_listing": "\t4096\noptimizer_0\t4096\noptimizer_0/__0_0.distcp\t1193079157\noptimizer_0/.metadata\t472051\noptimizer_0/__1_0.distcp\t1193611611\ntokens_state.json\t32\nscheduler.pt\t1465\ntrainer_state.json\t1846\npytorch_model_fsdp_0\t4096\npytorch_model_fsdp_0/__0_0.distcp\t752122831\npytorch_model_fsdp_0/.metadata\t165708\npytorch_model_fsdp_0/__1_0.distcp\t752122831\nrng_state_1.pth\t14917\nrng_state_0.pth\t14917\n",
+        "peak_vram": {
+          "gpu0_peak_mib": 4678,
+          "gpu1_peak_mib": 4678
+        },
+        "resume_attempted": true,
+        "resume_rc": 0,
+        "resume_target_steps": 4,
+        "resume_steps_completed": 4,
+        "train_log_tail": "_gap\": 200,\n[default0]:  \"qlora_sharded_model_loading\": false,\n[default0]:  \"quantize_moe_experts\": false,\n[default0]:  \"ray_num_workers\": 1,\n[default0]:  \"relora_prune_method\": \"magnitude\",\n[default0]:  \"resources_per_worker\": {\n[default0]:    \"GPU\": 1\n[default0]:  },\n[default0]:  \"sample_packing\": false,\n[default0]:  \"sample_packing_bin_size\": 200,\n[default0]:  \"sample_packing_group_size\": 100000,\n[default0]:  \"save_only_model\": false,\n[default0]:  \"save_safetensors\": true,\n[default0]:  \"save_steps\": 2,\n[default0]:  \"save_total_limit\": 4,\n[default0]:  \"seed\": 42,\n[default0]:  \"sequence_len\": 512,\n[default0]:  \"shuffle_before_merging_datasets\": false,\n[default0]:  \"shuffle_merged_datasets\": true,\n[default0]:  \"skip_prepare_dataset\": false,\n[default0]:  \"streaming_multipack_buffer_size\": 10000,\n[default0]:  \"strict\": false,\n[default0]:  \"tensor_parallel_size\": 1,\n[default0]:  \"tf32\": true,\n[default0]:  \"tiled_mlp_use_original_mlp\": true,\n[default0]:  \"tokenizer_config\": \"Qwen/Qwen3-0.6B\",\n[default0]:  \"tokenizer_save_jinja_files\": true,\n[default0]:  \"tokenizer_type\": \"AutoTokenizer\",\n[default0]:  \"torch_dtype\": \"torch.bfloat16\",\n[default0]:  \"train_on_inputs\": false,\n[default0]:  \"trl\": {\n[default0]:    \"async_prefetch\": false,\n[default0]:    \"log_completions\": false,\n[default0]:    \"mask_truncated_completions\": false,\n[default0]:    \"ref_model_mixup_alpha\": 0.9,\n[default0]:    \"ref_model_sync_steps\": 64,\n[default0]:    \"replay_buffer_size\": 0,\n[default0]:    \"replay_recompute_logps\": true,\n[default0]:    \"reroll_max_groups\": 1,\n[default0]:    \"reroll_start_fraction\": 1.0,\n[default0]:    \"reward_num_workers\": 1,\n[default0]:    \"scale_rewards\": true,\n[default0]:    \"skip_zero_advantage_batches\": true,\n[default0]:    \"sync_ref_model\": false,\n[default0]:    \"use_data_producer\": false,\n[default0]:    \"use_vllm\": false,\n[default0]:    \"vllm_lora_sync\": false,\n[default0]:    \"vllm_server_host\": \"0.0.0.0\",\n[default0]:    \"vllm_server_port\": 8000\n[default0]:  },\n[default0]:  \"type_of_model\": \"AutoModelForCausalLM\",\n[default0]:  \"use_otel_metrics\": false,\n[default0]:  \"use_ray\": false,\n[default0]:  \"val_set_size\": 0.0,\n[default0]:  \"vllm\": {\n[default0]:    \"device\": \"auto\",\n[default0]:    \"dtype\": \"auto\",\n[default0]:    \"gpu_memory_utilization\": 0.9,\n[default0]:    \"host\": \"0.0.0.0\",\n[default0]:    \"port\": 8000\n[default0]:  },\n[default0]:  \"weight_decay\": 0.0,\n[default0]:  \"world_size\": 2\n[default0]:}\n[default0]:[2026-08-23 15:16:48,785] [WARNING] [axolotl.cli.checks] Error verifying HuggingFace token. Remember to log in using `hf auth login` and get your access token from https://huggingface.co/settings/tokens if you want to use gated models or datasets.\n[default1]:[2026-08-23 15:16:55,920] [INFO] [axolotl.utils.data.sft] [RANK:1] Loading raw datasets...\n[default0]:[2026-08-23 15:17:56,010] [INFO] [axolotl.utils.data.shared] Loading prepared dataset from disk at /job/prepared/9870ddc1841e7ce64f239e0213ccaa85...\n[default0]:\n[default0]:Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]\n[default0]:Loading weights: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 311/311 [00:00<00:00, 7153.55it/s]\n[default1]:\n[default1]:Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]\n[default1]:Loading weights: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 311/311 [00:00<00:00, 6004.36it/s]\n[default0]:[transformers] When using FSDP, prefer `activation_checkpointing` in `fsdp_config` over `gradient_checkpointing`; the latter introduces a redundant AllGather in the backward pass. Reference: https://github.com/huggingface/transformers/issues/30404\n[default0]:[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.\n[default1]:[transformers] When using FSDP, prefer `activation_checkpointing` in `fsdp_config` over `gradient_checkpointing`; the latter introduces a redundant AllGather in the backward pass. Reference: https://github.com/huggingface/transformers/issues/30404\n[default0]:\n[default0]:  0%|          | 0/3 [00:00<?, ?it/s][default1]:[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.\n[default0]:\n[default0]: 33%|\u2588\u2588\u2588\u258e      | 1/3 [00:03<00:06,  3.11s/it]\n[default0]:                                             \n[default0]:\n[default0]: 33%|\u2588\u2588\u2588\u258e      | 1/3 [00:03<00:06,  3.11s/it][default0]:\n[default0]: 67%|\u2588\u2588\u2588\u2588\u2588\u2588\u258b   | 2/3 [00:03<00:01,  1.46s/it]\n[default0]:                                             \n[default0]:\n[default0]: 67%|\u2588\u2588\u2588\u2588\u2588\u2588\u258b   | 2/3 [00:03<00:01,  1.46s/it][default0]:\n[default0]:100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3/3 [00:09<00:00,  3.56s/it]\n[default0]:                                             \n[default0]:\n[default0]:100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3/3 [00:09<00:00,  3.56s/it][default0]:\n[default0]:                                             \n[default0]:\n[default0]:100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3/3 [00:14<00:00,  3.56s/it]\n[default0]:100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3/3 [00:14<00:00,  4.78s/it]\n[default0]:[2026-08-23 15:17:56,014] [INFO] [axolotl.utils.data.sft] Maximum number of steps set at 3\n[default0]:[2026-08-23 15:17:58,448] [INFO] [axolotl.monkeypatch.accelerate.float8_fsdp] Installed FSDP2 support (split + all-gather hooks) on torchao Float8Tensor\n[default0]:[2026-08-23 15:18:05,812] [INFO] [axolotl.loaders.model] Converting modules to torch.bfloat16\n[default0]:[2026-08-23 15:18:09,289] [INFO] [axolotl.train] Pre-saving tokenizer to /out/run...\n[default0]:[2026-08-23 15:18:09,372] [INFO] [axolotl.train] Pre-saving model config to /out/run...\n[default0]:[2026-08-23 15:18:09,375] [INFO] [axolotl.train] Starting trainer...\n[default0]:{'loss': '12.16', 'grad_norm': 'nan', 'learning_rate': '1e-05', 'ppl': '1.903e+05', 'memory/max_active (GiB)': '2.84', 'memory/max_allocated (GiB)': '2.84', 'memory/device_reserved (GiB)': '3.17', 'tokens/trainable': 28, 'tokens/total': 1024, 'epoch': '0.03125'}\n[default0]:{'loss': '0', 'grad_norm': 'nan', 'learning_rate': '1e-05', 'ppl': '1', 'memory/max_active (GiB)': '3.32', 'memory/max_allocated (GiB)': '3.32', 'memory/device_reserved (GiB)': '4.19', 'tokens/train_per_sec_per_gpu': '43.79', 'tokens/trainable': 55, 'tokens/total': 2048, 'epoch': '0.0625'}\n[default0]:{'loss': '0', 'grad_norm': 'nan', 'learning_rate': '1e-05', 'ppl': '1', 'memory/max_active (GiB)': '3.32', 'memory/max_allocated (GiB)': '3.32', 'memory/device_reserved (GiB)': '4.19', 'tokens/train_per_sec_per_gpu': '2.31', 'tokens/trainable': 83, 'tokens/total': 3072, 'epoch': '0.09375'}\n[default0]:{'train_runtime': '14.31', 'train_samples_per_second': '0.419', 'train_steps_per_second': '0.21', 'train_loss': '4.052', 'memory/max_active (GiB)': '1.7', 'memory/max_allocated (GiB)': '1.7', 'memory/device_reserved (GiB)': '4.03', 'epoch': '0.09375'}\n[default0]:[2026-08-23 15:18:24,322] [INFO] [axolotl.train] Training completed! Saving trained model to /out/run.\n[default0]:[2026-08-23 15:18:24,322] [INFO] [axolotl.train] The final model was saved with a sharded state dict. Please ensure you merge the sharded weights with `merge-sharded-fsdp-weights`.\n[default0]:[2026-08-23 15:18:24,323] [INFO] [axolotl.utils.train] Resuming from last checkpoint at /out/run/checkpoint-3\n[default0]:[2026-08-23 15:18:24,325] [INFO] [axolotl.cli.merge_sharded_fsdp_weights] Merging FSDP weights from /out/run/checkpoint-3/pytorch_model_fsdp_0\n[default0]:[2026-08-23 15:18:26,232] [INFO] [axolotl.cli.merge_sharded_fsdp_weights] Successfully merged FSDP weights and saved to /out/run/merged\n[default0]:[2026-08-23 15:18:26,233] [INFO] [axolotl.train] Model successfully saved to /out/run\n",
+        "resume_log_tail": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 311/311 [00:00<00:00, 5764.69it/s]\n[default0]:\n[default0]:Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]\n[default0]:Loading weights: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 311/311 [00:00<00:00, 6322.14it/s]\n[default1]:[transformers] When using FSDP, prefer `activation_checkpointing` in `fsdp_config` over `gradient_checkpointing`; the latter introduces a redundant AllGather in the backward pass. Reference: https://github.com/huggingface/transformers/issues/30404\n[default0]:[transformers] When using FSDP, prefer `activation_checkpointing` in `fsdp_config` over `gradient_checkpointing`; the latter introduces a redundant AllGather in the backward pass. Reference: https://github.com/huggingface/transformers/issues/30404\n[default0]:[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.\n[default1]:[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.\n[default0]:\n[default0]:  0%|          | 0/4 [00:00<?, ?it/s][default0]:\n[default0]:100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 4/4 [00:01<00:00,  3.45it/s][default0]:\n[default0]:                                             \n[default0]:\n[default0]:100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 4/4 [00:01<00:00,  3.45it/s][default0]:\n[default0]:                                             \n[default0]:\n[default0]:100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 4/4 [00:06<00:00,  3.45it/s]\n[default0]:100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 4/4 [00:06<00:00,  1.67s/it]\n[default0]:[2026-08-23 15:18:53,688] [INFO] [axolotl.utils.data.sft] Maximum number of steps set at 4\n[default0]:[2026-08-23 15:18:56,240] [INFO] [axolotl.monkeypatch.accelerate.float8_fsdp] Installed FSDP2 support (split + all-gather hooks) on torchao Float8Tensor\n[default0]:[2026-08-23 15:18:57,222] [INFO] [axolotl.loaders.model] Converting modules to torch.bfloat16\n[default0]:[2026-08-23 15:19:00,761] [INFO] [axolotl.train] Pre-saving tokenizer to /out/run...\n[default0]:[2026-08-23 15:19:00,837] [INFO] [axolotl.train] Pre-saving model config to /out/run...\n[default0]:[2026-08-23 15:19:00,840] [INFO] [axolotl.train] Starting trainer...\n[default0]:[2026-08-23 15:19:05,166] [INFO] [axolotl.utils.callbacks.tokens_per_second] Restored total_tokens: 3072\n[default0]:{'loss': '0', 'grad_norm': 'nan', 'learning_rate': '1e-05', 'ppl': '1', 'memory/max_active (GiB)': '3.33', 'memory/max_allocated (GiB)': '3.33', 'memory/device_reserved (GiB)': '4.9', 'tokens/trainable': 111, 'tokens/total': 4096, 'epoch': '0.125'}\n[default0]:{'train_runtime': '6.532', 'train_samples_per_second': '1.225', 'train_steps_per_second': '0.612', 'train_loss': '0', 'memory/max_active (GiB)': '1.71', 'memory/max_allocated (GiB)': '1.71', 'memory/device_reserved (GiB)': '4.9', 'epoch': '0.125'}\n[default0]:[2026-08-23 15:19:11,832] [INFO] [axolotl.train] Training completed! Saving trained model to /out/run.\n[default0]:[2026-08-23 15:19:11,833] [INFO] [axolotl.train] The final model was saved with a sharded state dict. Please ensure you merge the sharded weights with `merge-sharded-fsdp-weights`.\n[default0]:[2026-08-23 15:19:11,833] [INFO] [axolotl.utils.train] Resuming from last checkpoint at /out/run/checkpoint-4\n[default0]:[2026-08-23 15:19:11,836] [INFO] [axolotl.cli.merge_sharded_fsdp_weights] Merging FSDP weights from /out/run/checkpoint-4/pytorch_model_fsdp_0\n[default0]:[2026-08-23 15:19:13,582] [INFO] [axolotl.cli.merge_sharded_fsdp_weights] Successfully merged FSDP weights and saved to /out/run/merged\n[default0]:[2026-08-23 15:19:13,792] [INFO] [axolotl.train] Model successfully saved to /out/run\n"
+      },
+      {
+        "case": "large",
+        "model": "Qwen/Qwen3-4B",
+        "launch_rc": 1,
+        "seconds": 179,
+        "steps_requested": 3,
+        "steps_completed": 0,
+        "checkpoint_format": "torch.distributed.checkpoint (.distcp shards)",
+        "checkpoint_bytes": 13639487399,
+        "checkpoint_listing": "\t4096\noptimizer_0\t4096\noptimizer_0/__0_0.distcp\t2426789888\noptimizer_0/__1_0.distcp\t2388365312\ntokens_state.json\t32\npytorch_model_fsdp_0\t4096\npytorch_model_fsdp_0/__0_0.distcp\t4412053479\npytorch_model_fsdp_0/.metadata\t212921\npytorch_model_fsdp_0/__1_0.distcp\t4412053479\n",
+        "peak_vram": {
+          "gpu0_peak_mib": 21162,
+          "gpu1_peak_mib": 21162
+        },
+        "resume_attempted": true,
+        "resume_rc": 1,
+        "resume_target_steps": 4,
+        "resume_steps_completed": 0,
+        "train_log_tail": "unction call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n[default0]:{%- else %}\n[default0]:    {%- if messages[0].role == 'system' %}\n[default0]:        {{- '<|im_start|>system\\n' + messages[0].content + '<|im_end|>\\n' }}\n[default0]:    {%- endif %}\n[default0]:{%- endif %}\n[default0]:{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n[default0]:{%- for message in messages[::-1] %}\n[default0]:    {%- set index = (messages|length - 1) - loop.index0 %}\n[default0]:    {%- if ns.multi_step_tool and message.role == \"user\" and message.content is string and not(message.content.startswith('<tool_response>') and message.content.endswith('</tool_response>')) %}\n[default0]:        {%- set ns.multi_step_tool = false %}\n[default0]:        {%- set ns.last_query_index = index %}\n[default0]:    {%- endif %}\n[default0]:{%- endfor %}\n[default0]:{%- for message in messages %}\n[default0]:    {%- if message.content is string %}\n[default0]:        {%- set content = message.content %}\n[default0]:    {%- else %}\n[default0]:        {%- set content = '' %}\n[default0]:    {%- endif %}\n[default0]:    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) %}\n[default0]:        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n[default0]:    {%- elif message.role == \"assistant\" %}\n[default0]:        {%- set reasoning_content = '' %}\n[default0]:        {%- if message.reasoning_content is string %}\n[default0]:            {%- set reasoning_content = message.reasoning_content %}\n[default0]:        {%- else %}\n[default0]:            {%- if '</think>' in content %}\n[default0]:                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n[default0]:                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n[default0]:            {%- endif %}\n[default0]:        {%- endif %}\n[default0]:        {%- if loop.index0 > ns.last_query_index %}\n[default0]:            {%- if loop.last or (not loop.last and reasoning_content) %}\n[default0]:                {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content.strip('\\n') + '\\n</think>\\n\\n' + content.lstrip('\\n') }}\n[default0]:            {%- else %}\n[default0]:                {{- '<|im_start|>' + message.role + '\\n' + content }}\n[default0]:            {%- endif %}\n[default0]:        {%- else %}\n[default0]:            {{- '<|im_start|>' + message.role + '\\n' + content }}\n[default0]:        {%- endif %}\n[default0]:        {%- if message.tool_calls %}\n[default0]:            {%- for tool_call in message.tool_calls %}\n[default0]:                {%- if (loop.first and content) or (not loop.first) %}\n[default0]:                    {{- '\\n' }}\n[default0]:                {%- endif %}\n[default0]:                {%- if tool_call.function %}\n[default0]:                    {%- set tool_call = tool_call.function %}\n[default0]:                {%- endif %}\n[default0]:                {{- '<tool_call>\\n{\"name\": \"' }}\n[default0]:                {{- tool_call.name }}\n[default0]:                {{- '\", \"arguments\": ' }}\n[default0]:                {%- if tool_call.arguments is string %}\n[default0]:                    {{- tool_call.arguments }}\n[default0]:                {%- else %}\n[default0]:                    {{- tool_call.arguments | tojson }}\n[default0]:                {%- endif %}\n[default0]:                {{- '}\\n</tool_call>' }}\n[default0]:            {%- endfor %}\n[default0]:        {%- endif %}\n[default0]:        {{- '<|im_end|>\\n' }}\n[default0]:    {%- elif message.role == \"tool\" %}\n[default0]:        {%- if loop.first or (messages[loop.index0 - 1].role != \"tool\") %}\n[default0]:            {{- '<|im_start|>user' }}\n[default0]:        {%- endif %}\n[default0]:        {{- '\\n<tool_response>\\n' }}\n[default0]:        {{- content }}\n[default0]:        {{- '\\n</tool_response>' }}\n[default0]:        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n[default0]:            {{- '<|im_end|>\\n' }}\n[default0]:        {%- endif %}\n[default0]:    {%- endif %}\n[default0]:{%- endfor %}\n[default0]:{%- if add_generation_prompt %}\n[default0]:    {{- '<|im_start|>assistant\\n' }}\n[default0]:    {%- if enable_thinking is defined and enable_thinking is false %}\n[default0]:        {{- '<think>\\n\\n</think>\\n\\n' }}\n[default0]:    {%- endif %}\n[default0]:{%- endif %}\n[default0]:---\n[default0]:[2026-08-23 15:20:46,131] [INFO] [axolotl.utils.data.utils] min_input_len: 33\n[default0]:[2026-08-23 15:20:46,131] [INFO] [axolotl.utils.data.utils] max_input_len: 35\n[default0]:[2026-08-23 15:20:48,466] [INFO] [axolotl.utils.data.sft] Maximum number of steps set at 3\n[default0]:[2026-08-23 15:20:51,049] [INFO] [axolotl.monkeypatch.accelerate.float8_fsdp] Installed FSDP2 support (split + all-gather hooks) on torchao Float8Tensor\n[default0]:[2026-08-23 15:21:12,406] [INFO] [axolotl.loaders.model] Converting modules to torch.bfloat16\n[default0]:[2026-08-23 15:21:15,932] [INFO] [axolotl.train] Pre-saving tokenizer to /out/run...\n[default0]:[2026-08-23 15:21:16,004] [INFO] [axolotl.train] Pre-saving model config to /out/run...\n[default0]:[2026-08-23 15:21:16,007] [INFO] [axolotl.train] Starting trainer...\n[default0]:{'loss': '7.625', 'grad_norm': 'nan', 'learning_rate': '1e-05', 'ppl': '2049', 'memory/max_active (GiB)': '18.83', 'memory/max_allocated (GiB)': '18.83', 'memory/device_reserved (GiB)': '19.82', 'tokens/trainable': 28, 'tokens/total': 1024, 'epoch': '0.03125'}\n[default0]:{'loss': '0', 'grad_norm': 'nan', 'learning_rate': '1e-05', 'ppl': '1', 'memory/max_active (GiB)': '18.81', 'memory/max_allocated (GiB)': '18.81', 'memory/device_reserved (GiB)': '21.13', 'tokens/train_per_sec_per_gpu': '7.91', 'tokens/trainable': 55, 'tokens/total': 2048, 'epoch': '0.0625'}\n[default0]:{'loss': '0', 'grad_norm': 'nan', 'learning_rate': '1e-05', 'ppl': '1', 'memory/max_active (GiB)': '18.81', 'memory/max_allocated (GiB)': '18.81', 'memory/device_reserved (GiB)': '20.29', 'tokens/train_per_sec_per_gpu': '0.45', 'tokens/trainable': 83, 'tokens/total': 3072, 'epoch': '0.09375'}\n    args.func(args)\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/accelerate/commands/launch.py\", line 1392, in launch_command\n    multi_gpu_launcher(args)\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/accelerate/commands/launch.py\", line 1023, in multi_gpu_launcher\n    distrib_run.run(args)\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/torch/distributed/run.py\", line 1007, in run\n    elastic_launch(\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/torch/distributed/launcher/api.py\", line 191, in __call__\n    return launch_agent(self._config, self._entrypoint, list(args))\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/torch/distributed/launcher/api.py\", line 371, in launch_agent\n    raise ChildFailedError(\ntorch.distributed.elastic.multiprocessing.errors.ChildFailedError: \n============================================================\naxolotl.cli.train FAILED\n------------------------------------------------------------\nFailures:\n[1]:\n  time      : 2026-08-23_15:22:16\n  host      : 93c0bff25181\n  rank      : 1 (local_rank: 1)\n  exitcode  : 1 (pid: 179) \n  error_file: <N/A>\n  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html\n------------------------------------------------------------\nRoot Cause (first observed failure):\n[0]:\n  time      : 2026-08-23_15:22:16\n  host      : 93c0bff25181\n  rank      : 0 (local_rank: 0)\n  exitcode  : 1 (pid: 178) \n  error_file: <N/A>\n  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html\n============================================================\n",
+        "resume_log_tail": "ume_from_checkpoint)\n[default1]:[rank1]:   File \"/workspace/axolotl/src/axolotl/train.py\", line 235, in execute_training\n[default1]:[rank1]:     trainer.train(resume_from_checkpoint=resume_from_checkpoint)\n[default1]:[rank1]:   File \"/workspace/axolotl-venv/lib/python3.12/site-packages/transformers/trainer.py\", line 1426, in train\n[default1]:[rank1]:     state = TrainerState.load_from_json(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))\n[default1]:[rank1]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n[default1]:[rank1]:   File \"/workspace/axolotl-venv/lib/python3.12/site-packages/transformers/trainer_callback.py\", line 152, in load_from_json\n[default1]:[rank1]:     with open(json_path, encoding=\"utf-8\") as f:\n[default1]:[rank1]:          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n[default1]:[rank1]: FileNotFoundError: [Errno 2] No such file or directory: '/out/run/checkpoint-3/trainer_state.json'\nW0823 15:22:50.328000 1 torch/distributed/elastic/multiprocessing/api.py:1014] Sending process 178 closing signal SIGTERM\nE0823 15:22:50.943000 1 torch/distributed/elastic/multiprocessing/api.py:988] failed (exitcode: 1) local_rank: 0 (pid: 177) of binary: /workspace/axolotl-venv/bin/python\nTraceback (most recent call last):\n  File \"/workspace/axolotl-venv/bin/accelerate\", line 12, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/accelerate/commands/accelerate_cli.py\", line 50, in main\n    args.func(args)\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/accelerate/commands/launch.py\", line 1392, in launch_command\n[default0]:[2026-08-23 15:22:40,546] [INFO] [axolotl.utils.data.sft] Maximum number of steps set at 4\n[default0]:[2026-08-23 15:22:42,969] [INFO] [axolotl.monkeypatch.accelerate.float8_fsdp] Installed FSDP2 support (split + all-gather hooks) on torchao Float8Tensor\n[default0]:[2026-08-23 15:22:43,760] [INFO] [axolotl.loaders.model] Converting modules to torch.bfloat16\n[default0]:[2026-08-23 15:22:47,873] [INFO] [axolotl.train] Pre-saving tokenizer to /out/run...\n[default0]:[2026-08-23 15:22:47,968] [INFO] [axolotl.train] Pre-saving model config to /out/run...\n[default0]:[2026-08-23 15:22:47,971] [INFO] [axolotl.train] Starting trainer...\n[default0]:[2026-08-23 15:22:47,973] [ERROR] [axolotl.telemetry.errors] Error captured in telemetry. Run ID: 691bca99-f79e-4f6c-9391-029f396daf80\n    multi_gpu_launcher(args)\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/accelerate/commands/launch.py\", line 1023, in multi_gpu_launcher\n    distrib_run.run(args)\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/torch/distributed/run.py\", line 1007, in run\n    elastic_launch(\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/torch/distributed/launcher/api.py\", line 191, in __call__\n    return launch_agent(self._config, self._entrypoint, list(args))\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/axolotl-venv/lib/python3.12/site-packages/torch/distributed/launcher/api.py\", line 371, in launch_agent\n    raise ChildFailedError(\ntorch.distributed.elastic.multiprocessing.errors.ChildFailedError: \n============================================================\naxolotl.cli.train FAILED\n------------------------------------------------------------\nFailures:\n[1]:\n  time      : 2026-08-23_15:22:50\n  host      : dfe554941e13\n  rank      : 1 (local_rank: 1)\n  exitcode  : -15 (pid: 178)  (SIGTERM)\n  error_file: <N/A>\n  traceback : Signal 15 (SIGTERM) received by PID 178\n------------------------------------------------------------\nRoot Cause (first observed failure):\n[0]:\n  time      : 2026-08-23_15:22:50\n  host      : dfe554941e13\n  rank      : 0 (local_rank: 0)\n  exitcode  : 1 (pid: 177) \n  error_file: <N/A>\n  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html\n============================================================\n"
+      }
+    ]
+  },
+  "verdict": {
+    "two_devices_on_host": true,
+    "two_devices_in_the_pinned_image": true,
+    "fsdp_attempted": true,
+    "mechanism_case": {
+      "model": "Qwen/Qwen3-0.6B",
+      "mechanism_ran": true,
+      "run_completed": true,
+      "steps_completed": 3,
+      "checkpoint_format": "torch.distributed.checkpoint (.distcp shards)",
+      "checkpoint_gb": 3.89,
+      "peak_vram_mib": {
+        "gpu0_peak_mib": 4678,
+        "gpu1_peak_mib": 4678
+      },
+      "resume_attempted": true,
+      "resume_worked": true,
+      "numerics": {
+        "losses": [
+          "12.16",
+          "0",
+          "0"
+        ],
+        "grad_norms": [
+          "nan",
+          "nan",
+          "nan"
+        ],
+        "loss_ever_plausible": true,
+        "loss_collapsed_to_zero": true,
+        "all_grad_norms_nan": true,
+        "numerically_healthy": false
+      }
+    },
+    "capacity_case": {
+      "model": "Qwen/Qwen3-4B",
+      "mechanism_ran": true,
+      "run_completed": false,
+      "steps_completed": 0,
+      "checkpoint_format": "torch.distributed.checkpoint (.distcp shards)",
+      "checkpoint_gb": 13.64,
+      "peak_vram_mib": {
+        "gpu0_peak_mib": 21162,
+        "gpu1_peak_mib": 21162
+      },
+      "resume_attempted": true,
+      "resume_worked": false,
+      "numerics": {
+        "losses": [
+          "7.625",
+          "0",
+          "0"
+        ],
+        "grad_norms": [
+          "nan",
+          "nan",
+          "nan"
+        ],
+        "loss_ever_plausible": true,
+        "loss_collapsed_to_zero": true,
+        "all_grad_norms_nan": true,
+        "numerically_healthy": false
+      }
+    },
+    "capstone_go": false,
+    "statement": "THE MECHANISM WORKS AND THE NUMERICS DO NOT. Two devices are visible in the pinned image, FSDP FULL_SHARD shards, steps, writes a .distcp checkpoint and resumes from it -- and the loss collapses to zero with a nan grad_norm from the first step. Taking steps is not training. THE CAPSTONE DOES NOT GO ON THE CALENDAR on this evidence: a run that shards perfectly and learns nothing is a MORE expensive failure than one that will not launch, because it produces an artifact that looks like a success. Explain the nan before scheduling anything.",
+    "capacity_finding": "Qwen/Qwen3-4B full fine-tune did not complete on 2x L4. The mechanism is not in question -- the small case proved it on the same machine minutes earlier -- so this is a CAPACITY result: 48 GB across two cards is not enough for a 4B full fine-tune with adamw_torch. Measured peak: {'gpu0_peak_mib': 21162, 'gpu1_peak_mib': 21162}."
+  },
+  "reinterpreted_note": "The verdict was recomputed from the SAME captured probe report after the interpretation gained a numerics check. No machine was provisioned to produce this file a second time -- the measurements are unchanged and only the reading of them moved."
+}

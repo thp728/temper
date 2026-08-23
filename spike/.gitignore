@@ -11,3 +11,19 @@
 # step, so any findings file can carry it — glob rather than name them, because
 # the next spike will invent another filename.
 findings*.json
+
+# The Phase B findings are committed deliberately -- see the root .gitignore
+# for why. Belt and braces here too, so the negation travels with the folder.
+!findings-spike5.json
+!findings-spike6.json
+!findings-spike7.json
+!findings-spike8.json
+!findings-spike9.json
+
+# Spike 9 generates multi-GB datasets and caches an 11 MB tokenizer.json.
+# Both are reproducible from the script; neither belongs in git.
+.spike9-data/
+.cache/
+
+# Dry-run preflights, regenerable and not evidence.
+findings-spike*-dryrun.json

@@ -9,9 +9,21 @@ id_ed25519
 
 # Generated
 findings*.json
+# ...but the Phase B spike findings ARE the evidence base, and a finding that
+# only exists in a terminal scrollback is not evidence. These five carry no
+# credential and no balance -- spike 8 records that the balance was READABLE
+# and deliberately withholds the figure -- so they are committed on purpose.
+# `findings.json` (spike 1) stays ignored: it records the account balance.
+!spike/findings-spike5.json
+!spike/findings-spike6.json
+!spike/findings-spike7.json
+!spike/findings-spike8.json
+!spike/findings-spike9.json
 __pycache__/
 *.pyc
 .venv/
 
-# Runtime state
-data/
+# Runtime state. LEADING SLASH: a bare `data/` matches a directory of that
+# name at ANY depth, which silently swallowed docs/data/ -- a committed source
+# artifact, not runtime state. Anchor it to the repo root.
+/data/

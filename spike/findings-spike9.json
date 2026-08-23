@@ -1,0 +1,442 @@
+{
+  "spike": "spike9-streaming-validation",
+  "run_at": "2026-08-23T15:33:01.140560+00:00",
+  "host": {
+    "python": "3.13.5",
+    "platform": "win32",
+    "cpu_count": 20,
+    "total_ram_gb": 34.0,
+    "quiet_machine": false,
+    "contention_note": "This run shared the machine with a multi-GB Docker image pull and with the orchestration of spikes 5 and 6. THE MB/s FIGURES ARE A FLOOR, not a rate. Peak RSS is unaffected by CPU contention and is the half of this spike that carries the claim. See derived.verdict.sensitivity for why the recommendation does not depend on the contended number."
+  },
+  "tokenizer": "Qwen/Qwen3-4B tokenizer.json via `tokenizers`",
+  "row_shape": "multi-turn chat, system + 1-2 user/assistant pairs, 200-700 char assistant turns",
+  "results": [
+    {
+      "size_gb": 1.0,
+      "dataset": {
+        "path": "D:\\Dev\\temper\\spike\\.spike9-data\\synthetic-1gb.jsonl",
+        "bytes": 1000000668,
+        "rows": 1322790,
+        "generated": true,
+        "write_seconds": 9.8
+      },
+      "passes": {
+        "validate": {
+          "label": "stream: parse + validate (line numbers held)",
+          "kind": "measured",
+          "seconds": 42.92,
+          "bytes": 1000000668,
+          "mb_per_s": 23.3,
+          "peak_rss_mb": 105.8,
+          "baseline_rss_mb": 101.7,
+          "rss_growth_mb": 4.1,
+          "rss_growth_multiple_of_file": 0.004,
+          "row_count": 1322790,
+          "usable_rows": 1322790,
+          "valid": true,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": null
+        },
+        "validate_without_line_numbers": {
+          "label": "stream: parse + validate (line numbers dropped)",
+          "kind": "measured",
+          "seconds": 39.68,
+          "bytes": 1000000668,
+          "mb_per_s": 25.2,
+          "peak_rss_mb": 85.8,
+          "baseline_rss_mb": 81.5,
+          "rss_growth_mb": 4.3,
+          "rss_growth_multiple_of_file": 0.004,
+          "row_count": 1322790,
+          "usable_rows": 1322790,
+          "valid": true,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": null
+        },
+        "validate_and_tokenise": {
+          "label": "stream: parse + validate + tokenise",
+          "kind": "measured",
+          "seconds": 371.76,
+          "bytes": 1000000000,
+          "mb_per_s": 2.7,
+          "peak_rss_mb": 88.8,
+          "baseline_rss_mb": 81.4,
+          "rss_growth_mb": 7.3,
+          "rss_growth_multiple_of_file": 0.007,
+          "row_count": 1322790,
+          "usable_rows": 1322790,
+          "valid": true,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": 185808772
+        },
+        "in_memory_shipped": {
+          "label": "in-memory (shipped): parse + validate",
+          "kind": "measured",
+          "seconds": 68.08,
+          "bytes": 1000000668,
+          "mb_per_s": 14.7,
+          "peak_rss_mb": 6013.5,
+          "baseline_rss_mb": 83.6,
+          "rss_growth_mb": 5929.9,
+          "rss_growth_multiple_of_file": 5.93,
+          "usable_rows": 1322790
+        }
+      },
+      "tokenisation": {
+        "kind": "measured on a prefix",
+        "bytes_tokenised": 1000000000,
+        "whole_file": false,
+        "extra_seconds_over_bytes_tokenised": 328.84,
+        "share_of_total_time": 0.885,
+        "slowdown_multiple": 8.66,
+        "whole_file_seconds": {
+          "value": 371.8,
+          "kind": "derived from the prefix rate"
+        }
+      },
+      "line_number_guarantee": {
+        "kind": "derived",
+        "extra_seconds": 3.24,
+        "share_of_validate_time": 0.0755,
+        "extra_rss_mb": -0.2
+      },
+      "memory_multiplier": {
+        "kind": "measured",
+        "in_memory_x_file": 5.93,
+        "streaming_x_file": 0.0041,
+        "adr_0005_claim": 4.8
+      }
+    },
+    {
+      "size_gb": 5.0,
+      "dataset": {
+        "path": "D:\\Dev\\temper\\spike\\.spike9-data\\synthetic-5gb.jsonl",
+        "bytes": 5000000672,
+        "rows": 6608972,
+        "generated": true,
+        "write_seconds": 79.02
+      },
+      "passes": {
+        "validate": {
+          "label": "stream: parse + validate (line numbers held)",
+          "kind": "measured",
+          "seconds": 279.84,
+          "bytes": 5000000672,
+          "mb_per_s": 17.9,
+          "peak_rss_mb": 131.0,
+          "baseline_rss_mb": 127.2,
+          "rss_growth_mb": 3.8,
+          "rss_growth_multiple_of_file": 0.001,
+          "row_count": 6608972,
+          "usable_rows": 6608972,
+          "valid": true,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": null
+        },
+        "validate_without_line_numbers": {
+          "label": "stream: parse + validate (line numbers dropped)",
+          "kind": "measured",
+          "seconds": 282.99,
+          "bytes": 5000000672,
+          "mb_per_s": 17.7,
+          "peak_rss_mb": 90.9,
+          "baseline_rss_mb": 86.5,
+          "rss_growth_mb": 4.4,
+          "rss_growth_multiple_of_file": 0.001,
+          "row_count": 6608972,
+          "usable_rows": 6608972,
+          "valid": true,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": null
+        },
+        "validate_and_tokenise": {
+          "label": "stream: parse + validate + tokenise",
+          "kind": "measured",
+          "seconds": 267.66,
+          "bytes": 1000000000,
+          "mb_per_s": 3.7,
+          "peak_rss_mb": 92.4,
+          "baseline_rss_mb": 86.5,
+          "rss_growth_mb": 5.9,
+          "rss_growth_multiple_of_file": 0.006,
+          "row_count": 1322790,
+          "usable_rows": 1322790,
+          "valid": false,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": 185808772
+        }
+      },
+      "tokenisation": {
+        "kind": "measured on a prefix",
+        "bytes_tokenised": 1000000000,
+        "whole_file": false,
+        "extra_seconds_over_bytes_tokenised": 211.69,
+        "share_of_total_time": 0.791,
+        "slowdown_multiple": 4.78,
+        "whole_file_seconds": {
+          "value": 1338.3,
+          "kind": "derived from the prefix rate"
+        }
+      },
+      "line_number_guarantee": {
+        "kind": "derived",
+        "extra_seconds": -3.15,
+        "share_of_validate_time": -0.0112,
+        "extra_rss_mb": -0.6
+      }
+    },
+    {
+      "size_gb": 20.0,
+      "dataset": {
+        "path": "D:\\Dev\\temper\\spike\\.spike9-data\\synthetic-20gb.jsonl",
+        "bytes": 20000000708,
+        "rows": 26401860,
+        "generated": true,
+        "write_seconds": 193.1
+      },
+      "passes": {
+        "validate": {
+          "label": "stream: parse + validate (line numbers held)",
+          "kind": "measured",
+          "seconds": 843.46,
+          "bytes": 20000000708,
+          "mb_per_s": 23.7,
+          "peak_rss_mb": 102.4,
+          "baseline_rss_mb": 98.8,
+          "rss_growth_mb": 3.6,
+          "rss_growth_multiple_of_file": 0.0,
+          "row_count": 26401860,
+          "usable_rows": 26401860,
+          "valid": true,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": null
+        },
+        "validate_without_line_numbers": {
+          "label": "stream: parse + validate (line numbers dropped)",
+          "kind": "measured",
+          "seconds": 887.19,
+          "bytes": 20000000708,
+          "mb_per_s": 22.5,
+          "peak_rss_mb": 58.4,
+          "baseline_rss_mb": 54.2,
+          "rss_growth_mb": 4.2,
+          "rss_growth_multiple_of_file": 0.0,
+          "row_count": 26401860,
+          "usable_rows": 26401860,
+          "valid": true,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": null
+        },
+        "validate_and_tokenise": {
+          "label": "stream: parse + validate + tokenise",
+          "kind": "measured",
+          "seconds": 270.36,
+          "bytes": 1000000000,
+          "mb_per_s": 3.7,
+          "peak_rss_mb": 58.5,
+          "baseline_rss_mb": 53.6,
+          "rss_growth_mb": 4.9,
+          "rss_growth_multiple_of_file": 0.005,
+          "row_count": 1322790,
+          "usable_rows": 1322790,
+          "valid": false,
+          "errors": 0,
+          "enable_thinking": false,
+          "retained_objects": 8,
+          "token_count": 185808772
+        }
+      },
+      "tokenisation": {
+        "kind": "measured on a prefix",
+        "bytes_tokenised": 1000000000,
+        "whole_file": false,
+        "extra_seconds_over_bytes_tokenised": 228.18,
+        "share_of_total_time": 0.844,
+        "slowdown_multiple": 6.41,
+        "whole_file_seconds": {
+          "value": 5407.2,
+          "kind": "derived from the prefix rate"
+        }
+      },
+      "line_number_guarantee": {
+        "kind": "derived",
+        "extra_seconds": -43.74,
+        "share_of_validate_time": -0.0519,
+        "extra_rss_mb": -0.6
+      }
+    }
+  ],
+  "derived": {
+    "flatness": {
+      "kind": "measured",
+      "sizes_gb": [
+        1.0,
+        5.0,
+        20.0
+      ],
+      "rss_growth_mb": [
+        4.1,
+        3.8,
+        3.6
+      ],
+      "file_size_ratio": 20.0,
+      "rss_growth_ratio": 1.14
+    },
+    "verdict": {
+      "kind": "derived",
+      "mean_validate_mb_per_s": 21.6,
+      "mean_validate_and_tokenise_mb_per_s": 3.4,
+      "tolerable_wait_seconds": 60,
+      "tolerable_wait_justification": "the point at which a synchronous upload page stops reading as a wait and starts reading as a hang. A judgement, not a measurement.",
+      "gb_validatable_within_tolerable_wait": 1.3,
+      "gb_validatable_and_tokenisable_within_tolerable_wait": 0.2,
+      "current_ceiling_gb": 1.0,
+      "current_ceiling_reason": "in-memory validation at ~4.8x the file size (ADR-0005)",
+      "five_gb_tokenise_seconds": 1485.1,
+      "token_counting_becomes_its_own_phase": true,
+      "recommendation": "SPLIT. Validate on upload and count tokens asynchronously before the quote; the quote gains a 'counting' state. Tokenisation cannot be held inside a synchronous upload at this rate.",
+      "sensitivity": {
+        "kind": "derived",
+        "why": "the measured rates are a floor -- the machine was not idle. The question is not what the exact rate is, but whether the recommendation depends on it.",
+        "five_gb_tokenise_seconds_if_rate_were": {
+          "x1": 1485,
+          "x2": 743,
+          "x4": 371,
+          "x10": 149
+        },
+        "speedup_needed_to_fit_the_budget": 24.8,
+        "verdict_is_robust": true,
+        "conclusion": "Tokenisation would have to be an order of magnitude faster than measured to come close to the budget, and even a 10x machine leaves 5 GB well outside it. THE SPLIT RECOMMENDATION DOES NOT DEPEND ON THE CONTENDED MEASUREMENT -- re-running on an idle machine would sharpen the number and would not change the decision."
+      }
+    }
+  },
+  "known_divergences_from_the_shipped_validator": [
+    "encoding errors name a line (the in-memory path can only give a byte offset, because it decodes the whole file at once)",
+    "rows split on \\n only; str.splitlines() also splits on \\v, \\f, \\x1c-\\x1e, \\x85, \\u2028 and \\u2029"
+  ],
+  "steps": [
+    {
+      "step": "tokenizer loaded",
+      "ok": true,
+      "detail": "Qwen/Qwen3-4B, vocab 151,669, 11.4 MB"
+    },
+    {
+      "step": "dataset generated",
+      "ok": true,
+      "detail": "synthetic-1gb.jsonl: 1.00 GB, 1,322,790 rows, 9.8s (102 MB/s write)"
+    },
+    {
+      "step": "stream: parse + validate (line numbers held)",
+      "ok": true,
+      "detail": "42.9s, 23 MB/s, peak RSS 106 MB (+4 MB over baseline, 0.00x file)"
+    },
+    {
+      "step": "stream: parse + validate (line numbers dropped)",
+      "ok": true,
+      "detail": "39.7s, 25 MB/s, peak RSS 86 MB (+4 MB over baseline, 0.00x file)"
+    },
+    {
+      "step": "tokenising a prefix",
+      "ok": null,
+      "detail": "1.0 GB of 1.0 GB; the rate is measured, the whole-file time is derived from it"
+    },
+    {
+      "step": "stream: parse + validate + tokenise",
+      "ok": true,
+      "detail": "371.8s, 3 MB/s, peak RSS 89 MB (+7 MB over baseline, 0.01x file)"
+    },
+    {
+      "step": "in-memory (shipped): parse + validate",
+      "ok": true,
+      "detail": "68.1s, 15 MB/s, peak RSS 6014 MB (+5930 MB over baseline, 5.93x file)"
+    },
+    {
+      "step": "dataset generated",
+      "ok": true,
+      "detail": "synthetic-5gb.jsonl: 5.00 GB, 6,608,972 rows, 79.0s (63 MB/s write)"
+    },
+    {
+      "step": "stream: parse + validate (line numbers held)",
+      "ok": true,
+      "detail": "279.8s, 18 MB/s, peak RSS 131 MB (+4 MB over baseline, 0.00x file)"
+    },
+    {
+      "step": "stream: parse + validate (line numbers dropped)",
+      "ok": true,
+      "detail": "283.0s, 18 MB/s, peak RSS 91 MB (+4 MB over baseline, 0.00x file)"
+    },
+    {
+      "step": "tokenising a prefix",
+      "ok": null,
+      "detail": "1.0 GB of 5.0 GB; the rate is measured, the whole-file time is derived from it"
+    },
+    {
+      "step": "stream: parse + validate + tokenise",
+      "ok": true,
+      "detail": "267.7s, 4 MB/s, peak RSS 92 MB (+6 MB over baseline, 0.01x file)"
+    },
+    {
+      "step": "in-memory validator skipped",
+      "ok": null,
+      "detail": "5.0 GB would need roughly 24 GB of RSS at the ADR-0005 multiplier"
+    },
+    {
+      "step": "dataset generated",
+      "ok": true,
+      "detail": "synthetic-20gb.jsonl: 20.00 GB, 26,401,860 rows, 193.1s (104 MB/s write)"
+    },
+    {
+      "step": "stream: parse + validate (line numbers held)",
+      "ok": true,
+      "detail": "843.5s, 24 MB/s, peak RSS 102 MB (+4 MB over baseline, 0.00x file)"
+    },
+    {
+      "step": "stream: parse + validate (line numbers dropped)",
+      "ok": true,
+      "detail": "887.2s, 23 MB/s, peak RSS 58 MB (+4 MB over baseline, 0.00x file)"
+    },
+    {
+      "step": "tokenising a prefix",
+      "ok": null,
+      "detail": "1.0 GB of 20.0 GB; the rate is measured, the whole-file time is derived from it"
+    },
+    {
+      "step": "stream: parse + validate + tokenise",
+      "ok": true,
+      "detail": "270.4s, 4 MB/s, peak RSS 58 MB (+5 MB over baseline, 0.00x file)"
+    },
+    {
+      "step": "in-memory validator skipped",
+      "ok": null,
+      "detail": "20.0 GB would need roughly 96 GB of RSS at the ADR-0005 multiplier"
+    },
+    {
+      "step": "peak memory is flat as the file grows",
+      "ok": true,
+      "detail": "file x20.0 -> RSS x1.14"
+    },
+    {
+      "step": "token counting fits in one synchronous pass",
+      "ok": false,
+      "detail": "5 GB tokenises in 1485s against a 60s budget"
+    }
+  ],
+  "rederived_note": "The verdict was recomputed from the SAME saved per-size results after the derivation gained a sensitivity analysis. No dataset was regenerated and no pass was re-timed."
+}

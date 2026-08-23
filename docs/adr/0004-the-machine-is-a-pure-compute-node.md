@@ -1,6 +1,6 @@
 # ADR-0004 — The machine is a pure compute node
 
-- **Status:** accepted
+- **Status:** accepted — **property 2 superseded by [ADR-0009](0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md) (2026-08-23)**
 - **Date:** 2026-08-21
 - **Spec:** `docs/specs/002-dataset-transport-and-limits.md`
 - **Issue:** [#8](https://github.com/thp728/temper/issues/8)

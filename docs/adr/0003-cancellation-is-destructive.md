@@ -1,9 +1,29 @@
 # ADR-0003 — Cancellation is destructive, and is not a failure
 
-- **Status:** accepted
+- **Status:** accepted — **flagged for reopening 2026-08-23 by spike 8**
 - **Date:** 2026-08-21
 - **Spec:** `docs/specs/001-orchestrator-core.md`
 - **Issue:** [#6](https://github.com/thp728/temper/issues/6)
+
+> **Flagged for reopening — spike 8, 2026-08-23.** This record was written on
+> the premise that a run can be stopped in exactly one cheap way: destroy the
+> machine. That premise was never checked against the provider's SDK, and it is
+> wrong. `instances.pause()` exists, and the vendor's own documentation says a
+> paused instance stops compute billing, keeps storage billing, and keeps its
+> data. A paused machine was observed in the live account, so the state is real
+> and not merely an attribute.
+>
+> **That is a second cheap outcome, not a cheaper version of this one** — stop
+> paying for the GPU, keep the checkpoint on disk, let the user resume or
+> discard — so it changes what cancellation could offer rather than how it is
+> implemented. The decision below stands until a new ADR replaces it; it is not
+> silently amended.
+>
+> Reopening has to answer the question that makes it non-obvious: **a paused
+> machine still bills for storage and has no run that owns it**, which is
+> exactly the shape the reconciler exists to destroy. "Pause instead of
+> destroy" is only cheaper if somebody eventually destroys it, and deciding who
+> and when is the actual work. See `spike/findings-spike8.json`.
 
 ## Context
 

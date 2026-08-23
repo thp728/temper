@@ -21,7 +21,7 @@ Fine-tunes open-weight LLMs on user-supplied instruction data, on real GPUs, end
 - **Models:** curated and pinned — `Qwen/Qwen3-4B`, `Qwen/Qwen3-8B`
 - **Compute:** JarvisLabs VMs, provisioned and destroyed per job
 - **Trainer:** Axolotl in a digest-pinned container
-- **Dataset limit:** 1 GB per upload (`TEMPER_MAX_DATASET_MB`). This is a limit of the current in-memory validation path, which holds about 4.8× the file size — not a product rule. Streaming validation removes it; until then, uploads over the limit are refused immediately with both sizes named.
+- **Dataset limit:** 1 GB per upload (`TEMPER_MAX_DATASET_MB`). This is a limit of the current in-memory validation path, which holds about **5.9× the file size** — not a product rule. (The figure was 4.8× until spike 9 measured it at a real 1 GB file rather than extrapolating from small ones; see [ADR-0005](docs/adr/0005-the-dataset-size-limit-is-derived-from-measured-memory.md).) Streaming validation removes the limit — measured at **flat +4 MB from 1 GB to 20 GB, and faster than the in-memory path** — but it is not built yet. Until then, uploads over the limit are refused immediately with both sizes named.
 - **Duration warning:** a dataset that plainly cannot finish inside the 24-hour job ceiling (`TEMPER_MAX_JOB_DURATION_S`) gets a warning at job creation — an **estimate** from measured throughput on one real run (~1.19 row-passes/s, L4, Qwen3-4B), not a quote. The job launches anyway; the estimate is crude and only the user should decide whether the run is worth attempting.
 
 ## Why these choices

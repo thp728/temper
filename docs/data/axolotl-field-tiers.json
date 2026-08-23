@@ -1,0 +1,123 @@
+{
+  "_comment": "Tier classification for Axolotl config fields. DATA rather than code, deliberately: this is a long list of judgements, and a judgement that lives in a data file is reviewable in a diff. The same list embedded in a form component is not.",
+  "_source": "spike 7, spike/findings-spike7.json",
+  "_source_image": "axolotlai/axolotl:main-20260817-py3.12-cu130-2.12.0@sha256:29327e75d7ae0348e001809df5c11151887fdeec63fe4bc5c4330917777c701e",
+  "_axolotl_version": "0.19.0.dev0",
+  "_config_model": "axolotl.utils.schemas.config.AxolotlInputConfig",
+  "_status": "SAMPLE ONLY. Twenty of the 344 training-relevant fields, classified to time the full pass. The other 324 are unclassified and this file is not yet a product artifact.",
+  "_sampling": "Seeded random sample (random.Random(20260823).sample) of the 344 fields NOT marked infrastructural. Random rather than hand-picked on purpose: a sample of fields the product already uses would be quick to classify and would underestimate the cost of the ones nobody has looked at.",
+  "_tiers": {
+    "exposed_with_calculated_default": "Shown in Advanced mode with a default the platform computes. Overriding it is low-risk.",
+    "exposed_with_named_failure_mode": "Shown in Advanced mode with the specific failure named inline next to it. These are the fields where a plausible-looking override produces a silently wrong result rather than an error.",
+    "known_but_unsupported": "Present in the trainer, not offered by the platform, with the reason stated. Refused loudly if passed, per the unknown-key rule - the difference is that the refusal can say WHY rather than 'unknown key'."
+  },
+  "_classification_minutes": 27,
+  "_classified_count": 20,
+  "_timing_note": "27 minutes of actual work for 20 fields, measured start to finish, including reading Axolotl's own documentation for the six methods (Q-GaLore, LISA, EAFT, DPO, dynamic checkpointing, PoSE) that appeared in the sample and that this project had not previously encountered. The rate is honest for UNFAMILIAR fields, which is what the remaining 324 mostly are.",
+  "fields": [
+    {
+      "name": "preprocess_iterable",
+      "tier": "known_but_unsupported",
+      "reason": "Dataset preparation is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation."
+    },
+    {
+      "name": "fused_attn_kernel",
+      "tier": "known_but_unsupported",
+      "reason": "Attention implementation is derived from the measured hardware, not chosen. A fused kernel that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent."
+    },
+    {
+      "name": "qgalore_rank",
+      "tier": "known_but_unsupported",
+      "reason": "Q-GaLore is a projected-gradient optimiser family outside the supported set. Exposing one of its knobs without supporting the optimiser would offer a dial connected to nothing."
+    },
+    {
+      "name": "dynamic_checkpoint",
+      "tier": "known_but_unsupported",
+      "reason": "A nested config object, not a scalar. The generated form is flat by design; nested submodels are a second form-generation problem and are out of scope for v1."
+    },
+    {
+      "name": "lisa_n_layers",
+      "tier": "known_but_unsupported",
+      "reason": "LISA is an alternative to LoRA, not a setting within it. The adapter strategy is a top-level product choice (LoRA / QLoRA / full), and adding a fourth belongs in that decision rather than in Advanced mode."
+    },
+    {
+      "name": "dpo_label_smoothing",
+      "tier": "known_but_unsupported",
+      "reason": "DPO is preference tuning; Temper does supervised fine-tuning. Out of scope, and the refusal can say so rather than saying 'unknown key'."
+    },
+    {
+      "name": "gpu_memory_limit",
+      "tier": "exposed_with_named_failure_mode",
+      "reason": "The platform computes this from the provisioned card, and the predictor's whole output depends on it.",
+      "failure_mode": "Set below what the configuration needs and the run OOMs partway through training, after the machine has been paid for. Set above the card and the limit does nothing, which reads as the setting being ignored."
+    },
+    {
+      "name": "max_memory",
+      "tier": "known_but_unsupported",
+      "reason": "A per-device memory budget for model placement. Device placement is the platform's business - it provisions the machine and knows what is on it - and this field is a free-form dict the schema says almost nothing about."
+    },
+    {
+      "name": "eaft_alpha",
+      "tier": "known_but_unsupported",
+      "reason": "EAFT is another training method outside the supported set. Same reasoning as LISA and Q-GaLore."
+    },
+    {
+      "name": "shrink_embeddings",
+      "tier": "exposed_with_named_failure_mode",
+      "reason": "A real memory lever on models with large vocabularies, and one a knowledgeable user may genuinely want.",
+      "failure_mode": "It changes the embedding matrix, so the resulting adapter no longer matches the base model at serving time. The job succeeds and the artifact is unusable, which is the worst shape a failure can take."
+    },
+    {
+      "name": "qgalore_gamma_proj",
+      "tier": "known_but_unsupported",
+      "reason": "Q-GaLore again. See qgalore_rank."
+    },
+    {
+      "name": "torch_empty_cache_steps",
+      "tier": "exposed_with_calculated_default",
+      "reason": "Periodically frees the CUDA cache. Pure memory-for-throughput trade with no correctness consequence, and the platform can set it automatically when the predictor lands close to the VRAM ceiling."
+    },
+    {
+      "name": "dpo_norm_loss",
+      "tier": "known_but_unsupported",
+      "reason": "DPO. See dpo_label_smoothing."
+    },
+    {
+      "name": "save_only_model",
+      "tier": "exposed_with_named_failure_mode",
+      "reason": "Halves checkpoint size on large models, which matters once the disk ceiling is in play.",
+      "failure_mode": "It drops the optimiser and scheduler state from the checkpoint, so THE RUN CAN NO LONGER RESUME. Spike 4 established that resume works; this is the single setting that quietly takes it away, and a user who set it to save disk would not connect the two."
+    },
+    {
+      "name": "generation_max_new_tokens",
+      "tier": "exposed_with_calculated_default",
+      "reason": "How many tokens the sample generations produce during evaluation. Affects the length of what you read in the log and nothing about the trained weights."
+    },
+    {
+      "name": "pad_to_multiple_of",
+      "tier": "exposed_with_calculated_default",
+      "reason": "Pads sequence length to a tensor-core-friendly multiple. A throughput setting with a hardware-derived right answer, which is what a calculated default is for."
+    },
+    {
+      "name": "is_qwen_derived_model",
+      "tier": "known_but_unsupported",
+      "reason": "A legacy architecture hint, superseded by auto-detection from the model config. It is derived from the base model, so it is not a user choice - and offering it would invite a user to contradict the model they picked."
+    },
+    {
+      "name": "dpo_loss_weights",
+      "tier": "known_but_unsupported",
+      "reason": "DPO. See dpo_label_smoothing."
+    },
+    {
+      "name": "dpo_beta",
+      "tier": "known_but_unsupported",
+      "reason": "DPO. See dpo_label_smoothing."
+    },
+    {
+      "name": "special_tokens",
+      "tier": "exposed_with_named_failure_mode",
+      "reason": "One of the correctness settings AGENTS.md names as default-locked, and the export-time template probe is what makes exposing it safe.",
+      "failure_mode": "Set pad_token equal to eos_token and the loss mask hides every end-of-sequence token, so the model is trained never to stop. Training completes, the loss curve looks fine, and the model generates until it hits the token limit. This is the highest-value entry in the whole file: it is the failure that is invisible until inference."
+    }
+  ]
+}

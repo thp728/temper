@@ -33,12 +33,13 @@ repository becomes public at submission.
 | --- | --- | --- | --- |
 | [0001](0001-event-channel-over-ssh-stdout.md) | The event channel is the machine's stdout, pulled over SSH | accepted | 2026-08-21 |
 | [0002](0002-stall-detection-and-a-duration-ceiling.md) | A stalled job and an over-long job are stopped separately, and named separately | accepted | 2026-08-21 |
-| [0003](0003-cancellation-is-destructive.md) | Cancelling destroys the machine, produces no adapter, and is not a failure | accepted | 2026-08-21 |
+| [0003](0003-cancellation-is-destructive.md) | Cancelling destroys the machine, produces no adapter, and is not a failure | accepted — **flagged for reopening** (spike 8 found the provider can pause) | 2026-08-21 |
 | [0004](0004-the-machine-is-a-pure-compute-node.md) | The machine is a pure compute node, and everything it receives is pushed by the control plane | accepted | 2026-08-21 |
-| [0005](0005-the-dataset-size-limit-is-derived-from-measured-memory.md) | The dataset size limit is derived from measured memory, not chosen | accepted | 2026-08-21 |
+| [0005](0005-the-dataset-size-limit-is-derived-from-measured-memory.md) | The dataset size limit is derived from measured memory, not chosen | accepted — **corrected** (spike 9 measured 5.93×, not 4.8×) | 2026-08-21 |
 | [0006](0006-validation-runs-off-the-event-loop.md) | Validation runs off the event loop | accepted | 2026-08-21 |
 | [0007](0007-the-feasibility-warning-is-an-estimate-and-warns-rather-than-blocks.md) | The feasibility warning is an estimate from one measured run, and warns rather than blocks | accepted | 2026-08-21 |
 | [0008](0008-adapters-ship-as-fp32.md) | Adapters ship as fp32 — the artifact is exactly the weights that were trained | accepted | 2026-08-21 |
+| [0009](0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md) | The machine may write its own artifact to a pre-signed URL scoped to one key | accepted — supersedes [0004](0004-the-machine-is-a-pure-compute-node.md) in part | 2026-08-23 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

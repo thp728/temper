@@ -1,9 +1,26 @@
 # ADR-0005 — The dataset size limit is derived from measured memory
 
-- **Status:** accepted
+- **Status:** accepted — **the multiplier it derives from was measured too low; see below**
 - **Date:** 2026-08-21
 - **Spec:** `docs/specs/002-dataset-transport-and-limits.md`
 - **Issue:** [#9](https://github.com/thp728/temper/issues/9)
+
+> **Correction — spike 9, 2026-08-23.** The 4.8× multiplier below was measured
+> across five dataset sizes, none of them near the limit it was used to derive.
+> Measured again at a real 1 GB file, the shipped in-memory validator peaks at
+> **5.93× the file size** — so a 1 GB dataset peaks near 6 GB of RSS, not the
+> 4.8 GB this record predicted. **The number was extrapolated from small files
+> and the extrapolation was optimistic.** The 1 GB limit is still defensible
+> on the development machine, with less headroom than claimed.
+>
+> The same spike measured the streaming alternative: peak RSS **+4 MB and flat
+> from 1 GB to 20 GB**, and *faster* than the in-memory path (the in-memory
+> path spends time allocating). So the ceiling is not a trade between memory
+> and speed — streaming wins on both, and the ceiling is simply a property of
+> code that predates the need. See `spike/findings-spike9.json`.
+>
+> This record is not superseded here, because streaming validation is not
+> built yet. It is corrected: the derivation stands, the input was wrong.
 
 ## Context
 
