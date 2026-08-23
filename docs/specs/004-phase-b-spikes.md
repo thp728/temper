@@ -1,6 +1,6 @@
 # Spec 004 — Phase B spikes
 
-**Status:** ready to run
+**Status:** run 2026-08-23 — see Outcomes
 **Phase:** B (Sun 2026-08-23, before any Phase B ticket is written)
 **Depends on:** nothing — these run against the live account and the pinned image
 **Produces:** the measured inputs for Specs 005+ and ADR-0009 (superseding ADR-0004)
@@ -365,6 +365,59 @@ in `config.py`, and the quote's dependency graph.
   that force it.
 - A go/no-go on each capstone run: 8B full FT on 2× H100 (2026-08-27) and 70B
   QLoRA on 1× RTX-PRO6000 (2026-08-28).
+
+## Outcomes — run 2026-08-23
+
+All five ran. Findings in `spike/findings-spike5.json` … `findings-spike9.json`,
+written up in [spike/README.md](../../spike/README.md#phase-b-spikes--2026-08-23).
+Total GPU spend across every attempt, including three runs of spike 6: **~₹25**.
+
+| # | Kill criterion | Fired? | Answer |
+| --- | --- | --- | --- |
+| 5 | disk cannot exceed ~200 GB | **no** | **7200 GB**, named by the API's own refusal. 70B is not disk-bound. Download 364 MB/s |
+| 6 | FSDP does not run in the pinned image | **partly — see below** | it runs, shards, checkpoints and resumes. **The loss is `nan`** |
+| 7 | schema has no usable structure | **yes, in part** | 388 fields; only ~12% of constraints are in the schema. Derive the form, hand-write the rules |
+| 8 | (cannot fail) | — | **pause exists.** ADR-0003 flagged for reopening |
+| 9 | tokenisation dominates beyond a tolerable wait | **yes** | needs to be 24.8× faster to fit 60s. Counting splits into its own phase |
+
+### Go / no-go on the capstones
+
+**8B full fine-tune on 2× H100, 2026-08-27 — NO-GO as things stand.**
+
+Not for the reason the spike expected. The mechanism is proven: two devices are
+visible inside the pinned image, FSDP FULL_SHARD shards and steps, a
+`torch.distributed.checkpoint` `.distcp` checkpoint is written, and **sharded
+resume works** — which was the step this spike existed to doubt.
+
+**The loss collapses to zero with a `nan` grad_norm on every step, in both
+model cases.** Taking steps is not training. A capstone that shards perfectly
+and learns nothing is a *more* expensive failure than one that will not launch,
+because it produces an artifact that looks like a success and nothing
+downstream would catch it. The `nan` gets explained first — tracked as
+[#81](https://github.com/thp728/temper/issues/81).
+
+**70B QLoRA on 1× RTX-PRO6000, 2026-08-28 — the disk question is closed.**
+Spike 5 removes the constraint that would have blocked it: 7200 GB of disk and
+2.7s per GB of download mean a 141 GB model lands in about six minutes. Whether
+it goes ahead now depends on VRAM and on the same `nan`, not on storage.
+
+### Amendments these force
+
+- **ADR-0009** written, superseding ADR-0004's property 2, on the measured
+  sizes — a 13.6 GB sharded checkpoint at 4B is the number that forces it.
+- **ADR-0005 corrected**: the 4.8× memory multiplier was extrapolated from small
+  files; measured at a real 1 GB file it is **5.93×**.
+- **ADR-0003 flagged for reopening**: the provider can pause, which is a second
+  cheap outcome for a stopped run.
+- **Spec 005 (predictor and quote)** gains two measured anchors it did not have:
+  peak VRAM per device of 4,678 MiB at 0.6B and 21,162 MiB at 4B under FSDP,
+  and a `preparing` ETA derived from 2.7s per GB rather than extrapolated.
+- **Spec 006 (streaming transport)** gains a `counting` state on the quote, and
+  the upload ceiling becomes a property of a streaming path that holds +4 MB
+  flat from 1 GB to 20 GB.
+- **Spec 009 (advanced mode)** is re-scoped: the field list is generated from
+  the pinned digest, the cross-field rules are hand-enumerated, and the estimate
+  uses ~120 design-relevant fields rather than 344.
 
 ## Related
 

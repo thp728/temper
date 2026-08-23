@@ -336,7 +336,8 @@ not.*
 sharded run that produces a plausible-looking artifact from garbage weights is a
 *more* expensive failure than one that will not launch, because it produces an
 artifact — and nothing downstream would catch it. The `nan` gets explained
-first.
+first, and is tracked as
+[#81](https://github.com/thp728/temper/issues/81).
 
 Three candidates, none of them tested here, and recorded as candidates rather
 than as a cause: bf16 with FSDP2 and gradient checkpointing; the synthetic
@@ -639,8 +640,10 @@ parametrised chunk-size tests now go down to 1 byte for exactly this reason.
 Each of these is a known gap, not an oversight, and each is written down
 because the alternative is remembering it.
 
-1. **The `nan` in spike 6.** The single highest-value open question here: FSDP
-   shards, checkpoints and resumes, and the loss collapses to zero. Candidates,
+1. **The `nan` in spike 6** — tracked as
+   [#81](https://github.com/thp728/temper/issues/81). The single highest-value
+   open question here: FSDP shards, checkpoints and resumes, and the loss
+   collapses to zero with a `nan` grad_norm on the first step. Candidates,
    untested: bf16 with FSDP2 plus gradient checkpointing; a synthetic dataset
    with ~28 trainable tokens per step under assistant-only masking;
    `flash_attention: false` forcing an eager path. **The 8B capstone is blocked
