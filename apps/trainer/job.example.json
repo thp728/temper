@@ -1,6 +1,7 @@
 {
   "job_id": "example-0001",
   "base_model": "Qwen/Qwen3-4B",
+  "base_revision": "1cfa9a7208912126459214e8b04321603b3df60c",
   "messages_field": "messages",
 
   "_comment_hyperparameters": "Only keys in ALLOWED_OVERRIDES are honoured. Anything else is echoed back in result.json under rejected_overrides rather than silently ignored — an override the caller thinks is in effect but isn't is worse than a refusal.",

@@ -179,9 +179,11 @@ def _remote_script(
     already goes there, so phase markers and the output they bracket stay in
     order.
     """
+    revision = job.get("base_revision") or model.revision
     job_spec = {
         "job_id": job["id"],
         "base_model": model.repo,
+        "base_revision": revision,
         "hyperparameters": job["hyperparameters"] or {},
     }
     script = f"""

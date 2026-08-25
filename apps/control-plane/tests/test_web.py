@@ -153,13 +153,18 @@ def create_page(client, ds_id):
 
 
 def test_create_page_lists_models_with_licence_and_revision(client, tmp_path):
+    from temper_core.catalog import is_pinned_revision, listing
+
     ds = valid_dataset(client, tmp_path)
     body = create_page(client, ds).text
     assert "Qwen/Qwen3-4B" in body
     assert "Qwen/Qwen3-8B" in body
     assert "Apache-2.0" in body  # licence, per model
     # The pinned revision, rendered as the code element the template wraps it in.
-    assert "<code>main</code>" in body
+    assert "<code>main</code>" not in body
+    for m in listing():
+        assert is_pinned_revision(m["revision"])
+        assert m["revision"] in body
 
 
 def test_create_page_shows_the_frozen_hyperparameters(client, tmp_path):

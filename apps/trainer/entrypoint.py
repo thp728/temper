@@ -82,6 +82,7 @@ ALLOWED_OVERRIDES = {
 ALLOWED_JOB_KEYS = {
     "job_id",
     "base_model",
+    "base_revision",
     "messages_field",
     "hyperparameters",
     "max_steps",
@@ -347,7 +348,12 @@ def main() -> int:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         job = json.loads((JOB_DIR / "job.json").read_text())
         result["job_id"] = job.get("job_id")
-        log(f"job {job.get('job_id')} — base_model={job.get('base_model')}")
+        result["base_model"] = job.get("base_model")
+        result["base_revision"] = job.get("base_revision")
+        log(
+            f"job {job.get('job_id')} — base_model={job.get('base_model')}"
+            f"@{job.get('base_revision') or 'unpinned'}"
+        )
 
         ds = JOB_DIR / "dataset.jsonl"
         if not ds.exists():

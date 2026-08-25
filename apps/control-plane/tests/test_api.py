@@ -33,12 +33,33 @@ def upload(client, path):
 
 
 def test_catalog_lists_pinned_models(client):
+    from temper_core.catalog import is_pinned_revision
+
     body = client.get("/v1/models").json()
     ids = [m["id"] for m in body["models"]]
     assert body["default"] in ids
     for m in body["models"]:
         assert m["license"] == "Apache-2.0"  # licence flows to derivatives
         assert m["revision"]  # never unpinned
+        assert is_pinned_revision(m["revision"]), (
+            f"{m['id']} revision '{m['revision']}' is not a pinned commit SHA"
+        )
+        assert m["revision"] != "main", "branch name is not a pinned revision"
+
+
+def test_catalog_revision_shown_alongside_licence_at_model_choice(
+    client, tmp_path
+):
+    """The revision is shown to the user at model choice, alongside the licence.
+
+    The create-job page renders the catalog entries with both fields, so a user
+    choosing a model sees what revision they are about to train against.
+    """
+    ds = valid_dataset(client, tmp_path)
+    html = client.get(f"/jobs/new?dataset_id={ds}").text
+    for m in client.get("/v1/models").json()["models"]:
+        assert m["revision"] in html
+        assert m["license"] in html
 
 
 # --- validation ------------------------------------------------------------
@@ -119,6 +140,22 @@ def test_job_creation_freezes_hyperparameters(client, tmp_path):
     job = r.json()
     assert job["status"] == "queued"
     assert job["hyperparameters"] == {"lora_r": 32}
+
+
+def test_job_records_exact_revision_it_trained_against(client, tmp_path):
+    """A job records the exact revision it trained against, frozen at creation."""
+    from temper_core import catalog
+
+    ds = valid_dataset(client, tmp_path)
+    model_id = catalog.DEFAULT_MODEL
+    expected = catalog.get(model_id).revision
+    job = client.post(
+        "/v1/jobs", json={"dataset_id": ds, "base_model": model_id}
+    ).json()
+    assert job["base_revision"] == expected
+    fetched = client.get(f"/v1/jobs/{job['id']}").json()
+    assert fetched["base_revision"] == expected
+    assert fetched["base_revision"] != "main"
 
 
 def test_job_on_invalid_dataset_is_refused(client, tmp_path):
