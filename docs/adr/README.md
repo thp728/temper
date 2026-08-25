@@ -43,6 +43,7 @@ repository becomes public at submission.
 
 | [0010](0010-the-repository-is-laid-out-as-apps-and-packages.md) | The repository is laid out as `apps/` and `packages/` | accepted | 2026-08-25 |
 | [0011](0011-one-command-runs-every-task-and-one-defines-green.md) | One command runs every task, and one command defines green | accepted | 2026-08-25 |
+| [0012](0012-the-repository-ships-under-apache-2.md) | The repository ships under Apache-2.0 | accepted | 2026-08-25 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
