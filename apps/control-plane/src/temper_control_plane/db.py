@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     id            TEXT PRIMARY KEY,
     dataset_id    TEXT NOT NULL REFERENCES datasets(id),
     base_model    TEXT NOT NULL,
+    base_revision TEXT,
     -- Frozen at creation. The run spec is immutable after launch.
     hyperparams_json TEXT NOT NULL,
     status        TEXT NOT NULL,
@@ -132,6 +133,7 @@ def connect():
 ADDED_COLUMNS = (
     ("jobs", "cancel_requested", "INTEGER NOT NULL DEFAULT 0"),
     ("jobs", "warnings_json", "TEXT"),
+    ("jobs", "base_revision", "TEXT"),
 )
 
 
@@ -207,16 +209,19 @@ def create_job(
     base_model: str,
     hyperparams: dict,
     warnings: list | None = None,
+    base_revision: str | None = None,
 ) -> str:
     job_id = new_id("job")
     with connect() as c:
         c.execute(
-            "INSERT INTO jobs (id, dataset_id, base_model, hyperparams_json, "
-            "status, warnings_json, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO jobs (id, dataset_id, base_model, base_revision, "
+            "hyperparams_json, status, warnings_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
             (
                 job_id,
                 dataset_id,
                 base_model,
+                base_revision,
                 json.dumps(hyperparams),
                 "queued",
                 json.dumps(warnings) if warnings else None,
@@ -388,7 +393,10 @@ def active_jobs() -> list[dict]:
             f"SELECT * FROM jobs WHERE status NOT IN ({q})",
             tuple(TERMINAL_STATES),
         ).fetchall()
-    return [_row(r, {"hyperparams_json": "hyperparameters"}) for r in rows]
+    return [
+        _with_warnings(_row(r, {"hyperparams_json": "hyperparameters"}))
+        for r in rows
+    ]
 
 
 def _row(r, json_fields: dict[str, str]) -> dict | None:

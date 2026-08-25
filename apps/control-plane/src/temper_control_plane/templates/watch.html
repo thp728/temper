@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Job {{ job.id }}</h1>
 <p>Dataset <a href="/datasets/{{ job.dataset_id }}">{{ dataset_filename }}</a>
-· base model <code>{{ job.base_model }}</code></p>
+· base model <code>{{ job.base_model }}</code>{% if job.base_revision %}@<code>{{ job.base_revision[:12] }}</code>{% endif %}</p>
 
 <section aria-labelledby="status-h">
   <h2 id="status-h">Status</h2>

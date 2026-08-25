@@ -61,7 +61,8 @@ def create(dataset_id: str, base_model: str, hyperparameters: dict) -> str:
     surface it arrived on.
     """
     ds = usable_dataset(dataset_id)
-    if not catalog.get(base_model):
+    model = catalog.get(base_model)
+    if not model:
         raise HTTPException(
             400,
             {
@@ -80,7 +81,11 @@ def create(dataset_id: str, base_model: str, hyperparameters: dict) -> str:
     warnings = [warn] if warn else []
 
     job_id = db.create_job(
-        dataset_id, base_model, hyperparameters, warnings=warnings
+        dataset_id,
+        base_model,
+        hyperparameters,
+        warnings=warnings,
+        base_revision=model.revision,
     )
     if warn:
         db.add_event(
