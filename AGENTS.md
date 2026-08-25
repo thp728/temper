@@ -22,11 +22,10 @@ misdiagnosis cost an evening and produced a wrongly-filed platform bug.
 
 Before any GPU work, `ssh-add -l` must list one ED25519 key. If it does not, `ssh-add ~/.ssh/id_ed25519`.
 
-Interpreter: `d:\Dev\life-os\.venv\Scripts\python.exe`. Use `python -u` for backgrounded runs, and
-set `PYTHONIOENCODING=utf-8` for any Python writing emoji, since Windows defaults to cp1252 and
-raises. Prefer the Write tool over bash heredocs for files over ~50 lines; large heredocs have
-silently produced no file and no error here. Commit with `git commit -F -` and a heredoc, never
-`-m "…"` with backticks, which get command-substituted and eat part of the message.
+Interpreter: `d:\Dev\life-os\.venv\Scripts\python.exe`. `python -u` for backgrounded runs;
+`PYTHONIOENCODING=utf-8` for anything writing emoji, since Windows defaults to cp1252 and raises.
+Use the Write tool over bash heredocs past ~50 lines, which have silently produced no file and no
+error. Commit with `git commit -F -`, never `-m` with backticks, which get command-substituted.
 
 **Money.** GPU work bills per minute against a ₹50,000 grant. The account bills in **INR**, so read
 `account.currency()` rather than assuming USD. Cheapest VM-capable GPU is L4 at ₹41.31/hr. **Every
@@ -59,17 +58,14 @@ in the body. Minimum ceremony: no templates, no required reviewers.
 
 ## Phases
 
-Phase A (to 2026-08-21) proved the loop on a deliberately scrappy stack. Phase B (2026-08-23 to
-submission) is the larger half: Postgres, Temporal, Redis, MinIO, Next.js, and the quality gates.
-Phase A was written so Phase B would be a migration rather than a rewrite, and **the domain logic
-carries over unchanged.** Anywhere it does not, the seam was leakier than claimed, and that finding
-gets recorded rather than patched over.
+Phase A (to 2026-08-21) proved the loop on a deliberately scrappy stack. Phase B (to submission) is
+the larger half: Postgres, Temporal, Redis, MinIO, Next.js, quality gates. Phase A was written so
+Phase B would be a migration, and **the domain logic carries over unchanged.** Anywhere it does not,
+the seam was leakier than claimed, and that gets recorded rather than patched over.
 
 **Production-grade is part of the deliverable.** This repository is the public portfolio artifact,
 read by a company whose own product is GPU infrastructure. **The orchestration layer is the work
-sample.**
-
-Target spec: `technical-architecture.md` in the vault.
+sample.** Target spec: `technical-architecture.md` in the vault.
 
 ## How to work
 
@@ -97,15 +93,10 @@ copied in before the repo goes public (issue #26).
 
 ## Where things are
 
-| Path | What it holds |
-| --- | --- |
-| `CONTEXT.md` | The domain glossary. One vocabulary for code, specs and records |
-| `docs/adr/` | Decision records, with the index and the numbering policy |
-| `docs/specs/` | The twelve specs the tickets come from |
-| `docs/agents/` | Issue tracker, triage labels, domain docs |
-| `api/AGENTS.md` | Control plane rules |
-| `trainer/AGENTS.md` | Training contract and correctness rules |
-| `spike/AGENTS.md` | Probe rules and what each spike proved |
+`CONTEXT.md` is the domain glossary and fixes one vocabulary for code, specs and records.
+`docs/adr/` holds decision records, `docs/specs/` the twelve specs tickets come from, `docs/agents/`
+the issue tracker, triage labels and domain docs. Each module carries its own `AGENTS.md` with the
+rules specific to it.
 
 Reasoning and project state live in the private vault at
 `d:\Dev\life-os\projects\jarvislabs-assignment\`: `technical-architecture.md` is the spec,
