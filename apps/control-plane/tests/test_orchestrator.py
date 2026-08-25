@@ -14,7 +14,6 @@ import re
 import tarfile
 import time
 from dataclasses import replace
-from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -22,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from temper_control_plane.fake_provider import (
     MACHINE_ID,
+    REACH_S,
     FakeClock,
     FakeProvider,
     simulated_limits,
@@ -133,7 +133,36 @@ class Harness:
     def messages(self, job_id) -> list[str]:
         return [e["message"] for e in self.events(job_id)]
 
-    def poll_until_terminal(self, job_id) -> tuple[list[dict], list[dict]]:
+    def page(self, job_id, after: int) -> tuple[list[dict], int]:
+        """One cursor page: the events past `after`, and the new cursor."""
+        body = self._client.get(
+            f"/v1/jobs/{job_id}/events", params={"after": after}
+        ).json()
+        batch = body["events"]
+        assert all(e["id"] > after for e in batch), (
+            "after= re-delivered events the client already held"
+        )
+        return batch, body["last_id"]
+
+    def wait_for_message(self, job_id, message: str) -> bool:
+        """Block until a named message is in the log. False if it never came.
+
+        Companion to a provider pause: the pause makes the line's arrival
+        certain -- it was produced before the producer stopped -- so this only
+        synchronises with the recorder, which is microseconds behind. Bounded
+        like every other ceiling here, so a mistake fails rather than hangs.
+        """
+        last, deadline = 0, time.time() + REACH_S
+        while time.time() < deadline:
+            batch, last = self.page(job_id, last)
+            if any(e["message"] == message for e in batch):
+                return True
+            time.sleep(0.005)
+        return False
+
+    def poll_until_terminal(
+        self, job_id, after: int = 0
+    ) -> tuple[list[dict], list[dict]]:
         """Read events the way a client does: incrementally, by last id seen.
 
         Returns the events that were provably appended while the job was still
@@ -141,34 +170,40 @@ class Harness:
         a terminal status before it can read anything is exactly the four
         minutes of silence being fixed.
 
-        The status is read *after* each page, not before: an event in a page
-        fetched before a status that still said "working" was appended before
-        that status was read, so it cannot be output that only arrived at the
-        end. Reading the status first proves nothing -- the job may have
-        finished in between.
+        Every exit is decided by two reads, and their order is the proof. A
+        page is fetched, then the status is read. If the status says working,
+        everything in the page was appended before a status that still said
+        working, so it belongs to the run -- which is why the page comes
+        first. If the status says terminal, the page just fetched may be
+        missing whatever was appended between the two reads -- so one further
+        page goes out, now, strictly after the terminal observation. The
+        orchestrator writes nothing after the terminal transition (teardown
+        and the closing summary deliberately precede it), so that trailing
+        page completes the log whatever it holds -- within the endpoint's
+        page size, which no test here comes near -- and ending the poll there
+        is a proof rather than a hope. It used to end on "empty page, then
+        terminal status", which missed exactly the events written in between.
         """
         from temper_control_plane import db
 
-        during, everything, last = [], [], 0
+        during: list[dict] = []
+        everything: list[dict] = []
+        last = after
         deadline = time.time() + POLL_DEADLINE_S
-        while time.time() < deadline:
-            page = self._client.get(
-                f"/v1/jobs/{job_id}/events", params={"after": last}
-            ).json()
-            batch = page["events"]
-            assert all(e["id"] > last for e in batch), (
-                "after= re-delivered events the client already held"
-            )
-            last = page["last_id"]
+        while True:
+            batch, last = self.page(job_id, last)
             everything += batch
             if self.job(job_id)["status"] not in db.TERMINAL_STATES:
                 during += batch
-            elif not batch:
-                return during, everything
-            time.sleep(0.01)
-        raise AssertionError(
-            f"job never reached a terminal state: {everything}"
-        )
+                if time.time() >= deadline:
+                    raise AssertionError(
+                        f"job never reached a terminal state: {everything}"
+                    )
+                time.sleep(0.01)
+                continue
+            trailing, _ = self.page(job_id, last)
+            everything += trailing
+            return during, everything
 
 
 @pytest.fixture()
@@ -664,14 +699,25 @@ def _command_block(script: str, command: str) -> str:
     return "\n".join(block)
 
 
-def streaming_provider():
-    """A provider whose output is spaced out in time, as real output is."""
-    return FakeProvider(
+def paused_mid_run_job(harness) -> tuple[FakeProvider, str]:
+    """Launch a job on a thread and hold it at a chosen line, then return it.
+
+    The hold makes mid-run reads deterministic in both directions: the first
+    two lines were *produced* before the producer stopped, so waiting for
+    them only synchronises with the recorder -- once both are in, whatever a
+    test reads next cannot gain the last line until the job is released.
+    """
+    provider = FakeProvider(
         lines=TRAINING_LINES,
         result=RESULT,
         adapter_bytes=ADAPTER_BYTES,
-        line_delay=LINE_DELAY_S,
+        pause_at_line=2,
     )
+    job_id = harness.run_on_a_thread(provider)
+    assert provider.wait_until_paused(), "the provider never reached its pause"
+    assert harness.wait_for_message(job_id, TRAINING_LINES[0])
+    assert harness.wait_for_message(job_id, TRAINING_LINES[1])
+    return provider, job_id
 
 
 def test_output_reaches_the_control_plane_while_the_job_is_still_running(
@@ -682,22 +728,44 @@ def test_output_reaches_the_control_plane_while_the_job_is_still_running(
     Before this, the whole build-and-train phase was one blocking call: 251
     measured seconds in which a user could not tell a working job from a hung
     one, because nothing left the machine until it was over.
-    """
-    job_id = harness.run_on_a_thread(streaming_provider())
 
-    during, _ = harness.poll_until_terminal(job_id)
-    arrived_early = [e["message"] for e in during]
-    assert set(TRAINING_LINES) & set(arrived_early), (
-        f"no training output arrived before the job ended: {arrived_early}"
+    Read at a pause rather than raced: the read below happens while the job
+    provably still has work to do -- the last line cannot have arrived --
+    whatever the machine load is.
+    """
+    provider, job_id = paused_mid_run_job(harness)
+
+    assert TRAINING_LINES[-1] not in harness.messages(job_id), (
+        "the whole log arrived before the read; nothing was proved mid-run"
     )
+    provider.resume.set()
+    harness.poll_until_terminal(job_id)
     assert harness.job(job_id)["status"] == "complete"
 
 
 def test_events_are_retrievable_incrementally_while_the_job_runs(harness):
-    """`after=` is a cursor, not a snapshot: nothing repeated, nothing lost."""
-    job_id = harness.run_on_a_thread(streaming_provider())
+    """`after=` is a cursor, not a snapshot: nothing repeated, nothing lost.
 
-    _, polled = harness.poll_until_terminal(job_id)
+    Anchored at a pause: the mid-run page is read while the test holds the
+    job at a chosen line, so what the incremental client assembled describes
+    a moment the test made rather than one it hoped to catch. The exit of the
+    drain does the rest -- see `poll_until_terminal`, whose old exit could
+    return before the last events were seen at all.
+    """
+    provider, job_id = paused_mid_run_job(harness)
+
+    # Held at line two: the page below is read while the job provably still
+    # has lines to come, so the incremental client is working mid-run because
+    # the test made it so, not because it happened to look early enough.
+    first, last = harness.page(job_id, 0)
+    held_messages = [e["message"] for e in first]
+    assert TRAINING_LINES[0] in held_messages
+    assert TRAINING_LINES[-1] not in held_messages
+
+    provider.resume.set()
+    _, rest = harness.poll_until_terminal(job_id, after=last)
+    polled = [*first, *rest]
+
     ids = [e["id"] for e in polled]
     assert ids == sorted(ids) and len(ids) == len(set(ids))
     # What a client assembled by polling is what one arriving at the end sees.
@@ -710,8 +778,23 @@ def test_each_event_is_stamped_when_its_line_was_read(harness):
     They were all written after the remote command returned, so the record
     could not say how long anything took — which is a second failure on top of
     the silence, and the one that survives into the job's history.
+
+    The gap is caused, not hoped for. Holding the producer at line two pins
+    lines one and two in the log; a silence the test itself creates then
+    separates them from everything recorded after the release, so one
+    inter-line gap is provably at least that silence long. Checking *every*
+    gap against the provider's spacing was the old shape, and it raced the
+    recorder: a scheduler stall of one poll interval let the consumer drain
+    two queued lines back-to-back and read a gap smaller than the sleep that
+    produced them -- roughly one full-suite run in a hundred, and a gate that
+    fails that often is a gate people re-run.
     """
-    job_id = harness.run(streaming_provider())
+    provider, job_id = paused_mid_run_job(harness)
+
+    held_at = time.time()
+    time.sleep(LINE_DELAY_S)
+    provider.resume.set()
+    harness.poll_until_terminal(job_id)
 
     events = harness.events(job_id)
     stamps = [e["ts"] for e in events]
@@ -720,9 +803,13 @@ def test_each_event_is_stamped_when_its_line_was_read(harness):
     output = [e["ts"] for e in events if e["message"] in TRAINING_LINES]
     assert len(output) == len(TRAINING_LINES)
     assert len(set(output)) == len(output), "output lines share a timestamp"
-    assert all(b - a >= LINE_DELAY_S * 0.5 for a, b in pairwise(output)), (
-        "timestamps do not reflect when each line actually arrived"
+    # output[1] is the second held line, stamped before `held_at`; output[2]
+    # is the first line after the release, stamped after it. The silence in
+    # between belongs to the record because it happened in the run.
+    assert output[1] <= held_at < output[2], (
+        "stamps do not reflect when each line actually arrived"
     )
+    assert output[2] - output[1] >= LINE_DELAY_S * 0.5
 
 
 def test_the_machine_does_not_park_container_output_in_a_file(harness):
@@ -1137,9 +1224,20 @@ def test_cancelling_says_plainly_that_no_adapter_will_be_produced(harness):
 
 
 def test_cancelling_twice_succeeds_quietly(harness):
-    """A double-clicked button is not an error condition."""
+    """A double-clicked button is not an error condition.
+
+    Paused at a stage rather than at a line, and the difference is the fix: a
+    line pause holds only the guard's pump thread, while the job's own thread
+    keeps circling -- and that circle honours the first cancellation within a
+    poll interval even on a silent stream, tearing the job down and going
+    terminal between the two requests. The second then read `cancelled` and
+    was refused with 409, roughly one run in five. A stage pause holds the job
+    thread itself, inside a provider call where a cancellation cannot be
+    honoured until the test releases it, so both requests land against a job
+    the test has pinned as still working.
+    """
     provider = FakeProvider(
-        lines=TRAINING_LINES, result=RESULT, pause_at_line=2
+        lines=TRAINING_LINES, result=RESULT, pause_at_stage="await_ready"
     )
     job_id = harness.run_on_a_thread(provider, limits=responsive_limits())
     assert provider.wait_until_paused()
