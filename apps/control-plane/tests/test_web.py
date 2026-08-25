@@ -8,7 +8,13 @@ The pages are server-rendered and must work without JavaScript, so "renders
 with scripting unavailable" is asserted directly: no <script> tag may appear.
 """
 
+import hashlib
 import json
+import time
+from dataclasses import replace
+
+from temper_control_plane.fake_provider import FakeProvider, simulated_limits
+from temper_control_plane.limits import RunLimits
 
 
 def jsonl(tmp_path, rows, name="d.jsonl"):
@@ -227,15 +233,6 @@ def test_create_page_renders_without_javascript(client, tmp_path):
 # what a user can see -- state, spend, loss, outcome, teardown proof -- never
 # markup structure.
 
-import hashlib  # noqa: E402
-import time  # noqa: E402
-from dataclasses import replace  # noqa: E402
-
-from temper_control_plane.fake_provider import (  # noqa: E402
-    FakeProvider,
-    simulated_limits,
-)
-from temper_control_plane.limits import RunLimits  # noqa: E402
 
 WEIGHTS = b"weights"
 RESULT = {

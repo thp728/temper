@@ -25,7 +25,12 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "data" / "temper.db"
+from . import config
+
+# Via config, not by counting directories up from this file. The counted form
+# meant the repo root at `api/db.py` and `apps/control-plane/src/` after the
+# move, which put the database outside the anchored `/data/` gitignore rule.
+DB_PATH = config.REPO_ROOT / "data" / "temper.db"
 
 # The full lifecycle. `preparing` covers image build and model download --
 # separated from `training` because they fail for completely different reasons

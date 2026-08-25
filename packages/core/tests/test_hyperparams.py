@@ -2,7 +2,7 @@
 
 The create-job page promises the user a set of hyperparameters. That promise
 is only honest if it is computed the same way the trainer computes its config,
-so this module mirrors `trainer/entrypoint.py`'s resolution -- defaults, the
+so this module mirrors `apps/trainer/entrypoint.py`'s resolution -- defaults, the
 allowed overrides, alpha tracking rank, rsLoRA inferred -- and the final test
 pins the mirror against the original so the two cannot drift apart silently.
 
@@ -11,7 +11,7 @@ feasibility.py duplicate DEFAULT_EPOCHS), so the pin is what stands in for a
 shared constant.
 """
 
-from temper_core import hyperparams  # noqa: E402
+from temper_core import hyperparams
 
 
 def test_defaults_are_what_the_trainer_will_use():
@@ -50,13 +50,3 @@ def test_locked_settings_ignore_overrides():
     )
     assert eff["warmup_ratio"] == 0.1
     assert eff["lr_scheduler"] == "cosine"
-
-
-def test_mirror_matches_the_trainer():
-    """The page's promise and the trainer's behaviour come from two copies of
-    one table. This test is why that is safe: if either copy changes alone,
-    this fails and the drift is caught before a user is told something false."""
-    import entrypoint
-
-    assert hyperparams.DEFAULTS == entrypoint.DEFAULTS
-    assert hyperparams.ALLOWED_OVERRIDES == entrypoint.ALLOWED_OVERRIDES

@@ -18,11 +18,11 @@ import io
 import re
 import tarfile
 
-from temper_control_plane import orchestrator
+from temper_control_plane import orchestrator, trainer_build
 
 
 def _copied_by_the_dockerfile() -> set[str]:
-    text = (orchestrator.TRAINER_DIR / "Dockerfile").read_text(
+    text = (trainer_build.TRAINER_DIR / "Dockerfile").read_text(
         encoding="utf-8"
     )
     line = re.search(r"^COPY\s+(.+?)\s+\S+/\s*$", text, re.M)
@@ -32,7 +32,7 @@ def _copied_by_the_dockerfile() -> set[str]:
 
 def test_every_source_shipped_is_a_source_the_image_copies():
     shipped = {
-        p.name for p in orchestrator.TRAINER_SOURCES if p.suffix == ".py"
+        p.name for p in trainer_build.TRAINER_SOURCES if p.suffix == ".py"
     }
     assert shipped == _copied_by_the_dockerfile()
 
@@ -44,7 +44,7 @@ def test_the_tarball_carries_every_named_source_flat():
         fileobj=io.BytesIO(orchestrator._trainer_tarball()), mode="r:gz"
     ) as tar:
         names = set(tar.getnames())
-    assert names == {p.name for p in orchestrator.TRAINER_SOURCES}
+    assert names == {p.name for p in trainer_build.TRAINER_SOURCES}
 
 
 def test_the_module_the_domain_validates_with_is_the_module_the_image_runs():
@@ -52,7 +52,7 @@ def test_the_module_the_domain_validates_with_is_the_module_the_image_runs():
     import temper_core.thinking as domain_side
 
     shipped = next(
-        p for p in orchestrator.TRAINER_SOURCES if p.name == "thinking.py"
+        p for p in trainer_build.TRAINER_SOURCES if p.name == "thinking.py"
     )
     assert (
         shipped.resolve()
@@ -74,9 +74,7 @@ def test_sources_are_normalised_to_lf():
 def test_the_local_build_context_matches_what_the_machine_receives(tmp_path):
     """`just image` and a real job must build the same thing, or "it worked
     locally" stops meaning anything about the job that is about to cost money."""
-    from temper_control_plane import trainer_image
-
-    context = trainer_image.write_context(tmp_path / "ctx")
+    context = trainer_build.write_context(tmp_path / "ctx")
     on_disk = {p.name: p.read_bytes() for p in context.iterdir()}
 
     with tarfile.open(

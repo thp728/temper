@@ -239,6 +239,42 @@ Form and Zod** — deferred with a trigger rather than absent: they arrive with
 fields and cross-field validation, and Orval generates the Zod schemas from the
 same document.
 
+## What implementation found, 2026-08-25
+
+Appended after carrying this out. The decision is not edited; these are the
+places the description above did not survive contact.
+
+**The pre-commit hooks call the tools, not the recipes.** This record says
+"`repo: local` hooks calling the same recipes, so there is still one
+definition". They call `uv run ruff` directly, because pre-commit passes the
+staged filenames to the hook and a `just` recipe takes no filenames — calling
+the recipe would lint the whole tree on every commit, which is the slow hook
+this record warned would get bypassed. One definition survives in the sense
+that matters: both read the same `[tool.ruff]` block. The claim about recipes
+does not.
+
+**gitleaks is a remote hook, not a local one**, pinned by `rev`. And the
+history scan this record attributes to it is the pipeline's job (#27); the hook
+scans staged changes, which is the half that catches a secret before it exists
+in history at all.
+
+**Nothing carries the `hardware` marker yet**, so `just test-gpu` selects
+nothing. The marker is registered and the exclusion is real; the set it excludes
+is currently empty, and fills as the tickets that need a GPU land.
+
+**`just dev` starts the control plane, not the stack.** The stack needs a
+compose file, which is #29.
+
+**`coverage` was an orphan.** This record has coverage reporting as part of the
+gate; the first implementation put it in a recipe nothing called. It now runs
+inside `test`, so the number is printed on every gate run and still thresholds
+nothing.
+
+**The mypy suppression is wider than described.** It names four error codes, and
+one of them, `misc`, is mypy's catch-all rather than a member of the nullable
+family. Three findings arrive under it. Recorded in #85 rather than narrowed,
+because there is no narrower code to name.
+
 ## Alternatives considered
 
 **make.** The trodden path, and rejected on one measured constraint. Make is

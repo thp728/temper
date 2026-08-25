@@ -39,8 +39,8 @@ commit it, never paste it into a message. This repo goes public at submission.
 ## Layout and tasks
 
 One rule, from [ADR-0010](docs/adr/0010-the-repository-is-laid-out-as-apps-and-packages.md): **if it
-ships it is an app, if it is imported it is a package.** `apps/` holds `web`, `control-plane`,
-`worker` and `trainer`; `packages/` holds `core` (pure domain, no framework imports) and `contracts`
+ships it is an app, if it is imported it is a package.** `apps/` holds `control-plane`,
+`worker` and `trainer`, and will hold `web` (#38); `packages/` holds `core` (pure domain, no framework imports) and `contracts`
 (generated artifacts crossing a boundary where import is impossible). `spike/` is a documented
 throwaway; code graduating out of it takes its tests along.
 

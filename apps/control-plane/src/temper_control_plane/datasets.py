@@ -8,14 +8,15 @@ to validation lands everywhere at once.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import HTTPException
 
 from temper_control_plane import config, db
 from temper_core import validation
 
-UPLOADS = Path(__file__).parent.parent / "data" / "uploads"
+# Via config, for the reason given on db.DB_PATH: a counted path silently
+# meant somewhere else once this module moved, and uploaded datasets are the
+# worst possible thing to relocate into a directory git is willing to commit.
+UPLOADS = config.REPO_ROOT / "data" / "uploads"
 
 
 def _fmt_size(n: int) -> str:

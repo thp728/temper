@@ -78,10 +78,10 @@ max-line-length = 100
 python_version = "3.12"
 mypy_path = ["packages/core/src", "apps/control-plane/src", "apps/worker/src"]
 exclude = ["^spike/", "/tests/"]
-# Deliberately off for the applications: it reports 25 findings, all of one
-# shape, and issue #85 records them rather than silencing them. Turning it on
-# without fixing them would mean 25 suppressions, which is a worse record than
-# an issue.
+# Deliberately off for the applications: it reports findings of one shape only,
+# and issue #85 records them rather than silencing them. Turning it on without
+# fixing them would mean a suppression per site, which is a worse record than an
+# issue.
 check_untyped_defs = false
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -99,10 +99,12 @@ ignore_missing_imports = true
 # `dict | None`, callers index it, and the guard that makes that safe is a
 # `raise` several frames away that mypy cannot follow.
 #
-# They are recorded in issue #85, not silenced. This suppression is scoped to
-# the four codes that family produces, so anything else in these modules still
-# fails, and it names the issue so deleting it is a checkable act rather than a
-# judgement call. Fixing them means adding a raising `require_job`, which is a
+# They are recorded in issue #85, not silenced. The suppression names the four
+# codes that family reports under, and it names the issue, so deleting it is a
+# checkable act rather than a judgement call. `misc` is wider than the family
+# -- it is mypy's catch-all, and three db.py findings arrive under it -- so this
+# hides more than the other three do. Recorded rather than glossed: closing #85
+# is what makes the control plane checked as thoroughly as the domain. Fixing them means adding a raising `require_job`, which is a
 # change to the orchestrator's behaviour on the path that spends money, and that
 # does not belong inside a directory move.
 module = "temper_control_plane.*"

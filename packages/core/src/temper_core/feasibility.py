@@ -37,7 +37,7 @@ from typing import Any
 # before changing this number or its derivation.
 ROWS_PER_SECOND = 192 / 161.4
 
-# Mirrors trainer/entrypoint.py DEFAULTS["num_epochs"]. Duplicated rather than
+# Mirrors apps/trainer/entrypoint.py DEFAULTS["num_epochs"]. Duplicated rather than
 # imported because the control plane does not import trainer code -- but the
 # two must agree, and the trainer's default is the documented one.
 DEFAULT_EPOCHS = 3

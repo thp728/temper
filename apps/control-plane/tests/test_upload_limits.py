@@ -20,7 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from temper_control_plane import config  # noqa: E402
+from temper_control_plane import config
 
 
 @pytest.fixture()

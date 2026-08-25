@@ -215,6 +215,38 @@ top-level import the container died before the `finally` that writes
 pointing at training and saying nothing about the image. The move made that
 failure easier to reach, so it is now the one thing here with tests of its own.
 
+**Two claims above are written in the present tense and are not yet true.**
+
+The Decision says the four copies of the trainer defaults "collapse to one
+definition in `packages/contracts`". They have not. `DEFAULTS` and
+`ALLOWED_OVERRIDES` still sit in `apps/trainer/entrypoint.py` and are still
+mirrored in `temper_core`. What landed is the *rule* and the test that pins the
+copies together; the collapse itself is issue #82, and #83 removes the second
+resolver behind it. The rule was worth stating here even unimplemented, because
+sixty tickets needed it before either of those lands, but the tense overstates.
+
+The Decision also says `packages/core` has "no I/O". It has some:
+`validation.py` reads the dataset off disk. Everything else holds — no
+framework imports, and nothing in core imports an application — but a file read
+is a file read. Streaming validation (#31) is what removes it, and until then
+the accurate claim is narrower: the domain depends on no framework and on
+neither application.
+
+**Three couplings the first pass left in, found by review and fixed.**
+`db.DB_PATH` and `datasets.UPLOADS` were depth-coded paths, and after the move
+they resolved to `apps/control-plane/src/data/` — three directories below where
+`.gitignore` anchors `/data/`, which made the database and every uploaded
+dataset committable in a repository that goes public. The suite stayed green
+because every test monkeypatches both to a `tmp_path`, which is the right thing
+for a test to do and exactly why nothing noticed. `test_storage_paths.py` now
+asserts the unpatched values.
+
+The other two were tests in the wrong package: `packages/core/tests` reached
+into `apps/trainer` to `import entrypoint`, and into the control plane for a
+configuration constant. A pure package whose tests depend on an application is
+the same violation one level down. Those assertions moved to the applications
+that own them.
+
 **Two consequences worth naming.** `apps/trainer/` holds one Python file, not
 two, and a plain `docker build apps/trainer/` no longer works — which is correct
 rather than unfortunate, because the product never built that way either. And

@@ -6,8 +6,9 @@ because the control plane validates thinking mode with the module the image runs
 and a second copy beside the entrypoint would be a hand-mirrored definition.
 
 This exists so that `just image` and a real job build the same thing.
-`orchestrator.TRAINER_SOURCES` is the single list; this writes it to a directory
-and the orchestrator writes it to a tar, and both flatten to the same names.
+`trainer_build.TRAINER_SOURCES` is the single list. This writes it to a
+directory, the orchestrator writes it to a tar, and both flatten to the same
+names from the same bytes.
 
 Issue #44 moves the published build into the pipeline. This stays afterwards as
 the local path, because "build it and see" should not require a pull request.
@@ -22,22 +23,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .orchestrator import TRAINER_SOURCES
+from .trainer_build import write_context
 
 DEFAULT_TAG = "temper-trainer:local"
-
-
-def write_context(destination: Path) -> Path:
-    """Flatten every named source into one directory and return it."""
-    destination.mkdir(parents=True, exist_ok=True)
-    for source in TRAINER_SOURCES:
-        # Same normalisation as the tar: a CRLF Dockerfile fails inside the
-        # container in ways that read as anything but a line-ending bug.
-        text = source.read_text(encoding="utf-8").replace("\r\n", "\n")
-        (destination / source.name).write_text(
-            text, encoding="utf-8", newline="\n"
-        )
-    return destination
 
 
 def main(argv: list[str] | None = None) -> int:

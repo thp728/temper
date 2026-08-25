@@ -54,9 +54,9 @@ from temper_core.errors import Cancelled, OrchestratorError
 from . import config, db
 from .limits import RunLimits, guard
 from .provider import Provider, new_provider
+from .trainer_build import TRAINER_SOURCES, normalised
 
 REPO_ROOT = config.REPO_ROOT
-TRAINER_DIR = REPO_ROOT / "apps" / "trainer"
 ARTIFACTS = REPO_ROOT / "data" / "artifacts"
 
 GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
@@ -120,29 +120,6 @@ CANCEL_ACK = (
 CANCEL_MESSAGE = "Cancelled at your request. No adapter was produced."
 
 
-# Everything the image is built from, named rather than globbed.
-#
-# Globbing the trainer directory was fine when that directory held nothing but
-# the image's sources. It now also holds a pyproject, a README and this
-# project's instructions, none of which belong in a build context. Naming the
-# sources also makes the list checkable against the Dockerfile's COPY, which is
-# the specific failure this has already had: `thinking.py` was missing from the
-# COPY for weeks, and because it is a top-level import the container died before
-# the `finally` that writes result.json, surfacing as "trainer produced no
-# result.json" -- an error pointing at training and saying nothing about the
-# image. `test_trainer_context.py` asserts the two agree.
-#
-# `thinking.py` comes from the domain rather than from beside the entrypoint:
-# the control plane validates thinking mode with the same module the image runs,
-# and a second copy beside the entrypoint is the kind of hand-mirrored
-# definition ADR-0010 forbids.
-TRAINER_SOURCES = (
-    TRAINER_DIR / "Dockerfile",
-    TRAINER_DIR / "entrypoint.py",
-    REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
-)
-
-
 def _trainer_tarball() -> bytes:
     """Ship the image's sources as one tar. One round trip, no scp dependency.
 
@@ -153,13 +130,7 @@ def _trainer_tarball() -> bytes:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for source in TRAINER_SOURCES:
-            # Normalise line endings: a CRLF Dockerfile fails inside the
-            # container in ways that read as anything but a line-ending bug.
-            data = (
-                source.read_text(encoding="utf-8")
-                .replace("\r\n", "\n")
-                .encode()
-            )
+            data = normalised(source)
             info = tarfile.TarInfo(name=source.name)
             info.size, info.mode = len(data), 0o644
             tar.addfile(info, io.BytesIO(data))

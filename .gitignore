@@ -30,3 +30,8 @@ __pycache__/
 
 # Local build contexts assembled by `just image`.
 /.build/
+
+# Coverage output. `just test` writes it on every run.
+.coverage
+coverage.xml
+htmlcov/

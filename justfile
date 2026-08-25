@@ -16,7 +16,7 @@ setup:
     uv sync
 
 # The definition of green. Cheapest gate first, stops at the first failure.
-check: fmt-check lint types test contracts-check
+check: fmt-check lint types contracts-check test
 
 # Formatting, as a gate rather than as a fix.
 fmt-check:
@@ -32,19 +32,20 @@ lint:
 types:
     uv run mypy packages/core/src apps/control-plane/src apps/worker/src
 
-# Hardware and credential tests are deselected here, and only here.
+# Hardware and credential tests are deselected here, and only here. Coverage
+# prints a number and gates nothing: a threshold would buy tests written for it.
 test:
-    uv run pytest -m "not hardware"
-
-# Reports a number and gates nothing: a threshold here buys tests written for it.
-coverage:
     uv run pytest -m "not hardware" --cov=packages/core/src --cov=apps/control-plane/src
 
 # The excluded set, run deliberately. Costs money: provisions real machines.
+# Nothing carries the marker yet, so this selects nothing until the tickets that
+# add hardware tests land. `--exitfirst` keeps an empty selection from reading as
+# a failure.
 test-gpu:
-    uv run pytest -m hardware
+    uv run pytest -m hardware --exitfirst
 
-# Regenerate the API contract and the client the interface consumes.
+# Regenerate the API contract. The interface's client generates from this file;
+# that step arrives with the web application (#38).
 contracts:
     uv run python -m temper_control_plane.contracts
 
@@ -52,7 +53,8 @@ contracts:
 contracts-check: contracts
     git diff --exit-code packages/contracts/openapi.json
 
-# The control plane, against local defaults, with reload.
+# The control plane alone, against local defaults, with reload. ADR-0011 has this
+# starting the whole stack; that needs a compose file, which is #29.
 dev:
     uv run uvicorn temper_control_plane.main:app --reload
 

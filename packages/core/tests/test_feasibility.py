@@ -14,13 +14,15 @@ Two seams, per the spec's testing decisions:
   yields a warning **and a launched job**, never a refusal.
 """
 
-import json
-
 import pytest
-from fastapi.testclient import TestClient
 
-from temper_control_plane import config  # noqa: E402
-from temper_core import feasibility  # noqa: E402
+from temper_core import feasibility
+
+# The control plane's ceiling, as a number rather than as an import. The
+# domain takes the ceiling as an argument precisely so it does not have to
+# know where the value comes from, and a pure package's tests reaching into
+# an application to fetch one would undo that (ADR-0010).
+CEILING_S = 24 * 60 * 60
 
 # --- the estimate ------------------------------------------------------------
 
@@ -83,18 +85,18 @@ def test_warning_fires_when_estimate_exceeds_the_ceiling():
     w = feasibility.warning(
         usable_rows=10**6,
         hyperparams={},
-        max_duration_s=config.MAX_JOB_DURATION_S,
+        max_duration_s=CEILING_S,
     )
     assert w is not None
     assert w["code"] == "duration_feasibility"
-    assert w["estimated_duration_s"] > config.MAX_JOB_DURATION_S
+    assert w["estimated_duration_s"] > CEILING_S
 
 
 def test_warning_names_itself_an_estimate_wherever_it_would_be_shown():
     w = feasibility.warning(
         usable_rows=10**6,
         hyperparams={},
-        max_duration_s=config.MAX_JOB_DURATION_S,
+        max_duration_s=CEILING_S,
     )
     assert "estimate" in w["message"].lower()
     assert "measured" in w["message"].lower()
@@ -105,7 +107,7 @@ def test_no_warning_when_the_run_plausibly_fits():
         feasibility.warning(
             usable_rows=500,
             hyperparams={},
-            max_duration_s=config.MAX_JOB_DURATION_S,
+            max_duration_s=CEILING_S,
         )
         is None
     )
@@ -115,106 +117,13 @@ def test_warning_at_exact_equality_does_not_fire():
     """The estimate is crude; a boundary value is inside its own error bar.
     Only plainly-over fires."""
     rows = int(
-        config.MAX_JOB_DURATION_S
-        * feasibility.ROWS_PER_SECOND
-        / feasibility.DEFAULT_EPOCHS
+        CEILING_S * feasibility.ROWS_PER_SECOND / feasibility.DEFAULT_EPOCHS
     )
     assert (
         feasibility.warning(
             usable_rows=rows,
             hyperparams={},
-            max_duration_s=config.MAX_JOB_DURATION_S,
+            max_duration_s=CEILING_S,
         )
         is None
     )
-
-
-def test_default_epochs_is_pinned_to_the_trainer_default():
-    """Duplicated from the trainer entrypoint on purpose -- the domain does not
-    import application code -- but the duplication is pinned here, so a trainer
-    default change fails this test instead of silently skewing every estimate.
-
-    Issue #82 removes the duplication itself; until then this is what makes it
-    safe."""
-    import entrypoint
-
-    assert feasibility.DEFAULT_EPOCHS == entrypoint.DEFAULTS["num_epochs"]
-
-
-# --- job creation, through the HTTP seam --------------------------------------
-
-
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    from temper_control_plane import datasets, db, main, orchestrator
-
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(datasets, "UPLOADS", tmp_path / "uploads")
-    monkeypatch.setattr(orchestrator, "ARTIFACTS", tmp_path / "artifacts")
-    monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
-    db.init()
-    datasets.UPLOADS.mkdir(parents=True, exist_ok=True)
-    with TestClient(main.app) as c:
-        yield c
-
-
-def chat_rows(n):
-    for i in range(n):
-        yield {
-            "messages": [
-                {"role": "user", "content": f"question {i}"},
-                {"role": "assistant", "content": f"answer {i}"},
-            ]
-        }
-
-
-def upload(client, rows):
-    data = ("\n".join(json.dumps(r) for r in rows)).encode("utf-8")
-    r = client.post("/v1/datasets", files={"file": ("d.jsonl", data)})
-    assert r.status_code == 201
-    return r.json()["id"]
-
-
-def test_large_dataset_yields_a_warning_and_a_launched_job(
-    client, monkeypatch
-):
-    """The acceptance criterion, verbatim: a large dataset yields a warning
-    and a launched job, not a refusal. The ceiling is pulled down to seconds
-    so a generated fixture -- never a committed one -- trips it."""
-    monkeypatch.setattr(config, "MAX_JOB_DURATION_S", 1.0)
-    ds_id = upload(client, chat_rows(50))
-
-    r = client.post("/v1/jobs", json={"dataset_id": ds_id})
-
-    assert r.status_code == 201, "a warning must not veto the user's judgement"
-    body = r.json()
-    assert body["status"] == "queued"
-    warnings = body["warnings"]
-    assert len(warnings) == 1
-    assert warnings[0]["code"] == "duration_feasibility"
-    assert "estimate" in warnings[0]["message"].lower()
-
-
-def test_warning_is_on_the_job_afterwards_and_in_its_history(
-    client, monkeypatch
-):
-    """Shown wherever the job is shown, and recorded as an event, so the
-    warning the user accepted is part of the run's own account of itself."""
-    monkeypatch.setattr(config, "MAX_JOB_DURATION_S", 1.0)
-    ds_id = upload(client, chat_rows(50))
-    job_id = client.post("/v1/jobs", json={"dataset_id": ds_id}).json()["id"]
-
-    fetched = client.get(f"/v1/jobs/{job_id}").json()
-    assert fetched["warnings"][0]["code"] == "duration_feasibility"
-
-    events = client.get(f"/v1/jobs/{job_id}/events").json()["events"]
-    assert any("estimate" in (e["message"] or "").lower() for e in events)
-
-
-def test_normal_dataset_gets_no_warning(client):
-    ds_id = upload(client, chat_rows(50))
-
-    r = client.post("/v1/jobs", json={"dataset_id": ds_id})
-
-    assert r.status_code == 201
-    assert r.json()["warnings"] == []

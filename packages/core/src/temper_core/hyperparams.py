@@ -2,7 +2,7 @@
 
 The create-job page shows the user exactly what their job will freeze. That
 promise is only honest if it resolves overrides the way the trainer does, so
-this module mirrors `trainer/entrypoint.py`: the same defaults, the same
+this module mirrors `apps/trainer/entrypoint.py`: the same defaults, the same
 allowed-override set, alpha recomputed from rank when rank moves alone, and
 rsLoRA inferred at rank >= 32.
 
@@ -16,9 +16,9 @@ trainer will not run.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "lora_r": 16,
     "lora_alpha": 32,  # α = 2r; recompute if r changes
     "lora_dropout": 0.0,
@@ -61,8 +61,8 @@ def effective(overrides: dict[str, Any] | None) -> dict[str, Any]:
 
     # α is mechanically tied to r: a new rank never pairs with a stale scale.
     if "lora_r" in applied and "lora_alpha" not in applied:
-        cfg["lora_alpha"] = 2 * int(cast(int, cfg["lora_r"]))
+        cfg["lora_alpha"] = 2 * int(cfg["lora_r"])
 
     # rsLoRA above rank 32: plain α/r scaling over-shrinks high-rank adapters.
-    cfg["lora_use_rslora"] = int(cast(int, cfg["lora_r"])) >= 32
+    cfg["lora_use_rslora"] = int(cfg["lora_r"]) >= 32
     return cfg
