@@ -48,7 +48,7 @@ GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
 INSTANCE_NAME = "spike3-qlora"
 STORAGE_GB = 100
 TEST_PORT = 8000
-BOOTSTRAP_TIMEOUT_S = 3600     # model download + install + two training runs
+BOOTSTRAP_TIMEOUT_S = 3600  # model download + install + two training runs
 
 # From wiki/foundations.md, computed off Qwen3-8B's config. The 4B differs, so
 # this is a sanity band rather than an equality check -- LoRA r=16 all-linear
@@ -67,15 +67,24 @@ def run_bootstrap(ssh_command: str, model: str, f: Findings) -> dict | None:
     # Bytes, not text=True -- Windows would translate \n to \r\n on the pipe.
     payload = script.read_text(encoding="utf-8").replace("\r\n", "\n").encode()
 
-    print(f"  model={model}. Weights download + pip install + 2 training runs.")
+    print(
+        f"  model={model}. Weights download + pip install + 2 training runs."
+    )
     print("  This is the long one; expect several minutes.")
     t0 = time.time()
     try:
         r = subprocess.run(
             ssh_base(ssh_command) + [f"BASE_MODEL={model} bash -s"],
-            input=payload, capture_output=True, timeout=BOOTSTRAP_TIMEOUT_S)
+            input=payload,
+            capture_output=True,
+            timeout=BOOTSTRAP_TIMEOUT_S,
+        )
     except subprocess.TimeoutExpired:
-        f.record("bootstrap executed", False, f"timed out after {BOOTSTRAP_TIMEOUT_S}s")
+        f.record(
+            "bootstrap executed",
+            False,
+            f"timed out after {BOOTSTRAP_TIMEOUT_S}s",
+        )
         return None
 
     for line in r.stderr.decode("utf-8", "replace").splitlines():
@@ -84,12 +93,12 @@ def run_bootstrap(ssh_command: str, model: str, f: Findings) -> dict | None:
 
     stdout = r.stdout.decode("utf-8", "replace")
     try:
-        report = json.loads(stdout[stdout.index("{"):])
+        report = json.loads(stdout[stdout.index("{") :])
     except (ValueError, json.JSONDecodeError):
         f.record("bootstrap executed", False, "stdout was not JSON")
         print(stdout[:1000])
         return None
-    f.record("bootstrap executed", True, f"{time.time()-t0:.0f}s wall clock")
+    f.record("bootstrap executed", True, f"{time.time() - t0:.0f}s wall clock")
     return report
 
 
@@ -114,17 +123,28 @@ def test_port_blocked(public_ip: str, rep: dict, f: Findings) -> None:
             reachable, detail = True, f"HTTP {resp.status} {body!r}"
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             reachable, detail = False, str(getattr(e, "reason", e))
-        f.record(f"blocked from outside — {label}", expect_blocked and not reachable,
-                 f"{url} {'REACHABLE ' + detail if reachable else 'unreachable (' + detail + ')'}")
+        f.record(
+            f"blocked from outside — {label}",
+            expect_blocked and not reachable,
+            f"{url} {'REACHABLE ' + detail if reachable else 'unreachable (' + detail + ')'}",
+        )
 
     if rep.get("docker_user_rule_installed"):
-        print("\n  DOCKER-USER rule was installed. If the published port is now")
-        print("  blocked but was open under ufw alone, that is the whole finding:")
+        print(
+            "\n  DOCKER-USER rule was installed. If the published port is now"
+        )
+        print(
+            "  blocked but was open under ufw alone, that is the whole finding:"
+        )
         print("  ufw is not a firewall for containers.")
     if rep.get("loopback_bound_port_ok"):
-        print("  The loopback-bound container answered on 127.0.0.1 — so binding")
+        print(
+            "  The loopback-bound container answered on 127.0.0.1 — so binding"
+        )
         print("  to loopback keeps a service working locally while never")
-        print("  publishing it. Prefer this wherever public reach is not needed.")
+        print(
+            "  publishing it. Prefer this wherever public reach is not needed."
+        )
 
 
 def interpret(rep: dict, f: Findings) -> None:
@@ -133,51 +153,67 @@ def interpret(rep: dict, f: Findings) -> None:
 
     if rep.get("pip_install_ok"):
         s = rep.get("pip_install_seconds", 0)
-        print(f"  Stack install: {s}s. {rep.get('versions','')}")
+        print(f"  Stack install: {s}s. {rep.get('versions', '')}")
         if s > 90:
-            print(f"  >90s of pure setup on EVERY cold run. That is the")
+            print("  >90s of pure setup on EVERY cold run. That is the")
             print("  argument for baking a purpose-built image rather than")
             print("  installing at boot — build it once, pull it by digest.")
 
     dropped = tr.get("sftconfig_dropped")
     if dropped:
-        print(f"\n  ⚠ SFTConfig REJECTED {len(dropped)} of our intended args: "
-              f"{', '.join(dropped)}")
+        print(
+            f"\n  ⚠ SFTConfig REJECTED {len(dropped)} of our intended args: "
+            f"{', '.join(dropped)}"
+        )
         print("  TRL 1.x no longer inherits TrainingArguments. Those defaults")
         print("  cannot be expressed on this version — which is exactly the")
         print("  dependency drift a pinned image exists to prevent.")
 
     if rep.get("train_ok") and tr:
-        print(f"\n  QLoRA RAN. steps={tr.get('steps_completed')}, "
-              f"loss={tr.get('train_loss')}, "
-              f"peak VRAM={tr.get('peak_vram_gb')} GB on a 24 GB L4")
-        print(f"  model load: {tr.get('load_seconds')}s, "
-              f"train: {tr.get('train_seconds')}s")
+        print(
+            f"\n  QLoRA RAN. steps={tr.get('steps_completed')}, "
+            f"loss={tr.get('train_loss')}, "
+            f"peak VRAM={tr.get('peak_vram_gb')} GB on a 24 GB L4"
+        )
+        print(
+            f"  model load: {tr.get('load_seconds')}s, "
+            f"train: {tr.get('train_seconds')}s"
+        )
         if tr.get("tokens_per_second"):
-            print(f"  {tr['tokens_per_second']} tokens/sec — feeds the MFU "
-                  "constant, the softest number in the cost model")
+            print(
+                f"  {tr['tokens_per_second']} tokens/sec — feeds the MFU "
+                "constant, the softest number in the cost model"
+            )
         tp = tr.get("trainable_pct")
         if tp is not None:
             ok = tp < TRAINABLE_PCT_MAX
-            print(f"  trainable: {tr.get('trainable_params'):,} ({tp}%) "
-                  f"{'✓ matches the LoRA arithmetic' if ok else '✗ UNEXPECTED'}")
+            print(
+                f"  trainable: {tr.get('trainable_params'):,} ({tp}%) "
+                f"{'✓ matches the LoRA arithmetic' if ok else '✗ UNEXPECTED'}"
+            )
         print(f"  checkpoints written: {tr.get('checkpoints')}")
     else:
-        print("\n  ! QLoRA did NOT run. The stack does not work as configured;")
+        print(
+            "\n  ! QLoRA did NOT run. The stack does not work as configured;"
+        )
         print("    see the log tail above. This blocks the entire build.")
 
     if tr.get("resume_ok"):
-        print(f"\n  Resume works: restarted from {tr.get('resume_from')} and "
-              f"reached step {tr.get('resume_final_step')}. Section 31's "
-              "'survives a forced interruption' criterion is achievable.")
+        print(
+            f"\n  Resume works: restarted from {tr.get('resume_from')} and "
+            f"reached step {tr.get('resume_final_step')}. Section 31's "
+            "'survives a forced interruption' criterion is achievable."
+        )
     elif "resume_error" in tr:
         print(f"\n  ! Resume FAILED: {tr['resume_error']}")
 
     c_sha, h_sha = tr.get("adapter_sha256"), rep.get("host_adapter_sha256")
     if c_sha and h_sha:
-        print(f"\n  Adapter {tr.get('adapter_bytes',0)/1e6:.1f} MB, "
-              f"SHA {'MATCHES' if c_sha == h_sha else 'MISMATCH'} "
-              "between container and host.")
+        print(
+            f"\n  Adapter {tr.get('adapter_bytes', 0) / 1e6:.1f} MB, "
+            f"SHA {'MATCHES' if c_sha == h_sha else 'MISMATCH'} "
+            "between container and host."
+        )
 
 
 def main() -> int:
@@ -185,8 +221,11 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--gpu")
     ap.add_argument("--model", default="Qwen/Qwen3-4B")
-    ap.add_argument("--out", type=Path,
-                    default=Path(__file__).parent / "findings-spike3.json")
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=Path(__file__).parent / "findings-spike3.json",
+    )
     args = ap.parse_args()
 
     if load_dotenv(Path(__file__).parent / ".env"):
@@ -202,25 +241,45 @@ def main() -> int:
     with client:
         try:
             header("PREFLIGHT")
-            avail = {r.gpu_type: r for r in client.account.gpu_availability()
-                     if r.workload_type == "vm" and r.num_free_devices > 0}
-            gpu = args.gpu or next((g for g in GPU_PREFERENCE if g in avail), None)
+            avail = {
+                r.gpu_type: r
+                for r in client.account.gpu_availability()
+                if r.workload_type == "vm" and r.num_free_devices > 0
+            }
+            gpu = args.gpu or next(
+                (g for g in GPU_PREFERENCE if g in avail), None
+            )
             if not gpu:
-                f.record("vm gpu available", False, f"none of {GPU_PREFERENCE} free")
+                f.record(
+                    "vm gpu available", False, f"none of {GPU_PREFERENCE} free"
+                )
                 return 1
             r = avail[gpu]
-            f.record("vm gpu available", True,
-                     f"{gpu} @ {r.price_per_hour}{client.account.currency()}/hr, "
-                     f"{r.vram}GB")
+            f.record(
+                "vm gpu available",
+                True,
+                f"{gpu} @ {r.price_per_hour}{client.account.currency()}/hr, "
+                f"{r.vram}GB",
+            )
 
             header(f"PROVISIONING — {gpu}, vm, {STORAGE_GB} GB")
             t0 = time.time()
             instance = client.instances.create(
-                gpu_type=gpu, num_gpus=1, template="vm",
-                storage=STORAGE_GB, name=INSTANCE_NAME)
-            f.record("VM created", True, f"{time.time()-t0:.0f}s to Running",
-                     machine_id=instance.machine_id)
-            print(f"  machine_id={instance.machine_id}  ip={instance.public_ip}")
+                gpu_type=gpu,
+                num_gpus=1,
+                template="vm",
+                storage=STORAGE_GB,
+                name=INSTANCE_NAME,
+            )
+            f.record(
+                "VM created",
+                True,
+                f"{time.time() - t0:.0f}s to Running",
+                machine_id=instance.machine_id,
+            )
+            print(
+                f"  machine_id={instance.machine_id}  ip={instance.public_ip}"
+            )
 
             if wait_for_ssh(instance.ssh_command or "", f) is None:
                 return 1
@@ -229,20 +288,33 @@ def main() -> int:
             f.probe_report = rep
             if rep:
                 tr = rep.get("train_result") or {}
-                f.record("stack installed", bool(rep.get("pip_install_ok")),
-                         rep.get("versions", ""))
-                f.record("QLoRA trained", bool(rep.get("train_ok")),
-                         f"steps={tr.get('steps_completed')} "
-                         f"loss={tr.get('train_loss')} "
-                         f"peakVRAM={tr.get('peak_vram_gb')}GB")
-                f.record("checkpoint resume", bool(tr.get("resume_ok")),
-                         f"from {tr.get('resume_from')} to step "
-                         f"{tr.get('resume_final_step')}"
-                         if tr.get("resume_ok") else tr.get("resume_error", "n/a"))
+                f.record(
+                    "stack installed",
+                    bool(rep.get("pip_install_ok")),
+                    rep.get("versions", ""),
+                )
+                f.record(
+                    "QLoRA trained",
+                    bool(rep.get("train_ok")),
+                    f"steps={tr.get('steps_completed')} "
+                    f"loss={tr.get('train_loss')} "
+                    f"peakVRAM={tr.get('peak_vram_gb')}GB",
+                )
+                f.record(
+                    "checkpoint resume",
+                    bool(tr.get("resume_ok")),
+                    f"from {tr.get('resume_from')} to step "
+                    f"{tr.get('resume_final_step')}"
+                    if tr.get("resume_ok")
+                    else tr.get("resume_error", "n/a"),
+                )
                 c, h = tr.get("adapter_sha256"), rep.get("host_adapter_sha256")
-                f.record("adapter integrity", bool(c and c == h),
-                         f"{tr.get('adapter_bytes',0)/1e6:.1f} MB, sha "
-                         f"{'match' if c and c == h else 'MISMATCH/absent'}")
+                f.record(
+                    "adapter integrity",
+                    bool(c and c == h),
+                    f"{tr.get('adapter_bytes', 0) / 1e6:.1f} MB, sha "
+                    f"{'match' if c and c == h else 'MISMATCH/absent'}",
+                )
                 interpret(rep, f)
                 test_port_blocked(instance.public_ip, rep, f)
 
@@ -255,30 +327,45 @@ def main() -> int:
             if instance is None:
                 print("  Nothing provisioned.")
             elif args.keep:
-                print(f"  --keep: {instance.machine_id} LEFT RUNNING and billing.")
+                print(
+                    f"  --keep: {instance.machine_id} LEFT RUNNING and billing."
+                )
                 print(f"  Destroy: jl destroy {instance.machine_id}")
                 f.record("teardown", False, "skipped via --keep")
             else:
                 for attempt in range(1, 4):
                     try:
                         client.instances.destroy(instance.machine_id)
-                        f.record("instance destroyed", True, f"attempt {attempt}")
+                        f.record(
+                            "instance destroyed", True, f"attempt {attempt}"
+                        )
                         break
                     except Exception as e:
                         f.note(f"destroy attempt {attempt}", str(e))
                         time.sleep(5)
                 else:
-                    f.record("instance destroyed", False,
-                             f"DESTROY MANUALLY: jl destroy {instance.machine_id}")
+                    f.record(
+                        "instance destroyed",
+                        False,
+                        f"DESTROY MANUALLY: jl destroy {instance.machine_id}",
+                    )
             try:
-                stray = [i for i in client.instances.list()
-                         if getattr(i, "name", "") == INSTANCE_NAME]
-                f.record("no stray instances", not stray,
-                         "confirmed via list()" if not stray else f"{len(stray)} left")
+                stray = [
+                    i
+                    for i in client.instances.list()
+                    if getattr(i, "name", "") == INSTANCE_NAME
+                ]
+                f.record(
+                    "no stray instances",
+                    not stray,
+                    "confirmed via list()"
+                    if not stray
+                    else f"{len(stray)} left",
+                )
             except Exception as e:
                 f.note("stray check", str(e))
 
-    print(f"\nElapsed: {time.time()-started:.0f}s")
+    print(f"\nElapsed: {time.time() - started:.0f}s")
     f.save(args.out)
     failed = [s for s in f.steps if s["ok"] is False]
     if failed:

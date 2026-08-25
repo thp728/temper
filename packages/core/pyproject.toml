@@ -1,0 +1,19 @@
+# The pure domain. Validation, hyperparameter resolution, feasibility, the
+# catalog, event classification, thinking-mode detection, the error registry.
+#
+# The dependency list below is the point of this package: no web framework, no
+# ORM, no cloud SDK. Both Python applications import it and it imports neither,
+# which is the seam the Phase B migration is bounded by. A wrong import here
+# fails to resolve rather than merely failing review.
+[project]
+name = "temper-core"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/temper_core"]

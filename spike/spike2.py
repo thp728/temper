@@ -33,7 +33,6 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -46,20 +45,28 @@ except ImportError:
 
 GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
 INSTANCE_NAME = "spike2-bootstrap"
-STORAGE_GB = 100          # VM minimum, enforced by the platform
+STORAGE_GB = 100  # VM minimum, enforced by the platform
 TEST_PORT = 8000
 SSH_READY_TIMEOUT_S = 240
-BOOTSTRAP_TIMEOUT_S = 1800   # image pull dominates; be generous
+BOOTSTRAP_TIMEOUT_S = 1800  # image pull dominates; be generous
 
 
 def ssh_base(ssh_command: str) -> list[str]:
     base = ssh_command.strip()
     if base.startswith("ssh "):
         base = base[4:]
-    return ["ssh", "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "ConnectTimeout=10",
-            "-o", "ServerAliveInterval=30", *base.split()]
+    return [
+        "ssh",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=30",
+        *base.split(),
+    ]
 
 
 def wait_for_ssh(ssh_command: str, f: Findings) -> float | None:
@@ -68,12 +75,20 @@ def wait_for_ssh(ssh_command: str, f: Findings) -> float | None:
     t0 = time.time()
     while time.time() - t0 < SSH_READY_TIMEOUT_S:
         try:
-            r = subprocess.run(ssh_base(ssh_command) + ["true"],
-                               capture_output=True, text=True, timeout=25)
+            r = subprocess.run(
+                ssh_base(ssh_command) + ["true"],
+                capture_output=True,
+                text=True,
+                timeout=25,
+            )
             if r.returncode == 0:
                 dt = time.time() - t0
-                f.record("ssh ready", True, f"{dt:.0f}s after Running",
-                         ssh_ready_seconds=round(dt))
+                f.record(
+                    "ssh ready",
+                    True,
+                    f"{dt:.0f}s after Running",
+                    ssh_ready_seconds=round(dt),
+                )
                 return dt
         except subprocess.TimeoutExpired:
             pass
@@ -96,18 +111,29 @@ def run_bootstrap(ssh_command: str, f: Findings) -> dict | None:
     # CRLF and every line ends in a stray \r -- which surfaces as nonsense like
     # "ambiguous redirect" rather than anything pointing at line endings.
     # Normalise explicitly and hand over raw bytes.
-    payload = script.read_text(encoding="utf-8").replace("\r\n", "\n").encode("utf-8")
+    payload = (
+        script.read_text(encoding="utf-8")
+        .replace("\r\n", "\n")
+        .encode("utf-8")
+    )
 
-    print("  piping bootstrap.sh over SSH; image pull dominates, be patient...")
+    print(
+        "  piping bootstrap.sh over SSH; image pull dominates, be patient..."
+    )
     t0 = time.time()
     try:
         r = subprocess.run(
             ssh_base(ssh_command) + ["bash -s"],
-            input=payload, capture_output=True, timeout=BOOTSTRAP_TIMEOUT_S,
+            input=payload,
+            capture_output=True,
+            timeout=BOOTSTRAP_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
-        f.record("bootstrap executed", False,
-                 f"timed out after {BOOTSTRAP_TIMEOUT_S}s")
+        f.record(
+            "bootstrap executed",
+            False,
+            f"timed out after {BOOTSTRAP_TIMEOUT_S}s",
+        )
         return None
 
     elapsed = time.time() - t0
@@ -128,8 +154,12 @@ def run_bootstrap(ssh_command: str, f: Findings) -> dict | None:
         print(stdout[:800])
         return None
 
-    f.record("bootstrap executed", True, f"{elapsed:.0f}s wall clock",
-             bootstrap_seconds=round(elapsed))
+    f.record(
+        "bootstrap executed",
+        True,
+        f"{elapsed:.0f}s wall clock",
+        bootstrap_seconds=round(elapsed),
+    )
     return report
 
 
@@ -143,16 +173,22 @@ def test_public_port(public_ip: str, f: Findings) -> None:
         try:
             with urllib.request.urlopen(url, timeout=10) as resp:
                 body = resp.read(64).decode(errors="replace").strip()
-            f.record("public port reachable", True,
-                     f"{url} -> HTTP {resp.status} {body!r}. "
-                     "C7 RETRACTED: VM serving works without the port proxy")
+            f.record(
+                "public port reachable",
+                True,
+                f"{url} -> HTTP {resp.status} {body!r}. "
+                "C7 RETRACTED: VM serving works without the port proxy",
+            )
             return
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             reason = getattr(e, "reason", e)
             if attempt == 4:
-                f.record("public port reachable", False,
-                         f"{url} unreachable ({reason}). C7 STANDS: serving "
-                         "needs the container port-proxy or an SSH tunnel")
+                f.record(
+                    "public port reachable",
+                    False,
+                    f"{url} unreachable ({reason}). C7 STANDS: serving "
+                    "needs the container port-proxy or an SSH tunnel",
+                )
             time.sleep(4)
 
 
@@ -161,36 +197,51 @@ def interpret(report: dict, f: Findings) -> None:
     if report.get("pull_ok"):
         gb = report.get("image_bytes", 0) / 1e9
         s = report.get("pull_seconds", 0)
-        print(f"  Image pull: {gb:.1f} GB in {s}s"
-              f"{f' ({gb*1000/s:.0f} MB/s)' if s else ''}.")
-        print("  This is cold-start latency on EVERY run and belongs in the ETA.")
+        print(
+            f"  Image pull: {gb:.1f} GB in {s}s"
+            f"{f' ({gb * 1000 / s:.0f} MB/s)' if s else ''}."
+        )
+        print(
+            "  This is cold-start latency on EVERY run and belongs in the ETA."
+        )
         if s > 120:
-            print("  >2min: worth caching the image on a JarvisLabs filesystem,")
+            print(
+                "  >2min: worth caching the image on a JarvisLabs filesystem,"
+            )
             print("  which the architecture allows for public weights only --")
             print("  re-read that constraint, an image is not tenant data.")
     if report.get("digest_repull_ok"):
         print("  Digest pinning works. Principle 4 (immutable runs) is")
         print("  achievable on this platform.")
     else:
-        print("  ! Digest re-pull FAILED -- immutability claim is not supported.")
+        print(
+            "  ! Digest re-pull FAILED -- immutability claim is not supported."
+        )
     if report.get("gpu_in_container_ok"):
-        print(f"  torch sees {report.get('gpu_name')}, "
-              f"bf16={report.get('bf16_supported')}, "
-              f"torch {report.get('torch_version')}.")
+        print(
+            f"  torch sees {report.get('gpu_name')}, "
+            f"bf16={report.get('bf16_supported')}, "
+            f"torch {report.get('torch_version')}."
+        )
     else:
         print("  ! torch cannot see the GPU inside the container -- the whole")
         print("    containerised training path is blocked.")
     if report.get("artifact_ok"):
-        print(f"  Artifact survived the container: "
-              f"{report.get('artifact_bytes',0)/1e6:.1f} MB via bind mount.")
+        print(
+            f"  Artifact survived the container: "
+            f"{report.get('artifact_bytes', 0) / 1e6:.1f} MB via bind mount."
+        )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--gpu")
-    ap.add_argument("--out", type=Path,
-                    default=Path(__file__).parent / "findings-spike2.json")
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=Path(__file__).parent / "findings-spike2.json",
+    )
     args = ap.parse_args()
 
     env_file = Path(__file__).parent / ".env"
@@ -210,29 +261,47 @@ def main() -> int:
     with client:
         try:
             header("PREFLIGHT")
-            rows = [r for r in client.account.gpu_availability()
-                    if r.workload_type == "vm" and r.num_free_devices > 0]
+            rows = [
+                r
+                for r in client.account.gpu_availability()
+                if r.workload_type == "vm" and r.num_free_devices > 0
+            ]
             avail = {r.gpu_type: r for r in rows}
-            gpu = args.gpu or next((g for g in GPU_PREFERENCE if g in avail), None)
+            gpu = args.gpu or next(
+                (g for g in GPU_PREFERENCE if g in avail), None
+            )
             if not gpu:
-                f.record("vm gpu available", False,
-                         f"none of {GPU_PREFERENCE} free")
+                f.record(
+                    "vm gpu available", False, f"none of {GPU_PREFERENCE} free"
+                )
                 return 1
             r = avail[gpu]
-            f.record("vm gpu available", True,
-                     f"{gpu} @ {r.price_per_hour}{client.account.currency()}/hr, "
-                     f"{r.num_free_devices} free")
+            f.record(
+                "vm gpu available",
+                True,
+                f"{gpu} @ {r.price_per_hour}{client.account.currency()}/hr, "
+                f"{r.num_free_devices} free",
+            )
 
             header(f"PROVISIONING -- {gpu}, vm, {STORAGE_GB} GB")
             t0 = time.time()
             instance = client.instances.create(
-                gpu_type=gpu, num_gpus=1, template="vm",
-                storage=STORAGE_GB, name=INSTANCE_NAME,
-                http_ports="",           # rejected for VMs; left explicit
+                gpu_type=gpu,
+                num_gpus=1,
+                template="vm",
+                storage=STORAGE_GB,
+                name=INSTANCE_NAME,
+                http_ports="",  # rejected for VMs; left explicit
             )
-            f.record("VM created", True, f"{time.time()-t0:.0f}s to Running",
-                     machine_id=instance.machine_id)
-            print(f"  machine_id={instance.machine_id}  ip={instance.public_ip}")
+            f.record(
+                "VM created",
+                True,
+                f"{time.time() - t0:.0f}s to Running",
+                machine_id=instance.machine_id,
+            )
+            print(
+                f"  machine_id={instance.machine_id}  ip={instance.public_ip}"
+            )
             print(f"  ssh: {instance.ssh_command}")
 
             if wait_for_ssh(instance.ssh_command or "", f) is None:
@@ -245,8 +314,11 @@ def main() -> int:
                 if report.get("port_listening_locally"):
                     test_public_port(instance.public_ip, f)
                 else:
-                    f.record("public port reachable", False,
-                             "listener never started on the VM; C7 untested")
+                    f.record(
+                        "public port reachable",
+                        False,
+                        "listener never started on the VM; C7 untested",
+                    )
 
         except KeyboardInterrupt:
             f.record("run", False, "interrupted")
@@ -257,31 +329,45 @@ def main() -> int:
             if instance is None:
                 print("  Nothing provisioned.")
             elif args.keep:
-                print(f"  --keep: {instance.machine_id} LEFT RUNNING and billing.")
+                print(
+                    f"  --keep: {instance.machine_id} LEFT RUNNING and billing."
+                )
                 print(f"  Destroy: jl destroy {instance.machine_id}")
                 f.record("teardown", False, "skipped via --keep")
             else:
                 for attempt in range(1, 4):
                     try:
                         client.instances.destroy(instance.machine_id)
-                        f.record("instance destroyed", True, f"attempt {attempt}")
+                        f.record(
+                            "instance destroyed", True, f"attempt {attempt}"
+                        )
                         break
                     except Exception as e:
                         f.note(f"destroy attempt {attempt}", str(e))
                         time.sleep(5)
                 else:
-                    f.record("instance destroyed", False,
-                             f"DESTROY MANUALLY: jl destroy {instance.machine_id}")
+                    f.record(
+                        "instance destroyed",
+                        False,
+                        f"DESTROY MANUALLY: jl destroy {instance.machine_id}",
+                    )
             try:
-                stray = [i for i in client.instances.list()
-                         if getattr(i, "name", "") == INSTANCE_NAME]
-                f.record("no stray instances", not stray,
-                         "confirmed via list()" if not stray
-                         else f"{len(stray)} still listed")
+                stray = [
+                    i
+                    for i in client.instances.list()
+                    if getattr(i, "name", "") == INSTANCE_NAME
+                ]
+                f.record(
+                    "no stray instances",
+                    not stray,
+                    "confirmed via list()"
+                    if not stray
+                    else f"{len(stray)} still listed",
+                )
             except Exception as e:
                 f.note("stray check", str(e))
 
-    print(f"\nElapsed: {time.time()-started:.0f}s")
+    print(f"\nElapsed: {time.time() - started:.0f}s")
     f.save(args.out)
     failed = [s for s in f.steps if s["ok"] is False]
     if failed:

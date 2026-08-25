@@ -1,0 +1,31 @@
+# A fast filter, not the gate. `just check` is the gate.
+#
+# Format, lint and secrets on staged files, and nothing else. Types and the test
+# suite are deliberately absent: a hook that takes a minute is a hook that gets
+# --no-verify'd by the second day, and a bypassed hook is worse than no hook
+# because you stop trusting it.
+#
+# The local hooks call the project's own tools rather than pre-commit's managed
+# copies, so there is still one definition of what lint means and this file is a
+# trigger rather than a second declaration.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: ruff
+        name: lint
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+
+  # Catching a secret before it enters history is a different outcome from
+  # catching it after, where the remedy is rewriting history and rotating a live
+  # key. spike/.env holds one, against a grant, and this repository goes public.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks

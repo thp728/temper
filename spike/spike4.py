@@ -70,16 +70,28 @@ def push_trainer_sources(ssh_command: str, f: Findings) -> bool:
             info.mode = 0o644
             tar.addfile(info, io.BytesIO(data))
     payload = buf.getvalue()
-    f.record("trainer/ packed", True,
-             f"{len(files)} files, {len(payload)} bytes gz: "
-             f"{', '.join(p.name for p in files)}")
+    f.record(
+        "trainer/ packed",
+        True,
+        f"{len(files)} files, {len(payload)} bytes gz: "
+        f"{', '.join(p.name for p in files)}",
+    )
 
     r = subprocess.run(
-        ssh_base(ssh_command) + ["mkdir -p /tmp/trainer && tar xzf - -C /tmp/trainer"],
-        input=payload, capture_output=True, timeout=120)
+        ssh_base(ssh_command)
+        + ["mkdir -p /tmp/trainer && tar xzf - -C /tmp/trainer"],
+        input=payload,
+        capture_output=True,
+        timeout=120,
+    )
     ok = r.returncode == 0
-    f.record("trainer/ unpacked on VM", ok,
-             r.stderr.decode("utf-8", "replace")[:200] if not ok else "/tmp/trainer")
+    f.record(
+        "trainer/ unpacked on VM",
+        ok,
+        r.stderr.decode("utf-8", "replace")[:200]
+        if not ok
+        else "/tmp/trainer",
+    )
     return ok
 
 
@@ -97,9 +109,16 @@ def run_bootstrap(ssh_command: str, model: str, f: Findings) -> dict | None:
     try:
         r = subprocess.run(
             ssh_base(ssh_command) + [f"BASE_MODEL={model} bash -s"],
-            input=payload, capture_output=True, timeout=BOOTSTRAP_TIMEOUT_S)
+            input=payload,
+            capture_output=True,
+            timeout=BOOTSTRAP_TIMEOUT_S,
+        )
     except subprocess.TimeoutExpired:
-        f.record("bootstrap executed", False, f"timed out after {BOOTSTRAP_TIMEOUT_S}s")
+        f.record(
+            "bootstrap executed",
+            False,
+            f"timed out after {BOOTSTRAP_TIMEOUT_S}s",
+        )
         return None
 
     for line in r.stderr.decode("utf-8", "replace").splitlines():
@@ -108,12 +127,12 @@ def run_bootstrap(ssh_command: str, model: str, f: Findings) -> dict | None:
 
     out = r.stdout.decode("utf-8", "replace")
     try:
-        rep = json.loads(out[out.index("{"):])
+        rep = json.loads(out[out.index("{") :])
     except (ValueError, json.JSONDecodeError):
         f.record("bootstrap executed", False, "stdout was not JSON")
         print(out[:1200])
         return None
-    f.record("bootstrap executed", True, f"{time.time()-t0:.0f}s wall clock")
+    f.record("bootstrap executed", True, f"{time.time() - t0:.0f}s wall clock")
     return rep
 
 
@@ -121,35 +140,54 @@ def interpret(rep: dict, f: Findings) -> None:
     header("WHAT THIS MEANS")
     r1 = rep.get("result_run1") or {}
 
-    f.record("image built", bool(rep.get("build_ok")),
-             f"{rep.get('build_seconds')}s, "
-             f"{rep.get('image_bytes', 0) / 1e9:.1f} GB, "
-             f"base={rep.get('base_digest_label', '')[:23]}...")
+    f.record(
+        "image built",
+        bool(rep.get("build_ok")),
+        f"{rep.get('build_seconds')}s, "
+        f"{rep.get('image_bytes', 0) / 1e9:.1f} GB, "
+        f"base={rep.get('base_digest_label', '')[:23]}...",
+    )
 
-    f.record("job ran through /job -> /out contract", bool(r1.get("ok")),
-             f"{r1.get('train_seconds')}s train, "
-             f"{r1.get('dataset_rows')} rows, exit={r1.get('exit_code')}")
+    f.record(
+        "job ran through /job -> /out contract",
+        bool(r1.get("ok")),
+        f"{r1.get('train_seconds')}s train, "
+        f"{r1.get('dataset_rows')} rows, exit={r1.get('exit_code')}",
+    )
 
     rejected = r1.get("rejected_overrides")
-    f.record("unknown job keys refused", bool(rejected),
-             f"rejected {list(rejected)}" if rejected
-             else "NOT refused - a caller could believe an override applied")
+    f.record(
+        "unknown job keys refused",
+        bool(rejected),
+        f"rejected {list(rejected)}"
+        if rejected
+        else "NOT refused - a caller could believe an override applied",
+    )
 
-    f.record("checkpoint resume", bool(rep.get("resume_ok")),
-             f"{rep.get('checkpoint_count')} checkpoints, "
-             f"run2 {rep.get('run2_seconds')}s")
+    f.record(
+        "checkpoint resume",
+        bool(rep.get("resume_ok")),
+        f"{rep.get('checkpoint_count')} checkpoints, "
+        f"run2 {rep.get('run2_seconds')}s",
+    )
 
     if r1.get("adapter_sha256"):
-        print(f"\n  adapter: {r1.get('adapter_bytes', 0) / 1e6:.1f} MB "
-              f"({r1.get('adapter_format')}), sha {r1['adapter_sha256'][:16]}...")
+        print(
+            f"\n  adapter: {r1.get('adapter_bytes', 0) / 1e6:.1f} MB "
+            f"({r1.get('adapter_format')}), sha {r1['adapter_sha256'][:16]}..."
+        )
         ac = r1.get("adapter_config") or {}
         if ac:
-            print(f"  adapter_config: r={ac.get('r')} alpha={ac.get('lora_alpha')} "
-                  f"rslora={ac.get('use_rslora')} targets={ac.get('target_modules')}")
+            print(
+                f"  adapter_config: r={ac.get('r')} alpha={ac.get('lora_alpha')} "
+                f"rslora={ac.get('use_rslora')} targets={ac.get('target_modules')}"
+            )
 
     if rep.get("resume_ok"):
         print("\n  RESUME WORKS. This is the thing spike 3 could not do - the")
-        print("  pinned Axolotl base removed the transformers/trl/torch conflict")
+        print(
+            "  pinned Axolotl base removed the transformers/trl/torch conflict"
+        )
         print("  that made checkpoints unloadable. C14 is closed.")
     elif r1.get("ok"):
         print("\n  ! Training works but resume does not. Section 31's")
@@ -165,8 +203,11 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--gpu")
     ap.add_argument("--model", default="Qwen/Qwen3-4B")
-    ap.add_argument("--out", type=Path,
-                    default=Path(__file__).parent / "findings-spike4.json")
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=Path(__file__).parent / "findings-spike4.json",
+    )
     args = ap.parse_args()
 
     if load_dotenv(Path(__file__).parent / ".env"):
@@ -182,24 +223,44 @@ def main() -> int:
     with client:
         try:
             header("PREFLIGHT")
-            avail = {r.gpu_type: r for r in client.account.gpu_availability()
-                     if r.workload_type == "vm" and r.num_free_devices > 0}
-            gpu = args.gpu or next((g for g in GPU_PREFERENCE if g in avail), None)
+            avail = {
+                r.gpu_type: r
+                for r in client.account.gpu_availability()
+                if r.workload_type == "vm" and r.num_free_devices > 0
+            }
+            gpu = args.gpu or next(
+                (g for g in GPU_PREFERENCE if g in avail), None
+            )
             if not gpu:
-                f.record("vm gpu available", False, f"none of {GPU_PREFERENCE} free")
+                f.record(
+                    "vm gpu available", False, f"none of {GPU_PREFERENCE} free"
+                )
                 return 1
-            f.record("vm gpu available", True,
-                     f"{gpu} @ {avail[gpu].price_per_hour}"
-                     f"{client.account.currency()}/hr")
+            f.record(
+                "vm gpu available",
+                True,
+                f"{gpu} @ {avail[gpu].price_per_hour}"
+                f"{client.account.currency()}/hr",
+            )
 
             header(f"PROVISIONING - {gpu}, vm, {STORAGE_GB} GB")
             t0 = time.time()
             instance = client.instances.create(
-                gpu_type=gpu, num_gpus=1, template="vm",
-                storage=STORAGE_GB, name=INSTANCE_NAME)
-            f.record("VM created", True, f"{time.time() - t0:.0f}s to Running",
-                     machine_id=instance.machine_id)
-            print(f"  machine_id={instance.machine_id}  ip={instance.public_ip}")
+                gpu_type=gpu,
+                num_gpus=1,
+                template="vm",
+                storage=STORAGE_GB,
+                name=INSTANCE_NAME,
+            )
+            f.record(
+                "VM created",
+                True,
+                f"{time.time() - t0:.0f}s to Running",
+                machine_id=instance.machine_id,
+            )
+            print(
+                f"  machine_id={instance.machine_id}  ip={instance.public_ip}"
+            )
 
             if wait_for_ssh(instance.ssh_command or "", f) is None:
                 return 1
@@ -220,25 +281,38 @@ def main() -> int:
             if instance is None:
                 print("  Nothing provisioned.")
             elif args.keep:
-                print(f"  --keep: {instance.machine_id} LEFT RUNNING and billing.")
+                print(
+                    f"  --keep: {instance.machine_id} LEFT RUNNING and billing."
+                )
                 f.record("teardown", False, "skipped via --keep")
             else:
                 for attempt in range(1, 4):
                     try:
                         client.instances.destroy(instance.machine_id)
-                        f.record("instance destroyed", True, f"attempt {attempt}")
+                        f.record(
+                            "instance destroyed", True, f"attempt {attempt}"
+                        )
                         break
                     except Exception as e:
                         f.note(f"destroy attempt {attempt}", str(e))
                         time.sleep(5)
                 else:
-                    f.record("instance destroyed", False,
-                             f"DESTROY MANUALLY: jl destroy {instance.machine_id}")
+                    f.record(
+                        "instance destroyed",
+                        False,
+                        f"DESTROY MANUALLY: jl destroy {instance.machine_id}",
+                    )
             try:
-                stray = [i for i in client.instances.list()
-                         if getattr(i, "name", "") == INSTANCE_NAME]
-                f.record("no stray instances", not stray,
-                         "confirmed" if not stray else f"{len(stray)} left")
+                stray = [
+                    i
+                    for i in client.instances.list()
+                    if getattr(i, "name", "") == INSTANCE_NAME
+                ]
+                f.record(
+                    "no stray instances",
+                    not stray,
+                    "confirmed" if not stray else f"{len(stray)} left",
+                )
             except Exception as e:
                 f.note("stray check", str(e))
 

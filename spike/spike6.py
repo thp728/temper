@@ -71,7 +71,7 @@ INSTANCE_NAME = "spike6-fsdp"
 # The small case answers the mechanism question with room to spare; the large
 # case is then a CAPACITY data point and is read as one.
 SMALL_MODEL = "Qwen/Qwen3-0.6B"
-LARGE_MODEL = "Qwen/Qwen3-4B"   # the smallest model in the CATALOG
+LARGE_MODEL = "Qwen/Qwen3-4B"  # the smallest model in the CATALOG
 STEPS = 3
 BOOTSTRAP_TIMEOUT_S = 5400
 
@@ -90,8 +90,11 @@ def pinned_base_image(f: Findings) -> str | None:
     if not DOCKERFILE.exists():
         f.record("trainer/Dockerfile present", False, str(DOCKERFILE))
         return None
-    m = re.search(r"^FROM\s+(\S+@sha256:[0-9a-f]{64})",
-                  DOCKERFILE.read_text(encoding="utf-8"), re.MULTILINE)
+    m = re.search(
+        r"^FROM\s+(\S+@sha256:[0-9a-f]{64})",
+        DOCKERFILE.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
     if not m:
         f.record("digest pin found", False, "no FROM ...@sha256: line")
         return None
@@ -110,7 +113,9 @@ def preflight(client: Client, f: Findings) -> tuple[str | None, dict]:
         return None, {}
 
     if not client.ssh_keys.list():
-        f.record("ssh key registered", False, "VM creation WILL fail without one")
+        f.record(
+            "ssh key registered", False, "VM creation WILL fail without one"
+        )
         return None, {}
     f.record("ssh key registered", True)
 
@@ -126,28 +131,39 @@ def preflight(client: Client, f: Findings) -> tuple[str | None, dict]:
             continue
         prev = best.get(row.gpu_type)
         if prev is None or row.num_free_devices > prev["free"]:
-            best[row.gpu_type] = {"price": row.price_per_hour,
-                                  "free": row.num_free_devices,
-                                  "region": row.region,
-                                  "vram_gb": row.vram}
+            best[row.gpu_type] = {
+                "price": row.price_per_hour,
+                "free": row.num_free_devices,
+                "region": row.region,
+                "vram_gb": row.vram,
+            }
 
     chosen = next((g for g in GPU_PREFERENCE if g in best), None)
     if chosen is None and best:
         chosen = min(best, key=lambda k: best[k]["price"])
     if chosen is None:
-        f.record(f"a GPU with {NUM_GPUS} free devices exists", False,
-                 "nothing with two free devices on one node right now")
+        f.record(
+            f"a GPU with {NUM_GPUS} free devices exists",
+            False,
+            "nothing with two free devices on one node right now",
+        )
         return None, {}
 
     rate = best[chosen]["price"]
-    f.record(f"a GPU with {NUM_GPUS} free devices exists", True,
-             f"{chosen}: {best[chosen]['free']} free at {rate} {currency}/hr "
-             f"each -- {NUM_GPUS} will cost about "
-             f"{rate * NUM_GPUS if rate else '?'} {currency}/hr")
-    return chosen, {"currency": currency, "chosen": chosen,
-                    "hourly_rate_per_device": rate,
-                    "estimated_hourly_rate": rate * NUM_GPUS if rate else None,
-                    "candidates": best}
+    f.record(
+        f"a GPU with {NUM_GPUS} free devices exists",
+        True,
+        f"{chosen}: {best[chosen]['free']} free at {rate} {currency}/hr "
+        f"each -- {NUM_GPUS} will cost about "
+        f"{rate * NUM_GPUS if rate else '?'} {currency}/hr",
+    )
+    return chosen, {
+        "currency": currency,
+        "chosen": chosen,
+        "hourly_rate_per_device": rate,
+        "estimated_hourly_rate": rate * NUM_GPUS if rate else None,
+        "candidates": best,
+    }
 
 
 def run_bootstrap6(ssh_command: str, image: str, f: Findings) -> dict | None:
@@ -155,16 +171,25 @@ def run_bootstrap6(ssh_command: str, image: str, f: Findings) -> dict | None:
     if not BOOTSTRAP.exists():
         f.record("bootstrap6.sh present", False, str(BOOTSTRAP))
         return None
-    payload = BOOTSTRAP.read_text(encoding="utf-8").replace("\r\n", "\n").encode()
+    payload = (
+        BOOTSTRAP.read_text(encoding="utf-8").replace("\r\n", "\n").encode()
+    )
     print("  image pull dominates the first few minutes; be patient...")
     t0 = time.time()
     try:
         r = subprocess.run(
             ssh_base(ssh_command)
-            + [f"bash -s -- '{image}' '{SMALL_MODEL}' '{LARGE_MODEL}' {STEPS}"],
-            input=payload, capture_output=True, timeout=BOOTSTRAP_TIMEOUT_S)
+            + [
+                f"bash -s -- '{image}' '{SMALL_MODEL}' '{LARGE_MODEL}' {STEPS}"
+            ],
+            input=payload,
+            capture_output=True,
+            timeout=BOOTSTRAP_TIMEOUT_S,
+        )
     except subprocess.TimeoutExpired:
-        f.record("probe executed", False, f"timed out after {BOOTSTRAP_TIMEOUT_S}s")
+        f.record(
+            "probe executed", False, f"timed out after {BOOTSTRAP_TIMEOUT_S}s"
+        )
         return None
     for line in r.stderr.decode("utf-8", "replace").splitlines():
         if line.strip():
@@ -208,7 +233,9 @@ def read_numerics(train_log: str) -> dict:
         "loss_ever_plausible": healthy_loss,
         "loss_collapsed_to_zero": collapsed,
         "all_grad_norms_nan": all_grads_nan,
-        "numerically_healthy": healthy_loss and not collapsed and not all_grads_nan,
+        "numerically_healthy": healthy_loss
+        and not collapsed
+        and not all_grads_nan,
     }
 
 
@@ -216,19 +243,27 @@ def interpret(report: dict, f: Findings) -> dict:
     """The three claims, answered in order, with the kill criterion applied."""
     header("CLAIM 1 -- the machine has two devices")
     host = report.get("host_gpu_count", 0)
-    f.record(f"host reports {NUM_GPUS} devices", host == NUM_GPUS,
-             report.get("host_gpu_list", "")[:200])
+    f.record(
+        f"host reports {NUM_GPUS} devices",
+        host == NUM_GPUS,
+        report.get("host_gpu_list", "")[:200],
+    )
 
     header("CLAIM 2 -- the PINNED IMAGE sees both of them")
     container = report.get("container_gpu_count", -1)
     passthrough = container == NUM_GPUS
-    f.record("the pinned image sees both devices", passthrough,
-             f"torch.cuda.device_count() == {container} inside the container")
+    f.record(
+        "the pinned image sees both devices",
+        passthrough,
+        f"torch.cuda.device_count() == {container} inside the container",
+    )
     if host == NUM_GPUS and not passthrough:
-        f.note("the toolkit, not the platform",
-               "the host has two devices and the container does not see them. "
-               "That is nvidia-container-toolkit passthrough, and it is a "
-               "problem with OUR IMAGE, not with the provider.")
+        f.note(
+            "the toolkit, not the platform",
+            "the host has two devices and the container does not see them. "
+            "That is nvidia-container-toolkit passthrough, and it is a "
+            "problem with OUR IMAGE, not with the provider.",
+        )
 
     # A probe that never launched is not evidence about what it would have
     # found. An earlier run hit a docker-socket permission error and recorded
@@ -237,9 +272,11 @@ def interpret(report: dict, f: Findings) -> dict:
     # when claim 2 did not hold.
     if not report.get("fsdp_attempted", True):
         header("CLAIM 3 -- NOT ATTEMPTED")
-        f.note("FSDP was NOT ATTEMPTED",
-               report.get("not_attempted_reason", "")
-               + " Claim 3 is UNKNOWN, not failed.")
+        f.note(
+            "FSDP was NOT ATTEMPTED",
+            report.get("not_attempted_reason", "")
+            + " Claim 3 is UNKNOWN, not failed.",
+        )
         if report.get("container_torch_stderr"):
             print("  --- what the container said ---")
             print(report["container_torch_stderr"][-1500:])
@@ -248,12 +285,11 @@ def interpret(report: dict, f: Findings) -> dict:
             "two_devices_in_the_pinned_image": passthrough,
             "fsdp_attempted": False,
             "capstone_go": False,
-            "statement":
-                "INCONCLUSIVE ON FSDP. The container reported no devices, so "
-                "FSDP was never launched and this run says NOTHING about "
-                "whether it works. The capstone cannot be scheduled on an "
-                "unanswered question, but neither may the docs say FSDP was "
-                "tried and failed. Fix device visibility and re-run.",
+            "statement": "INCONCLUSIVE ON FSDP. The container reported no devices, so "
+            "FSDP was never launched and this run says NOTHING about "
+            "whether it works. The capstone cannot be scheduled on an "
+            "unanswered question, but neither may the docs say FSDP was "
+            "tried and failed. Fix device visibility and re-run.",
         }
 
     header("CLAIM 3 -- FSDP shards, checkpoints, and resumes")
@@ -272,15 +308,22 @@ def interpret(report: dict, f: Findings) -> dict:
         # read as the whole story and the artifact was ignored.
         sharded = "distcp" in ckpt or "sharded" in ckpt
         ran = steps > 0 or sharded
-        f.record(f"[{tag}] FSDP FULL_SHARD actually sharded and stepped", ran,
-                 f"{steps} step(s) of {case['steps_requested']}, "
-                 f"checkpoint: {ckpt}, rc={rc}")
+        f.record(
+            f"[{tag}] FSDP FULL_SHARD actually sharded and stepped",
+            ran,
+            f"{steps} step(s) of {case['steps_requested']}, "
+            f"checkpoint: {ckpt}, rc={rc}",
+        )
 
         completed = rc == 0 and steps >= case["steps_requested"]
-        f.record(f"[{tag}] the run completed cleanly", completed,
-                 f"rc={rc}" if completed else
-                 f"rc={rc} after {steps} step(s) -- the mechanism ran, the run "
-                 f"did not finish")
+        f.record(
+            f"[{tag}] the run completed cleanly",
+            completed,
+            f"rc={rc}"
+            if completed
+            else f"rc={rc} after {steps} step(s) -- the mechanism ran, the run "
+            f"did not finish",
+        )
         if not completed:
             print(f"  --- [{tag}] launch log tail ---")
             print((case.get("train_log_tail") or "")[-2500:])
@@ -288,38 +331,54 @@ def interpret(report: dict, f: Findings) -> dict:
         if sharded:
             gb = case["checkpoint_bytes"] / 1e9
             f.note(f"[{tag}] sharded checkpoint size", f"{gb:.1f} GB")
-            f.note(f"[{tag}] checkpoint contents",
-                   (case.get("checkpoint_listing") or "")[:1200])
+            f.note(
+                f"[{tag}] checkpoint contents",
+                (case.get("checkpoint_listing") or "")[:1200],
+            )
 
         peak = case.get("peak_vram") or {}
         if peak:
-            f.note(f"[{tag}] peak VRAM per device (measured, nvidia-smi)",
-                   ", ".join(f"{k}={v} MiB" for k, v in sorted(peak.items())))
+            f.note(
+                f"[{tag}] peak VRAM per device (measured, nvidia-smi)",
+                ", ".join(f"{k}={v} MiB" for k, v in sorted(peak.items())),
+            )
 
         # Did it TRAIN, or merely step? Separate question, separate answer.
         num = read_numerics(case.get("train_log_tail", ""))
-        f.record(f"[{tag}] the loss behaved like training", num["numerically_healthy"],
-                 f"losses {num['losses']}, grad_norms {num['grad_norms']}"
-                 if not num["numerically_healthy"] else
-                 f"losses {num['losses']}")
+        f.record(
+            f"[{tag}] the loss behaved like training",
+            num["numerically_healthy"],
+            f"losses {num['losses']}, grad_norms {num['grad_norms']}"
+            if not num["numerically_healthy"]
+            else f"losses {num['losses']}",
+        )
         if not num["numerically_healthy"]:
-            f.note(f"[{tag}] NUMERICS ARE NOT PROVEN",
-                   "the run sharded, stepped and checkpointed, and the loss "
-                   "collapsed to zero with a nan grad_norm. Mechanism and "
-                   "numerics are different claims and only the first is "
-                   "demonstrated here.")
+            f.note(
+                f"[{tag}] NUMERICS ARE NOT PROVEN",
+                "the run sharded, stepped and checkpointed, and the loss "
+                "collapsed to zero with a nan grad_norm. Mechanism and "
+                "numerics are different claims and only the first is "
+                "demonstrated here.",
+            )
 
         if not case.get("resume_attempted"):
-            f.note(f"[{tag}] sharded resume NOT ATTEMPTED",
-                   "no checkpoint existed to resume from. UNKNOWN, not failed.")
+            f.note(
+                f"[{tag}] sharded resume NOT ATTEMPTED",
+                "no checkpoint existed to resume from. UNKNOWN, not failed.",
+            )
             resumed = None
         else:
-            resumed = (case["resume_rc"] == 0
-                       and case["resume_steps_completed"] > steps)
-            f.record(f"[{tag}] sharded resume worked", bool(resumed),
-                     f"resumed to step {case['resume_steps_completed']} "
-                     f"(target {case['resume_target_steps']}), "
-                     f"rc={case['resume_rc']}")
+            resumed = (
+                case["resume_rc"] == 0
+                and case["resume_steps_completed"] > steps
+            )
+            f.record(
+                f"[{tag}] sharded resume worked",
+                bool(resumed),
+                f"resumed to step {case['resume_steps_completed']} "
+                f"(target {case['resume_target_steps']}), "
+                f"rc={case['resume_rc']}",
+            )
             if not resumed:
                 print(f"  --- [{tag}] resume log tail ---")
                 print((case.get("resume_log_tail") or "")[-1500:])
@@ -346,21 +405,26 @@ def interpret(report: dict, f: Findings) -> dict:
     # the confusion this two-case structure exists to prevent.
     mechanism = bool(small.get("mechanism_ran") and small.get("run_completed"))
     resume_ok = bool(small.get("resume_worked"))
-    numerics_ok = bool((small.get("numerics") or {}).get("numerically_healthy"))
+    numerics_ok = bool(
+        (small.get("numerics") or {}).get("numerically_healthy")
+    )
     # Numerics gate the capstone as hard as the mechanism does. A capstone run
     # that shards perfectly and learns nothing is a more expensive failure than
     # one that will not launch, because it produces an artifact.
     go = bool(passthrough and mechanism and resume_ok and numerics_ok)
 
     if not passthrough:
-        statement = ("The pinned image does not see both devices. Multi-GPU "
-                     "stays designed and unexercised.")
+        statement = (
+            "The pinned image does not see both devices. Multi-GPU "
+            "stays designed and unexercised."
+        )
     elif not mechanism:
         statement = (
             "FSDP DOES NOT RUN IN THE PINNED IMAGE even at 0.6B, where memory "
             "is not the constraint. The 8B full-FT capstone does NOT go on the "
             "calendar. Do not attempt to fix the image at Rs510/hr on the "
-            "27th -- that is the mistake this spike exists to prevent.")
+            "27th -- that is the mistake this spike exists to prevent."
+        )
     elif not resume_ok:
         statement = (
             "FSDP shards, steps and checkpoints in the pinned image, and "
@@ -368,7 +432,8 @@ def interpret(report: dict, f: Findings) -> dict:
             "(spike 4) and does not carry over. The capstone may be scheduled "
             "only if it is allowed to run uninterrupted -- and a run that "
             "cannot resume is one whose stall-detection remedy is to lose the "
-            "work. Record that before scheduling.")
+            "work. Record that before scheduling."
+        )
     elif not numerics_ok:
         statement = (
             "THE MECHANISM WORKS AND THE NUMERICS DO NOT. Two devices are "
@@ -379,7 +444,8 @@ def interpret(report: dict, f: Findings) -> dict:
             "CALENDAR on this evidence: a run that shards perfectly and learns "
             "nothing is a MORE expensive failure than one that will not "
             "launch, because it produces an artifact that looks like a "
-            "success. Explain the nan before scheduling anything.")
+            "success. Explain the nan before scheduling anything."
+        )
     else:
         statement = (
             "The mechanism works end to end at 2x the cheapest card: two "
@@ -387,7 +453,8 @@ def interpret(report: dict, f: Findings) -> dict:
             "stepping, a sharded checkpoint written and resumed from, and a "
             "loss that behaves like training. STILL NOT PROVEN: this ran on 2 "
             "devices of one type, and 8 devices of another is a different NCCL "
-            "topology.")
+            "topology."
+        )
 
     verdict = {
         "two_devices_on_host": host == NUM_GPUS,
@@ -401,11 +468,13 @@ def interpret(report: dict, f: Findings) -> dict:
 
     # The capacity case, read as capacity rather than as mechanism.
     if mechanism and large and not large.get("run_completed"):
-        note = (f"{large['model']} full fine-tune did not complete on "
-                f"{NUM_GPUS}x L4. The mechanism is not in question -- the small "
-                f"case proved it on the same machine minutes earlier -- so this "
-                f"is a CAPACITY result: 48 GB across two cards is not enough "
-                f"for a 4B full fine-tune with adamw_torch.")
+        note = (
+            f"{large['model']} full fine-tune did not complete on "
+            f"{NUM_GPUS}x L4. The mechanism is not in question -- the small "
+            f"case proved it on the same machine minutes earlier -- so this "
+            f"is a CAPACITY result: 48 GB across two cards is not enough "
+            f"for a 4B full fine-tune with adamw_torch."
+        )
         if large.get("peak_vram_mib"):
             note += f" Measured peak: {large['peak_vram_mib']}."
         verdict["capacity_finding"] = note
@@ -417,10 +486,16 @@ def interpret(report: dict, f: Findings) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dry-run", action="store_true",
-                    help="preflight only; provisions nothing, costs nothing")
-    ap.add_argument("--keep", action="store_true",
-                    help="leave the instance running (COSTS MONEY)")
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="preflight only; provisions nothing, costs nothing",
+    )
+    ap.add_argument(
+        "--keep",
+        action="store_true",
+        help="leave the instance running (COSTS MONEY)",
+    )
     args = ap.parse_args()
 
     load_dotenv(Path(__file__).parent / ".env")
@@ -451,7 +526,9 @@ def main() -> int:
         dry_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"\nDry-run findings written to {dry_path}")
         if FINDINGS_PATH.exists():
-            print(f"  ({FINDINGS_PATH.name} left untouched -- it holds a real run)")
+            print(
+                f"  ({FINDINGS_PATH.name} left untouched -- it holds a real run)"
+            )
         header("DRY RUN -- nothing was provisioned")
         return 0 if (gpu and image) else 1
 
@@ -460,13 +537,21 @@ def main() -> int:
         header(f"CREATING {NUM_GPUS}x {gpu}")
         t0 = time.time()
         instance = client.instances.create(
-            gpu_type=gpu, num_gpus=NUM_GPUS, template="vm",
-            storage=STORAGE_GB, name=INSTANCE_NAME)
-        f.record("instance created", True,
-                 f"{NUM_GPUS}x {gpu}, machine {instance.machine_id}, "
-                 f"{time.time() - t0:.0f}s to Running")
+            gpu_type=gpu,
+            num_gpus=NUM_GPUS,
+            template="vm",
+            storage=STORAGE_GB,
+            name=INSTANCE_NAME,
+        )
+        f.record(
+            "instance created",
+            True,
+            f"{NUM_GPUS}x {gpu}, machine {instance.machine_id}, "
+            f"{time.time() - t0:.0f}s to Running",
+        )
         payload["machine"] = {
-            "gpu": gpu, "num_gpus": NUM_GPUS,
+            "gpu": gpu,
+            "num_gpus": NUM_GPUS,
             "region": getattr(instance, "region", None),
             # The SDK reports what was actually attached, which is not
             # necessarily what was asked for.
@@ -475,7 +560,9 @@ def main() -> int:
 
         ssh_command = getattr(instance, "ssh_command", None)
         if not ssh_command:
-            f.record("ssh command returned", False, "instance has no ssh_command")
+            f.record(
+                "ssh command returned", False, "instance has no ssh_command"
+            )
             return 1
         if wait_for_ssh(ssh_command, f) is None:
             return 1
@@ -487,9 +574,12 @@ def main() -> int:
     finally:
         if instance is not None:
             if args.keep:
-                f.record("teardown", False,
-                         f"SKIPPED via --keep -- STILL BILLING: "
-                         f"jl destroy {instance.machine_id}")
+                f.record(
+                    "teardown",
+                    False,
+                    f"SKIPPED via --keep -- STILL BILLING: "
+                    f"jl destroy {instance.machine_id}",
+                )
             else:
                 confirm_destroyed(client, instance.machine_id, f)
         # ...and then ask the PLATFORM, not our own variables. `instance` is
@@ -499,7 +589,9 @@ def main() -> int:
         # sweep closes that window by matching on the name instead.
         sweep_by_name(client, INSTANCE_NAME, f, keep=args.keep)
         payload["steps"] = f.steps
-        FINDINGS_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        FINDINGS_PATH.write_text(
+            json.dumps(payload, indent=2), encoding="utf-8"
+        )
         print(f"\nFindings written to {FINDINGS_PATH}")
     return 0
 

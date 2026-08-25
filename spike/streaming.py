@@ -1,4 +1,4 @@
-"""A streaming rewrite of `api.validation`, for spike 9 to measure.
+"""A streaming rewrite of `temper_core.validation`, for spike 9 to measure.
 
 **This is a probe, not the product.** It exists so spike 9 can put numbers on
 two questions before the streaming-validation ticket is written: how fast
@@ -46,17 +46,18 @@ than hidden:
 from __future__ import annotations
 
 import json
-import sys
 import unicodedata
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import BinaryIO, Callable, Iterator
+from typing import BinaryIO
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "trainer"))
-from thinking import THINK_OPEN  # noqa: E402
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from api.validation import MIN_ROWS, RECOMMENDED_ROWS, MAX_PREVIEW  # noqa: E402
+from temper_core.thinking import THINK_OPEN
+from temper_core.validation import (  # noqa: E402
+    MAX_PREVIEW,
+    MIN_ROWS,
+    RECOMMENDED_ROWS,
+)
 
 DEFAULT_CHUNK_BYTES = 1024 * 1024
 DEFAULT_ERROR_CAP = 100
@@ -115,8 +116,13 @@ class StreamReport:
         at gigabyte scale tells you the claim held for one file, and this tells
         you which change broke it.
         """
-        return (len(self.errors) + len(self.warnings) + len(self.preview)
-                + len(self.thinking_lines_with) + len(self.thinking_lines_without))
+        return (
+            len(self.errors)
+            + len(self.warnings)
+            + len(self.preview)
+            + len(self.thinking_lines_with)
+            + len(self.thinking_lines_without)
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -142,12 +148,13 @@ class StreamReport:
 def _normalise(text: str) -> str:
     """NFC, and strip control characters except tab and newline.
 
-    Copied from `api.validation` rather than imported so the measurement is of
+    Copied from `temper_core.validation` rather than imported so the measurement is of
     a self-contained pass. If this file becomes the ticket, the duplicate goes.
     """
     text = unicodedata.normalize("NFC", text)
-    return "".join(ch for ch in text
-                   if ch in "\n\t" or unicodedata.category(ch)[0] != "C")
+    return "".join(
+        ch for ch in text if ch in "\n\t" or unicodedata.category(ch)[0] != "C"
+    )
 
 
 def _iter_lines(fh: BinaryIO, chunk_bytes: int) -> Iterator[tuple[int, bytes]]:
@@ -176,7 +183,7 @@ def _iter_lines(fh: BinaryIO, chunk_bytes: int) -> Iterator[tuple[int, bytes]]:
                 tail = buf
                 continue
             if buf.startswith(BOM):
-                buf = buf[len(BOM):]
+                buf = buf[len(BOM) :]
             first = False
         *lines, tail = buf.split(b"\n")
         for raw in lines:
@@ -264,10 +271,15 @@ def stream_validate(
             try:
                 line = raw.decode("utf-8")
             except UnicodeDecodeError as e:
-                add(parse_errors, Issue(
-                    at(line_no), "encoding",
-                    f"Line is not valid UTF-8 ({e.reason} at byte {e.start} of "
-                    f"the line)."))
+                add(
+                    parse_errors,
+                    Issue(
+                        at(line_no),
+                        "encoding",
+                        f"Line is not valid UTF-8 ({e.reason} at byte {e.start} of "
+                        f"the line).",
+                    ),
+                )
                 # Matches the shipped validator's behaviour of abandoning the
                 # file on a decode failure, but names the line while doing it.
                 return finish(parse_errors)
@@ -277,13 +289,24 @@ def stream_validate(
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError as e:
-                add(parse_errors, Issue(at(line_no), "invalid_json",
-                                        f"Not valid JSON: {e.msg} at column {e.colno}."))
+                add(
+                    parse_errors,
+                    Issue(
+                        at(line_no),
+                        "invalid_json",
+                        f"Not valid JSON: {e.msg} at column {e.colno}.",
+                    ),
+                )
                 continue
             if not isinstance(obj, dict):
-                add(parse_errors, Issue(
-                    at(line_no), "not_an_object",
-                    f"Expected a JSON object, got {type(obj).__name__}."))
+                add(
+                    parse_errors,
+                    Issue(
+                        at(line_no),
+                        "not_an_object",
+                        f"Expected a JSON object, got {type(obj).__name__}.",
+                    ),
+                )
                 continue
 
             parsed_rows += 1
@@ -297,8 +320,19 @@ def stream_validate(
             if isinstance(msgs, list):
                 with_messages += 1
 
-            _check_row(obj, msgs, messages_field, line_no, parsed_rows, rep,
-                       row_errors, add, at, sample_cap, count_tokens)
+            _check_row(
+                obj,
+                msgs,
+                messages_field,
+                line_no,
+                parsed_rows,
+                rep,
+                row_errors,
+                add,
+                at,
+                sample_cap,
+                count_tokens,
+            )
 
     if rep.row_count == 0:
         add(parse_errors, Issue(None, "empty", "File contains no rows."))
@@ -307,12 +341,17 @@ def stream_validate(
     if with_messages == 0:
         # Same shape as the shipped message, and the same early return: with no
         # recognised schema there is nothing meaningful to say per row.
-        add(parse_errors, Issue(
-            None, "unrecognised_schema",
-            f"No row has a '{messages_field}' list. Temper accepts chat-format "
-            f"JSONL: {{\"{messages_field}\": [{{\"role\": \"user\", \"content\": ...}}, "
-            f"{{\"role\": \"assistant\", \"content\": ...}}]}}. "
-            f"Keys found instead: {sorted(schema_keys)}."))
+        add(
+            parse_errors,
+            Issue(
+                None,
+                "unrecognised_schema",
+                f"No row has a '{messages_field}' list. Temper accepts chat-format "
+                f'JSONL: {{"{messages_field}": [{{"role": "user", "content": ...}}, '
+                f'{{"role": "assistant", "content": ...}}]}}. '
+                f"Keys found instead: {sorted(schema_keys)}.",
+            ),
+        )
         # The shipped validator returns before it fills the preview here, and
         # a preview of rows in a schema we could not recognise would be
         # misleading anyway.
@@ -326,8 +365,19 @@ def stream_validate(
     return finish(parse_errors + row_errors)
 
 
-def _check_row(obj, msgs, messages_field, line_no, parsed_rows, rep,
-               row_errors, add, at, sample_cap, count_tokens) -> None:
+def _check_row(
+    obj,
+    msgs,
+    messages_field,
+    line_no,
+    parsed_rows,
+    rep,
+    row_errors,
+    add,
+    at,
+    sample_cap,
+    count_tokens,
+) -> None:
     """Everything that can be decided from one row, deciding it now.
 
     Split out because the loop above is about reading and this is about
@@ -340,7 +390,9 @@ def _check_row(obj, msgs, messages_field, line_no, parsed_rows, rep,
         # processes.
         for m in msgs or []:
             if isinstance(m, dict) and isinstance(m.get("content"), str):
-                rep.token_count = (rep.token_count or 0) + count_tokens(m["content"])
+                rep.token_count = (rep.token_count or 0) + count_tokens(
+                    m["content"]
+                )
 
     # Thinking mode, counted incrementally and capped. The shipped detector
     # keeps every line number and caps at the end; that is the one place the
@@ -358,35 +410,63 @@ def _check_row(obj, msgs, messages_field, line_no, parsed_rows, rep,
                     rep.thinking_lines_without.append(parsed_rows)
 
     if not isinstance(msgs, list):
-        add(row_errors, Issue(at(line_no), "missing_messages",
-                              f"Row has no '{messages_field}' list."))
+        add(
+            row_errors,
+            Issue(
+                at(line_no),
+                "missing_messages",
+                f"Row has no '{messages_field}' list.",
+            ),
+        )
         return
     roles = [m.get("role") for m in msgs if isinstance(m, dict)]
     if "assistant" not in roles:
-        add(row_errors, Issue(
-            at(line_no), "no_assistant_turn",
-            "No assistant turn. The assistant turn is the training target, so "
-            "this row teaches nothing."))
+        add(
+            row_errors,
+            Issue(
+                at(line_no),
+                "no_assistant_turn",
+                "No assistant turn. The assistant turn is the training target, so "
+                "this row teaches nothing.",
+            ),
+        )
         return
     if "user" not in roles:
-        add(rep.warnings, Issue(
-            at(line_no), "no_user_turn",
-            "No user turn; the model sees a response with no prompt."),
-            is_error=False)
-    last_assistant = [m for m in msgs
-                      if isinstance(m, dict) and m.get("role") == "assistant"][-1]
+        add(
+            rep.warnings,
+            Issue(
+                at(line_no),
+                "no_user_turn",
+                "No user turn; the model sees a response with no prompt.",
+            ),
+            is_error=False,
+        )
+    last_assistant = [
+        m for m in msgs if isinstance(m, dict) and m.get("role") == "assistant"
+    ][-1]
     content = last_assistant.get("content")
     if not isinstance(content, str) or not content.strip():
-        add(row_errors, Issue(
-            at(line_no), "empty_target",
-            "Final assistant turn is empty. Under assistant-only loss this row "
-            "is a no-op."))
+        add(
+            row_errors,
+            Issue(
+                at(line_no),
+                "empty_target",
+                "Final assistant turn is empty. Under assistant-only loss this row "
+                "is a no-op.",
+            ),
+        )
         return
     if _normalise(content) != content:
-        add(rep.warnings, Issue(
-            at(line_no), "normalised",
-            "Content contained control characters or non-NFC sequences; it "
-            "will be normalised."), is_error=False)
+        add(
+            rep.warnings,
+            Issue(
+                at(line_no),
+                "normalised",
+                "Content contained control characters or non-NFC sequences; it "
+                "will be normalised.",
+            ),
+            is_error=False,
+        )
     rep.usable_rows += 1
 
 
@@ -396,30 +476,45 @@ def _finish_thinking(rep, row_errors, add, sample_cap) -> None:
         rep.enable_thinking = False
         return
     if rep.turns_with_think and rep.turns_without_think:
-        add(row_errors, Issue(
-            None, "mixed_thinking",
-            f"Dataset mixes reasoning traces with plain responses: "
-            f"{rep.turns_with_think} assistant turn(s) contain <think> blocks "
-            f"and {rep.turns_without_think} do not. Every row must be "
-            f"consistent, because the chat template is applied to the whole "
-            f"dataset -- a mixed set trains half the rows against the wrong "
-            f"template. With <think>, e.g. lines "
-            f"{rep.thinking_lines_with[:sample_cap]}; without, e.g. lines "
-            f"{rep.thinking_lines_without[:sample_cap]}."))
+        add(
+            row_errors,
+            Issue(
+                None,
+                "mixed_thinking",
+                f"Dataset mixes reasoning traces with plain responses: "
+                f"{rep.turns_with_think} assistant turn(s) contain <think> blocks "
+                f"and {rep.turns_without_think} do not. Every row must be "
+                f"consistent, because the chat template is applied to the whole "
+                f"dataset -- a mixed set trains half the rows against the wrong "
+                f"template. With <think>, e.g. lines "
+                f"{rep.thinking_lines_with[:sample_cap]}; without, e.g. lines "
+                f"{rep.thinking_lines_without[:sample_cap]}.",
+            ),
+        )
         return
     rep.enable_thinking = bool(rep.turns_with_think)
 
 
 def _check_size_gates(rep, row_errors, add) -> None:
     if rep.usable_rows < MIN_ROWS:
-        add(row_errors, Issue(
-            None, "too_few_rows",
-            f"{rep.usable_rows} usable row(s); the minimum is {MIN_ROWS}. "
-            f"Below that a run cannot produce a meaningful adapter, so it is "
-            f"blocked rather than allowed to waste GPU time."))
+        add(
+            row_errors,
+            Issue(
+                None,
+                "too_few_rows",
+                f"{rep.usable_rows} usable row(s); the minimum is {MIN_ROWS}. "
+                f"Below that a run cannot produce a meaningful adapter, so it is "
+                f"blocked rather than allowed to waste GPU time.",
+            ),
+        )
     elif rep.usable_rows < RECOMMENDED_ROWS:
-        add(rep.warnings, Issue(
-            None, "few_rows",
-            f"{rep.usable_rows} usable rows. Training will run, but results "
-            f"are typically weak below ~{RECOMMENDED_ROWS} examples."),
-            is_error=False)
+        add(
+            rep.warnings,
+            Issue(
+                None,
+                "few_rows",
+                f"{rep.usable_rows} usable rows. Training will run, but results "
+                f"are typically weak below ~{RECOMMENDED_ROWS} examples.",
+            ),
+            is_error=False,
+        )

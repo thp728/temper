@@ -331,31 +331,42 @@ Note the disagreement: rank ranges 8–32 across serious platforms, and α conve
 ### 6.4 The selection function (implementable)
 
 ```python
-def select_method(schema, n_examples, model_params_B, budget_usd, vram_gb,
-                  user_opts_full_ft=False):
+def select_method(
+    schema,
+    n_examples,
+    model_params_B,
+    budget_usd,
+    vram_gb,
+    user_opts_full_ft=False,
+):
     # 1. Preference data → preference tuning (assumes a prior/base SFT)
     if schema == "preference":
-        return "ORPO" if n_examples < 20_000 else "DPO"   # ORPO = single-stage, cheaper
+        return (
+            "ORPO" if n_examples < 20_000 else "DPO"
+        )  # ORPO = single-stage, cheaper
 
     # 2. Completion / continued-pretrain
     if schema == "completion" and n_examples > 200_000:
         return "continued_pretrain_lora"
 
     # 3. SFT path (instruction/chat) — choose LoRA flavor by memory fit
-    bf16_gb = model_params_B * 2            # inference weight size in bf16
+    bf16_gb = model_params_B * 2  # inference weight size in bf16
     # Full FT only if the user explicitly opts in AND has the memory + data:
     if user_opts_full_ft and vram_gb >= 3.5 * bf16_gb and n_examples >= 50_000:
         return "full_ft"
     # QLoRA if a 16-bit base won't fit training comfortably; else 16-bit LoRA.
-    if vram_gb < 2.0 * bf16_gb:             # base too big for 16-bit LoRA training
-        return "qlora"                       # NF4 base + bf16 adapters
+    if vram_gb < 2.0 * bf16_gb:  # base too big for 16-bit LoRA training
+        return "qlora"  # NF4 base + bf16 adapters
     return "lora"
+
 
 def select_rank(n_examples):
     # "LoRA Without Regret": rank 32 matches full FT up to ~50k examples on a 7B
-    if n_examples < 1_000:   return 8
-    if n_examples < 50_000:  return 16       # 16–32 both defensible here
-    return 64                                # scale capacity with data past ~50k
+    if n_examples < 1_000:
+        return 8
+    if n_examples < 50_000:
+        return 16  # 16–32 both defensible here
+    return 64  # scale capacity with data past ~50k
 ```
 
 Additional inferred settings: `alpha = 2*rank`; `epochs = 3 if n<1000 else 2 if n<10000 else 1`; `max_len = p95_token_length` (capped); targets = all-linear; enable rsLoRA scaling when `rank >= 64`. Budget acts as a hard filter: estimate GPU-hours (Report B) × the cheapest qualifying GPU rate (§6.5) and, if it exceeds `budget_usd`, step down model size or switch LoRA→QLoRA before failing.

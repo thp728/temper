@@ -42,8 +42,7 @@ One rule, from [ADR-0010](docs/adr/0010-the-repository-is-laid-out-as-apps-and-p
 ships it is an app, if it is imported it is a package.** `apps/` holds `web`, `control-plane`,
 `worker` and `trainer`; `packages/` holds `core` (pure domain, no framework imports) and `contracts`
 (generated artifacts crossing a boundary where import is impossible). `spike/` is a documented
-throwaway; code graduating out of it takes its tests along. ⚠️ **The move is issue #15 and has not
-happened yet** — today the tree is still `api/`, `trainer/`, `spike/`.
+throwaway; code graduating out of it takes its tests along.
 
 **A value two components must agree on is defined once and read, never retyped.**
 
@@ -103,4 +102,5 @@ Reasoning and project state live in the private vault at
 `grilling-prep.md` answers everything cut, `scope-flow-table.md` is the parity boundary, `tasks.md`
 is the backlog, `wiki/` is the explainability gate.
 
-`python -m pytest -q` from the repo root.
+`uv` owns Python dependencies, `pnpm` will own JavaScript ones, `just` owns verbs. One workspace,
+one `uv.lock`. `just check` before you push; `just --list` for everything else.

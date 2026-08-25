@@ -52,5 +52,9 @@ def test_returns_none_when_the_rejection_names_no_bound():
 
 def test_returns_none_when_the_bound_is_on_some_other_field():
     """A ceiling on num_gpus is not a ceiling on disk, and must not be read as one."""
-    assert ceiling_from_rejection(
-        "num_gpus: ensure this value is less than or equal to 8") is None
+    assert (
+        ceiling_from_rejection(
+            "num_gpus: ensure this value is less than or equal to 8"
+        )
+        is None
+    )

@@ -183,6 +183,45 @@ and run against the working directory rather than the installed code.
 - `docs/data/axolotl-field-tiers.json` moves to `packages/contracts/`, which
   changes a path referenced by spec 009 and issue #33.
 
+## What the move found, 2026-08-25
+
+Appended after implementation. The decision above is not edited; this records
+what carrying it out revealed, because a design that meets contact and is
+quietly adjusted is exactly the kind of claim that fails under questioning.
+
+**The rule had a case this record did not anticipate: a module both halves need
+and only one of them can import.** `validation.py` reached into the trainer
+directory with a `sys.path` hack to import `thinking.py`, because thinking-mode
+detection has to be identical at training and at validation. Under this layout
+that would make `packages/core` depend on an application, breaking the central
+rule on the first day.
+
+Neither obvious answer works. A copy beside the entrypoint is the hand-mirrored
+definition this record forbids. Importing `temper_core` inside the image is
+impossible, because the image never installs anything.
+
+The resolution: **`thinking.py` lives in `packages/core`, and the trainer's
+build context is assembled rather than pointed at.** `TRAINER_SOURCES` in the
+orchestrator names every file the image is built from, wherever it lives; a real
+job flattens that list into a tar, and `just image` flattens it into a
+directory. `test_trainer_context.py` asserts the list matches the Dockerfile's
+`COPY`, that both build paths produce identical bytes, and that the module the
+domain validates with is the same file the image runs.
+
+That last test exists because this exact failure has already happened once:
+`thinking.py` was missing from the `COPY` for weeks, and because it is a
+top-level import the container died before the `finally` that writes
+`result.json`, surfacing as "trainer produced no result.json" — an error
+pointing at training and saying nothing about the image. The move made that
+failure easier to reach, so it is now the one thing here with tests of its own.
+
+**Two consequences worth naming.** `apps/trainer/` holds one Python file, not
+two, and a plain `docker build apps/trainer/` no longer works — which is correct
+rather than unfortunate, because the product never built that way either. And
+adopting the type checker surfaced 23 pre-existing findings in the control
+plane, all of one shape, recorded in issue #85 behind a scoped and issue-linked
+suppression rather than silenced.
+
 ## Rollback
 
 The move is a sequence of `git mv` calls plus an import rewrite. Reverting is

@@ -27,3 +27,6 @@ __pycache__/
 # name at ANY depth, which silently swallowed docs/data/ -- a committed source
 # artifact, not runtime state. Anchor it to the repo root.
 /data/
+
+# Local build contexts assembled by `just image`.
+/.build/

@@ -10,7 +10,7 @@
 The orchestrator carried this line:
 
 ```python
-MAX_GPU_MINUTES = 90      # safety control, not billing
+MAX_GPU_MINUTES = 90  # safety control, not billing
 ```
 
 Nothing read it. No code path compared anything to it, and no test would have

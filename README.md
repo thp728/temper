@@ -48,13 +48,37 @@ On an NVIDIA L4 (24 GB), Qwen3-4B:
 
 ⚠️ **Derived is not measured.** The cost line is computed from the event log against the stored hourly price; nothing here reads an invoice, and nothing in the product computes a job cost yet.
 
-## Layout
+## Running it
+
+Prerequisites: [uv](https://docs.astral.sh/uv/) and [just](https://just.systems).
+Both are single-binary installs, and every `just` recipe is one readable command
+if you would rather not install the second.
 
 ```
-api/        control plane — upload, validate, catalog, launch, watch, download
-trainer/    the pinned training container and its /job -> /out contract
-spike/      infrastructure probes against the live JarvisLabs account
+just setup     # resolve and install everything, one lockfile
+just check     # format, lint, types, tests, contract drift. One pass or fail
+just dev       # the control plane on localhost
+just --list    # every task
 ```
+
+## Layout
+
+One rule: if it ships it is an app, if it is imported it is a package.
+
+```
+apps/
+  control-plane/   upload, validate, catalog, launch, watch, download
+  worker/          reserved for orchestration (#51). Empty on purpose
+  trainer/         the pinned training container and its /job -> /out contract
+packages/
+  core/            the domain: validation, hyperparameters, feasibility,
+                   thinking-mode detection. No framework imports, no I/O
+  contracts/       generated artifacts crossing a language boundary
+spike/             infrastructure probes against the live JarvisLabs account
+```
+
+Recorded in [ADR-0010](docs/adr/0010-the-repository-is-laid-out-as-apps-and-packages.md),
+with the flat alternative and why it lost.
 
 ## Known gaps
 

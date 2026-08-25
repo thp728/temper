@@ -45,8 +45,11 @@ def confirm_destroyed(client, machine_id: int, f) -> bool:
             time.sleep(5)
 
     if not destroyed:
-        f.record("destroy called", False,
-                 f"DESTROY MANUALLY: jl destroy {machine_id}")
+        f.record(
+            "destroy called",
+            False,
+            f"DESTROY MANUALLY: jl destroy {machine_id}",
+        )
 
     # The proof, which is separate from the call and does not trust it.
     header("TEARDOWN CONFIRMATION -- consecutive samples (C17)")
@@ -56,8 +59,14 @@ def confirm_destroyed(client, machine_id: int, f) -> bool:
     while time.time() - t0 < CONFIRM_TIMEOUT_S:
         try:
             rows = client.instances.list()
-            match = next((i for i in rows
-                          if getattr(i, "machine_id", None) == machine_id), None)
+            match = next(
+                (
+                    i
+                    for i in rows
+                    if getattr(i, "machine_id", None) == machine_id
+                ),
+                None,
+            )
             status = getattr(match, "status", None) if match else "ABSENT"
         except Exception as e:  # noqa: BLE001
             status = f"LIST FAILED: {type(e).__name__}"
@@ -72,20 +81,28 @@ def confirm_destroyed(client, machine_id: int, f) -> bool:
         else:
             consecutive_absent = 0
         if consecutive_absent >= CONFIRM_SAMPLES:
-            f.record("teardown confirmed", True,
-                     f"absent in {CONFIRM_SAMPLES} consecutive listings",
-                     teardown_trace=trace)
+            f.record(
+                "teardown confirmed",
+                True,
+                f"absent in {CONFIRM_SAMPLES} consecutive listings",
+                teardown_trace=trace,
+            )
             return True
         time.sleep(CONFIRM_INTERVAL_S)
 
-    f.record("teardown confirmed", False,
-             f"still present or unconfirmed after {CONFIRM_TIMEOUT_S}s -- "
-             f"CHECK MANUALLY: jl list; jl destroy {machine_id}",
-             teardown_trace=trace)
+    f.record(
+        "teardown confirmed",
+        False,
+        f"still present or unconfirmed after {CONFIRM_TIMEOUT_S}s -- "
+        f"CHECK MANUALLY: jl list; jl destroy {machine_id}",
+        teardown_trace=trace,
+    )
     return False
 
 
-def sweep_by_name(client, name_prefix: str, f, keep: bool = False) -> list[int]:
+def sweep_by_name(
+    client, name_prefix: str, f, keep: bool = False
+) -> list[int]:
     """Destroy any instance whose name starts with `name_prefix`. Belt and braces.
 
     `confirm_destroyed` can only destroy a machine whose id the caller managed
@@ -109,21 +126,28 @@ def sweep_by_name(client, name_prefix: str, f, keep: bool = False) -> list[int]:
     try:
         rows = client.instances.list()
     except Exception as e:  # noqa: BLE001
-        f.record("orphan sweep", False,
-                 f"could not list instances ({type(e).__name__}: {e}) -- "
-                 f"CHECK MANUALLY: jl list")
+        f.record(
+            "orphan sweep",
+            False,
+            f"could not list instances ({type(e).__name__}: {e}) -- "
+            f"CHECK MANUALLY: jl list",
+        )
         return []
 
-    strays = [i for i in rows
-              if (getattr(i, "name", "") or "").startswith(name_prefix)]
+    strays = [
+        i
+        for i in rows
+        if (getattr(i, "name", "") or "").startswith(name_prefix)
+    ]
     if not strays:
         f.record("orphan sweep", True, "nothing left behind")
         return []
 
     ids = [i.machine_id for i in strays]
     if keep:
-        f.record("orphan sweep", False,
-                 f"--keep, so {ids} LEFT RUNNING AND BILLING")
+        f.record(
+            "orphan sweep", False, f"--keep, so {ids} LEFT RUNNING AND BILLING"
+        )
         return ids
 
     f.note("orphans found", f"{ids} -- destroying")

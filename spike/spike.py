@@ -119,7 +119,9 @@ class Findings:
     def note(self, step: str, detail: str, **extra) -> None:
         """Neither pass nor fail -- an observation worth carrying back."""
         print(f"  [ .. ] {step} -- {detail}")
-        self.steps.append({"step": step, "ok": None, "detail": detail, **extra})
+        self.steps.append(
+            {"step": step, "ok": None, "detail": detail, **extra}
+        )
 
     def save(self, path: Path) -> None:
         payload = {
@@ -143,7 +145,11 @@ def preflight(client: Client, f: Findings) -> str | None:
     # 1. Auth + balance.
     try:
         bal = client.account.balance()
-        f.record("auth + balance", True, f"balance={bal.balance} grants={bal.grants}")
+        f.record(
+            "auth + balance",
+            True,
+            f"balance={bal.balance} grants={bal.grants}",
+        )
     except Exception as e:
         f.record("auth + balance", False, f"{type(e).__name__}: {e}")
         return None
@@ -156,7 +162,8 @@ def preflight(client: Client, f: Findings) -> str | None:
             f.record("ssh key registered", True, f"{len(keys)} key(s)")
         else:
             f.record(
-                "ssh key registered", False,
+                "ssh key registered",
+                False,
                 "none found -- VM creation WILL fail. "
                 "Fix: jl ssh-key add ~/.ssh/id_ed25519.pub --name my-laptop",
             )
@@ -183,21 +190,28 @@ def preflight(client: Client, f: Findings) -> str | None:
         # a container-only A30 and fail at create.
         vm_rows = [r for r in rows if r.workload_type == "vm"]
         container_only = sorted(
-            {r.gpu_type for r in rows}
-            - {r.gpu_type for r in vm_rows}
+            {r.gpu_type for r in rows} - {r.gpu_type for r in vm_rows}
         )
         if container_only:
-            f.note("container-only GPUs (unusable for training)",
-                   ", ".join(container_only))
+            f.note(
+                "container-only GPUs (unusable for training)",
+                ", ".join(container_only),
+            )
 
         free: dict[str, dict] = {}
         for r in vm_rows:
             if r.num_free_devices < 1:
                 continue
-            cur = free.setdefault(r.gpu_type, {
-                "free": 0, "price": r.price_per_hour, "spot": r.spot_price,
-                "vram": r.vram, "regions": set(),
-            })
+            cur = free.setdefault(
+                r.gpu_type,
+                {
+                    "free": 0,
+                    "price": r.price_per_hour,
+                    "spot": r.spot_price,
+                    "vram": r.vram,
+                    "regions": set(),
+                },
+            )
             cur["free"] += r.num_free_devices
             cur["regions"].add(r.region)
             cur["price"] = min(cur["price"], r.price_per_hour)
@@ -212,7 +226,9 @@ def preflight(client: Client, f: Findings) -> str | None:
         # Billing currency is account-scoped and is NOT necessarily USD.
         # The quote engine must read this rather than assume it; the
         # architecture's USD anchors are calibration, not billing.
-        f.note("billing currency", f"{currency} -- quote must not hard-code USD")
+        f.note(
+            "billing currency", f"{currency} -- quote must not hard-code USD"
+        )
 
         for gpu in GPU_PREFERENCE:
             if gpu in free:
@@ -220,13 +236,19 @@ def preflight(client: Client, f: Findings) -> str | None:
                 break
         if chosen:
             i = free[chosen]
-            f.record("gpu selected", True,
-                     f"{chosen}: {i['free']} free @ {i['price']}{currency}/hr, "
-                     f"{i['vram']}GB, {sorted(i['regions'])}")
+            f.record(
+                "gpu selected",
+                True,
+                f"{chosen}: {i['free']} free @ {i['price']}{currency}/hr, "
+                f"{i['vram']}GB, {sorted(i['regions'])}",
+            )
         else:
-            f.record("gpu selected", False,
-                     f"none of {GPU_PREFERENCE} free for VMs. "
-                     f"VM-capable and free: {summary or 'none'}")
+            f.record(
+                "gpu selected",
+                False,
+                f"none of {GPU_PREFERENCE} free for VMs. "
+                f"VM-capable and free: {summary or 'none'}",
+            )
             return None
     except Exception as e:
         # Do NOT fall back to a guess. Provisioning a GPU we could not confirm
@@ -246,8 +268,11 @@ def preflight(client: Client, f: Findings) -> str | None:
         if "template" in params:
             f.record("VM reachable from SDK", True, 'via template="vm"')
         else:
-            f.record("VM reachable from SDK", False,
-                     "no template parameter -- SDK contract changed, re-read the source")
+            f.record(
+                "VM reachable from SDK",
+                False,
+                "no template parameter -- SDK contract changed, re-read the source",
+            )
     except Exception as e:
         f.note("SDK create() introspection", f"{type(e).__name__}: {e}")
 
@@ -287,8 +312,11 @@ def upload_probe(client: Client, f: Findings) -> str | None:
         if sid:
             f.record("startup script created", True, f"id={sid}")
             return sid
-        f.record("startup script created", False,
-                 "add() reported success but the script is not in list()")
+        f.record(
+            "startup script created",
+            False,
+            "add() reported success but the script is not in list()",
+        )
         return None
     except Exception as e:
         f.record("startup script", False, f"{type(e).__name__}: {e}")
@@ -313,12 +341,22 @@ def fetch_probe_report(ssh_command: str, f: Findings) -> dict | None:
     # /tmp because VMs log in as `ubuntu` and /root is 700. The sudo fallback
     # covers a startup script that ran with a stricter umask, and `2>/dev/null`
     # on the first arm keeps the real error visible if both fail.
-    remote = ("cat /tmp/probe-report.json 2>/dev/null "
-              "|| sudo cat /tmp/probe-report.json 2>/dev/null "
-              "|| sudo cat /root/probe-report.json")
-    cmd = ["ssh", "-o", "StrictHostKeyChecking=no",
-           "-o", "UserKnownHostsFile=/dev/null",
-           "-o", "ConnectTimeout=10", *base.split(), remote]
+    remote = (
+        "cat /tmp/probe-report.json 2>/dev/null "
+        "|| sudo cat /tmp/probe-report.json 2>/dev/null "
+        "|| sudo cat /root/probe-report.json"
+    )
+    cmd = [
+        "ssh",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "ConnectTimeout=10",
+        *base.split(),
+        remote,
+    ]
 
     t_start = time.time()
     ssh_reachable_at = None
@@ -331,34 +369,54 @@ def fetch_probe_report(ssh_command: str, f: Findings) -> dict | None:
             # get ANY response (even a failed cat), the port is open. That gap
             # is orchestration-relevant: the worker cannot be handed work at
             # the moment the provider says Running.
-            if ssh_reachable_at is None and "Connection timed out" not in (r.stderr or ""):
+            if ssh_reachable_at is None and "Connection timed out" not in (
+                r.stderr or ""
+            ):
                 ssh_reachable_at = time.time() - t_start
-                f.record("ssh port reachable", True,
-                         f"{ssh_reachable_at:.0f}s after Running "
-                         f"(attempt {attempt}) -- 'Running' != 'ready'",
-                         ssh_ready_seconds=round(ssh_reachable_at))
+                f.record(
+                    "ssh port reachable",
+                    True,
+                    f"{ssh_reachable_at:.0f}s after Running "
+                    f"(attempt {attempt}) -- 'Running' != 'ready'",
+                    ssh_ready_seconds=round(ssh_reachable_at),
+                )
             if r.returncode == 0 and r.stdout.strip():
                 try:
                     report = json.loads(r.stdout)
                 except json.JSONDecodeError:
-                    f.note(f"ssh attempt {attempt}", "report present but unparseable")
+                    f.note(
+                        f"ssh attempt {attempt}",
+                        "report present but unparseable",
+                    )
                     print(r.stdout[:500])
                     time.sleep(SSH_RETRY_DELAY_S)
                     continue
-                f.record("probe report retrieved", True, f"after {attempt} attempt(s)")
+                f.record(
+                    "probe report retrieved",
+                    True,
+                    f"after {attempt} attempt(s)",
+                )
                 return report
-            f.note(f"ssh attempt {attempt}/{SSH_RETRIES}",
-                   (r.stderr or "no report yet").strip()[:120])
+            f.note(
+                f"ssh attempt {attempt}/{SSH_RETRIES}",
+                (r.stderr or "no report yet").strip()[:120],
+            )
         except subprocess.TimeoutExpired:
             f.note(f"ssh attempt {attempt}/{SSH_RETRIES}", "timed out")
         except FileNotFoundError:
-            f.record("ssh client available", False,
-                     "no `ssh` on PATH -- install OpenSSH or read the report manually")
+            f.record(
+                "ssh client available",
+                False,
+                "no `ssh` on PATH -- install OpenSSH or read the report manually",
+            )
             return None
         time.sleep(SSH_RETRY_DELAY_S)
 
-    f.record("probe report retrieved", False,
-             f"gave up after {SSH_RETRIES} attempts; ssh in manually: {ssh_command}")
+    f.record(
+        "probe report retrieved",
+        False,
+        f"gave up after {SSH_RETRIES} attempts; ssh in manually: {ssh_command}",
+    )
     return None
 
 
@@ -367,7 +425,9 @@ def interpret(report: dict | None, f: Findings) -> None:
     header("WHAT THIS MEANS")
 
     if not report:
-        print("  No probe report -- the C1 Docker question is still unanswered.")
+        print(
+            "  No probe report -- the C1 Docker question is still unanswered."
+        )
         return
 
     docker = report.get("docker_present")
@@ -377,17 +437,27 @@ def interpret(report: dict | None, f: Findings) -> None:
 
     if docker and daemon and ghcr and gpus:
         print("  C1 RESOLVED, favourably. Docker present, daemon up, GHCR")
-        print("  reachable, GPU passthrough works. The immutable-image approach")
+        print(
+            "  reachable, GPU passthrough works. The immutable-image approach"
+        )
         print("  in architecture §14 holds -- correct §0/C1 to resolved and")
         print("  proceed with the bootstrap as written.")
     elif docker and daemon and ghcr and not gpus:
-        print("  C1 PARTIAL. Docker works but the container cannot see the GPU.")
+        print(
+            "  C1 PARTIAL. Docker works but the container cannot see the GPU."
+        )
         print("  Almost certainly a missing nvidia-container-toolkit -- the")
-        print("  startup script must install it. Adds boot latency to every run;")
+        print(
+            "  startup script must install it. Adds boot latency to every run;"
+        )
         print("  measure it before quoting durations.")
     elif docker and not daemon:
-        print("  C1 PARTIAL. Docker installed but the daemon is not running by")
-        print("  default. The startup script has to start it. Cheap fix, but it")
+        print(
+            "  C1 PARTIAL. Docker installed but the daemon is not running by"
+        )
+        print(
+            "  default. The startup script has to start it. Cheap fix, but it"
+        )
         print("  must be in the script and not assumed.")
     elif not docker:
         print("  C1 RESOLVED, unfavourably. No Docker on a bare VM.")
@@ -395,11 +465,19 @@ def interpret(report: dict | None, f: Findings) -> None:
         print("    (a) startup script installs Docker  -> keeps immutability,")
         print("        costs boot time on every run, and the install itself")
         print("        becomes an unpinned dependency;")
-        print("    (b) uv-provisioned env from a lockfile -> fast, but forfeits")
+        print(
+            "    (b) uv-provisioned env from a lockfile -> fast, but forfeits"
+        )
         print("        the immutable-image guarantee principle 10 rests on;")
-        print("    (c) use a container template instead of --vm -> Docker becomes")
-        print("        irrelevant, at the cost of controlling the image at all.")
-        print("  Whichever is chosen, architecture §5, §14 and principle 10 all")
+        print(
+            "    (c) use a container template instead of --vm -> Docker becomes"
+        )
+        print(
+            "        irrelevant, at the cost of controlling the image at all."
+        )
+        print(
+            "  Whichever is chosen, architecture §5, §14 and principle 10 all"
+        )
         print("  need rewriting, not patching.")
 
     for host in ("ghcr_io", "huggingface_co", "pypi_org"):
@@ -409,20 +487,29 @@ def interpret(report: dict | None, f: Findings) -> None:
             print("    protocol and R2 signed URLs. Escalate before building.")
 
     if report.get("nvidia_smi_present"):
-        print(f"  GPU seen: {report.get('gpu_name')} "
-              f"({report.get('vram_total_mib')} MiB), "
-              f"driver {report.get('driver_version')}")
+        print(
+            f"  GPU seen: {report.get('gpu_name')} "
+            f"({report.get('vram_total_mib')} MiB), "
+            f"driver {report.get('driver_version')}"
+        )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dry-run", action="store_true",
-                    help="preflight only; provisions nothing, costs nothing")
-    ap.add_argument("--keep", action="store_true",
-                    help="do not destroy the instance (COSTS MONEY until you do)")
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="preflight only; provisions nothing, costs nothing",
+    )
+    ap.add_argument(
+        "--keep",
+        action="store_true",
+        help="do not destroy the instance (COSTS MONEY until you do)",
+    )
     ap.add_argument("--gpu", help="override GPU type")
-    ap.add_argument("--out", type=Path,
-                    default=Path(__file__).parent / "findings.json")
+    ap.add_argument(
+        "--out", type=Path, default=Path(__file__).parent / "findings.json"
+    )
     args = ap.parse_args()
 
     f = Findings()
@@ -442,7 +529,9 @@ def main() -> int:
     except Exception as e:
         print(f"\nCannot authenticate: {e}\n")
         if env_file.exists() and not loaded:
-            print(f"{env_file} exists but set nothing -- is JL_API_KEY still blank?")
+            print(
+                f"{env_file} exists but set nothing -- is JL_API_KEY still blank?"
+            )
         print("Fix any one of:")
         print(f"  1. Put JL_API_KEY=<key> in {env_file}")
         print('  2. $env:JL_API_KEY = "<key>"   # this shell only')
@@ -464,8 +553,10 @@ def main() -> int:
             script_id = upload_probe(client, f)
 
             header(f"PROVISIONING -- {gpu}, vm mode, {STORAGE_GB} GB")
-            print("  (SDK create() blocks until running; boot timeout "
-                  f"{BOOT_TIMEOUT_S}s)")
+            print(
+                "  (SDK create() blocks until running; boot timeout "
+                f"{BOOT_TIMEOUT_S}s)"
+            )
 
             # template="vm" IS --vm. Note the constraints this buys, all read
             # from the CLI source and all load-bearing for the architecture:
@@ -486,9 +577,12 @@ def main() -> int:
 
             t0 = time.time()
             instance = client.instances.create(**create_kwargs)
-            f.record("VM created", True,
-                     f"{time.time() - t0:.0f}s to Running",
-                     boot_seconds=round(time.time() - t0))
+            f.record(
+                "VM created",
+                True,
+                f"{time.time() - t0:.0f}s to Running",
+                boot_seconds=round(time.time() - t0),
+            )
 
             mid = instance.machine_id
             print(f"  machine_id={mid}  status={instance.status}")
@@ -513,34 +607,52 @@ def main() -> int:
             if instance is None:
                 print("  Nothing provisioned.")
             elif args.keep:
-                print(f"  --keep set. Instance {instance.machine_id} LEFT RUNNING.")
+                print(
+                    f"  --keep set. Instance {instance.machine_id} LEFT RUNNING."
+                )
                 print(f"  Destroy it: jl destroy {instance.machine_id}")
-                f.record("teardown", False, "skipped via --keep -- still billing")
+                f.record(
+                    "teardown", False, "skipped via --keep -- still billing"
+                )
             else:
                 for attempt in range(1, 4):
                     try:
                         client.instances.destroy(instance.machine_id)
-                        f.record("instance destroyed", True, f"attempt {attempt}")
+                        f.record(
+                            "instance destroyed", True, f"attempt {attempt}"
+                        )
                         break
                     except Exception as e:
-                        f.note(f"destroy attempt {attempt}", f"{type(e).__name__}: {e}")
+                        f.note(
+                            f"destroy attempt {attempt}",
+                            f"{type(e).__name__}: {e}",
+                        )
                         time.sleep(5)
                 else:
-                    f.record("instance destroyed", False,
-                             f"ALL ATTEMPTS FAILED -- destroy manually NOW: "
-                             f"jl destroy {instance.machine_id}")
+                    f.record(
+                        "instance destroyed",
+                        False,
+                        f"ALL ATTEMPTS FAILED -- destroy manually NOW: "
+                        f"jl destroy {instance.machine_id}",
+                    )
 
             # Independent confirmation. Trusting the destroy call's return value
             # is exactly the assumption the §17 reconciler exists to catch.
             try:
                 live = client.instances.list()
-                stray = [i for i in live
-                         if getattr(i, "name", "") == INSTANCE_NAME]
+                stray = [
+                    i for i in live if getattr(i, "name", "") == INSTANCE_NAME
+                ]
                 if stray:
-                    f.record("no stray instances", False,
-                             f"{len(stray)} still listed -- destroy manually")
+                    f.record(
+                        "no stray instances",
+                        False,
+                        f"{len(stray)} still listed -- destroy manually",
+                    )
                 else:
-                    f.record("no stray instances", True, "confirmed via list()")
+                    f.record(
+                        "no stray instances", True, "confirmed via list()"
+                    )
             except Exception as e:
                 f.note("stray check", f"{type(e).__name__}: {e}")
 

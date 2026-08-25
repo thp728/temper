@@ -1,0 +1,19 @@
+# Reserved by ADR-0010 so that issue #51 has a name to move orchestration into
+# rather than inventing one. Empty on purpose: an empty directory would not
+# survive git, and a directory invented later would not match what the ADR and
+# sixty tickets already call it.
+[project]
+name = "temper-worker"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["temper-core"]
+
+[tool.uv.sources]
+temper-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/temper_worker"]

@@ -1,0 +1,116 @@
+# Workspace root. Holds no code of its own: it exists so that one lockfile and
+# one virtual environment cover every Python member, and so a change in
+# packages/core is picked up by its consumers without a publish step.
+#
+# See docs/adr/0010-the-repository-is-laid-out-as-apps-and-packages.md.
+
+[tool.uv.workspace]
+members = ["apps/control-plane", "apps/worker", "apps/trainer", "packages/core", "spike"]
+
+[tool.uv.sources]
+temper-core = { workspace = true }
+temper-control-plane = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "temper-core",
+    "temper-control-plane",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "httpx",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+]
+
+[tool.pytest.ini_options]
+# `apps/trainer` is on the path rather than installed: the trainer image runs
+# `entrypoint.py` as a flat script at /opt/trainer, so it is not a package and
+# pretending otherwise here would test a shape that does not ship. `spike` is
+# the same, for the probe modules its own tests import.
+pythonpath = ["apps/trainer", "spike"]
+testpaths = ["packages", "apps", "spike"]
+addopts = "-q"
+markers = [
+    "hardware: needs a real GPU or JL_API_KEY. Deselected by `just test`",
+]
+
+[tool.ruff]
+line-length = 79
+src = ["packages/core/src", "apps/control-plane/src", "apps/worker/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+# Every suppression names why, because a silent ignore list is how a linter
+# stops meaning anything.
+ignore = [
+    "S101",  # assert is how the test suite asserts
+    "S108",  # the /tmp paths are on the remote machine, not this filesystem
+    "S603",  # the provider shells out to ssh on purpose; args are a list
+    "S607",  # ssh is resolved from PATH deliberately, not pinned to a path
+    "S608",  # column names come from internal dicts; every value is bound
+    "B008",  # FastAPI's File()/Depends() in defaults is the framework idiom
+]
+
+[tool.ruff.lint.pycodestyle]
+# The formatter wraps code at 79. Prose in comments and docstrings is allowed a
+# little more room rather than being rewrapped by hand every time a word moves.
+max-line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+# Probes are measurement code, kept for reference rather than maintained.
+# Holding them to the product's line length and to a cryptographic-randomness
+# rule they have no reason to satisfy would be tidying for its own sake.
+"spike/*" = ["S110", "S311", "E501"]
+
+[tool.mypy]
+# Strict where it earns it, checked everywhere.
+#
+# `packages/core` is strict: it is small, pure, and it is the code Phase B has
+# to carry across unchanged, so a type error there is the expensive kind.
+#
+# The applications are checked but not strict, and that is a scheduling
+# judgement rather than a standard. `web.py` is deleted by #47, `db.py` is
+# rewritten onto Postgres by #43, and `orchestrator.py` moves to the worker by
+# #51. Annotating 89 call sites that three tickets are about to delete or
+# rewrite is work with no reader. Each of those tickets tightens its own half as
+# it lands.
+python_version = "3.12"
+mypy_path = ["packages/core/src", "apps/control-plane/src", "apps/worker/src"]
+exclude = ["^spike/", "/tests/"]
+# Deliberately off for the applications: it reports 25 findings, all of one
+# shape, and issue #85 records them rather than silencing them. Turning it on
+# without fixing them would mean 25 suppressions, which is a worse record than
+# an issue.
+check_untyped_defs = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+# The provider SDK ships no type information. Nothing to be done about that from
+# here, and an untyped third-party client is not a finding about this codebase.
+module = "jarvislabs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Adopting the type checker surfaced 23 findings in the applications, all of one
+# shape: a value that can be None used as if it cannot. `db.get_job` returns
+# `dict | None`, callers index it, and the guard that makes that safe is a
+# `raise` several frames away that mypy cannot follow.
+#
+# They are recorded in issue #85, not silenced. This suppression is scoped to
+# the four codes that family produces, so anything else in these modules still
+# fails, and it names the issue so deleting it is a checkable act rather than a
+# judgement call. Fixing them means adding a raising `require_job`, which is a
+# change to the orchestrator's behaviour on the path that spends money, and that
+# does not belong inside a directory move.
+module = "temper_control_plane.*"
+disable_error_code = ["union-attr", "index", "arg-type", "misc"]
+
+[[tool.mypy.overrides]]
+module = "temper_core.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_any_generics = true
+warn_return_any = true

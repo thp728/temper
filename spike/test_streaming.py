@@ -19,10 +19,10 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api.validation import validate  # noqa: E402
 from streaming import stream_validate  # noqa: E402
+
+from temper_core.validation import validate  # noqa: E402
 
 
 def write(tmp_path: Path, rows: list, name: str = "d.jsonl") -> Path:
@@ -35,11 +35,15 @@ def write(tmp_path: Path, rows: list, name: str = "d.jsonl") -> Path:
 
 
 def good_row(i: int = 0, think: bool = False) -> dict:
-    answer = f"<think>because {i}</think>the answer" if think else f"the answer {i}"
-    return {"messages": [
-        {"role": "user", "content": f"question {i}"},
-        {"role": "assistant", "content": answer},
-    ]}
+    answer = (
+        f"<think>because {i}</think>the answer" if think else f"the answer {i}"
+    )
+    return {
+        "messages": [
+            {"role": "user", "content": f"question {i}"},
+            {"role": "assistant", "content": answer},
+        ]
+    }
 
 
 def assert_agrees(path: Path) -> None:
@@ -52,8 +56,9 @@ def assert_agrees(path: Path) -> None:
     assert streamed["schema_type"] == memory["schema_type"]
     assert streamed["enable_thinking"] == memory["enable_thinking"]
     for kind in ("errors", "warnings"):
-        assert ([(i["line"], i["code"]) for i in streamed[kind]]
-                == [(i["line"], i["code"]) for i in memory[kind]]), kind
+        assert [(i["line"], i["code"]) for i in streamed[kind]] == [
+            (i["line"], i["code"]) for i in memory[kind]
+        ], kind
     assert streamed["preview"] == memory["preview"]
 
 
@@ -62,7 +67,9 @@ def test_agrees_on_a_clean_dataset(tmp_path):
 
 
 def test_agrees_on_a_thinking_dataset(tmp_path):
-    assert_agrees(write(tmp_path, [good_row(i, think=True) for i in range(60)]))
+    assert_agrees(
+        write(tmp_path, [good_row(i, think=True) for i in range(60)])
+    )
 
 
 def test_agrees_on_a_mixed_thinking_dataset(tmp_path):
@@ -82,9 +89,13 @@ def test_agrees_on_malformed_json_and_names_the_same_line(tmp_path):
 
 def test_agrees_on_rows_that_teach_nothing(tmp_path):
     rows = [good_row(i) for i in range(60)]
-    rows[3]["messages"] = [{"role": "user", "content": "orphan"}]     # no assistant
-    rows[4]["messages"][1]["content"] = "   "                          # empty target
-    rows[5]["messages"] = [{"role": "assistant", "content": "reply"}]  # no user
+    rows[3]["messages"] = [
+        {"role": "user", "content": "orphan"}
+    ]  # no assistant
+    rows[4]["messages"][1]["content"] = "   "  # empty target
+    rows[5]["messages"] = [
+        {"role": "assistant", "content": "reply"}
+    ]  # no user
     assert_agrees(write(tmp_path, rows))
 
 
@@ -125,6 +136,7 @@ def test_rejects_invalid_utf8_without_reading_the_whole_file(tmp_path):
 
 
 # --- the properties that make it a *streaming* validator --------------------
+
 
 def test_error_list_is_capped_but_the_count_is_not(tmp_path):
     """A 5 GB file of broken JSON must not become a 5 GB error list.
@@ -177,7 +189,8 @@ def test_token_counting_is_optional_and_reports_a_total(tmp_path):
     assert rep.token_count > 0
     assert rep.token_count == sum(
         len(m["content"].split())
-        for i in range(60) for m in good_row(i)["messages"]
+        for i in range(60)
+        for m in good_row(i)["messages"]
     )
 
 
@@ -188,8 +201,12 @@ def test_peak_memory_does_not_grow_with_row_count(tmp_path):
     checks the shape of what is kept, which is the part a refactor breaks;
     the spike measures actual RSS at gigabyte scale.
     """
-    small = stream_validate(write(tmp_path, [good_row(i) for i in range(100)], "s.jsonl"))
-    large = stream_validate(write(tmp_path, [good_row(i) for i in range(10_000)], "l.jsonl"))
+    small = stream_validate(
+        write(tmp_path, [good_row(i) for i in range(100)], "s.jsonl")
+    )
+    large = stream_validate(
+        write(tmp_path, [good_row(i) for i in range(10_000)], "l.jsonl")
+    )
     assert large.usable_rows == 100 * small.usable_rows
     assert len(large.preview) == len(small.preview)
     assert len(large.errors) == len(small.errors)
@@ -201,8 +218,10 @@ def test_peak_memory_does_not_grow_with_row_count(tmp_path):
 def test_agrees_regardless_of_read_buffer_size(tmp_path, chunk):
     """A row split across two reads is the classic streaming bug."""
     path = write(tmp_path, [good_row(i) for i in range(60)])
-    assert stream_validate(path, chunk_bytes=chunk).to_dict() == \
-        stream_validate(path, chunk_bytes=8 * 1024 * 1024).to_dict()
+    assert (
+        stream_validate(path, chunk_bytes=chunk).to_dict()
+        == stream_validate(path, chunk_bytes=8 * 1024 * 1024).to_dict()
+    )
 
 
 def test_a_byte_limited_pass_stops_early_and_refuses_a_verdict(tmp_path):

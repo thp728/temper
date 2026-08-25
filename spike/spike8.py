@@ -33,7 +33,7 @@ import inspect
 import json
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -92,7 +92,9 @@ class Capability:
                 return
         self.in_sdk = True
         try:
-            self.signature = self.sdk_path.split(".")[-1] + str(inspect.signature(target))
+            self.signature = self.sdk_path.split(".")[-1] + str(
+                inspect.signature(target)
+            )
         except (TypeError, ValueError):
             self.signature = "<not introspectable>"
 
@@ -119,235 +121,358 @@ class Capability:
 CAPABILITIES: list[Capability] = [
     # --- instance lifecycle --------------------------------------------
     Capability(
-        "create instance", "lifecycle", "instances.create", True,
-        "SKILL.md 'jl create'", tested_in="spike1-4, api/provider.py",
+        "create instance",
+        "lifecycle",
+        "instances.create",
+        True,
+        "SKILL.md 'jl create'",
+        tested_in="spike1-4, api/provider.py",
     ),
     Capability(
-        "destroy instance", "lifecycle", "instances.destroy", True,
-        "SKILL.md 'jl destroy'", tested_in="spike1-4, api/provider.py",
+        "destroy instance",
+        "lifecycle",
+        "instances.destroy",
+        True,
+        "SKILL.md 'jl destroy'",
+        tested_in="spike1-4, api/provider.py",
     ),
     Capability(
-        "list instances", "lifecycle", "instances.list", True,
-        "SKILL.md 'jl list'", tested_in="spike1-4, api/provider.py",
+        "list instances",
+        "lifecycle",
+        "instances.list",
+        True,
+        "SKILL.md 'jl list'",
+        tested_in="spike1-4, api/provider.py",
     ),
     Capability(
-        "get one instance", "lifecycle", "instances.get", True,
+        "get one instance",
+        "lifecycle",
+        "instances.get",
+        True,
         "SKILL.md 'jl get'",
         notes="Polled indirectly through create(); never called directly here.",
     ),
     Capability(
-        "PAUSE instance", "lifecycle", "instances.pause", True,
+        "PAUSE instance",
+        "lifecycle",
+        "instances.pause",
+        True,
         "SKILL.md: 'Paused (compute billing stopped, storage billing "
         "continues, data persists)'",
         notes="THE FINDING. Compute billing stops, storage billing continues, "
-              "the whole VM disk persists. Untested here - pricing below is "
-              "the vendor's claim, not a measurement.",
+        "the whole VM disk persists. Untested here - pricing below is "
+        "the vendor's claim, not a measurement.",
     ),
     Capability(
-        "resume instance", "lifecycle", "instances.resume", True,
+        "resume instance",
+        "lifecycle",
+        "instances.resume",
+        True,
         "SKILL.md 'jl resume'",
         notes="Region-locked; MAY RETURN A NEW machine_id, so any caller that "
-              "stores the id must re-read it. GPU type and storage can both "
-              "change on resume, within the original region.",
+        "stores the id must re-read it. GPU type and storage can both "
+        "change on resume, within the original region.",
     ),
     Capability(
-        "rename instance", "lifecycle", "instances.rename", True,
+        "rename instance",
+        "lifecycle",
+        "instances.rename",
+        True,
         "SKILL.md 'jl rename'",
         notes="Cosmetic. No product use.",
     ),
     Capability(
-        "resize a running instance", "lifecycle", None, False,
+        "resize a running instance",
+        "lifecycle",
+        None,
+        False,
         "absent from SKILL.md",
         notes="No resize call. Changing GPU or disk goes through pause then "
-              "resume with new parameters - which is the same mechanism, at "
-              "the cost of an interruption.",
+        "resume with new parameters - which is the same mechanism, at "
+        "the cost of an interruption.",
         via="absent",
     ),
     Capability(
-        "CPU-only VM", "lifecycle", "instances.create_cpu_vm", True,
+        "CPU-only VM",
+        "lifecycle",
+        "instances.create_cpu_vm",
+        True,
         "SKILL.md 'jl cpus'",
         notes="A separate backend path with its own rejections. Not useful for "
-              "training; possibly useful as a cheap holder of a filesystem.",
+        "training; possibly useful as a cheap holder of a filesystem.",
     ),
     Capability(
-        "spot instances", "lifecycle", None, True,
+        "spot instances",
+        "lifecycle",
+        None,
+        True,
         "SKILL.md: 'Spot prices are shown only for GPU containers'",
         notes="is_spot is a create/resume PARAMETER, not a call - and the SDK "
-              "raises ValidationError for is_spot with template='vm'. Spot is "
-              "containers only, so it is unavailable to this product, which "
-              "needs VMs for Docker.",
+        "raises ValidationError for is_spot with template='vm'. Spot is "
+        "containers only, so it is unavailable to this product, which "
+        "needs VMs for Docker.",
         via="parameter",
     ),
     # --- storage --------------------------------------------------------
     Capability(
-        "instance disk sizing", "storage", None, True,
+        "instance disk sizing",
+        "storage",
+        None,
+        True,
         "SKILL.md '--storage (default: 100GB)'",
         notes="`storage` is a create parameter with NO client-side upper "
-              "bound, so the ceiling is discovered by rejection. Spike 5 "
-              "measures where that rejection falls.",
+        "bound, so the ceiling is discovered by rejection. Spike 5 "
+        "measures where that rejection falls.",
         via="parameter",
     ),
     Capability(
-        "persistent filesystem: create", "storage", "filesystems.create", True,
+        "persistent filesystem: create",
+        "storage",
+        "filesystems.create",
+        True,
         "SKILL.md 'jl filesystem create'",
         notes="Outlives any instance. The obvious home for a model cache that "
-              "would otherwise be re-downloaded per job.",
+        "would otherwise be re-downloaded per job.",
     ),
     Capability(
-        "persistent filesystem: list", "storage", "filesystems.list", True,
+        "persistent filesystem: list",
+        "storage",
+        "filesystems.list",
+        True,
         "SKILL.md 'jl filesystem list'",
     ),
     Capability(
-        "persistent filesystem: resize", "storage", "filesystems.edit", True,
+        "persistent filesystem: resize",
+        "storage",
+        "filesystems.edit",
+        True,
         "SKILL.md 'jl filesystem'",
         notes="Grows a filesystem in place - the resize the instance disk "
-              "does not have.",
+        "does not have.",
     ),
     Capability(
-        "persistent filesystem: remove", "storage", "filesystems.remove", True,
+        "persistent filesystem: remove",
+        "storage",
+        "filesystems.remove",
+        True,
         "SKILL.md 'jl filesystem'",
     ),
     Capability(
-        "attach filesystem to instance", "storage", None, True,
+        "attach filesystem to instance",
+        "storage",
+        None,
+        True,
         "SKILL.md: 'Attach a filesystem at creation with --fs-id'",
         notes="fs_id is a create/resume parameter, not a call.",
         via="parameter",
     ),
     # --- images and templates -------------------------------------------
     Capability(
-        "list templates", "images", "account.templates", True,
+        "list templates",
+        "images",
+        "account.templates",
+        True,
         "SKILL.md 'jl templates --json'",
         notes="Templates are container images the provider offers. A VM takes "
-              "template='vm' and no image - which is why this product ships "
-              "its own image through Docker rather than as a template.",
+        "template='vm' and no image - which is why this product ships "
+        "its own image through Docker rather than as a template.",
     ),
     Capability(
-        "supply a custom image", "images", None, False,
+        "supply a custom image",
+        "images",
+        None,
+        False,
         "absent from SKILL.md",
         tested_in="spike1 (established by absence)",
         notes="No such call. This is the whole reason the product runs Docker "
-              "on a VM instead of using a container instance.",
+        "on a VM instead of using a container instance.",
         via="absent",
     ),
     Capability(
-        "startup scripts: add/list/update/remove", "images", "scripts.list", True,
+        "startup scripts: add/list/update/remove",
+        "images",
+        "scripts.list",
+        True,
         "SKILL.md 'jl scripts add'",
         tested_in="spike1",
         notes="DOCUMENTED AND IN THE SDK, BUT SILENTLY IGNORED ON VMs. "
-              "create() accepts script_id without error and cloud-init never "
-              "runs it (correction C11). This row is why the three columns are "
-              "kept separate.",
+        "create() accepts script_id without error and cloud-init never "
+        "runs it (correction C11). This row is why the three columns are "
+        "kept separate.",
     ),
     # --- keys and network ------------------------------------------------
     Capability(
-        "SSH keys: list", "keys", "ssh_keys.list", True,
-        "SKILL.md 'jl ssh-key'", tested_in="spike1-4 preflight",
+        "SSH keys: list",
+        "keys",
+        "ssh_keys.list",
+        True,
+        "SKILL.md 'jl ssh-key'",
+        tested_in="spike1-4 preflight",
         notes="A hard prerequisite of VM creation, and the SDK enforces it "
-              "before spending money.",
+        "before spending money.",
     ),
     Capability(
-        "SSH keys: add", "keys", "ssh_keys.add", True, "SKILL.md 'jl ssh-key add'",
+        "SSH keys: add",
+        "keys",
+        "ssh_keys.add",
+        True,
+        "SKILL.md 'jl ssh-key add'",
     ),
     Capability(
-        "SSH keys: remove", "keys", "ssh_keys.remove", True, "SKILL.md 'jl ssh-key'",
+        "SSH keys: remove",
+        "keys",
+        "ssh_keys.remove",
+        True,
+        "SKILL.md 'jl ssh-key'",
     ),
     Capability(
-        "VPC: create/list/get/delete/ips", "keys", "vpcs.list", True,
+        "VPC: create/list/get/delete/ips",
+        "keys",
+        "vpcs.list",
+        True,
         "SKILL.md 'jl vpc'",
         notes="Private networking. The mitigation for spike 2's finding that "
-              "VMs come up with a public IP and no firewall - worth revisiting "
-              "if serving is ever exposed.",
+        "VMs come up with a public IP and no firewall - worth revisiting "
+        "if serving is ever exposed.",
     ),
     # --- availability, pricing, billing ----------------------------------
     Capability(
-        "GPU availability and pricing", "pricing", "account.gpu_availability", True,
-        "SKILL.md 'jl gpus'", tested_in="spike1-4 preflight, api/provider.py",
+        "GPU availability and pricing",
+        "pricing",
+        "account.gpu_availability",
+        True,
+        "SKILL.md 'jl gpus'",
+        tested_in="spike1-4 preflight, api/provider.py",
         notes="Availability for containers and for VMs is reported separately. "
-              "A GPU free for containers may not be free for VMs.",
+        "A GPU free for containers may not be free for VMs.",
     ),
     Capability(
-        "raw resource metadata", "pricing", "account.resources", True,
+        "raw resource metadata",
+        "pricing",
+        "account.resources",
+        True,
         "SKILL.md 'jl gpus --json'",
         notes="The unaggregated payload gpu_availability() is derived from - "
-              "where per-GPU price fields live.",
+        "where per-GPU price fields live.",
     ),
     Capability(
-        "CPU VM availability and pricing", "pricing", "account.resources", True,
+        "CPU VM availability and pricing",
+        "pricing",
+        "account.resources",
+        True,
         "SKILL.md 'jl cpus'",
     ),
     Capability(
-        "account balance", "pricing", "account.balance", True,
-        "SKILL.md", tested_in="spike1-4 preflight",
+        "account balance",
+        "pricing",
+        "account.balance",
+        True,
+        "SKILL.md",
+        tested_in="spike1-4 preflight",
     ),
     Capability(
-        "account currency", "pricing", "account.currency", True,
-        "SKILL.md", tested_in="spike1-4, api/provider.py",
+        "account currency",
+        "pricing",
+        "account.currency",
+        True,
+        "SKILL.md",
+        tested_in="spike1-4, api/provider.py",
         notes="Returns INR on this account. Reading it rather than assuming "
-              "USD is the difference between a correct quote and one off by "
-              "~85x.",
+        "USD is the difference between a correct quote and one off by "
+        "~85x.",
     ),
     Capability(
-        "resource metrics", "pricing", "account.resource_metrics", True, "SKILL.md",
+        "resource metrics",
+        "pricing",
+        "account.resource_metrics",
+        True,
+        "SKILL.md",
     ),
     Capability(
-        "user info", "pricing", "account.user_info", True, "SKILL.md",
+        "user info",
+        "pricing",
+        "account.user_info",
+        True,
+        "SKILL.md",
     ),
     Capability(
-        "per-instance cost to date", "pricing", "instances.list", False,
+        "per-instance cost to date",
+        "pricing",
+        "instances.list",
+        False,
         "absent from SKILL.md",
         tested_in="spike8 live probe",
         notes="CORRECTION, FOUND BY RUNNING THIS SPIKE. This row was first "
-              "written as absent, on the reasoning that no CALL is named "
-              "'cost'. The live probe disproved it: every Instance row carries "
-              "`cost` (a float, currency per account.currency()) and `runtime` "
-              "alongside it. The product computes spend from uptime x hourly "
-              "rate and never reads the provider's own figure -- so it has a "
-              "second, independent number available to reconcile against, "
-              "which is worth having when the first one is an estimate.",
+        "written as absent, on the reasoning that no CALL is named "
+        "'cost'. The live probe disproved it: every Instance row carries "
+        "`cost` (a float, currency per account.currency()) and `runtime` "
+        "alongside it. The product computes spend from uptime x hourly "
+        "rate and never reads the provider's own figure -- so it has a "
+        "second, independent number available to reconcile against, "
+        "which is worth having when the first one is an estimate.",
     ),
     Capability(
-        "invoices / billing history", "pricing", None, False,
+        "invoices / billing history",
+        "pricing",
+        None,
+        False,
         "absent from SKILL.md",
         notes="balance() and the per-instance `cost` field are the only "
-              "billing reads. Nothing returns a statement or a line-itemised "
-              "history, so anything resembling per-user billing has to be "
-              "accumulated by this product as it goes.",
+        "billing reads. Nothing returns a statement or a line-itemised "
+        "history, so anything resembling per-user billing has to be "
+        "accumulated by this product as it goes.",
         via="absent",
     ),
     # --- events -----------------------------------------------------------
     Capability(
-        "webhooks or an event stream", "events", None, False,
+        "webhooks or an event stream",
+        "events",
+        None,
+        False,
         "absent from SKILL.md",
         notes="NOTHING PUSHES. Every state change is discovered by polling, "
-              "which is why the orchestrator's event channel is the machine's "
-              "own stdout over SSH (ADR-0001) rather than anything the "
-              "provider offers.",
+        "which is why the orchestrator's event channel is the machine's "
+        "own stdout over SSH (ADR-0001) rather than anything the "
+        "provider offers.",
         via="absent",
     ),
     Capability(
-        "instance logs via the API", "events", None, False,
+        "instance logs via the API",
+        "events",
+        None,
+        False,
         "SKILL.md: 'jl run logs' reads over SSH",
         notes="The CLI's log command SSHes in; there is no server-side log "
-              "API. Confirms ADR-0001 had no alternative to reject.",
+        "API. Confirms ADR-0001 had no alternative to reject.",
         via="absent",
     ),
     # --- serverless -------------------------------------------------------
     Capability(
-        "serverless deployments", "serving", "deployments.create", True,
+        "serverless deployments",
+        "serving",
+        "deployments.create",
+        True,
         "SKILL.md 'jl deploy = beta serverless model serving'",
         notes="An OpenAI-compatible endpoint with autoscaling and no instance "
-              "to manage. Directly relevant to serving a trained adapter, and "
-              "out of scope for this submission - recorded so the scope cut is "
-              "informed rather than accidental.",
+        "to manage. Directly relevant to serving a trained adapter, and "
+        "out of scope for this submission - recorded so the scope cut is "
+        "informed rather than accidental.",
     ),
     Capability(
-        "deployment logs", "serving", "deployments.logs", True, "SKILL.md 'jl deploy'",
+        "deployment logs",
+        "serving",
+        "deployments.logs",
+        True,
+        "SKILL.md 'jl deploy'",
     ),
     Capability(
-        "deployment cost readout", "serving", "deployments.get", True,
+        "deployment cost readout",
+        "serving",
+        "deployments.get",
+        True,
         "SKILL.md: 'jl deploy list - compact table with cost'",
         notes="Deployments DO report cost, while instances do not. The one "
-              "place the platform exposes spend per resource.",
+        "place the platform exposes spend per resource.",
     ),
 ]
 
@@ -356,8 +481,7 @@ CAPABILITIES: list[Capability] = [
 # honest. If a later SDK rewords these, the spike fails loudly rather than
 # reporting a stale claim as current.
 DOC_ASSERTIONS = {
-    "pause stops compute billing":
-        "Paused** (compute billing stopped, storage billing continues, data persists)",
+    "pause stops compute billing": "Paused** (compute billing stopped, storage billing continues, data persists)",
     "resume is region-locked": "Resume is **region-locked**",
     "resume may return a new machine_id": "Resume may return a **new machine_id**",
     "spot is containers-only": "Spot prices are shown only for GPU containers",
@@ -375,7 +499,9 @@ def enumerate_sdk_surface(client: Client, f: Findings) -> dict:
     """
     header("SDK SURFACE - generated by introspection")
     surface: dict[str, list[str]] = {}
-    namespaces = [n for n in dir(client) if not n.startswith("_") and n != "close"]
+    namespaces = [
+        n for n in dir(client) if not n.startswith("_") and n != "close"
+    ]
     for ns in sorted(namespaces):
         obj = getattr(client, ns)
         methods = []
@@ -401,12 +527,18 @@ def enumerate_sdk_surface(client: Client, f: Findings) -> dict:
         for m in ms
         if f"{ns}.{m.split('(')[0]}" not in covered
     ]
-    f.record("SDK surface enumerated", True,
-             f"{len(namespaces)} namespaces, "
-             f"{sum(len(v) for v in surface.values())} public methods")
+    f.record(
+        "SDK surface enumerated",
+        True,
+        f"{len(namespaces)} namespaces, "
+        f"{sum(len(v) for v in surface.values())} public methods",
+    )
     if missed:
-        f.note("methods not in the curated table", ", ".join(missed),
-               uncovered_methods=missed)
+        f.note(
+            "methods not in the curated table",
+            ", ".join(missed),
+            uncovered_methods=missed,
+        )
     return surface
 
 
@@ -417,14 +549,22 @@ def check_documentation(f: Findings) -> dict:
         f.record("SKILL.md present", False, str(SKILL_DOC))
         return {"present": False}
     text = SKILL_DOC.read_text(encoding="utf-8")
-    f.record("SKILL.md present", True,
-             f"{len(text.splitlines())} lines at {SKILL_DOC}")
+    f.record(
+        "SKILL.md present",
+        True,
+        f"{len(text.splitlines())} lines at {SKILL_DOC}",
+    )
     results = {}
     for claim, needle in DOC_ASSERTIONS.items():
         found = needle in text
         results[claim] = found
-        f.record(f"doc says: {claim}", found,
-                 "" if found else f"NOT FOUND -- transcription may be stale: {needle!r}")
+        f.record(
+            f"doc says: {claim}",
+            found,
+            ""
+            if found
+            else f"NOT FOUND -- transcription may be stale: {needle!r}",
+        )
     return {"present": True, "path": str(SKILL_DOC), "assertions": results}
 
 
@@ -438,8 +578,10 @@ def resolve_capabilities(client: Client, f: Findings) -> list[dict]:
         # Kept adjacent on purpose -- the whole point of this table is that a
         # row can be [y--] or [yy-], and collapsing them into one tick is how
         # "documented" gets read as "works".
-        marks = "".join("y" if claim else "-" for claim in
-                        (cap.documented, cap.in_sdk, cap.tested_in))
+        marks = "".join(
+            "y" if claim else "-"
+            for claim in (cap.documented, cap.in_sdk, cap.tested_in)
+        )
         print(f"  [{marks}] {cap.name}")
         if cap.notes:
             print(f"          {cap.notes}")
@@ -449,17 +591,24 @@ def resolve_capabilities(client: Client, f: Findings) -> list[dict]:
     # through a create/resume parameter have no attribute to resolve, and
     # counting them as disagreements buried the one that matters.
     disagreements = [
-        r for r in rows
+        r
+        for r in rows
         if (r["via"] == "method" and r["documented"] != bool(r["in_sdk"]))
         or "SILENTLY IGNORED" in r["notes"]
     ]
     for r in disagreements:
-        f.note("docs/SDK disagreement", f"{r['capability']}: "
-               f"documented={r['documented']} in_sdk={r['in_sdk']}")
-    f.record("capabilities enumerated", True,
-             f"{len(rows)} rows, {sum(1 for r in rows if r['in_sdk'])} in SDK, "
-             f"{sum(1 for r in rows if r['tested_here'])} exercised here, "
-             f"{len(disagreements)} disagreement(s)")
+        f.note(
+            "docs/SDK disagreement",
+            f"{r['capability']}: "
+            f"documented={r['documented']} in_sdk={r['in_sdk']}",
+        )
+    f.record(
+        "capabilities enumerated",
+        True,
+        f"{len(rows)} rows, {sum(1 for r in rows if r['in_sdk'])} in SDK, "
+        f"{sum(1 for r in rows if r['tested_here'])} exercised here, "
+        f"{len(disagreements)} disagreement(s)",
+    )
     return rows
 
 
@@ -478,14 +627,15 @@ def answer_pause(rows: list[dict], probes: dict, f: Findings) -> dict:
     answer = {
         "pause_exists": exists,
         "evidence": "measured: introspected on the installed SDK"
-                    if exists else "absent from the installed SDK",
+        if exists
+        else "absent from the installed SDK",
         "observed_paused_instances": observed,
         "pricing": {
             "claim": "compute billing stops; storage billing continues; "
-                     "data persists",
+            "data persists",
             "source": "vendor SKILL.md shipped in the wheel",
             "kind": "DOCUMENTED, NOT MEASURED -- no paused instance has been "
-                    "billed and observed by this repo",
+            "billed and observed by this repo",
         },
         "caveats": [
             "resume is region-locked",
@@ -493,32 +643,34 @@ def answer_pause(rows: list[dict], probes: dict, f: Findings) -> dict:
             "a paused VM keeps its whole disk, so a paused 400 GB machine keeps "
             "paying for 400 GB",
         ],
-        "reopens": [] if not exists else [
+        "reopens": []
+        if not exists
+        else [
             {
                 "record": "ADR-0003 cancellation is destructive",
                 "why": "the ADR's premise is that stopping a run has only one "
-                       "cheap outcome. Pause is a second one: stop paying for "
-                       "the GPU, keep the checkpoint on disk, let the user "
-                       "resume or discard. That is a different product "
-                       "behaviour, not a cheaper implementation of the same "
-                       "one -- so the ADR is FLAGGED FOR REOPENING, not "
-                       "silently amended.",
+                "cheap outcome. Pause is a second one: stop paying for "
+                "the GPU, keep the checkpoint on disk, let the user "
+                "resume or discard. That is a different product "
+                "behaviour, not a cheaper implementation of the same "
+                "one -- so the ADR is FLAGGED FOR REOPENING, not "
+                "silently amended.",
                 "counterweight": "pause leaves storage billing running with no "
-                                 "run that owns it. The reconciler exists to "
-                                 "destroy machines nothing owns, and a paused "
-                                 "machine is exactly that shape. Reopening the "
-                                 "ADR means deciding who eventually kills a "
-                                 "paused machine, and that is not obviously "
-                                 "cheaper than destroying it now.",
+                "run that owns it. The reconciler exists to "
+                "destroy machines nothing owns, and a paused "
+                "machine is exactly that shape. Reopening the "
+                "ADR means deciding who eventually kills a "
+                "paused machine, and that is not obviously "
+                "cheaper than destroying it now.",
             },
             {
                 "record": "the OOM-retry cost model",
                 "why": "retry is specified around paying a 2-4 minute cold "
-                       "start per attempt. Pausing instead of destroying "
-                       "removes that per-attempt cost -- but only if the "
-                       "retry is on the same machine, and OOM retries "
-                       "typically want a BIGGER machine, which resume can "
-                       "provide within the same region.",
+                "start per attempt. Pausing instead of destroying "
+                "removes that per-attempt cost -- but only if the "
+                "retry is on the same machine, and OOM retries "
+                "typically want a BIGGER machine, which resume can "
+                "provide within the same region.",
             },
         ],
     }
@@ -526,16 +678,23 @@ def answer_pause(rows: list[dict], probes: dict, f: Findings) -> dict:
     for row in observed:
         print(f"    OBSERVED paused machine: {row}")
     if observed:
-        f.note("a paused machine exists in this account",
-               "pause is not merely an SDK attribute -- the backend holds the "
-               "state and keeps reporting the machine")
+        f.note(
+            "a paused machine exists in this account",
+            "pause is not merely an SDK attribute -- the backend holds the "
+            "state and keeps reporting the machine",
+        )
     for line in answer["caveats"]:
         print(f"    caveat: {line}")
-    f.record("pause exists", exists,
-             "compute billing stops, storage continues (documented, unmeasured)")
+    f.record(
+        "pause exists",
+        exists,
+        "compute billing stops, storage continues (documented, unmeasured)",
+    )
     if exists:
-        f.note("ADR-0003 flagged for reopening",
-               "pause is a second cheap outcome for a stopped run")
+        f.note(
+            "ADR-0003 flagged for reopening",
+            "pause is a second cheap outcome for a stopped run",
+        )
     return answer
 
 
@@ -557,12 +716,22 @@ def live_probes(client: Client, f: Findings) -> dict:
 
     # Deliberately does NOT record the balance figure -- findings files are
     # evidence and this repository goes public.
-    probe("account.currency", client.account.currency, lambda v: f"currency={v}")
-    probe("account.balance", client.account.balance,
-          lambda v: "balance readable (value withheld from findings)")
-    probe("instances.list", client.instances.list,
-          lambda v: f"{len(v)} instance(s) -- "
-                    f"{[getattr(i, 'status', '?') for i in v] or 'none running'}")
+    probe(
+        "account.currency", client.account.currency, lambda v: f"currency={v}"
+    )
+    probe(
+        "account.balance",
+        client.account.balance,
+        lambda v: "balance readable (value withheld from findings)",
+    )
+    probe(
+        "instances.list",
+        client.instances.list,
+        lambda v: (
+            f"{len(v)} instance(s) -- "
+            f"{[getattr(i, 'status', '?') for i in v] or 'none running'}"
+        ),
+    )
     # Pull the paused rows out separately, and record ONLY what supports the
     # finding. This file is a public artifact and the account is a person's:
     # a paused machine here may be their own work and nothing to do with this
@@ -574,7 +743,7 @@ def live_probes(client: Client, f: Findings) -> dict:
         out["instances.list"]["paused"] = [
             {
                 "_note": "an unrelated machine on the same account; identifying "
-                         "fields deliberately omitted",
+                "fields deliberately omitted",
                 "gpu_type": getattr(i, "gpu_type", None),
                 "storage_gb": getattr(i, "storage_gb", None),
                 "paused_for": getattr(i, "runtime", None),
@@ -585,19 +754,37 @@ def live_probes(client: Client, f: Findings) -> dict:
             if getattr(i, "status", None) == "Paused"
         ]
     probe("ssh_keys.list", client.ssh_keys.list, lambda v: f"{len(v)} key(s)")
-    probe("filesystems.list", client.filesystems.list, lambda v: f"{len(v)} filesystem(s)")
-    probe("scripts.list", client.scripts.list, lambda v: f"{len(v)} startup script(s)")
+    probe(
+        "filesystems.list",
+        client.filesystems.list,
+        lambda v: f"{len(v)} filesystem(s)",
+    )
+    probe(
+        "scripts.list",
+        client.scripts.list,
+        lambda v: f"{len(v)} startup script(s)",
+    )
     probe("vpcs.list", client.vpcs.list, lambda v: f"{len(v)} vpc(s)")
-    probe("account.templates", client.account.templates, lambda v: f"{len(v)} template(s)")
-    probe("account.gpu_availability", client.account.gpu_availability,
-          lambda v: f"{len(v)} gpu row(s)")
+    probe(
+        "account.templates",
+        client.account.templates,
+        lambda v: f"{len(v)} template(s)",
+    )
+    probe(
+        "account.gpu_availability",
+        client.account.gpu_availability,
+        lambda v: f"{len(v)} gpu row(s)",
+    )
     return out
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--offline", action="store_true",
-                    help="enumerate the installed SDK only; make no network calls")
+    ap.add_argument(
+        "--offline",
+        action="store_true",
+        help="enumerate the installed SDK only; make no network calls",
+    )
     args = ap.parse_args()
 
     load_dotenv(Path(__file__).parent / ".env")
@@ -617,14 +804,20 @@ def main() -> int:
     # than no findings file.
     if not os.environ.get("JL_API_KEY"):
         if not args.offline:
-            sys.exit("JL_API_KEY is not set. Put it in spike/.env, or run "
-                     "--offline to enumerate the installed SDK without it.")
+            sys.exit(
+                "JL_API_KEY is not set. Put it in spike/.env, or run "
+                "--offline to enumerate the installed SDK without it."
+            )
         os.environ["JL_API_KEY"] = "offline-introspection-only"
     client = Client()
 
     surface = enumerate_sdk_surface(client, f)
     rows = resolve_capabilities(client, f)
-    probes = live_probes(client, f) if not args.offline else {"skipped": "--offline"}
+    probes = (
+        live_probes(client, f)
+        if not args.offline
+        else {"skipped": "--offline"}
+    )
     pause = answer_pause(rows, probes, f)
 
     payload = {
