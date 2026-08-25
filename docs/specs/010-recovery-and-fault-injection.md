@@ -3,7 +3,7 @@
 **Status:** ready for tickets
 **Phase:** B, band 2 (the defensibility path)
 **Depends on:** Spec 008 (a worker process separate from the request path), Spec 006 (object storage for checkpoints), Spec 004 spike 8 (whether the provider can suspend a machine more cheaply than destroying it)
-**Produces:** ADR-0020 (a failure path is not done until it has been caused deliberately), ADR-0021 (durable execution recovers the job; the reconciler protects the money), ADR-0022 (teardown is confirmed across consecutive observations)
+**Produces:** ADRs that a failure path is not done until it has been caused deliberately, that durable execution recovers the job while the reconciler protects the money, and that teardown is confirmed across consecutive observations
 **Assumes:** ADR-0002 (a stalled job and an over-long job are stopped separately, and named separately), ADR-0003 (cancellation is destructive — reopened only if spike 8 finds suspension is cheaper)
 
 ## Problem Statement

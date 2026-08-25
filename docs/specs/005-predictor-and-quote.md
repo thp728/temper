@@ -3,7 +3,7 @@
 **Status:** ready for tickets
 **Phase:** B, band 1 (the demo path)
 **Depends on:** Spec 004 spikes 5, 7 and 9 — they supply the disk ceiling, the download rate, and the token-counting cost this spec turns into numbers
-**Produces:** ADR-0010 (the predictor blocks on memory and warns on time), ADR-0011 (a calculated default carries its reason)
+**Produces:** an ADR that the predictor blocks on memory and warns on time, and one that a calculated default carries its reason
 **Assumes:** ADR-0007 (the feasibility warning is an estimate and warns rather than blocks) — this spec inherits that posture and narrows where it does not apply
 
 ## Problem Statement

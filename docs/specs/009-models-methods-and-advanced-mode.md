@@ -3,7 +3,7 @@
 **Status:** ready for tickets
 **Phase:** B, band 2 (the defensibility path)
 **Depends on:** Spec 004 spikes 6 and 7 (multi-device execution, and the trainer's schema shape), Spec 005 (the `models` seam and the predictor), Spec 006 (artifact kinds)
-**Produces:** ADR-0017 (the advanced surface is generated from the trainer's own configuration schema), ADR-0018 (a mixture-of-experts model warns and is labelled untested rather than refused), ADR-0019 (a locked setting and a refused input are different things)
+**Produces:** ADRs that the advanced surface is generated from the trainer's own configuration schema, that a mixture-of-experts model warns and is labelled untested rather than refused, and that a locked setting and a refused input are different things
 **Assumes:** the rule that unknown job keys are refused loudly and echoed back; the thinking-mode decision, which this spec deliberately does not reopen
 
 ## Problem Statement

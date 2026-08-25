@@ -3,7 +3,7 @@
 **Status:** ready for tickets
 **Phase:** B, band 1 (the demo path)
 **Depends on:** Spec 004 spikes 5 and 9 — the disk ceiling, the download rate, and the streaming-validation throughput
-**Produces:** ADR-0009 (superseding ADR-0004 — the machine may write its own artifact to a scoped URL), ADR-0012 (progress is measured from the output that was going to be discarded), ADR-0013 (the artifact is the deliverable; the adapter is one kind of artifact)
+**Produces:** [ADR-0009](../adr/0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md) (superseding ADR-0004), an ADR that progress is measured from the output that was going to be discarded, and one that the artifact is the deliverable and the adapter is one kind of artifact
 **Assumes:** ADR-0001 (the event channel is the machine's stdout, pulled over SSH), ADR-0005 (the dataset size limit is derived from measured memory)
 
 ## Problem Statement

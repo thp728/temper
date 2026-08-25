@@ -3,7 +3,7 @@
 **Status:** ready for tickets
 **Phase:** B, band 1 for the parts that gate evaluation; band 2 for the rest
 **Depends on:** Spec 007 (the shell that starts), Spec 008 (the services that start with it)
-**Produces:** ADR-0026 (the zero-cost path is a labelled demonstration and is structurally blind to the transport)
+**Produces:** an ADR that the zero-cost path is a labelled demonstration and is structurally blind to the transport
 **Assumes:** the repository becomes public at submission, and the private working vault does not
 
 ## Problem Statement

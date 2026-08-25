@@ -3,7 +3,7 @@
 **Status:** ready for tickets
 **Phase:** B, band 2 (the defensibility path)
 **Depends on:** Spec 006 (the storage seam this implements behind), Spec 007 (the stream this fans out to)
-**Produces:** ADR-0015 (an event is persisted before it is published, and replay is by last-seen identifier), ADR-0016 (the migration is bounded by seams that already exist)
+**Produces:** [ADR-0010](../adr/0010-the-repository-is-laid-out-as-apps-and-packages.md) and [ADR-0011](../adr/0011-one-command-runs-every-task-and-one-defines-green.md) (landed), plus an ADR that an event is persisted before it is published with replay by last-seen identifier, and one that the migration is bounded by seams that already exist
 **Assumes:** the Phase A rule that no persistence code lives in request handlers — that rule is the reason this spec is a migration rather than a rewrite
 
 ## Problem Statement
@@ -156,9 +156,16 @@ required to run the system.
 
 **A good test here uses the real dependency.** Faking a database or an object
 store in tests for a spec whose entire content is *which* database and object
-store defeats the purpose. These tests run against the real services started by
-the same command a developer uses, which also means the pipeline exercises the
-composition rather than only the code.
+store defeats the purpose. These tests run against real services started as
+throwaway containers by the suite itself, so every run gets clean state and
+cleanup survives a crash.
+
+That covers the code but not the composition. A broken environment variable or
+healthcheck in the compose file would leave every test green and still fail for
+the reviewer who types the documented start command. So the pipeline also
+starts the whole stack from that command and polls the health endpoint until
+every dependency reports ready. Two mechanisms, two different failures. See
+ADR-0011.
 
 **What gets tested, and what the assertion is:**
 

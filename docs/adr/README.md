@@ -41,8 +41,19 @@ repository becomes public at submission.
 | [0008](0008-adapters-ship-as-fp32.md) | Adapters ship as fp32 — the artifact is exactly the weights that were trained | accepted | 2026-08-21 |
 | [0009](0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md) | The machine may write its own artifact to a pre-signed URL scoped to one key | accepted — supersedes [0004](0004-the-machine-is-a-pure-compute-node.md) in part | 2026-08-23 |
 
+| [0010](0010-the-repository-is-laid-out-as-apps-and-packages.md) | The repository is laid out as `apps/` and `packages/` | accepted | 2026-08-25 |
+| [0011](0011-one-command-runs-every-task-and-one-defines-green.md) | One command runs every task, and one command defines green | accepted | 2026-08-25 |
+
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
+
+## Numbering
+
+Numbers are assigned **when a record lands**, not reserved in advance. Specs
+used to name the number their decisions would take; they now name them by
+title, because a reservation is a plan and a plan that slips leaves gaps in a
+sequence that is supposed to mean chronology. Numbers are never reused and
+never renumbered.
 
 ## Format
 

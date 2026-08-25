@@ -3,7 +3,7 @@
 **Status:** ready for tickets
 **Phase:** B, band 1 (the demo path — and a prerequisite for verifying everything after it)
 **Depends on:** Spec 003 (the pages this ports), Specs 005 and 006 (the contracts it renders)
-**Produces:** ADR-0014 (the interface consumes a client generated from the API contract, and the two interfaces never coexist)
+**Produces:** an ADR that the interface consumes a client generated from the API contract, and that the two interfaces never coexist
 **Assumes:** the Phase A interface was deliberately disposable — Spec 003 says so in those words
 
 ## Problem Statement

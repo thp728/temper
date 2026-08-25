@@ -1,0 +1,31 @@
+# Line endings are git's job, not the application's.
+#
+# This repository is written on Windows, built on Linux, and ships shell
+# scripts that run inside a container. A CRLF file crossing that boundary fails
+# in ways that read as anything but a line-ending bug -- api/orchestrator.py
+# strips \r\n out of every trainer file as it packs the tarball precisely
+# because that already happened once, and cost a real run.
+#
+# That normalisation stays as a second line of defence. This file is the first.
+# See ADR-0010.
+
+* text=auto eol=lf
+
+# Anything executed by a POSIX shell, in a container or on a VM. LF, always.
+*.sh        text eol=lf
+*.bash      text eol=lf
+Dockerfile  text eol=lf
+*.Dockerfile text eol=lf
+
+# PowerShell is the one thing here that genuinely wants CRLF.
+*.ps1       text eol=crlf
+
+# Binary, or generated and not worth reading in a diff.
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.gz        binary
+*.tar       binary
+*.safetensors binary
+uv.lock       -diff linguist-generated=true
+pnpm-lock.yaml -diff linguist-generated=true

@@ -3,7 +3,7 @@
 **Status:** ready for tickets
 **Phase:** B, band 3 (the parity path — what raises the number)
 **Depends on:** Spec 006 (artifact kinds and object storage), Spec 009 (methods, and the export-time template probe)
-**Produces:** ADR-0023 (the best checkpoint is chosen by held-out loss, and the choice is recorded), ADR-0024 (a served endpoint stops itself), ADR-0025 (a general-capability check is a small slice, and its limits are stated)
+**Produces:** ADRs that the best checkpoint is chosen by held-out loss with the choice recorded, that a served endpoint stops itself, and that a general-capability check is a small slice whose limits are stated
 **Assumes:** ADR-0008 (artifacts ship at the precision they were trained in)
 
 ## Problem Statement
