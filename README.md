@@ -137,6 +137,6 @@ Named here rather than left for a reader to find. Current as of 2026-08-25.
 
 ## License
 
-[Apache-2.0](LICENSE) — chosen over MIT for its explicit patent grant and recorded with the rejected alternatives in [ADR-0012](docs/adr/0012-the-repository-ships-under-apache-2.md).
+[MIT](LICENSE) — chosen over Apache-2.0, GPL and source-available, and recorded with the rejected alternatives in [ADR-0012](docs/adr/0012-the-repository-ships-under-mit.md). Apache-2.0's patent grant was the reason to prefer it and does not hold up here: nothing in this repository is patentable subject matter anyone is plausibly asserting, so the grant insures a risk that does not exist and costs an evaluator ten times the reading.
 
 Separate from this repository's own licence: adapters produced here carry the **base model's** terms, since the weights they modify are Qwen3's. Both catalog models are Apache-2.0, and the catalog surfaces each model's licence beside its pinned revision at job creation.
