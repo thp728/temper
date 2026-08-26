@@ -24,16 +24,11 @@ from temper_control_plane import config
 
 
 @pytest.fixture()
-def server(tmp_path, monkeypatch):
-    """The app with storage redirected to tmp_path and the GPU stubbed out."""
-    from temper_control_plane import datasets, db, main, orchestrator
+def server(isolated, monkeypatch):
+    """The app, storage-isolated by `isolated`, launches made inert."""
+    from temper_control_plane import main, orchestrator
 
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(datasets, "UPLOADS", tmp_path / "uploads")
-    monkeypatch.setattr(orchestrator, "ARTIFACTS", tmp_path / "artifacts")
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
-    db.init()
-    datasets.UPLOADS.mkdir(parents=True, exist_ok=True)
     return main
 
 
@@ -150,19 +145,21 @@ def test_large_upload_does_not_block_concurrent_requests(server, monkeypatch):
 
     from temper_core import validation
 
-    real_validate = validation.validate
+    # The upload path validates the bytes it already holds; the stub blocks
+    # on that entry point, which is the one whose off-loop-ness is pinned.
+    real_validate = validation.validate_bytes
     block_started = threading.Event()
     release = threading.Event()
     block_t0 = 0.0
 
-    def slow_validate(path, *a, **k):
+    def slow_validate(data, *a, **k):
         nonlocal block_t0
         block_t0 = time.monotonic()
         block_started.set()
         release.wait(timeout=15)
-        return real_validate(path, *a, **k)
+        return real_validate(data, *a, **k)
 
-    monkeypatch.setattr(validation, "validate", slow_validate)
+    monkeypatch.setattr(validation, "validate_bytes", slow_validate)
     watchdog = threading.Timer(3.0, release.set)
     watchdog.start()
 

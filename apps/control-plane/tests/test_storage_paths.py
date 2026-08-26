@@ -1,9 +1,9 @@
-"""Every path the product writes to sits under the repo root's `data/`.
+"""Every writable location the product owns sits under the repo root's `data/`.
 
-The reorg broke this and nothing caught it. `db.DB_PATH` and `datasets.UPLOADS`
-were `Path(__file__).parent.parent / "data"`, which meant one thing when this
-module lived at `api/db.py` and something else entirely once it moved to
-`apps/control-plane/src/temper_control_plane/db.py`. They resolved to
+The reorg broke this and nothing caught it. `db.DB_PATH` and the dataset
+uploads directory were `Path(__file__).parent.parent / "data"`, which meant one
+thing when this module lived at `api/db.py` and something else entirely once it
+moved to `apps/control-plane/src/temper_control_plane/`. They resolved to
 `apps/control-plane/src/data/`, three directories below where `.gitignore`
 anchors `/data/`.
 
@@ -12,22 +12,25 @@ uploaded dataset moved without anyone asking, and they moved somewhere git
 would happily commit them -- in a repository that goes public at submission,
 carrying user training data.
 
-The suite stayed green throughout, because every test monkeypatches these two
+The suite stayed green throughout, because every test monkeypatches these
 constants to a `tmp_path`. That is the right thing for a test to do and it is
 exactly why nothing noticed: the only assertion that could have caught this is
 one about the unpatched value, which did not exist. It does now.
+
+Since issue #22 the stored objects themselves are behind the storage seam,
+addressed by key; what remains directly writable is the SQLite file and the
+filesystem backend's root -- both still pinned to `/data/`.
 """
 
 from __future__ import annotations
 
-from temper_control_plane import config, datasets, db, orchestrator
+from temper_control_plane import config, db
 
 
 def test_every_writable_path_is_under_the_repo_root_data_directory():
     for name, path in [
         ("db.DB_PATH", db.DB_PATH),
-        ("datasets.UPLOADS", datasets.UPLOADS),
-        ("orchestrator.ARTIFACTS", orchestrator.ARTIFACTS),
+        ("config.STORAGE_ROOT", config.STORAGE_ROOT),
     ]:
         assert path.resolve().is_relative_to(
             (config.REPO_ROOT / "data").resolve()

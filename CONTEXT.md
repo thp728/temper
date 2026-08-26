@@ -72,6 +72,16 @@ _Avoid_: model, fine-tuned model, tuned model, weights
 What a user downloads: the adapter together with the configuration that makes it loadable. An adapter without that configuration is not usable, so the two are not shipped separately.
 _Avoid_: output, result, download, bundle
 
+## Storage
+
+**Object key**:
+The name a stored thing is addressed by — every dataset and every artifact alike. A key says *what* was stored, never *where*: only the storage seam resolves a key to a location, so moving storage is configuration rather than a rewrite.
+_Avoid_: path, file path, location (for stored things)
+
+**Storage seam**:
+The one interface through which objects are put, got, and granted scoped writes. Nothing outside it knows whether the store is a directory or a bucket.
+_Avoid_: storage layer, file store, uploads directory
+
 ## Compute
 
 **Control plane**:

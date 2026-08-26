@@ -18,15 +18,11 @@ from temper_control_plane import config
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
-    from temper_control_plane import datasets, db, main, orchestrator
+def client(isolated, monkeypatch):
 
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(datasets, "UPLOADS", tmp_path / "uploads")
-    monkeypatch.setattr(orchestrator, "ARTIFACTS", tmp_path / "artifacts")
+    from temper_control_plane import main, orchestrator
+
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
-    db.init()
-    datasets.UPLOADS.mkdir(parents=True, exist_ok=True)
     with TestClient(main.app) as c:
         yield c
 

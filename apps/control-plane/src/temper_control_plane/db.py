@@ -23,9 +23,8 @@ import sqlite3
 import time
 import uuid
 from contextlib import contextmanager
-from pathlib import Path
 
-from . import config
+from . import config, storage
 
 # Via config, not by counting directories up from this file. The counted form
 # meant the repo root at `api/db.py` and `apps/control-plane/src/` after the
@@ -51,7 +50,9 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS datasets (
     id            TEXT PRIMARY KEY,
     filename      TEXT NOT NULL,
-    path          TEXT NOT NULL,
+    -- The storage seam's address for the dataset's object. Not a path: only
+    -- storage.py resolves a key to a location (spec 006, issue #22).
+    object_key    TEXT NOT NULL,
     created_at    REAL NOT NULL,
     row_count     INTEGER,
     schema_type   TEXT,
@@ -85,7 +86,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- the user was told before launching is part of the run's record.
     warnings_json TEXT,
     result_json   TEXT,
-    adapter_path  TEXT
+    -- The storage seam's address for this job's artifact weights.
+    artifact_key  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -147,6 +149,57 @@ def init() -> None:
             }
             if column not in present:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        _rename_location_columns(c)
+        _rewrite_legacy_locations(c)
+
+
+# Issue #22 renamed what these columns mean, not just their values: stored
+# objects went from filesystem paths to keys. Renamed in place so a database
+# written by the previous build opens cleanly.
+RENAMED_COLUMNS = (
+    ("datasets", "path", "object_key"),
+    ("jobs", "adapter_path", "artifact_key"),
+)
+
+
+def _rename_location_columns(c) -> None:
+    for table, old, new in RENAMED_COLUMNS:
+        present = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+        if old in present and new not in present:
+            c.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
+
+
+def _rewrite_legacy_locations(c) -> None:
+    """Best-effort conversion of pre-seam absolute paths into their keys.
+
+    The old layout named uploads `{id}.jsonl` and artifact directories after
+    the job, so most legacy rows map onto exactly one key and are rewritten.
+    A value whose shape does not match is left alone: an address that reads
+    back as missing beats a plausible-looking wrong one. Dev databases hold
+    disposable data; submission starts fresh.
+    """
+    rows = c.execute(
+        "SELECT id, object_key FROM datasets "
+        "WHERE object_key NOT LIKE 'datasets/%'"
+    ).fetchall()
+    for ds_id, location in rows:
+        name = location.replace("\\", "/").rsplit("/", 1)[-1]
+        if name == f"{ds_id}.jsonl":
+            c.execute(
+                "UPDATE datasets SET object_key=? WHERE id=?",
+                (storage.dataset_key(ds_id), ds_id),
+            )
+    rows = c.execute(
+        "SELECT id, artifact_key FROM jobs "
+        "WHERE artifact_key IS NOT NULL AND artifact_key NOT LIKE 'artifacts/%'"
+    ).fetchall()
+    for job_id, location in rows:
+        parts = location.replace("\\", "/").split("/")
+        if len(parts) >= 2 and parts[-2] == job_id:
+            c.execute(
+                "UPDATE jobs SET artifact_key=? WHERE id=?",
+                (storage.artifact_key(job_id, parts[-1]), job_id),
+            )
 
 
 # --------------------------------------------------------------------------
@@ -154,15 +207,17 @@ def init() -> None:
 # --------------------------------------------------------------------------
 
 
-def create_dataset(filename: str, path: Path, ds_id: str | None = None) -> str:
+def create_dataset(
+    filename: str, object_key: str, ds_id: str | None = None
+) -> str:
     """Insert a dataset row. `ds_id` lets the caller own the id -- the upload
-    path names the stored file after it, so the id must exist before the row."""
+    path derives the key from it, so the id must exist before the row."""
     ds_id = ds_id or new_id("ds")
     with connect() as c:
         c.execute(
-            "INSERT INTO datasets (id, filename, path, created_at, status) "
-            "VALUES (?,?,?,?,?)",
-            (ds_id, filename, str(path), time.time(), "validating"),
+            "INSERT INTO datasets (id, filename, object_key, created_at, status)"
+            " VALUES (?,?,?,?,?)",
+            (ds_id, filename, object_key, time.time(), "validating"),
         )
     return ds_id
 

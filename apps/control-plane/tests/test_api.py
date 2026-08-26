@@ -399,26 +399,25 @@ def test_completed_job_downloads_a_loadable_adapter(client, tmp_path):
 
     Regression test for shipping a bare .safetensors: PEFT cannot load weights
     without the config that records rank, alpha and target modules, so a
-    download missing it looks like the deliverable and is not one.
+    download missing it looks like the deliverable and is not one. Both files
+    are stored as objects behind the storage seam; the endpoint reads them by
+    key and must not know where they live.
     """
     import io
     import zipfile
 
-    from temper_control_plane import db, orchestrator
+    from temper_control_plane import db, storage
 
     ds = valid_dataset(client, tmp_path)
     job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
 
-    art = orchestrator.ARTIFACTS / job["id"]
-    art.mkdir(parents=True)
-    (art / "adapter_model.safetensors").write_bytes(b"weights")
-    (art / "adapter_config.json").write_text('{"r": 16, "lora_alpha": 32}')
-    db.set_state(
-        job["id"],
-        "complete",
-        "done",
-        adapter_path=str(art / "adapter_model.safetensors"),
+    weights_key = storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
+    storage.STORE.put(weights_key, b"weights")
+    storage.STORE.put(
+        storage.artifact_key(job["id"], storage.ADAPTER_CONFIG_NAME),
+        b'{"r": 16, "lora_alpha": 32}',
     )
+    db.set_state(job["id"], "complete", "done", artifact_key=weights_key)
 
     r = client.get(f"/v1/jobs/{job['id']}/adapter")
     assert r.status_code == 200
@@ -431,6 +430,22 @@ def test_completed_job_downloads_a_loadable_adapter(client, tmp_path):
             "adapter_model.safetensors",
         ]
         assert z.read("adapter_model.safetensors") == b"weights"
+
+
+def test_a_job_whose_stored_weights_are_gone_refuses_loudly(client, tmp_path):
+    """A download that 'succeeds' with an empty archive would look like the
+    deliverable and is not one -- the failure shape the zip exists to prevent.
+    The refusal carries a stable code like every other one."""
+    from temper_control_plane import db, storage
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    key = storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
+    db.set_state(job["id"], "complete", "done", artifact_key=key)
+
+    r = client.get(f"/v1/jobs/{job['id']}/adapter")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "artifact_missing"
 
 
 # --- ops --------------------------------------------------------------------

@@ -15,7 +15,6 @@ import io
 import sys
 import zipfile
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -27,6 +26,7 @@ from temper_control_plane import (
     db,
     jobs,
     orchestrator,
+    storage,
 )
 from temper_control_plane.contracts_models import (
     DatasetList,
@@ -37,6 +37,7 @@ from temper_control_plane.contracts_models import (
     JobSpecPreview,
     ModelCatalog,
 )
+from temper_control_plane.storage import ObjectNotFound
 from temper_control_plane.web import router as web_router
 from temper_core import catalog, feasibility, hyperparams
 
@@ -44,8 +45,7 @@ from temper_core import catalog, feasibility, hyperparams
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db.init()
-    datasets.UPLOADS.mkdir(parents=True, exist_ok=True)
-    orchestrator.ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    storage.STORE.ensure_ready()
     # Fail loudly at boot rather than four seconds into someone's first job.
     if not config.provider_credentials_present():
         print(
@@ -274,7 +274,8 @@ def download_adapter(job_id: str):
     job = db.get_job(job_id)
     if not job:
         raise HTTPException(404, "No such job.")
-    if not job.get("adapter_path"):
+    artifact_key = job.get("artifact_key")
+    if not artifact_key:
         raise HTTPException(
             409,
             {
@@ -282,16 +283,46 @@ def download_adapter(job_id: str):
                 "message": f"Job is '{job['status']}'; no adapter is available yet.",
             },
         )
-    # Zipped, because an adapter is a directory: the weights plus the
+    # Zipped, because an artifact is a set of objects: the weights plus the
     # adapter_config.json that makes them loadable. Built per request rather
     # than cached -- it is a few MB, and a stale zip beside fresh weights is a
     # worse failure than rebuilding it.
-    directory = Path(job["adapter_path"]).parent
+    #
+    # The weights are read from the key the job row records, so the address
+    # written at packaging time is the one read at download time. A missing
+    # weights object refuses loudly rather than downloading an empty archive:
+    # a download that "succeeds" with nothing in it looks like the deliverable
+    # and is not one -- the same failure shape as shipping a bare .safetensors.
+    # A missing config alone still zips the weights, because a run that
+    # produced none already reported that as an error event when it ended.
+    try:
+        weights = storage.STORE.get(artifact_key)
+    except ObjectNotFound:
+        raise HTTPException(
+            409,
+            {
+                "code": "artifact_missing",
+                "message": "This job records an artifact, but its stored "
+                "object is gone. The job's event log says what happened "
+                "to it.",
+            },
+        ) from None
+
+    zip_members = [("adapter_model.safetensors", weights)]
+    try:
+        zip_members.append(
+            (
+                "adapter_config.json",
+                storage.STORE.get(storage.artifact_config_key(artifact_key)),
+            )
+        )
+    except ObjectNotFound:
+        pass
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in sorted(directory.iterdir()):
-            if f.is_file():
-                z.write(f, arcname=f.name)
+        for arcname, data in zip_members:
+            z.writestr(arcname, data)
     buf.seek(0)
     return StreamingResponse(
         buf,

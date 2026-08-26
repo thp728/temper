@@ -22,7 +22,7 @@
 {% if job.status == "complete" %}
 <section aria-labelledby="result-h">
   <h2 id="result-h">Your adapter</h2>
-  {% if job.adapter_path %}
+  {% if job.artifact_key %}
   <p><a href="/v1/jobs/{{ job.id }}/adapter">Download the adapter</a> — a zip
   of the trained weights together with the <code>adapter_config.json</code>
   that makes them loadable.</p>

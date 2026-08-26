@@ -345,7 +345,7 @@
         "type": "object"
       },
       "JobRecord": {
-        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\n`adapter_path`: an absolute filesystem path is server state, and it had\nreached every raw job response before the interface consumed this API.\nThe artifact travels through the download endpoint instead.",
+        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead.",
         "properties": {
           "base_model": {
             "title": "Base Model",

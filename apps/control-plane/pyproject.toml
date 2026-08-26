@@ -12,6 +12,9 @@ dependencies = [
     "pydantic>=2.9",
     "jinja2>=3.1",
     "jarvislabs>=0.2.17",
+    # The object-store backend of the storage seam speaks the S3 API, which is
+    # also what MinIO -- the Phase B store -- serves.
+    "boto3>=1.35",
 ]
 
 [tool.uv.sources]

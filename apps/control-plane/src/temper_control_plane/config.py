@@ -189,3 +189,38 @@ MAX_DATASET_BYTES = int(
 # them runnable on every push. Everything else is real: the same API, the
 # same database, the same orchestrator transitions.
 FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))
+
+
+# --- stored objects ----------------------------------------------------------
+# Spec 006 / issue #22: every stored object sits behind one storage seam, and
+# which implementation answers is configuration. The values here are parsed
+# only; refusing an unusable combination is `storage.from_config`'s job, because
+# what counts as unusable is knowledge about backends and belongs behind the
+# seam with them.
+
+
+def _text(name: str) -> str | None:
+    """An optional string from the environment, or None when unset or empty."""
+    raw = os.environ.get(name)
+    return raw if raw else None
+
+
+# "filesystem" (local runs and tests) or "s3" (any S3-compatible store,
+# including MinIO). Nothing set means filesystem: a fresh clone must run with
+# no configuration at all.
+STORAGE_BACKEND = _text("TEMPER_STORAGE_BACKEND") or "filesystem"
+
+# Where the filesystem backend roots its keys. Under `/data/` with everything
+# else runtime-written -- test_storage_paths pins that boundary.
+STORAGE_ROOT = Path(
+    _text("TEMPER_STORAGE_ROOT") or REPO_ROOT / "data" / "objects"
+)
+
+S3_BUCKET = _text("TEMPER_S3_BUCKET")
+S3_ENDPOINT_URL = _text("TEMPER_S3_ENDPOINT_URL")
+S3_REGION = _text("TEMPER_S3_REGION")
+
+# Signing secret for filesystem write grants. Unset means a per-process random:
+# correct for local runs, whose grants live exactly one job inside one process,
+# and useless across restarts by construction rather than by hope.
+STORAGE_SECRET = _text("TEMPER_STORAGE_SECRET")

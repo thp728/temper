@@ -76,10 +76,21 @@ def _normalise(text: str) -> str:
 
 
 def validate(path: Path, messages_field: str = "messages") -> Report:
+    """Validate the dataset at `path`. A thin read over `validate_bytes`."""
+    return validate_bytes(path.read_bytes(), messages_field)
+
+
+def validate_bytes(raw: bytes, messages_field: str = "messages") -> Report:
+    """Validate dataset bytes already held. The pure entry point.
+
+    An upload has its bytes before anything is stored, so validation runs on
+    them directly rather than reading back what storage just wrote -- one
+    read fewer on the hottest path a user waits for. `validate` is the
+    path-shaped front door over this.
+    """
     rep = Report()
     rows: list[dict[str, Any]] = []
 
-    raw = path.read_bytes()
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError as e:

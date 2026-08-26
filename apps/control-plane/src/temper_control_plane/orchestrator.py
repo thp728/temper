@@ -42,22 +42,18 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import shutil
 import tarfile
 import threading
 import time
-from pathlib import Path
+from contextlib import suppress
 
 from temper_core import catalog, events
 from temper_core.errors import Cancelled, OrchestratorError
 
-from . import config, db
+from . import db, storage
 from .limits import RunLimits, guard
 from .provider import Provider, new_provider
 from .trainer_build import TRAINER_SOURCES, normalised
-
-REPO_ROOT = config.REPO_ROOT
-ARTIFACTS = REPO_ROOT / "data" / "artifacts"
 
 GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
 STORAGE_GB = 100  # platform minimum for VM instances
@@ -137,7 +133,7 @@ def _trainer_tarball() -> bytes:
     return buf.getvalue()
 
 
-def _dataset_tarball(dataset_path: Path) -> bytes:
+def _dataset_tarball(dataset_bytes: bytes) -> bytes:
     """Ship the dataset as one tar of raw bytes.
 
     The same transport as the sources above, with one deliberate difference:
@@ -145,13 +141,15 @@ def _dataset_tarball(dataset_path: Path) -> bytes:
     script and a Dockerfile and wrong for user data, which must arrive
     byte-identical -- a dataset silently edited in transit is a bug
     that looks like anything else.
+
+    The bytes come from the storage seam by key (`_attempt`), so this function
+    neither knows nor cares where they were kept.
     """
-    data = dataset_path.read_bytes()
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         info = tarfile.TarInfo(name="dataset.jsonl")
-        info.size, info.mode = len(data), 0o644
-        tar.addfile(info, io.BytesIO(data))
+        info.size, info.mode = len(dataset_bytes), 0o644
+        tar.addfile(info, io.BytesIO(dataset_bytes))
     return buf.getvalue()
 
 
@@ -296,6 +294,16 @@ def _consume(job_id: str, lines) -> dict:
 def _fetch_adapter(
     provider: Provider, machine, job_id: str, result: dict
 ) -> str | None:
+    """Pull the artifact off the machine and put it behind the storage seam.
+
+    Returns the artifact weights' key in storage, or None when the machine
+    produced nothing to store. The key -- not a path -- is what the job row
+    records; only `storage` knows what it resolves to.
+
+    Verification order is deliberate: the checksum is checked against the
+    bytes that crossed the transport *before* anything is stored, so a
+    silently truncated transfer never becomes an object that looks fine.
+    """
     rel = result.get("adapter_path")
     if not rel:
         return None
@@ -308,11 +316,6 @@ def _fetch_adapter(
         )
         return None
 
-    dest = ARTIFACTS / job_id
-    dest.mkdir(parents=True, exist_ok=True)
-    local = dest / "adapter_model.safetensors"
-    local.write_bytes(payload)
-
     # Verify against the hash the container computed. A silently truncated
     # transfer produces a file that looks fine and is not.
     got = hashlib.sha256(payload).hexdigest()
@@ -323,8 +326,13 @@ def _fetch_adapter(
             f"Adapter SHA mismatch: container reported {want[:16]}…, "
             f"downloaded file is {got[:16]}…",
         )
+
+    weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
+    storage.STORE.put(weights_key, payload)
     db.add_event(
-        job_id, "log", f"Adapter verified, {local.stat().st_size / 1e6:.1f} MB"
+        job_id,
+        "log",
+        f"Adapter verified, {len(payload) / 1e6:.1f} MB",
     )
 
     # A bare .safetensors is not a loadable adapter: PEFT needs
@@ -334,8 +342,9 @@ def _fetch_adapter(
     # result.json, so this costs no extra transfer.
     adapter_config = result.get("adapter_config")
     if adapter_config:
-        (dest / "adapter_config.json").write_text(
-            json.dumps(adapter_config, indent=2), encoding="utf-8"
+        storage.STORE.put(
+            storage.artifact_key(job_id, storage.ADAPTER_CONFIG_NAME),
+            json.dumps(adapter_config, indent=2).encode("utf-8"),
         )
     else:
         db.add_event(
@@ -344,11 +353,11 @@ def _fetch_adapter(
             "No adapter_config.json in the run result; the downloaded "
             "adapter will not load without one.",
         )
-    return str(local)
+    return weights_key
 
 
 def _discard_if_cancelled(job_id: str, check) -> None:
-    """Throw away an adapter that arrived after the user asked to stop.
+    """Throw away an artifact that arrived after the user asked to stop.
 
     The alternative -- keeping it, since it is trained and paid for -- would
     mean the answer a user got when they clicked depended on how many seconds
@@ -359,7 +368,12 @@ def _discard_if_cancelled(job_id: str, check) -> None:
     try:
         check()
     except Cancelled:
-        shutil.rmtree(ARTIFACTS / job_id, ignore_errors=True)
+        for name in storage.ARTIFACT_MEMBERS:
+            # Deletion failures are suppressed deliberately: teardown must
+            # not mask the cancellation that caused it, and an orphaned
+            # object is cheaper than a half-reported state.
+            with suppress(Exception):
+                storage.STORE.delete(storage.artifact_key(job_id, name))
         raise
 
 
@@ -494,9 +508,8 @@ def _attempt(
     db.add_event(job_id, "log", provider.await_ready(machine))
     cancelled()
     provider.push(machine, _trainer_tarball(), TRAINER_TARBALL)
-    provider.push(
-        machine, _dataset_tarball(Path(dataset["path"])), DATASET_TARBALL
-    )
+    dataset_bytes = storage.STORE.get(dataset["object_key"])
+    provider.push(machine, _dataset_tarball(dataset_bytes), DATASET_TARBALL)
 
     # Checked between stages as well as inside the stream: the guard below can
     # only notice the ceiling while lines are arriving, and everything above
@@ -531,12 +544,12 @@ def _attempt(
     # single worst thing this path could tell a user.
     cancelled()
     db.set_state(job_id, "packaging", "Retrieving adapter")
-    adapter = _fetch_adapter(provider, machine, job_id, result)
+    artifact_key = _fetch_adapter(provider, machine, job_id, result)
     _discard_if_cancelled(job_id, cancelled)
     return (
         "complete",
         "Training complete",
-        {"result_json": result, "adapter_path": adapter},
+        {"result_json": result, "artifact_key": artifact_key},
     )
 
 
