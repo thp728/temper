@@ -1,5 +1,12 @@
+import Link from "next/link";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card";
 import type {
   DatasetRecord,
   PreviewRow,
@@ -39,17 +46,40 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
       {issues.map((issue, i) => (
         // Issues are a rendered report, not mutable data: position is stable
         // for the lifetime of the page.
-        <li key={i} className="rounded-md border border-neutral-200 bg-white p-3">
+        <li key={i} className="rounded-lg border bg-card p-3">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="font-medium">{issueLocation(issue)}</span>
-            <code className="rounded bg-neutral-100 px-1 text-xs">
+            <code className="rounded bg-muted px-1 text-xs">
               {issue.code}
             </code>
           </div>
-          <p className="mt-1 text-sm text-neutral-700">{issue.message}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {issue.message}
+          </p>
         </li>
       ))}
     </ul>
+  );
+}
+
+function Stat({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardContent>
+        {/* Label and value stay a real dt/dd pair: that adjacency is what a
+            screen reader announces, and what the tests read. */}
+        <dl>
+          <dt className="text-sm text-muted-foreground">{label}</dt>
+          <dd className="mt-1 text-2xl font-semibold">{value}</dd>
+        </dl>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -60,7 +90,7 @@ function PreviewTurns({ row }: { row: PreviewRow }) {
       {messages.map((turn, j) => (
         <li key={j}>
           <span className="font-medium">{turn.role ?? "(no role)"}:</span>{" "}
-          <span className="text-neutral-700">{turn.content}</span>
+          <span className="text-muted-foreground">{turn.content}</span>
         </li>
       ))}
     </ul>
@@ -87,46 +117,41 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
     <section aria-labelledby="report-heading" className="space-y-6">
       <div>
         <FocusHeading>{record.filename}</FocusHeading>
-        <p
+        <Alert
           role="status"
-          className={`mt-3 rounded-md border p-4 ${
-            blocked
-              ? "border-red-300 bg-red-50 text-red-900"
-              : "border-green-300 bg-green-50 text-green-900"
+          variant={blocked ? "destructive" : "default"}
+          className={`mt-3 ${
+            blocked ? "" : "border-green-300 text-green-900"
           }`}
         >
-          {blocked
-            ? "This dataset was rejected. Fix the problems below and upload again."
-            : "Validation passed. You can proceed to choose a model and launch."}
-        </p>
+          <AlertTitle>
+            {blocked
+              ? "This dataset was rejected. Fix the problems below and upload again."
+              : "Validation passed. You can proceed to choose a model and launch."}
+          </AlertTitle>
+        </Alert>
       </div>
 
-      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-md border border-neutral-200 bg-white p-4">
-          <dt className="text-sm text-neutral-500">Rows found</dt>
-          <dd className="mt-1 text-2xl font-semibold">{report.row_count}</dd>
-        </div>
-        <div className="rounded-md border border-neutral-200 bg-white p-4">
-          <dt className="text-sm text-neutral-500">Usable rows</dt>
-          <dd className="mt-1 text-2xl font-semibold">
-            {report.usable_rows}
-          </dd>
-        </div>
-        <div className="rounded-md border border-neutral-200 bg-white p-4">
-          <dt className="text-sm text-neutral-500">Schema</dt>
-          <dd className="mt-1 text-lg font-semibold">
-            {report.schema_type ?? "Not recognised"}
-          </dd>
-        </div>
-        <div className="rounded-md border border-neutral-200 bg-white p-4">
-          <dt className="text-sm text-neutral-500">Thinking mode</dt>
-          <dd className="mt-1 text-lg font-semibold">
-            {thinkingText(report.enable_thinking)}
-          </dd>
-        </div>
-      </dl>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat label="Rows found" value={report.row_count} />
+        <Stat label="Usable rows" value={report.usable_rows} />
+        <Stat
+          label="Schema"
+          value={
+            <span className="text-lg">{report.schema_type ?? "Not recognised"}</span>
+          }
+        />
+        <Stat
+          label="Thinking mode"
+          value={
+            <span className="text-lg">
+              {thinkingText(report.enable_thinking)}
+            </span>
+          }
+        />
+      </div>
 
-      <p className="text-sm text-neutral-600">
+      <p className="text-sm text-muted-foreground">
         {thinkingExplanation(report.enable_thinking)}
       </p>
 
@@ -135,7 +160,7 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
           <h2 id="problems-heading" className="text-lg font-semibold">
             Problems ({report.errors.length})
           </h2>
-          <p className="text-sm text-neutral-600">
+          <p className="text-sm text-muted-foreground">
             This dataset cannot be trained on until every problem below is
             fixed. Fix the named lines and upload again.
           </p>
@@ -150,7 +175,7 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
           <h2 id="warnings-heading" className="text-lg font-semibold">
             Warnings ({report.warnings.length})
           </h2>
-          <p className="text-sm text-neutral-600">
+          <p className="text-sm text-muted-foreground">
             These do not block proceeding.
           </p>
           <div className="mt-3">
@@ -166,19 +191,18 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
           </h2>
           <div className="mt-3 space-y-3">
             {report.preview.map((row, i) => (
-              <div
-                key={i}
-                className="rounded-md border border-neutral-200 bg-white p-4"
-              >
-                <p className="text-sm text-neutral-500">Row {i + 1}</p>
-                {(row.messages?.length ?? 0) === 0 ? (
-                  <p className="mt-1 text-sm text-neutral-700">
-                    No messages list found in this row.
-                  </p>
-                ) : (
-                  <PreviewTurns row={row} />
-                )}
-              </div>
+              <Card key={i}>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">Row {i + 1}</p>
+                  {(row.messages?.length ?? 0) === 0 ? (
+                    <p className="mt-1 text-sm">
+                      No messages list found in this row.
+                    </p>
+                  ) : (
+                    <PreviewTurns row={row} />
+                  )}
+                </CardContent>
+              </Card>
             ))}
           </div>
         </section>
@@ -192,12 +216,11 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
             {/* Until this journey's next screen is ported (#38), continuing
                 hands over to the existing server-rendered create-job page,
                 proxied through this origin so the journey stays in one place. */}
-            <a
-              href={`/jobs/new?dataset_id=${encodeURIComponent(record.id)}`}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
-            >
-              Choose a model and continue
-            </a>
+            <Button asChild>
+              <a href={`/jobs/new?dataset_id=${encodeURIComponent(record.id)}`}>
+                Choose a model and continue
+              </a>
+            </Button>
             <BackToUpload />
           </>
         )}

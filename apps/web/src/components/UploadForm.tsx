@@ -2,6 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { uploadDatasetV1DatasetsPost } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
@@ -42,52 +46,40 @@ export default function UploadForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <label
-          htmlFor="dataset-file"
-          className="block text-sm font-medium text-neutral-800"
-        >
-          Dataset file (.jsonl)
-        </label>
-        <input
+      <div className="space-y-2">
+        <Label htmlFor="dataset-file">Dataset file (.jsonl)</Label>
+        <Input
           ref={inputRef}
           id="dataset-file"
           name="file"
           type="file"
           accept=".jsonl,.json"
-          className="mt-1 block w-full cursor-pointer rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-neutral-100 file:px-3 file:py-1 hover:file:bg-neutral-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900"
+          className="cursor-pointer py-2"
         />
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="text-sm text-muted-foreground">
           Chat-format JSONL: one JSON object per line with a{" "}
-          <code className="rounded bg-neutral-100 px-1">messages</code> list.
+          <code className="rounded bg-muted px-1">messages</code> list.
         </p>
       </div>
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-      >
+      <Button type="submit" disabled={busy}>
         {busy ? "Validating…" : "Upload and validate"}
-      </button>
+      </Button>
 
-      <p aria-live="polite" className="text-sm text-neutral-600">
+      <p aria-live="polite" className="text-sm text-muted-foreground">
         {busy ? status : ""}
       </p>
 
       {refusal && (
-        <div
-          role="alert"
-          className="rounded-md border border-red-300 bg-red-50 p-4"
-        >
-          <p className="font-medium text-red-900">
+        <Alert variant="destructive">
+          <AlertTitle>
             The upload was refused.{" "}
-            <code className="rounded bg-red-100 px-1 text-sm">
+            <code className="rounded bg-muted px-1 text-xs">
               {refusal.code}
             </code>
-          </p>
-          <p className="mt-1 text-sm text-red-800">{refusal.message}</p>
-        </div>
+          </AlertTitle>
+          <AlertDescription>{refusal.message}</AlertDescription>
+        </Alert>
       )}
     </form>
   );

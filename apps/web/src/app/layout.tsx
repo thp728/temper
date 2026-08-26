@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
 import "./globals.css";
+
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: {
@@ -14,9 +18,9 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className="flex min-h-screen flex-col bg-neutral-50 text-neutral-900 antialiased">
-        <header className="border-b border-neutral-200 bg-white">
+    <html lang="en" className={cn("font-sans", geist.variable)}>
+      <body className="flex min-h-screen flex-col bg-background text-foreground antialiased">
+        <header className="border-b bg-card">
           <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3">
             <Link
               href="/"
@@ -27,7 +31,7 @@ export default function RootLayout({
             <nav aria-label="Main">
               <Link
                 href="/"
-                className="rounded px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+                className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Upload a dataset
               </Link>

@@ -12,6 +12,13 @@ model and regenerate — do not declare it by hand. The one exception is
 `src/lib/api/mutator.ts`, which owns transport only (base URL, multipart
 boundary handling, typed error extraction) and no path or shape knowledge.
 
+**UI primitives come from shadcn/ui** (`src/components/ui/`, added via the
+shadcn CLI, owned in-repo per ADR-0011). Reach for a primitive before writing
+classes by hand; extend through its `className` rather than forking it. Two
+rules survive every styling decision: label/value pairs stay real `dt`/`dd`
+(that adjacency is what a screen reader announces), and nothing may break an
+accessible-name query — every journey test finds controls by name, not class.
+
 **Errors keep their stable codes.** The mutator turns every non-2xx response
 into an `ApiError` carrying `status` and the API's `detail.code`. Render the
 code on the page; never launder a refusal into a generic "something went
