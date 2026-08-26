@@ -8,27 +8,11 @@ import {
   getJobSpecPreviewV1JobsSpecGet,
   listModelsV1ModelsGet,
 } from "@/lib/api/generated/client";
-import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
+import { load } from "@/lib/api/load";
 
 export const metadata: Metadata = {
   title: "Choose a base model",
 };
-
-// The shape both fetches share when they fail: the data is null and the
-// refusal is typed, exactly as the mutator raises it.
-async function load<T>(fetch: () => Promise<T>): Promise<{
-  data: T | null;
-  error: ApiError | null;
-}> {
-  try {
-    return { data: await fetch(), error: null };
-  } catch (err) {
-    return {
-      data: null,
-      error: err instanceof ApiError ? err : NETWORK_ERROR,
-    };
-  }
-}
 
 // A refusal keeps its stable code on the page -- the same contract every
 // screen honours, never laundered into a generic "something went wrong".

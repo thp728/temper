@@ -1,6 +1,14 @@
 import { expect, type Page, test } from "@playwright/test";
 import { BACKEND_PORT } from "../src/lib/backend";
-import { chat, jsonl, tempFile, upload, uploadRows } from "./helpers";
+import {
+  chat,
+  jsonl,
+  pairedValue,
+  requireFakeProvider,
+  tempFile,
+  upload,
+  uploadRows,
+} from "./helpers";
 
 // The launch journey, ported into the shell (#38): choose a base model from
 // the catalog, read everything the job will train with, and start it with one
@@ -18,32 +26,11 @@ const backendHealth =
   process.env.TEMPER_BACKEND_URL ?? `http://127.0.0.1:${BACKEND_PORT}`;
 
 test.beforeAll(async ({ playwright }) => {
-  // reuseExistingServer makes a plain dev server look identical to the one
-  // Playwright boots itself; only /health can tell them apart.
-  const context = await playwright.request.newContext();
-  const health = await context.get(`${backendHealth}/health`);
-  const body = await health.json();
-  await context.dispose();
-  if (body.provider !== "fake") {
-    throw new Error(
-      `The control plane on port ${BACKEND_PORT} is not running with ` +
-        "TEMPER_FAKE_PROVIDER=1 -- driving launches against it could " +
-        "provision real machines. Stop that process and let Playwright " +
-        "boot its own.",
-    );
-  }
+  await requireFakeProvider(() => playwright.request.newContext(), backendHealth);
 });
 
 // Stat cards and definition lists pair a visible label with a value; read
-// them as pairs rather than matching bare words that repeat across the page.
-// The watch page keeps several pairs in one list, so take the value that
-// immediately follows the named term.
-function pairedValue(page: Page, label: string) {
-  return page
-    .getByText(label, { exact: true })
-    .locator("xpath=following-sibling::dd[1]");
-}
-
+// them as pairs -- see helpers.ts.
 async function uploadValidatedRows(page: Page, rows: object[]) {
   await uploadRows(page, rows);
   await expect(page.getByText("Validation passed")).toBeVisible();

@@ -287,9 +287,72 @@ DEMO_RESULT = {
     "adapter_config": {"r": 16, "lora_alpha": 32},
 }
 
+# The reserved hyperparameter through which a journey asks the simulated
+# machine to end with a named code -- the gap between "a job that succeeds"
+# (above) and Spec 007's failed-job journey, until #24 grows fault injection
+# into product surface. Honoured only here; a real trainer refuses unknown
+# keys loudly.
+SIMULATED_FAILURE_KEY = "simulated_failure_code"
+
+# Where `_remote_script` writes the jobspec into every script it ships, and
+# how that block ends. Parsing this is the same kind of accepted coupling as
+# tests/transport_endpoint.py parsing the wire commands: a machine that could
+# not read its own job spec would be simulating the wrong thing.
+_JOBSPEC_OPEN = b"<<'JOBSPEC'\n"
+_JOBSPEC_CLOSE = b"\nJOBSPEC"
+
+
+def _job_spec_from_script(script: bytes) -> dict | None:
+    """The jobspec embedded in a remote script, or None if there is none."""
+    start = script.find(_JOBSPEC_OPEN)
+    if start < 0:
+        return None
+    start += len(_JOBSPEC_OPEN)
+    end = script.find(_JOBSPEC_CLOSE, start)
+    if end < 0:
+        return None
+    try:
+        parsed = json.loads(script[start:end].decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+class SimulatedMachine(FakeProvider):
+    """`completed_run`'s machine, plus the one thing a canned success cannot
+    do: end early because the spec asked it to.
+
+    The failure travels the ordinary path -- result document naming its code,
+    OrchestratorError, coded terminal state -- exactly as a trainer that died
+    mid-run would, so nothing downstream can tell it apart by shape."""
+
+    def stream(self, machine, script):
+        spec = _job_spec_from_script(script)
+        requested = ((spec or {}).get("hyperparameters") or {}).get(
+            SIMULATED_FAILURE_KEY
+        )
+        if isinstance(requested, str) and requested.strip():
+            code = requested.strip()
+            self._result = {
+                "ok": False,
+                "stage": "train",
+                "error_code": code,
+                # This sentence is what the user reads under the stable code
+                # on the finished-job page, so it says what happened rather
+                # than what was simulated.
+                "error": (
+                    "The training process ended before completing; no "
+                    "adapter was produced."
+                ),
+            }
+            # Output stops where the failure begins: the history keeps what
+            # ran, not what never got the chance to.
+            self._lines = DEMO_LINES[:1]
+        yield from super().stream(machine, script)
+
 
 def completed_run() -> FakeProvider:
     """The fake configured as a small successful job, end to end."""
-    return FakeProvider(
+    return SimulatedMachine(
         lines=DEMO_LINES, result=DEMO_RESULT, adapter_bytes=DEMO_ADAPTER_BYTES
     )

@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -37,4 +37,37 @@ async function uploadRows(page: Page, rows: object[]) {
   await upload(page, await tempFile(jsonl(rows)));
 }
 
-export { chat, tempFile, jsonl, upload, uploadRows };
+// Stat cards and definition lists pair a visible label with a value; read
+// them as pairs rather than matching bare words that repeat across the page.
+// A record keeps several pairs in one list, so take the value that
+// immediately follows the named term.
+function pairedValue(page: Page, label: string) {
+  return page
+    .getByText(label, { exact: true })
+    .locator("xpath=following-sibling::dd[1]");
+}
+
+// ADR-0024's guard, defined once: every spec that drives launches refuses to
+// begin against a backend where TEMPER_FAKE_PROVIDER did not take effect --
+// reuseExistingServer would otherwise make a plain dev server look identical
+// to the one Playwright booted, and launching against it could provision
+// real machines.
+async function requireFakeProvider(
+  newRequestContext: () => Promise<APIRequestContext>,
+  backendUrl: string,
+) {
+  const context = await newRequestContext();
+  const health = await context.get(`${backendUrl}/health`);
+  const body = await health.json();
+  await context.dispose();
+  if (body.provider !== "fake") {
+    throw new Error(
+      `The control plane on port ${new URL(backendUrl).port} is not running ` +
+        "with TEMPER_FAKE_PROVIDER=1 -- driving launches against it could " +
+        "provision real machines. Stop that process and let Playwright " +
+        "boot its own.",
+    );
+  }
+}
+
+export { chat, tempFile, jsonl, upload, uploadRows, pairedValue, requireFakeProvider };
