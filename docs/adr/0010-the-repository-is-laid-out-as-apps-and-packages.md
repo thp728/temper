@@ -254,6 +254,19 @@ adopting the type checker surfaced 23 pre-existing findings in the control
 plane, all of one shape, recorded in issue #85 behind a scoped and issue-linked
 suppression rather than silenced.
 
+**The defaults collapse (#82, 2026-08-26) found a wording defect in this
+record's own rule for `packages/contracts`.** The Decision says the directory
+holds only generated artifacts and "nothing hand-written lives there", and in
+the same breath says the trainer defaults collapse into it. Those two sentences
+cannot both hold: the image never installs a package, so the one definition
+must cross that boundary as data, and data with no generator is hand-written.
+What landed is `trainer-defaults.json`, maintained by hand like any other
+source file, its per-number reasoning living in the wiki and git history. The
+accurate statement of the rule is narrower, like the "no I/O" correction above:
+contracts holds artifacts that cross a boundary where importing is impossible;
+some of those are generated (`openapi.json`) and some are not (the defaults).
+A README table row records which is which.
+
 ## Rollback
 
 The move is a sequence of `git mv` calls plus an import rewrite. Reverting is
