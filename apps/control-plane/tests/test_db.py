@@ -5,6 +5,10 @@ Issue #22 renamed what the two location columns mean: `datasets.path` became
 the previous build must open cleanly -- renamed in place, with legacy values
 that map onto their key rewritten rather than silently left pointing at
 nothing.
+
+Issue #85 adds `require_job` and `require_dataset`: `db.get_job` returns
+`dict | None` but the orchestration path spends money, so a missing row must
+arrive as a named error, not as `TypeError` on `None`.
 """
 
 from __future__ import annotations
@@ -126,14 +130,18 @@ def temp_db(tmp_path, monkeypatch):
     return db
 
 
-def test_require_job_returns_the_row(temp_db, tmp_path):
-    ds_id = temp_db.create_dataset("d.jsonl", tmp_path / "d.jsonl")
+def test_require_job_returns_the_row(temp_db):
+    ds_id = temp_db.create_dataset(
+        "d.jsonl", "datasets/ds_probe.jsonl", "ds_probe"
+    )
     job_id = temp_db.create_job(ds_id, "qwen3-4b", {})
     assert temp_db.require_job(job_id)["id"] == job_id
 
 
-def test_require_dataset_returns_the_row(temp_db, tmp_path):
-    ds_id = temp_db.create_dataset("d.jsonl", tmp_path / "d.jsonl")
+def test_require_dataset_returns_the_row(temp_db):
+    ds_id = temp_db.create_dataset(
+        "d.jsonl", "datasets/ds_probe2.jsonl", "ds_probe2"
+    )
     assert temp_db.require_dataset(ds_id)["id"] == ds_id
 
 
