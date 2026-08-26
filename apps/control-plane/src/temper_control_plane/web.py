@@ -88,8 +88,12 @@ def upload_form(request: Request, file: UploadFile = File(...)):
     page with the same stable code and message the API returns.
     """
     try:
+        # A part with no filename fails the extension check as a coded
+        # refusal, the same answer the API gives.
         ds_id, _report = datasets.ingest(
-            request.headers.get("content-length"), file.filename, file.file
+            request.headers.get("content-length"),
+            file.filename or "",
+            file.file,
         )
     except HTTPException as exc:
         return _error_from_exception(request, exc, "The upload was refused")

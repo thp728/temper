@@ -121,6 +121,24 @@ def test_too_large_upload_renders_an_error_page_with_the_code(
     assert "dataset_too_large" in r.text
 
 
+def test_form_upload_without_a_filename_renders_the_refusal(client):
+    """The form twin of the API's filename refusal: a part with no name is
+    answered with the coded refusal rendered as a page, never a crash."""
+    import io
+
+    from starlette.requests import Request
+
+    from temper_control_plane import web
+
+    class Unnamed:
+        filename = None
+        file = io.BytesIO(b"{}\n")
+
+    resp = web.upload_form(Request({"type": "http", "headers": []}), Unnamed())
+    assert resp.status_code == 400
+    assert resp.context["code"] == "unsupported_extension"
+
+
 # --- no-JavaScript baseline -------------------------------------------------
 
 

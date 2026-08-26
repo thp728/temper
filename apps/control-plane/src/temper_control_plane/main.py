@@ -131,7 +131,9 @@ def upload_dataset(request: Request, file: UploadFile = File(...)):
     """
     datasets.refuse_before_read(request.headers.get("content-length"))
     data = file.file.read()
-    ds_id, report = datasets.store_and_validate(file.filename, data)
+    # A multipart part can arrive with no filename at all; the empty string
+    # fails the extension check as a coded 400 rather than crashing here.
+    ds_id, report = datasets.store_and_validate(file.filename or "", data)
     return {"id": ds_id, "filename": file.filename, **report}
 
 
@@ -240,6 +242,10 @@ def cancel_job(job_id: str):
         raise HTTPException(404, "No such job.")
     if outcome == "terminal":
         job = db.get_job(job_id)
+        if job is None:
+            # The row existed when request_cancel answered; a re-read that
+            # comes back empty gets the same named 404, not a TypeError.
+            raise HTTPException(404, "No such job.")
         raise HTTPException(
             409,
             {
@@ -250,6 +256,8 @@ def cancel_job(job_id: str):
             },
         )
     job = db.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "No such job.")
     return {
         "id": job_id,
         "status": job["status"],

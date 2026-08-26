@@ -544,11 +544,18 @@ def _attempt(
     moment it exists — a machine that exists but was never recorded is a
     machine nobody destroys.
     """
-    job = db.get_job(job_id)
-    dataset = db.get_dataset(job["dataset_id"])
+    job = db.require_job(job_id)
+    dataset = db.require_dataset(job["dataset_id"])
     model = catalog.get(job["base_model"]) or catalog.get(
         catalog.DEFAULT_MODEL
     )
+    if model is None:
+        # Unreachable while creation validates against this catalog, but a
+        # re-read that outlives its guard fails by name on a money path.
+        raise OrchestratorError(
+            "unknown_model",
+            f"Model '{job['base_model']}' is not in the catalog.",
+        )
     enable_thinking = bool(dataset.get("enable_thinking"))
 
     # Checked at every boundary between stages, for the same reason the
@@ -666,7 +673,10 @@ def run_job(
         return
 
     owns_provider = provider is None
-    if owns_provider:
+    # The None check, not `if owns_provider:`: only a condition mypy can see
+    # through narrows the parameter here, and everything below this block
+    # passes the provider on as non-optional.
+    if provider is None:
         try:
             provider = new_provider()
         except OrchestratorError as e:

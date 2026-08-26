@@ -415,6 +415,53 @@ def test_missing_job_is_404(client):
     assert client.get("/v1/jobs/job_nope").status_code == 404
 
 
+def test_an_upload_without_a_filename_is_refused_by_name(client):
+    """A multipart part can carry no filename -- the type says `str | None`
+    even though Starlette's current parser rejects such parts before the
+    handler runs. The handler's own answer to None must still be a coded
+    400, never a crash on None."""
+    import io
+
+    import pytest
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from temper_control_plane import main
+
+    class Unnamed:
+        filename = None
+        file = io.BytesIO(b"{}\n")
+
+    with pytest.raises(HTTPException) as exc:
+        main.upload_dataset(
+            Request({"type": "http", "headers": []}), Unnamed()
+        )
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "unsupported_extension"
+
+
+def test_cancelling_a_job_that_vanishes_mid_request_is_a_404(
+    client, tmp_path, monkeypatch
+):
+    """The cancel handler re-reads the row after request_cancel answered;
+    if it vanished in between, the answer is a named 404, not a TypeError."""
+    from temper_control_plane import db
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+
+    real_get_job = db.get_job
+
+    def vanished(job_id):
+        real_get_job(job_id)
+        return None
+
+    monkeypatch.setattr(db, "get_job", vanished)
+    r = client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "No such job."
+
+
 def test_completed_job_downloads_a_loadable_adapter(client, tmp_path):
     """The download is a zip, and the zip carries adapter_config.json.
 

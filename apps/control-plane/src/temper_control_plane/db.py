@@ -24,6 +24,8 @@ import time
 import uuid
 from contextlib import contextmanager
 
+from temper_core.errors import OrchestratorError
+
 from . import config, storage
 
 # Via config, not by counting directories up from this file. The counted form
@@ -246,12 +248,27 @@ def get_dataset(ds_id: str) -> dict | None:
     return _row(r, {"report_json": "report"})
 
 
+def require_dataset(ds_id: str) -> dict:
+    """The dataset row, or a coded error -- never None.
+
+    For callers that cannot proceed without the row: the orchestrator reads
+    the dataset on the path that spends money, and indexing a None there
+    must not be the way a missing row is discovered.
+    """
+    ds = get_dataset(ds_id)
+    if ds is None:
+        raise OrchestratorError(
+            "dataset_not_found", f"No dataset with id '{ds_id}'."
+        )
+    return ds
+
+
 def list_datasets(limit: int = 50) -> list[dict]:
     with connect() as c:
         rows = c.execute(
             "SELECT * FROM datasets ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
-    return [_row(r, {"report_json": "report"}) for r in rows]
+    return [_present(_row(r, {"report_json": "report"})) for r in rows]
 
 
 # --------------------------------------------------------------------------
@@ -404,20 +421,35 @@ def get_job(job_id: str) -> dict | None:
     )
 
 
+def require_job(job_id: str) -> dict:
+    """The job row, or a coded error -- never None.
+
+    The raising companion to `get_job`, for the orchestration path: a job
+    row that goes missing between launch and a re-read must surface as a
+    named failure on the record, not as a TypeError mid-provisioning.
+    """
+    job = get_job(job_id)
+    if job is None:
+        raise OrchestratorError("job_not_found", f"No job with id '{job_id}'.")
+    return job
+
+
 def list_jobs(limit: int = 50) -> list[dict]:
     with connect() as c:
         rows = c.execute(
             "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
     return [
-        _with_warnings(
-            _row(
-                r,
-                {
-                    "hyperparams_json": "hyperparameters",
-                    "result_json": "result",
-                    "warnings_json": "warnings",
-                },
+        _present(
+            _with_warnings(
+                _row(
+                    r,
+                    {
+                        "hyperparams_json": "hyperparameters",
+                        "result_json": "result",
+                        "warnings_json": "warnings",
+                    },
+                )
             )
         )
         for r in rows
@@ -449,7 +481,9 @@ def active_jobs() -> list[dict]:
             tuple(TERMINAL_STATES),
         ).fetchall()
     return [
-        _with_warnings(_row(r, {"hyperparams_json": "hyperparameters"}))
+        _present(
+            _with_warnings(_row(r, {"hyperparams_json": "hyperparameters"}))
+        )
         for r in rows
     ]
 
@@ -462,3 +496,16 @@ def _row(r, json_fields: dict[str, str]) -> dict | None:
         raw = d.pop(col, None)
         d[name] = json.loads(raw) if raw else None
     return d
+
+
+def _present(row: dict | None) -> dict:
+    """Narrow a listed row that cannot actually be absent.
+
+    `fetchall()` returns one row object per matched record, so the None
+    case of `_row` is unreachable in a list comprehension over its result
+    -- but the Optional still fails the `list[dict]` return type, and
+    filtering the Nones out would hide a defect rather than surface it.
+    """
+    if row is None:
+        raise ValueError("a listed row came back missing")
+    return row
