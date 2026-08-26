@@ -3,8 +3,12 @@
 The fake covers the orchestration path; nothing covers the code that actually
 moves bytes. These tests run the real `stream` against a local process instead
 of an SSH one, which is enough to catch its two ways of going wrong: feeding a
-large script from the read loop deadlocks, and a command that never ends has to
-be killed by something.
+large script from the read loop deadlocks, and a command that never ends has
+to be killed by something.
+
+A local process crosses pipes but not a connection, so what a real connection
+does to bytes is covered one tier up, in `test_transport_endpoint.py`, where
+the same provider methods are driven against a live SSH endpoint.
 
 The provider is built with `object.__new__` deliberately — constructing one
 properly reaches the real client, which the suite refuses.
@@ -39,6 +43,21 @@ def test_ssh_command_from_the_provider_is_used_verbatim():
     assert argv[0] == "ssh"
     assert argv[-3:] == ["-p", "1234", "root@10.0.0.1"]
     assert "BatchMode=yes" in argv
+
+
+def test_a_quoted_identity_path_stays_one_argument():
+    """Handles are parsed, not split on whitespace.
+
+    The transport endpoint's handle quotes an identity path; on this
+    developer's machine that path contains a space (`C:/Users/Tejas
+    Page/...`). Splitting the handle naively would hand `ssh` two broken
+    arguments and fail auth with no hint why.
+    """
+    argv = provider_mod._ssh('-i "C:/Users/Tejas Page/k/id" -p 2222 u@h')
+    assert "-i" in argv
+    i = argv.index("-i")
+    assert argv[i + 1] == "C:/Users/Tejas Page/k/id"
+    assert argv[-1] == "u@h"
 
 
 def test_stream_yields_the_lines_the_command_produced(monkeypatch):

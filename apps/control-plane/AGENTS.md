@@ -49,5 +49,10 @@ collapses them into one definition in `packages/contracts/`. Do not add a fourth
 The provider is stubbed suite-wide. `conftest.py` refuses any attempt to construct a real client,
 because a suite that can reach the billing account by accident eventually does. Pass `FakeProvider`.
 
+The one exception is the transport tier ([ADR-0013](../docs/adr/0013-the-transport-is-proven-against-a-real-endpoint.md)):
+`test_transport_endpoint.py` drives `JarvisLabsProvider.push/fetch/stream` against a local in-process
+SSH endpoint, built with `object.__new__` so no client — and no credential path — is ever constructed.
+Everything else keeps the fake.
+
 Phase B integration tests use real Postgres, Redis and MinIO through testcontainers. Faking the
 database in the spec whose content is *which* database defeats the purpose.
