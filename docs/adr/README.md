@@ -63,7 +63,7 @@ repository becomes public at submission.
 | [0010](0010-the-repository-is-laid-out-as-apps-and-packages.md) | The repository is laid out as `apps/` and `packages/` | accepted | 2026-08-25 |
 | [0011](0011-one-command-runs-every-task-and-one-defines-green.md) | One command runs every task, and one command defines green | accepted | 2026-08-25 |
 | [0012](0012-the-repository-ships-under-mit.md) | The repository ships under MIT | accepted | 2026-08-25 |
-| [0013](0013-the-transport-is-proven-against-a-real-endpoint.md) | The transport is proven against a real connection endpoint | accepted | 2026-08-26 |
+| [0027](0027-the-transport-is-proven-against-a-real-endpoint.md) | The transport is proven against a real connection endpoint | accepted | 2026-08-26 |
 | [0023](0023-the-interface-consumes-a-client-generated-from-the-api-contract.md) | The interface consumes a client generated from the API contract, and the two interfaces never coexist | accepted | 2026-08-26 |
 | [0024](0024-the-browser-journeys-launch-against-an-app-side-fake-provider.md) | The browser journeys launch against an app-side fake provider, and refuse to run against anything else | accepted | 2026-08-26 |
 | [0025](0025-the-control-plane-resolves-and-the-trainer-applies.md) | The control plane resolves every hyperparameter; the trainer applies values rather than choosing them | accepted | 2026-08-26 |
