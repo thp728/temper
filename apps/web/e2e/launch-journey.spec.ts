@@ -1,8 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { BACKEND_PORT } from "../src/lib/backend";
+import { chat, jsonl, tempFile, upload, uploadRows } from "./helpers";
 
 // The launch journey, ported into the shell (#38): choose a base model from
 // the catalog, read everything the job will train with, and start it with one
@@ -36,22 +34,6 @@ test.beforeAll(async ({ playwright }) => {
   }
 });
 
-function chat(user: string, assistant: string) {
-  return {
-    messages: [
-      { role: "user", content: user },
-      { role: "assistant", content: assistant },
-    ],
-  };
-}
-
-async function tempFile(content: string, name = "d.jsonl"): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "temper-e2e-"));
-  const file = path.join(dir, name);
-  await fs.writeFile(file, content, "utf8");
-  return file;
-}
-
 // Stat cards and definition lists pair a visible label with a value; read
 // them as pairs rather than matching bare words that repeat across the page.
 // The watch page keeps several pairs in one list, so take the value that
@@ -62,12 +44,8 @@ function pairedValue(page: Page, label: string) {
     .locator("xpath=following-sibling::dd[1]");
 }
 
-async function uploadRows(page: Page, rows: object[]) {
-  await page.goto("/");
-  await page
-    .getByLabel("Dataset file (.jsonl)")
-    .setInputFiles(await tempFile(rows.map((r) => JSON.stringify(r)).join("\n") + "\n"));
-  await page.getByRole("button", { name: "Upload and validate" }).click();
+async function uploadValidatedRows(page: Page, rows: object[]) {
+  await uploadRows(page, rows);
   await expect(page.getByText("Validation passed")).toBeVisible();
 }
 
@@ -81,7 +59,7 @@ async function continueToLaunch(page: Page) {
 test("a job is chosen, reviewed and launched from the shell", async ({
   page,
 }) => {
-  await uploadRows(
+  await uploadValidatedRows(
     page,
     Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
   );
@@ -137,7 +115,7 @@ test("a feasibility warning arrives before the launch, while it can still be act
   const rows = Array.from({ length: 36_000 }, (_, i) =>
     chat(`question ${i}`, `answer ${i}`),
   );
-  await uploadRows(page, rows);
+  await uploadValidatedRows(page, rows);
   await continueToLaunch(page);
 
   // Scoped: Next's own route announcer is also an alert.
@@ -153,7 +131,7 @@ test("a feasibility warning arrives before the launch, while it can still be act
 });
 
 test("the launch screen is keyboard-operable end to end", async ({ page }) => {
-  await uploadRows(
+  await uploadValidatedRows(
     page,
     Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
   );
@@ -193,14 +171,11 @@ test("an unusable dataset never reaches a launchable form", async ({
 }) => {
   // A rejected dataset: its report blocks proceeding, and typing the launch
   // address by hand refuses with the same stable code the launch would raise.
-  const lines = [
-    JSON.stringify(chat("q", "   ")), // empty_target: invalid
-  ];
-  await page.goto("/");
-  await page
-    .getByLabel("Dataset file (.jsonl)")
-    .setInputFiles(await tempFile(lines.join("\n") + "\n", "bad.jsonl"));
-  await page.getByRole("button", { name: "Upload and validate" }).click();
+  // An empty assistant turn is an error (empty_target), so the dataset is invalid.
+  await upload(
+    page,
+    await tempFile(jsonl([chat("q", "   ")]), "bad.jsonl"),
+  );
   await expect(page.getByText("This dataset was rejected")).toBeVisible();
   const datasetId = new URL(page.url()).pathname.split("/").pop() ?? "";
 

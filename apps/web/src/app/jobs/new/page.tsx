@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
 import LaunchForm from "@/components/LaunchForm";
+import { Button } from "@/components/ui/button";
 import {
   getJobSpecPreviewV1JobsSpecGet,
   listModelsV1ModelsGet,
@@ -12,30 +14,17 @@ export const metadata: Metadata = {
   title: "Choose a base model",
 };
 
-// The fetches are what the try/catches guard; rendering happens after them,
-// so a component error here is an error boundary's job, not this function's.
-async function loadCatalog() {
+// The shape both fetches share when they fail: the data is null and the
+// refusal is typed, exactly as the mutator raises it.
+async function load<T>(fetch: () => Promise<T>): Promise<{
+  data: T | null;
+  error: ApiError | null;
+}> {
   try {
-    return { catalog: await listModelsV1ModelsGet(), error: null };
+    return { data: await fetch(), error: null };
   } catch (err) {
     return {
-      catalog: null,
-      error: err instanceof ApiError ? err : NETWORK_ERROR,
-    };
-  }
-}
-
-async function loadPreview(datasetId: string) {
-  try {
-    return {
-      preview: await getJobSpecPreviewV1JobsSpecGet({
-        dataset_id: datasetId,
-      }),
-      error: null,
-    };
-  } catch (err) {
-    return {
-      preview: null,
+      data: null,
       error: err instanceof ApiError ? err : NETWORK_ERROR,
     };
   }
@@ -79,8 +68,11 @@ export default async function NewJobPage({
     );
   }
 
-  const [{ catalog, error: catalogError }, { preview, error: previewError }] =
-    await Promise.all([loadCatalog(), loadPreview(datasetId)]);
+  const [{ data: catalog, error: catalogError }, { data: preview, error: previewError }] =
+    await Promise.all([
+      load(() => listModelsV1ModelsGet()),
+      load(() => getJobSpecPreviewV1JobsSpecGet({ dataset_id: datasetId })),
+    ]);
 
   if (previewError || !preview) {
     // A dataset that cannot start a job is refused before anything can be
@@ -143,7 +135,12 @@ export default async function NewJobPage({
 
       <LaunchForm catalog={catalog} preview={preview} />
 
-      <BackToUpload />
+      {/* The old screen's way back: the report this launch was reached from. */}
+      <Button variant="outline" asChild>
+        <Link href={`/datasets/${preview.dataset.id}`}>
+          Back to the validation report
+        </Link>
+      </Button>
     </section>
   );
 }

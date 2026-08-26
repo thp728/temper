@@ -254,11 +254,11 @@ class FakeProvider:
         )
 
 
-# --- a completed run, canned -------------------------------------------------
+# --- a completed job, canned -------------------------------------------------
 # For surfaces that need a whole job to reach `complete` without hardware --
 # today the browser journeys, which boot the control plane with
 # TEMPER_FAKE_PROVIDER and drive a launch to its adapter. One definition, so
-# every surface that watches a finished run watches the same one.
+# every surface that watches a finished job watches the same one.
 
 DEMO_ADAPTER_BYTES = b"demo adapter weights"
 
@@ -279,7 +279,7 @@ DEMO_RESULT = {
 
 
 def completed_run() -> FakeProvider:
-    """The fake configured as a small successful run, end to end."""
+    """The fake configured as a small successful job, end to end."""
     return FakeProvider(
         lines=DEMO_LINES, result=DEMO_RESULT, adapter_bytes=DEMO_ADAPTER_BYTES
     )
