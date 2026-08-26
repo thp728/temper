@@ -137,3 +137,72 @@ def test_the_original_defect_manifests_here_exactly_as_it_did_on_the_machine(
     assert any("$'\\r': command not found" in line for line in out), (
         f"the endpoint could not see a CRLF-mangled script: {out}"
     )
+
+
+# --- streaming transfer ------------------------------------------------------
+#
+# Spec 006's expand half, at the tier that exists because bytes get changed
+# between the fake and the wire. The streaming methods reuse the buffered
+# pair's wire commands -- one grammar, two feeding modes -- so these tests
+# need no new endpoint behaviour, and that reuse is itself under test: if a
+# streaming method ever grew its own command shape, it would arrive here
+# unemulated and fail.
+
+
+def test_stream_push_then_stream_fetch_round_trips_text_including_line_endings(
+    machine,
+):
+    """What went in as chunks comes out byte-identical, endings included.
+
+    The payload is cut so a CRLF pair straddles two chunks -- the boundary
+    where a chunk-aware implementation would be tempted to normalise.
+    """
+    provider, endpoint = machine
+    dest = "/tmp/temper/dataset.jsonl"
+    payload = b'{"a": 1}\n{"b": 2}\r\n{"c": 3}\rlast line'
+    chunks = [payload[i : i + 7] for i in range(0, len(payload), 7)]
+
+    provider.push_stream(Machine(1, endpoint.handle), iter(chunks), dest)
+
+    assert endpoint.files[dest] == payload
+    fetched = b"".join(
+        provider.fetch_stream(Machine(1, endpoint.handle), dest)
+    )
+    assert fetched == payload
+
+
+def test_stream_push_then_stream_fetch_round_trips_binary_content_unmodified(
+    machine,
+):
+    """Every byte value survives, in many small chunks, both directions.
+
+    Sized past any pipe or channel buffer (512 KB) and fed in 1000-byte
+    pieces, so the transfer crosses hundreds of chunk boundaries; the fetch
+    side must also deliver more than one chunk for the stream to count as
+    one.
+    """
+    provider, endpoint = machine
+    dest = "/tmp/temper/adapter.bin"
+    payload = bytes(range(256)) * 2048
+    chunks = (payload[i : i + 1000] for i in range(0, len(payload), 1000))
+
+    assert len(payload) == 512 * 1024
+    provider.push_stream(Machine(1, endpoint.handle), chunks, dest)
+    assert endpoint.files[dest] == payload
+
+    received = list(provider.fetch_stream(Machine(1, endpoint.handle), dest))
+    assert b"".join(received) == payload
+    assert len(received) > 1, "arrived as one blob, not a stream"
+
+
+def test_stream_fetch_of_a_file_that_is_not_there_yields_nothing(machine):
+    """The documented mirror of `fetch`'s empty-bytes contract."""
+    provider, endpoint = machine
+    assert (
+        list(
+            provider.fetch_stream(
+                Machine(1, endpoint.handle), "/tmp/temper/absent"
+            )
+        )
+        == []
+    )

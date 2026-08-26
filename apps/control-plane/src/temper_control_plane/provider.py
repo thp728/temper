@@ -29,15 +29,24 @@ Three methods beyond the six the spec enumerates, each with a reason:
 * `fetch` is the counterpart to `push`. Without it the adapter download would be
   the one provider interaction still shelling out behind the seam's back.
 * `close` releases whatever the implementation holds open. Plumbing, not domain.
+
+And two more since spec 006, the expand half of a streaming change:
+`push_stream` accepts an iterator of byte chunks and `fetch_stream` returns
+one. Payloads grow without bound now that a catalog model can be fully
+fine-tuned, so a transfer must never require the whole payload in memory. They
+reuse the buffered methods' wire commands and failure codes -- one grammar, two
+feeding modes -- and callers migrate one at a time; until they do, the buffered
+pair remains what production calls.
 """
 
 from __future__ import annotations
 
 import shlex
 import subprocess
+import tempfile
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -46,6 +55,11 @@ from temper_core.errors import OrchestratorError
 SSH_READY_TIMEOUT_S = 300
 PUSH_TIMEOUT_S = 180
 FETCH_TIMEOUT_S = 600
+
+# How much one streamed fetch hands the caller per step. Bounded, not tuned:
+# the tests assert memory stays flat as payloads grow, not that a particular
+# chunk size was used.
+FETCH_CHUNK_BYTES = 256 * 1024
 
 # The three wire commands the transport speaks. Defined once, read twice:
 # this module writes them and the transport tier's emulated endpoint
@@ -124,8 +138,25 @@ class Provider(Protocol):
 
     def push(self, machine: Machine, payload: bytes, dest: str) -> None: ...
 
+    def push_stream(
+        self, machine: Machine, chunks: Iterable[bytes], dest: str
+    ) -> None:
+        """Stream `chunks` to `dest`, holding at most one chunk whole.
+
+        Same wire command and failure codes as `push`.
+        """
+
     def fetch(self, machine: Machine, path: str) -> bytes:
         """Read a file off the machine. Empty bytes mean it could not be read."""
+
+    def fetch_stream(self, machine: Machine, path: str) -> Iterator[bytes]:
+        """Yield `path`'s bytes in bounded chunks.
+
+        Yielding nothing is the mirror of `fetch`'s empty bytes: the file
+        could not be read. A read that dies part-way delivers what crossed
+        before it died -- truncation is caught downstream, against the
+        checksum the machine computed.
+        """
 
     def stream(self, machine: Machine, script: bytes) -> Iterator[str]:
         """Run a script and yield its output lines as they are produced."""
@@ -290,6 +321,114 @@ class JarvisLabsProvider:
             timeout=FETCH_TIMEOUT_S,
         )
         return r.stdout if r.returncode == 0 else b""
+
+    def push_stream(
+        self, machine: Machine, chunks: Iterable[bytes], dest: str
+    ) -> None:
+        """Stream `chunks` to `dest` over the wire `push` already speaks.
+
+        The command is identical to the buffered push's -- one grammar, two
+        feeding modes -- so the remote cannot tell how the bytes were fed
+        and no new wire shape needs emulating at the transport tier.
+
+        stderr goes to a scratch file rather than a pipe: a pipe nobody
+        drains while this loop writes is a remote that can fill it and block,
+        which would deadlock the very transfer this method exists to make
+        unbounded.
+        """
+        with tempfile.TemporaryFile() as errors:
+            proc = subprocess.Popen(
+                _ssh(machine.handle) + [push_command(dest)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=errors,
+            )
+            timed_out = threading.Event()
+
+            def kill() -> None:
+                timed_out.set()
+                proc.kill()
+
+            watchdog = threading.Timer(PUSH_TIMEOUT_S, kill)
+            watchdog.start()
+            reaped = False
+            try:
+                try:
+                    for chunk in chunks:
+                        proc.stdin.write(chunk)
+                    proc.stdin.close()
+                except OSError:
+                    # The pipe died under us -- most often the watchdog
+                    # killing the client, sometimes the remote exiting
+                    # early. Which of the two is decided below, after the
+                    # wait; raising here would report a symptom instead of
+                    # the cause.
+                    try:
+                        proc.stdin.close()
+                    except OSError:
+                        pass
+                code = proc.wait()
+                reaped = True
+            finally:
+                watchdog.cancel()
+                if not reaped and proc.poll() is None:
+                    # The chunk source failed mid-push. There is no
+                    # legitimate transfer left to finish, so nothing keeps
+                    # the child alive.
+                    proc.kill()
+                    proc.wait()
+            if timed_out.is_set():
+                raise subprocess.TimeoutExpired(
+                    cmd=push_command(dest), timeout=PUSH_TIMEOUT_S
+                )
+            if code != 0:
+                errors.seek(0)
+                raise OrchestratorError(
+                    "source_upload_failed",
+                    errors.read().decode("utf-8", "replace")[:300]
+                    or f"ssh exited {code}",
+                )
+
+    def fetch_stream(self, machine: Machine, path: str) -> Iterator[bytes]:
+        """Yield `path`'s bytes in bounded chunks as they cross the wire.
+
+        The command is identical to the buffered fetch's; yielding nothing is
+        the mirror of its empty-bytes answer. A watchdog bounds a wedged read
+        exactly as the buffered timeout does, and cleanup also runs when the
+        consumer abandons the iterator, which is how cancellation will stop a
+        download.
+        """
+        proc = subprocess.Popen(
+            _ssh(machine.handle) + [fetch_command(path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        timed_out = threading.Event()
+
+        def kill() -> None:
+            timed_out.set()
+            proc.kill()
+
+        watchdog = threading.Timer(FETCH_TIMEOUT_S, kill)
+        watchdog.start()
+        try:
+            while chunk := proc.stdout.read(FETCH_CHUNK_BYTES):
+                yield chunk
+        finally:
+            # Also reached when the consumer abandons the iterator, which is
+            # how cancellation will stop a download; and cleanup must not be
+            # skipped, because a surviving child holds the connection open.
+            watchdog.cancel()
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+        # Reached only on normal completion; an abandoned iterator leaves via
+        # the finally above before this line, so abandonment never raises a
+        # timeout that nobody was reading.
+        if timed_out.is_set():
+            raise subprocess.TimeoutExpired(
+                cmd=fetch_command(path), timeout=FETCH_TIMEOUT_S
+            )
 
     def stream(self, machine: Machine, script: bytes) -> Iterator[str]:
         """Run `script` under bash and yield its output as it is produced.
