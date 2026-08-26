@@ -6,8 +6,10 @@ handler returning a dict merge publishes no shape at all: the generator emits
 -- which is precisely the drift the generated client exists to prevent.
 
 They describe what crosses the HTTP boundary only. Stored rows keep their
-path columns; `DatasetRecord` and `JobRecord` simply do not publish them, so
-an absolute filesystem path reaches neither a page nor a client.
+storage-seam addresses -- the dataset's object key and the job's artifact
+key -- and these models do not publish them: where an object lives is the
+seam's business, so neither a page nor a client learns it.
+"""
 """
 
 from __future__ import annotations
@@ -168,9 +170,9 @@ class JobRecord(BaseModel):
     """A job and the record of what became of it, published typed.
 
     Like `DatasetRecord` for stored rows, this deliberately does not publish
-    `adapter_path`: an absolute filesystem path is server state, and it had
-    reached every raw job response before the interface consumed this API.
-    The artifact travels through the download endpoint instead."""
+    the artifact's storage address (`artifact_key`): where a stored object
+    lives is the storage seam's business, not the browser's. The artifact
+    travels through the download endpoint instead."""
 
     id: str
     dataset_id: str

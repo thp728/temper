@@ -15,7 +15,6 @@ import io
 import sys
 import zipfile
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -27,6 +26,7 @@ from temper_control_plane import (
     db,
     jobs,
     orchestrator,
+    storage,
 )
 from temper_control_plane.contracts_models import (
     DatasetList,
@@ -37,6 +37,7 @@ from temper_control_plane.contracts_models import (
     JobSpecPreview,
     ModelCatalog,
 )
+from temper_control_plane.storage import ObjectNotFound
 from temper_control_plane.web import router as web_router
 from temper_core import catalog, feasibility, hyperparams
 
@@ -44,8 +45,7 @@ from temper_core import catalog, feasibility, hyperparams
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db.init()
-    datasets.UPLOADS.mkdir(parents=True, exist_ok=True)
-    orchestrator.ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    storage.STORE.ensure_ready()
     # Fail loudly at boot rather than four seconds into someone's first job.
     if not config.provider_credentials_present():
         print(
@@ -274,7 +274,8 @@ def download_adapter(job_id: str):
     job = db.get_job(job_id)
     if not job:
         raise HTTPException(404, "No such job.")
-    if not job.get("adapter_path"):
+    artifact_key = job.get("artifact_key")
+    if not artifact_key:
         raise HTTPException(
             409,
             {
@@ -282,16 +283,25 @@ def download_adapter(job_id: str):
                 "message": f"Job is '{job['status']}'; no adapter is available yet.",
             },
         )
-    # Zipped, because an adapter is a directory: the weights plus the
+    # Zipped, because an artifact is a set of objects: the weights plus the
     # adapter_config.json that makes them loadable. Built per request rather
     # than cached -- it is a few MB, and a stale zip beside fresh weights is a
-    # worse failure than rebuilding it.
-    directory = Path(job["adapter_path"]).parent
+    # worse failure than rebuilding it. A run that produced no config zips the
+    # weights alone rather than failing the download; its absence was already
+    # reported as an error event when the run ended.
+    member_names = (
+        (storage.ADAPTER_WEIGHTS_NAME, "adapter_model.safetensors"),
+        (storage.ADAPTER_CONFIG_NAME, "adapter_config.json"),
+    )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in sorted(directory.iterdir()):
-            if f.is_file():
-                z.write(f, arcname=f.name)
+        for name, arcname in member_names:
+            key = storage.artifact_key(job_id, name)
+            try:
+                data = storage.STORE.get(key)
+            except ObjectNotFound:
+                continue
+            z.writestr(arcname, data)
     buf.seek(0)
     return StreamingResponse(
         buf,

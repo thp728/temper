@@ -10,11 +10,16 @@ import pytest
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    from temper_control_plane import datasets, db, main, orchestrator
+    from temper_control_plane import db, main, orchestrator, storage
 
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(datasets, "UPLOADS", tmp_path / "uploads")
-    monkeypatch.setattr(orchestrator, "ARTIFACTS", tmp_path / "artifacts")
+    # Stored objects land in the test's own directory: nothing a test does
+    # may reach the checkout's data/ tree.
+    monkeypatch.setattr(
+        storage,
+        "STORE",
+        storage.FilesystemStorage(root=tmp_path / "objects"),
+    )
     # Never launch a real VM from a test.
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
     from fastapi.testclient import TestClient

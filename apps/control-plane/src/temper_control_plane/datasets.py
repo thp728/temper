@@ -10,13 +10,8 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from temper_control_plane import config, db
+from temper_control_plane import config, db, storage
 from temper_core import validation
-
-# Via config, for the reason given on db.DB_PATH: a counted path silently
-# meant somewhere else once this module moved, and uploaded datasets are the
-# worst possible thing to relocate into a directory git is willing to commit.
-UPLOADS = config.REPO_ROOT / "data" / "uploads"
 
 
 def _fmt_size(n: int) -> str:
@@ -84,12 +79,11 @@ def store_and_validate(filename: str, data: bytes) -> tuple[str, dict]:
         raise too_large(len(data), limit)
 
     ds_id = db.new_id("ds")
-    path = UPLOADS / f"{ds_id}.jsonl"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    db.create_dataset(filename, path, ds_id=ds_id)
+    key = storage.dataset_key(ds_id)
+    storage.STORE.put(key, data)
+    db.create_dataset(filename, key, ds_id=ds_id)
 
-    report = validation.validate(path).to_dict()
+    report = validation.validate_bytes(data).to_dict()
     db.finish_dataset(ds_id, report)
     return ds_id, report
 

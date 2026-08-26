@@ -22,6 +22,10 @@ dev = [
     "mypy>=1.13",
     "pre-commit>=4.0",
     "asyncssh>=2.14",
+    # In-process S3 API mock, for the object-store half of the storage seam.
+    # The real-store tier (MinIO via testcontainers) is Phase B integration
+    # work; this proves wiring and round-trip without Docker or credentials.
+    "moto>=5.0",
 ]
 
 [tool.pytest.ini_options]
@@ -92,6 +96,17 @@ no_implicit_optional = true
 # The provider SDK ships no type information. Nothing to be done about that from
 # here, and an untyped third-party client is not a finding about this codebase.
 module = "jarvislabs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Same for the S3 client the object-store backend speaks: boto3 and botocore
+# ship no py.typed marker. The seam's own surface is typed; the wire client
+# underneath it is not, and that is a fact about AWS's SDK.
+module = "boto3.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "botocore.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
