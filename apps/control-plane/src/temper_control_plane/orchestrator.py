@@ -368,11 +368,7 @@ def _discard_if_cancelled(job_id: str, check) -> None:
     try:
         check()
     except Cancelled:
-        artifact_names = (
-            storage.ADAPTER_WEIGHTS_NAME,
-            storage.ADAPTER_CONFIG_NAME,
-        )
-        for name in artifact_names:
+        for name in storage.ARTIFACT_MEMBERS:
             # Deletion failures are suppressed deliberately: teardown must
             # not mask the cancellation that caused it, and an orphaned
             # object is cheaper than a half-reported state.

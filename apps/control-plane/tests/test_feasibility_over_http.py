@@ -18,17 +18,11 @@ from temper_control_plane import config
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
-    from temper_control_plane import db, main, orchestrator, storage
+def client(isolated, monkeypatch):
 
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(
-        storage,
-        "STORE",
-        storage.FilesystemStorage(root=tmp_path / "objects"),
-    )
+    from temper_control_plane import main, orchestrator
+
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
-    db.init()
     with TestClient(main.app) as c:
         yield c
 

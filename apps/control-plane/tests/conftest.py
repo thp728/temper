@@ -9,20 +9,35 @@ import pytest
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
-    from temper_control_plane import db, main, orchestrator, storage
+def isolated(tmp_path, monkeypatch):
+    """Redirect every writable surface into this test's own directory.
+    Nothing a test does may reach the checkout's real data/ tree.
+
+    Fixtures that need the app add their TestClient on top of this one. This
+    deliberately does NOT neuter `orchestrator.launch`: the orchestrator
+    tests swap it for a driver they control, including the real threaded
+    one, and a stub here would be what they captured.
+    """
+    from temper_control_plane import db, storage
 
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    # Stored objects land in the test's own directory: nothing a test does
-    # may reach the checkout's data/ tree.
     monkeypatch.setattr(
         storage,
         "STORE",
         storage.FilesystemStorage(root=tmp_path / "objects"),
     )
+    db.init()
+
+
+@pytest.fixture()
+def client(isolated, monkeypatch):
     # Never launch a real VM from a test.
+    from temper_control_plane import orchestrator
+
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
     from fastapi.testclient import TestClient
+
+    from temper_control_plane import main
 
     with TestClient(main.app) as c:
         yield c

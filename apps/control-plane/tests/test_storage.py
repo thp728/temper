@@ -24,13 +24,16 @@ here by pretending this is it.
 from __future__ import annotations
 
 import base64
+import socket
 import time
+import urllib.request
 from urllib.parse import parse_qs, urlsplit
 
 import boto3
 import pytest
 from botocore.config import Config as botocore_config
 from moto import mock_aws
+from moto.server import ThreadedMotoServer
 
 from temper_control_plane import config, storage
 from temper_control_plane.storage import (
@@ -174,6 +177,50 @@ def test_an_object_store_grant_is_a_presigned_put_for_one_key(s3):
     assert query["X-Amz-Signature"]
     assert grant.key == "artifacts/j_1/adapter_model.safetensors"
     assert abs(grant.expires_at - (time.time() + ttl)) < 5
+
+
+def test_an_object_store_grant_actually_lands_bytes_when_put_over_http():
+    """The grant is exercised the way a machine will use it (ADR-0009): minted
+    by the store, PUT over real HTTP, then read back through the seam.
+
+    Honest about what this proves: moto's server honours the request without
+    cryptographically verifying the signature, so this pins the URL's shape,
+    its scoping to one key, and the whole wiring working against a real HTTP
+    endpoint -- it does not prove MinIO's enforcement. That tier is Phase B
+    integration work.
+    """
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = ThreadedMotoServer("127.0.0.1", port)
+    server.start()
+    try:
+        client = boto3.client(
+            "s3",
+            endpoint_url=f"http://127.0.0.1:{port}",
+            region_name="us-east-1",
+            aws_access_key_id="testing",  # noqa: S106 - moto's fixed dummy pair
+            aws_secret_access_key="testing",  # noqa: S106 - never a credential
+            config=botocore_config(signature_version="s3v4"),
+        )
+        client.create_bucket(Bucket="temper-test")
+        store = S3Storage(bucket="temper-test", client=client)
+
+        grant = store.mint_write_grant("artifacts/j_9/w", 900)
+        # The explicit content type is what any binary PUT carries anyway;
+        # urllib's default (urlencoded) makes the receiving WSGI layer parse
+        # the body as a form instead of storing it.
+        request = urllib.request.Request(  # noqa: S310 - loopback moto server
+            grant.url,
+            data=PAYLOAD,
+            method="PUT",
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        with urllib.request.urlopen(request) as response:  # noqa: S310
+            assert response.status == 200
+        assert store.get("artifacts/j_9/w") == PAYLOAD
+    finally:
+        server.stop()
 
 
 # --- key layout: defined once, read everywhere -------------------------------

@@ -432,6 +432,22 @@ def test_completed_job_downloads_a_loadable_adapter(client, tmp_path):
         assert z.read("adapter_model.safetensors") == b"weights"
 
 
+def test_a_job_whose_stored_weights_are_gone_refuses_loudly(client, tmp_path):
+    """A download that 'succeeds' with an empty archive would look like the
+    deliverable and is not one -- the failure shape the zip exists to prevent.
+    The refusal carries a stable code like every other one."""
+    from temper_control_plane import db, storage
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    key = storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
+    db.set_state(job["id"], "complete", "done", artifact_key=key)
+
+    r = client.get(f"/v1/jobs/{job['id']}/adapter")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "artifact_missing"
+
+
 # --- ops --------------------------------------------------------------------
 
 

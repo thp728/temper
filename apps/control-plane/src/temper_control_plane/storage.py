@@ -56,6 +56,7 @@ from . import config
 # components agree on is defined once and read, never retyped.
 ADAPTER_WEIGHTS_NAME = "adapter_model.safetensors"
 ADAPTER_CONFIG_NAME = "adapter_config.json"
+ARTIFACT_MEMBERS = (ADAPTER_WEIGHTS_NAME, ADAPTER_CONFIG_NAME)
 
 
 def dataset_key(ds_id: str) -> str:
@@ -66,6 +67,17 @@ def dataset_key(ds_id: str) -> str:
 def artifact_key(job_id: str, name: str) -> str:
     """The key one file of one job's artifact is stored under."""
     return f"artifacts/{job_id}/{name}"
+
+
+def artifact_config_key(weights_key: str) -> str:
+    """The config object that travels beside one artifact weights object.
+
+    An artifact is weights plus the config that makes them loadable; the
+    download endpoint holds the weights' key (from the job row) and derives
+    the config's address from it, so the pair cannot drift apart.
+    """
+    parent, _, _ = _checked(weights_key).rpartition("/")
+    return f"{parent}/{ADAPTER_CONFIG_NAME}"
 
 
 class ObjectNotFound(KeyError):

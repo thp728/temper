@@ -24,7 +24,7 @@ import time
 import uuid
 from contextlib import contextmanager
 
-from . import config
+from . import config, storage
 
 # Via config, not by counting directories up from this file. The counted form
 # meant the repo root at `api/db.py` and `apps/control-plane/src/` after the
@@ -187,7 +187,7 @@ def _rewrite_legacy_locations(c) -> None:
         if name == f"{ds_id}.jsonl":
             c.execute(
                 "UPDATE datasets SET object_key=? WHERE id=?",
-                (f"datasets/{ds_id}.jsonl", ds_id),
+                (storage.dataset_key(ds_id), ds_id),
             )
     rows = c.execute(
         "SELECT id, artifact_key FROM jobs "
@@ -198,7 +198,7 @@ def _rewrite_legacy_locations(c) -> None:
         if len(parts) >= 2 and parts[-2] == job_id:
             c.execute(
                 "UPDATE jobs SET artifact_key=? WHERE id=?",
-                (f"artifacts/{job_id}/{parts[-1]}", job_id),
+                (storage.artifact_key(job_id, parts[-1]), job_id),
             )
 
 

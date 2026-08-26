@@ -24,18 +24,11 @@ from temper_control_plane import config
 
 
 @pytest.fixture()
-def server(tmp_path, monkeypatch):
-    """The app with storage redirected to tmp_path and the GPU stubbed out."""
-    from temper_control_plane import db, main, orchestrator, storage
+def server(isolated, monkeypatch):
+    """The app, storage-isolated by `isolated`, launches made inert."""
+    from temper_control_plane import main, orchestrator
 
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(
-        storage,
-        "STORE",
-        storage.FilesystemStorage(root=tmp_path / "objects"),
-    )
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
-    db.init()
     return main
 
 

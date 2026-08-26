@@ -23,9 +23,11 @@ dev = [
     "pre-commit>=4.0",
     "asyncssh>=2.14",
     # In-process S3 API mock, for the object-store half of the storage seam.
-    # The real-store tier (MinIO via testcontainers) is Phase B integration
-    # work; this proves wiring and round-trip without Docker or credentials.
-    "moto>=5.0",
+    # The server extra is what lets a pre-signed URL be exercised over real
+    # loopback HTTP. The real-store tier (MinIO via testcontainers) is Phase B
+    # integration work; this proves wiring and round-trip without Docker or
+    # credentials.
+    "moto[server]>=5.0",
 ]
 
 [tool.pytest.ini_options]

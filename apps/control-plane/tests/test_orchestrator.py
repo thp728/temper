@@ -219,17 +219,12 @@ class Harness:
 
 
 @pytest.fixture()
-def harness(tmp_path, monkeypatch):
-    from temper_control_plane import db, main, orchestrator, storage
-
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    monkeypatch.setattr(
-        storage,
-        "STORE",
-        storage.FilesystemStorage(root=tmp_path / "objects"),
-    )
+def harness(isolated, tmp_path, monkeypatch):
     # Teardown retries sleep between attempts. Tests do not need to.
+    from temper_control_plane import main, orchestrator
+
     monkeypatch.setattr(orchestrator, "DESTROY_RETRY_DELAY_S", 0)
+
     with TestClient(main.app) as c:
         yield Harness(c, monkeypatch, tmp_path)
 
@@ -1179,9 +1174,15 @@ def test_cancelling_while_the_adapter_is_being_retrieved_produces_none(
     assert job["status"] == "cancelled"
     assert harness.stored(job["id"])["artifact_key"] is None
     assert provider.destroyed
-    assert not list(
-        (harness._tmp_path / "artifacts").rglob("*.safetensors")
-    ), "a cancelled job left an adapter on disk"
+    # What was already fetched must not survive as a stored object. The
+    # weights key is deterministic from the job id, so absence is provable
+    # through the seam itself rather than by scanning a directory.
+    from temper_control_plane import storage
+
+    with pytest.raises(storage.ObjectNotFound):
+        storage.STORE.get(
+            storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
+        )
 
 
 def test_a_cancelled_job_is_not_recorded_as_a_failure(harness):

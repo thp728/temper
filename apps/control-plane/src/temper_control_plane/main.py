@@ -286,21 +286,42 @@ def download_adapter(job_id: str):
     # Zipped, because an artifact is a set of objects: the weights plus the
     # adapter_config.json that makes them loadable. Built per request rather
     # than cached -- it is a few MB, and a stale zip beside fresh weights is a
-    # worse failure than rebuilding it. A run that produced no config zips the
-    # weights alone rather than failing the download; its absence was already
-    # reported as an error event when the run ended.
-    member_names = (
-        (storage.ADAPTER_WEIGHTS_NAME, "adapter_model.safetensors"),
-        (storage.ADAPTER_CONFIG_NAME, "adapter_config.json"),
-    )
+    # worse failure than rebuilding it.
+    #
+    # The weights are read from the key the job row records, so the address
+    # written at packaging time is the one read at download time. A missing
+    # weights object refuses loudly rather than downloading an empty archive:
+    # a download that "succeeds" with nothing in it looks like the deliverable
+    # and is not one -- the same failure shape as shipping a bare .safetensors.
+    # A missing config alone still zips the weights, because a run that
+    # produced none already reported that as an error event when it ended.
+    try:
+        weights = storage.STORE.get(artifact_key)
+    except ObjectNotFound:
+        raise HTTPException(
+            409,
+            {
+                "code": "artifact_missing",
+                "message": "This job records an artifact, but its stored "
+                "object is gone. The job's event log says what happened "
+                "to it.",
+            },
+        ) from None
+
+    zip_members = [("adapter_model.safetensors", weights)]
+    try:
+        zip_members.append(
+            (
+                "adapter_config.json",
+                storage.STORE.get(storage.artifact_config_key(artifact_key)),
+            )
+        )
+    except ObjectNotFound:
+        pass
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for name, arcname in member_names:
-            key = storage.artifact_key(job_id, name)
-            try:
-                data = storage.STORE.get(key)
-            except ObjectNotFound:
-                continue
+        for arcname, data in zip_members:
             z.writestr(arcname, data)
     buf.seek(0)
     return StreamingResponse(
