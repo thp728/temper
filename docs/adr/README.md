@@ -67,7 +67,7 @@ repository becomes public at submission.
 | [0023](0023-the-interface-consumes-a-client-generated-from-the-api-contract.md) | The interface consumes a client generated from the API contract, and the two interfaces never coexist | accepted | 2026-08-26 |
 | [0024](0024-the-browser-journeys-launch-against-an-app-side-fake-provider.md) | The browser journeys launch against an app-side fake provider, and refuse to run against anything else | accepted | 2026-08-26 |
 | [0025](0025-the-control-plane-resolves-and-the-trainer-applies.md) | The control plane resolves every hyperparameter; the trainer applies values rather than choosing them | accepted | 2026-08-26 |
-| [0025](0025-the-simulated-machine-fails-when-a-journey-asks.md) | The simulated machine fails when a journey asks it to, through the real failure path | accepted | 2026-08-26 |
+| [0026](0026-the-simulated-machine-fails-when-a-journey-asks.md) | The simulated machine fails when a journey asks it to, through the real failure path | accepted | 2026-08-26 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

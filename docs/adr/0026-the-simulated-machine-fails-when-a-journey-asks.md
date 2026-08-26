@@ -1,4 +1,4 @@
-# ADR-0025 — The simulated machine fails when a journey asks it to
+# ADR-0026 — The simulated machine fails when a journey asks it to
 
 - **Status:** accepted
 - **Date:** 2026-08-26
