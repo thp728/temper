@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 
 from temper_core.errors import OrchestratorError
 
@@ -169,9 +169,25 @@ class FakeProvider:
         self._enter("push")
         self.pushed.append((dest, payload))
 
+    def push_stream(
+        self, machine: Machine, chunks: Iterable[bytes], dest: str
+    ) -> None:
+        """The streaming push. Enters `push` and records into `pushed` exactly
+        as the buffered one, so fail_at and the recorded calls read the same
+        whichever way a caller feeds its bytes."""
+        self._enter("push")
+        self.pushed.append((dest, b"".join(chunks)))
+
     def fetch(self, machine: Machine, path: str) -> bytes:
         self._enter("fetch")
         return self._adapter_bytes
+
+    def fetch_stream(self, machine: Machine, path: str) -> Iterator[bytes]:
+        """The streaming fetch. One chunk; a double holding test-sized bytes
+        has nothing to stream, and inventing chunk boundaries would be
+        behaviour no caller asked it to simulate."""
+        self._enter("fetch")
+        yield self._adapter_bytes
 
     def stream(self, machine: Machine, script: bytes) -> Iterator[str]:
         self._enter("stream")

@@ -50,7 +50,8 @@ The provider is stubbed suite-wide. `conftest.py` refuses any attempt to constru
 because a suite that can reach the billing account by accident eventually does. Pass `FakeProvider`.
 
 The one exception is the transport tier ([ADR-0013](../docs/adr/0013-the-transport-is-proven-against-a-real-endpoint.md)):
-`test_transport_endpoint.py` drives `JarvisLabsProvider.push/fetch/stream` against a local in-process
+`test_transport_endpoint.py` drives `JarvisLabsProvider.push/push_stream/fetch/fetch_stream/stream`
+against a local in-process
 SSH endpoint, built with `object.__new__` so no client — and no credential path — is ever constructed.
 Everything else keeps the fake.
 
