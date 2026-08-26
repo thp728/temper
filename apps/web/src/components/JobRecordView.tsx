@@ -44,7 +44,12 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function AdapterSection({ job }: { job: JobRecord }) {
-  const produced = Boolean(job.result?.adapter_path);
+  // `JobRecord` deliberately does not publish the artifact's storage address;
+  // whether an artifact exists lives behind the download route (which reads
+  // the job row's `artifact_key`), not in anything the page may inspect. A
+  // completed job with a result is the only shape that can have produced one,
+  // so that is what the offer keys off -- the route answers 409 otherwise.
+  const produced = Boolean(job.result);
   return (
     <section aria-labelledby="result-heading" className="space-y-2">
       <h2 id="result-heading" className="text-lg font-semibold">

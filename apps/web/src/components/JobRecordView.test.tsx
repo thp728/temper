@@ -22,7 +22,7 @@ function job(overrides: Partial<JobRecord> = {}): JobRecord {
     price_per_hour: 41.31,
     currency: "INR",
     warnings: [],
-    result: { ok: true, adapter_path: "run/adapter_model.safetensors" },
+    result: { ok: true },
     ...overrides,
   };
 }
@@ -85,7 +85,7 @@ describe("JobRecordView", () => {
 
   it("says when training finished but no adapter could be retrieved", () => {
     render(
-      <JobRecordView job={job({ result: { ok: true } })} events={[]} />,
+      <JobRecordView job={job({ result: null })} events={[]} />,
     );
     expect(screen.getByText(/no adapter could be retrieved/i)).toBeVisible();
     expect(screen.queryByRole("link", { name: /Download the adapter/ })).toBeNull();
