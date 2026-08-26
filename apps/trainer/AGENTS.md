@@ -36,10 +36,19 @@ recorded in the job spec. Every serious platform in this space exposes these, an
 permanently is a limitation dressed as a safety feature. The export-time template probe is what
 makes exposure safe.
 
-**α tracks r.** Change `lora_r` without `lora_alpha` and α recomputes as `2r`. Pairing a new rank
-with a stale scale is a silent quality bug.
+**The trainer resolves nothing (#83).** The job spec arrives carrying the full resolved set; this
+entrypoint applies it as given and holds no defaults of its own. A spec missing a required key
+fails loudly (`spec_incomplete`, keys named) rather than falling back; unknown keys are echoed
+back as `rejected_overrides`. Until #33 generates the known-key set from the pinned image's own
+schema, `REQUIRED_HYPERPARAMETERS` / `KNOWN_HYPERPARAMETERS` here are that set by hand -- and
+`test_agreement_with_the_domain.py` pins them to exactly what `temper_core.hyperparams.effective`
+produces.
 
-**rsLoRA is inferred at `r >= 32`**, never exposed.
+**α tracks r at resolution time.** Move `lora_r` without `lora_alpha` and α recomputes as `2r`
+before launch, in `temper_core.hyperparams` -- never pair a new rank with a stale scale, and
+never recompute it here.
+
+**rsLoRA is inferred at `r >= 32`**, in the resolver before launch, never exposed.
 
 **Thinking mode is detected from the dataset**, applied identically at training and serving.
 `thinking.py` here and the control plane's validation must agree.

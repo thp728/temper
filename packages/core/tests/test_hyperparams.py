@@ -1,14 +1,14 @@
 """Tests for the effective job specification shown before launch.
 
-The create-job page promises the user a set of hyperparameters. That promise
-is only honest if it is computed the same way the trainer computes its config,
-so this module mirrors `apps/trainer/entrypoint.py`'s resolution -- defaults, the
-allowed overrides, alpha tracking rank, rsLoRA inferred -- and the final test
-pins the mirror against the original so the two cannot drift apart silently.
+The create-job page promises the user a set of hyperparameters. Since #83 that
+promise is what launches: the orchestrator writes `effective()` into the job
+spec and the trainer applies it without resolving anything, so these tests
+define the contract both ends rely on -- defaults, the allowed overrides,
+alpha tracking rank, rsLoRA inferred.
 
-The control plane does not import trainer code (the same rule that made
-feasibility.py duplicate DEFAULT_EPOCHS), so the pin is what stands in for a
-shared constant.
+The table here is the definition; #82 moves it into `packages/contracts/`.
+The trainer's required-key set is pinned against `effective({})` by
+`apps/trainer/tests/test_agreement_with_the_domain.py`.
 """
 
 from temper_core import hyperparams

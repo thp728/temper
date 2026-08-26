@@ -26,6 +26,7 @@ from temper_control_plane.fake_provider import (
     simulated_limits,
 )
 from temper_control_plane.limits import RunLimits
+from temper_core import hyperparams
 
 ADAPTER_BYTES = b"weights"
 RESULT = {
@@ -303,6 +304,28 @@ def test_the_job_spec_reaches_the_machine(harness):
     # Sources and dataset each travel as one binary payload rather than one
     # round trip per file or an inline encoding.
     assert len(provider.pushed) == 2
+
+
+def test_the_job_spec_carries_every_hyperparameter_resolved(harness):
+    """Issue #83: the trainer resolves nothing, so the spec written at launch
+    must carry the full resolved set -- defaults the user never mentioned,
+    alpha recomputed from a moved rank, rsLoRA inferred. The machine trains
+    with exactly these numbers; none of them may be left for it to choose."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    harness.run(provider, hyperparameters={"lora_r": 32})
+    script = provider.script.decode("utf-8")
+    m = re.search(r"<<'JOBSPEC'\n(.*?)\nJOBSPEC\n", script, re.S)
+    assert m, "no job spec heredoc found in the remote script"
+    spec = json.loads(m.group(1))
+    expected = hyperparams.effective({"lora_r": 32})
+    assert spec["hyperparameters"] == expected
+    assert spec["hyperparameters"]["lora_alpha"] == 64
+    assert spec["hyperparameters"]["lora_use_rslora"] is True
+    # A value the user never mentioned is decided before launch, not on the
+    # machine: the resolver's output is visible in the record either way.
+    assert spec["hyperparameters"]["learning_rate"] == 2e-4
 
 
 # --- dataset transport: bytes, not hex ---------------------------------------

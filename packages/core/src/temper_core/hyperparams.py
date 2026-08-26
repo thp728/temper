@@ -1,17 +1,18 @@
-"""The effective job specification, as the control plane can state it before launch.
+"""The effective job specification, resolved here and nowhere else.
 
-The create-job page shows the user exactly what their job will freeze. That
-promise is only honest if it resolves overrides the way the trainer does, so
-this module mirrors `apps/trainer/entrypoint.py`: the same defaults, the same
-allowed-override set, alpha recomputed from rank when rank moves alone, and
-rsLoRA inferred at rank >= 32.
+The create-job page shows the user exactly what their job will freeze. Since
+#83 that promise is also what launches: the orchestrator writes
+`effective(overrides)` into the job spec whole, and the trainer applies what
+it is given without resolving anything -- there is one resolver, this one, and
+its answer is visible in the job's record. Alpha recomputes from rank when rank
+moves alone, and rsLoRA is inferred at rank >= 32, both before launch.
 
-**The trainer's copy is authoritative.** The control plane does not import
-trainer code -- the same rule that has feasibility.py duplicating
-DEFAULT_EPOCHS -- so `test_hyperparams.py` pins this mirror against the
-original instead. Change a default in the trainer and that test fails until
-the mirror follows; change it only here and the page would describe a job the
-trainer will not run.
+This table was once a hand-maintained mirror of defaults in
+`apps/trainer/entrypoint.py`; those copies are gone now, so these literals are
+the definition until #82 moves them into `packages/contracts/`. The trainer's
+required-key set is pinned to `effective({})` by
+`apps/trainer/tests/test_agreement_with_the_domain.py`, which is what stops a
+default added here from failing every launch on the machine.
 """
 
 from __future__ import annotations

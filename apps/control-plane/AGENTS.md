@@ -29,7 +29,9 @@ learn what happened.
 
 **Unknown job keys are refused loudly**, at the top level *and* inside `hyperparameters`, and echoed
 back as `rejected_overrides`. An override the caller believes is in effect but is not is worse than
-a refusal.
+a refusal. Unknown *hyperparameter* keys are refused at creation with the stable code
+`unknown_hyperparameter` (#83): resolution happens before launch now, so a key that fell through
+would be dropped by the resolver without ever reaching the trainer's guard.
 
 **Mixed thinking-mode datasets block** with a line-numbered error. They are ambiguous by
 construction. Detection lives here and mirrors `trainer/thinking.py`.
@@ -40,9 +42,13 @@ construction. Detection lives here and mirrors `trainer/thinking.py`.
 client runs in a threadpool rather than blocking a handler
 ([ADR-0011](../docs/adr/0011-one-command-runs-every-task-and-one-defines-green.md)).
 
-**Hyperparameter defaults are mirrored from the trainer by hand today, and that is a known defect.**
-`hyperparams.py`, `feasibility.py:38` and `test_feasibility.py:108` each hold a copy. Issue #82
-collapses them into one definition in `packages/contracts/`. Do not add a fourth copy.
+**The control plane resolves; the trainer applies (#83).** The job spec written at launch carries
+`hyperparams.effective(overrides)` whole; the trainer holds no defaults and resolves nothing -- one
+resolver, and it is the visible one. The table lives in `temper_core.hyperparams` (with
+`feasibility.DEFAULT_EPOCHS` still a known duplicate); the trainer's required-key set is pinned to
+the resolver's output by an app-side test, because a default added to the resolver without the
+trainer learning to read it would fail every launch on the machine. Issue #82 moves the table into
+`packages/contracts/`. Do not add another copy anywhere else.
 
 ## Testing
 

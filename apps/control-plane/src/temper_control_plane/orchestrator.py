@@ -47,7 +47,7 @@ import threading
 import time
 from contextlib import suppress
 
-from temper_core import catalog, events
+from temper_core import catalog, events, hyperparams
 from temper_core.errors import Cancelled, OrchestratorError
 
 from . import db, storage
@@ -178,11 +178,16 @@ def _remote_script(
     order.
     """
     revision = job.get("base_revision") or model.revision
+    # Resolved here, before launch, and written whole (#83): the trainer
+    # resolves nothing, so this is the one place a value is chosen and the
+    # only copy the machine ever sees. What lands in the job record's
+    # `hyperparameters` field stays the user's request; what reaches the
+    # trainer is the resolver's answer to it.
     job_spec = {
         "job_id": job["id"],
         "base_model": model.repo,
         "base_revision": revision,
-        "hyperparameters": job["hyperparameters"] or {},
+        "hyperparameters": hyperparams.effective(job["hyperparameters"] or {}),
     }
     script = f"""
 set -u

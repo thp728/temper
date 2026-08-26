@@ -51,18 +51,54 @@ docker run --rm --gpus all \
   ghcr.io/<owner>/finetune-trainer@sha256:<digest>
 ```
 
+## The job specification carries every value
+
+**The trainer resolves nothing.** The control plane resolves every
+hyperparameter before launch (issue #83) and writes the full resolved set into
+`hyperparameters` in `job.json` — defaults, α recomputed from a moved rank,
+rsLoRA inferred at rank ≥ 32. There is one resolver, it runs before any money
+is spent, and its output is visible in the job's record; the trainer applies
+exactly what arrives.
+
+Three consequences, each enforced by tests in `tests/`:
+
+- **A missing required key fails loudly.** `spec_incomplete`, naming the keys.
+  No fallback: training on a number nobody chose is worse than not training.
+- **Unknown keys are refused loudly and echoed back**, at the top level and
+  inside `hyperparameters`, under `rejected_overrides` in `result.json`.
+  Until #33 generates the surface from the pinned image's own schema, "known"
+  means read by this entrypoint when rendering `config.yaml`
+  (`REQUIRED_HYPERPARAMETERS` / `KNOWN_HYPERPARAMETERS`).
+- **The trainer derives nothing.** Whatever α–r pairing or rsLoRA flag the
+  spec carries is what trains, even when visibly strange — second-guessing
+  the spec is the second resolver back through the wall.
+
+### Running standalone
+
+Outside the product you supply the complete spec yourself: copy
+[job.example.json](job.example.json), which carries every required key with
+the research defaults already resolved, mount it at `/job/job.json`, and run.
+The required keys are exactly what `temper_core.hyperparams.effective({})`
+produces — that equality is pinned by `test_agreement_with_the_domain.py`.
+
 ## What is settable, and what is not
 
-**Overridable** (`ALLOWED_OVERRIDES`): `lora_r`, `lora_alpha`, `learning_rate`, `num_epochs`, `max_steps`, `sequence_len`, `micro_batch_size`, `gradient_accumulation_steps`, `val_set_size`, `save_steps`.
-
-**Default-locked, not hidden** — chat-template resolution, `train_on_inputs: false`, EOS handling, NF4 double-quant, `lora_target_linear`, bf16, seed. These are the highest-frequency silent-failure surface: they pass every obvious health check and only surface as garbage generations, so the common path never touches them.
-
-⚠️ **This section used to say exposing them "buys a user nothing and costs correctness." That was overturned on 2026-08-19** — every serious platform in this space exposes these, and hiding them permanently is a limitation dressed as a safety feature. **Phase B adds an Advanced mode** that exposes each one with its failure mode named inline and records overrides in the run spec; the export-time template probe is what makes that safe. Today they are simply not wired to the job spec, which is a state of the build, not a principle.
+Everything under `hyperparameters` is applied as given; the resolver decides
+what may appear there (`ALLOWED_OVERRIDES` in `packages/core`). **Default-
+locked, not hidden** — chat-template resolution, `train_on_inputs: false`,
+EOS handling, NF4 double-quant, `lora_target_linear`, bf16, seed — are
+constants of this entrypoint, not resolved values. They are the
+highest-frequency silent-failure surface: they pass every obvious health check
+and only surface as garbage generations. Advanced mode (#33) exposes each one
+with its failure mode named inline; the export-time template probe is what
+makes exposure safe.
 
 Two behaviours worth knowing:
 
-- **α tracks r.** Move `lora_r` without `lora_alpha` and α is recomputed as `2r` rather than pairing a new rank with a stale scale.
-- **Unknown keys are refused loudly.** They come back in `result.json` as `rejected_overrides` — an override the caller believes is in effect but isn't is worse than a refusal.
+- **Unknown keys come back in `result.json` as `rejected_overrides`** — an
+  override the caller believes is in effect but isn't is worse than a refusal.
+- **α tracks r and rsLoRA follows rank at resolution time**, before launch,
+  in `temper_core.hyperparams` — no longer here.
 
 ## Verified 2026-08-18 (spike 4)
 

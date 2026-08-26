@@ -17,6 +17,11 @@ Design notes worth keeping, because each is a decision:
   EOS handling and loss masking are the highest-frequency silent-failure
   surface: they pass every obvious health check and only show up as garbage
   generations. They are decided here, not exposed.
+* **The trainer resolves nothing.** Hyperparameters arrive in the job spec
+  already resolved by the control plane (#83); this entrypoint applies what it
+  is given, refuses a spec missing required values (`spec_incomplete`), and
+  echoes unknown keys back rather than dropping them. Two resolvers that could
+  disagree meant the one that ran was the one nobody could see.
 * **Everything is reported, including failure.** result.json is always written,
   even on a crash, so the orchestrator never has to parse logs to find out what
   happened.
@@ -45,32 +50,30 @@ CONFIG = OUT_DIR / "config.yaml"
 RESULT = OUT_DIR / "result.json"
 LOG = OUT_DIR / "train.log"
 
-# Defaults from the research, and the reasoning lives in the wiki rather than
-# here. Anything a user may override is in ALLOWED_OVERRIDES; anything absent
-# from that set is a correctness decision and is deliberately not settable.
-DEFAULTS = {
-    "lora_r": 16,
-    "lora_alpha": 32,  # α = 2r; recompute if r changes
-    "lora_dropout": 0.0,
-    "learning_rate": 2e-4,
-    "num_epochs": 3,
-    "micro_batch_size": 1,
-    "gradient_accumulation_steps": 8,  # effective batch 8; see wiki
-    "sequence_len": 2048,
-    "warmup_ratio": 0.1,
-    "lr_scheduler": "cosine",
-    "val_set_size": 0.05,
-}
-ALLOWED_OVERRIDES = {
+# The trainer resolves nothing (#83): the control plane applies its resolver to
+# the user's overrides before launch and writes the full resolved set into the
+# job spec, so there is one resolver, the visible one. What remains here is the
+# guard: these are the keys this entrypoint reads when it renders config.yaml.
+# A spec missing any of them stops the job before the GPU does any work --
+# training on a number nobody chose is worse than not training -- and a key
+# outside the set is refused loudly and echoed back rather than dropped.
+REQUIRED_HYPERPARAMETERS = {
     "lora_r",
     "lora_alpha",
+    "lora_dropout",
     "learning_rate",
     "num_epochs",
-    "max_steps",
-    "sequence_len",
     "micro_batch_size",
     "gradient_accumulation_steps",
+    "sequence_len",
+    "warmup_ratio",
+    "lr_scheduler",
     "val_set_size",
+    "lora_use_rslora",
+}
+KNOWN_HYPERPARAMETERS = REQUIRED_HYPERPARAMETERS | {
+    # Optional wherever they appear; smoke tests use them to keep a job short.
+    "max_steps",
     "save_steps",
 }
 
@@ -89,6 +92,10 @@ ALLOWED_JOB_KEYS = {
     "save_steps",
     "resume_from_checkpoint",
 }
+
+
+class IncompleteJobSpec(ValueError):
+    """The job spec omitted values the trainer refuses to invent."""
 
 
 def log(msg: str) -> None:
@@ -182,10 +189,41 @@ def run_streaming(cmd: list[str]) -> tuple[int, list[str]]:
     return proc.wait(), list(tail)
 
 
-def build_config(job: dict, enable_thinking: bool = False) -> dict:
-    """Job spec -> Axolotl config. Returns the config dict."""
-    cfg = dict(DEFAULTS)
-    applied, rejected = {}, {}
+def spec_hyperparameters(job: dict) -> dict:
+    """The hyperparameters the job spec carries, or a loud refusal.
+
+    The control plane resolves every value before launch, so anything missing
+    here is a hole in the spec, not an occasion to pick a number. Naming the
+    missing keys is the difference between a fixable refusal and a guess.
+    """
+    hp = job.get("hyperparameters")
+    if not isinstance(hp, dict) or not hp:
+        raise IncompleteJobSpec(
+            "job specification carries no hyperparameters; the trainer "
+            "resolves nothing and was given nothing"
+        )
+    missing = sorted(k for k in REQUIRED_HYPERPARAMETERS if k not in hp)
+    if missing:
+        raise IncompleteJobSpec(
+            "job specification is missing required hyperparameters "
+            f"{missing}; the trainer resolves nothing and will not fall "
+            "back to defaults it no longer has"
+        )
+    return hp
+
+
+def build_config(
+    job: dict, enable_thinking: bool = False
+) -> tuple[dict, dict]:
+    """Job spec -> Axolotl config. Returns (config, rejected).
+
+    Every hyperparameter is read from the spec exactly as given. Derivations
+    that used to live here -- alpha tracking rank, rsLoRA above rank 32 --
+    happen in the control plane's resolver before launch; redoing them would
+    be the second resolver again.
+    """
+    hp = spec_hyperparameters(job)
+    rejected: dict = {}
 
     # Validate the top level before anything else.
     unknown_top = sorted(
@@ -195,21 +233,11 @@ def build_config(job: dict, enable_thinking: bool = False) -> dict:
     )
     for k in unknown_top:
         rejected[k] = job[k]
-    for k, v in (job.get("hyperparameters") or {}).items():
-        if k in ALLOWED_OVERRIDES:
-            cfg[k] = v
-            applied[k] = v
-        else:
-            rejected[k] = v
+    unknown_hp = sorted(k for k in hp if k not in KNOWN_HYPERPARAMETERS)
+    for k in unknown_hp:
+        rejected[k] = hp[k]
 
-    # α is mechanically tied to r. If the caller moved r but not α, recompute
-    # rather than silently pairing a new rank with a stale scale.
-    if "lora_r" in applied and "lora_alpha" not in applied:
-        cfg["lora_alpha"] = 2 * int(cfg["lora_r"])
-
-    # rsLoRA above rank 32: plain α/r scaling over-shrinks high-rank adapters
-    # and training destabilises. Inferred from rank, never exposed.
-    cfg["lora_use_rslora"] = int(cfg["lora_r"]) >= 32
+    cfg = {k: v for k, v in hp.items() if k in KNOWN_HYPERPARAMETERS}
 
     cfg.update(
         {
@@ -272,7 +300,7 @@ def build_config(job: dict, enable_thinking: bool = False) -> dict:
     if job.get("resume_from_checkpoint"):
         cfg["resume_from_checkpoint"] = job["resume_from_checkpoint"]
 
-    return cfg, applied, rejected
+    return cfg, rejected
 
 
 def _checkpoint_step(path: Path) -> int:
@@ -384,15 +412,28 @@ def main() -> int:
             f"({think.with_think}/{think.assistant_turns} assistant turns have <think>)"
         )
 
-        cfg, applied, rejected = build_config(
-            job, enable_thinking=think.enable_thinking
-        )
-        result["applied_overrides"] = applied
+        # An incomplete spec must fail as a named refusal here rather than as
+        # a training anomaly minutes into a paid machine.
+        try:
+            cfg, rejected = build_config(
+                job, enable_thinking=think.enable_thinking
+            )
+        except IncompleteJobSpec:
+            result["error_code"] = "spec_incomplete"
+            raise
+        # Recorded filtered to keys this trainer knows: the record should name
+        # only values that were trained with, and anything else is already
+        # echoed verbatim under rejected_overrides.
+        result["hyperparameters"] = {
+            k: v
+            for k, v in (job.get("hyperparameters") or {}).items()
+            if k in KNOWN_HYPERPARAMETERS
+        }
         if rejected:
-            # Not silently dropped: an override we refuse is something the
+            # Not silently dropped: a key the caller sent is something the
             # caller believes is in effect.
             result["rejected_overrides"] = rejected
-            log(f"REJECTED non-overridable keys: {list(rejected)}")
+            log(f"REJECTED unknown keys: {list(rejected)}")
 
         import yaml  # provided by the base image
 
