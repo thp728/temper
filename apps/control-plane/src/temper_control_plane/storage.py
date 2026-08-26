@@ -390,7 +390,9 @@ class S3Storage:
                         upload_id = self._begin_upload(key)
                     parts.append(
                         self._upload_part(
-                            key, upload_id, part_number,
+                            key,
+                            upload_id,
+                            part_number,
                             bytes(buffer[:S3_PART_BYTES]),
                         )
                     )
@@ -405,9 +407,7 @@ class S3Storage:
                 return
             part_number += 1
             parts.append(
-                self._upload_part(
-                    key, upload_id, part_number, bytes(buffer)
-                )
+                self._upload_part(key, upload_id, part_number, bytes(buffer))
             )
             self._client.complete_multipart_upload(
                 Bucket=self.bucket,

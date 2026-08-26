@@ -57,8 +57,6 @@ from .chunks import ChunkReader, piped_chunks
 from .limits import RunLimits, guard
 from .provider import Provider, new_provider
 from .trainer_build import TRAINER_SOURCES, normalised
-from .provider import Provider, new_provider
-from .trainer_build import TRAINER_SOURCES, normalised
 
 GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
 STORAGE_GB = 100  # platform minimum for VM instances
@@ -169,6 +167,7 @@ def _trainer_chunks() -> Iterator[bytes]:
         data = normalised(source)
         members.append(_TarMember(source.name, len(data), data))
     return piped_chunks(lambda sink: _pour_tar(members, sink))
+
 
 def _dataset_chunks(dataset_object_key: str) -> Iterator[bytes]:
     """The dataset as one streamed tar.gz of its raw bytes.

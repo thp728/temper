@@ -350,9 +350,11 @@ def test_a_failed_filesystem_put_stream_publishes_nothing(fs):
     with pytest.raises(ObjectNotFound):
         fs.get("artifacts/j_1/w")
     # And no staging leftover sits beside where the object would be.
-    siblings = [
-        p.name for p in (fs._root / "artifacts" / "j_1").iterdir()
-    ] if (fs._root / "artifacts" / "j_1").is_dir() else []
+    siblings = (
+        [p.name for p in (fs._root / "artifacts" / "j_1").iterdir()]
+        if (fs._root / "artifacts" / "j_1").is_dir()
+        else []
+    )
     assert not any(name.endswith(".part") for name in siblings)
 
 
@@ -367,7 +369,10 @@ def test_an_object_store_put_stream_round_trips_across_many_parts(
     monkeypatch.setattr(storage, "S3_PART_BYTES", 64 << 10)
     payload = PAYLOAD * 1024  # ~1 MiB across 16+ parts
 
-    s3.put_stream("artifacts/j_1/w", iter([payload[i:i + 9973] for i in range(0, len(payload), 9973)]))
+    s3.put_stream(
+        "artifacts/j_1/w",
+        iter([payload[i : i + 9973] for i in range(0, len(payload), 9973)]),
+    )
 
     assert s3.get("artifacts/j_1/w") == payload
 

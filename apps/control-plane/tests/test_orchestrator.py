@@ -1530,9 +1530,8 @@ def test_collecting_a_large_artifact_stays_flat_in_memory(
 def test_an_unverified_or_corrupt_collection_stores_nothing(harness):
     """The refusal deletes the staged object: nothing reachable by key is
     left that looks like an artifact and is not one."""
-    from temper_core.errors import OrchestratorError
-
     from temper_control_plane import orchestrator, storage
+    from temper_core.errors import OrchestratorError
 
     job_id = harness._create()
 

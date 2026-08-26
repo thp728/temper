@@ -526,10 +526,17 @@ def test_the_download_zip_streams_without_holding_it_whole(
 
     # And the stream is a valid archive either way.
     storage.STORE.put(weights_key, block * 3)
+    import asyncio
     import io
     import zipfile
 
-    joined = b"".join(asyncio_run(main.download_adapter(job["id"])))
+    async def collect() -> bytes:
+        parts = []
+        async for chunk in main.download_adapter(job["id"]).body_iterator:
+            parts.append(chunk)
+        return b"".join(parts)
+
+    joined = asyncio.run(collect())
     with zipfile.ZipFile(io.BytesIO(joined)) as z:
         assert sorted(z.namelist()) == [
             "adapter_config.json",
