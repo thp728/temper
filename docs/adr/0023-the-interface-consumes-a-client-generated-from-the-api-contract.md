@@ -1,4 +1,4 @@
-# ADR-0013 — The interface consumes a client generated from the API contract
+# ADR-0023 — The interface consumes a client generated from the API contract
 
 - **Status:** accepted
 - **Date:** 2026-08-26

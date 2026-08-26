@@ -43,7 +43,7 @@ control plane's address from one definition, `src/lib/backend.ts`.
   address in `src/lib/backend.ts`.
 - Unported old screens are reachable through rewrites (`/jobs/*`) so a journey
   stays in one origin; each ported screen deletes its proxy entry in the same
-  change. See [ADR-0013](../../docs/adr/0013-the-interface-consumes-a-client-generated-from-the-api-contract.md).
+  change. See [ADR-0023](../../docs/adr/0023-the-interface-consumes-a-client-generated-from-the-api-contract.md).
 - jsdom enforces form constraint validation but never sets a file input's
   fakepath value, so submit-blocked-by-`required` cannot be exercised in
   component tests; the empty-file refusal is the component's own guard instead.

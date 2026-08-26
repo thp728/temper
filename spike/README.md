@@ -79,7 +79,9 @@ Run against the real account. **Total spend across all attempts: ₹9.64.**
 
 ## Spike 2 results — 2026-08-17, all checks passed
 
-`spike2.py` + `bootstrap.sh`. **The SSH-driven bootstrap works.** Exit 0, instance destroyed, no strays.
+`spike2.py` + `bootstrap.sh` (removed — the near-duplicate bootstraps collapsed
+to [bootstrap6.sh](bootstrap6.sh), which represents the final approach; earlier
+versions are in git history). **The SSH-driven bootstrap works.** Exit 0, instance destroyed, no strays.
 
 | Test | Result |
 | --- | --- |
@@ -100,7 +102,7 @@ Architecture §23 states *"training VMs expose no public application ports."* **
 
 ## Spike 3 results — 2026-08-17
 
-`spike3.py` + `bootstrap3.sh`. Two attempts; the first failed usefully. **QLoRA runs. Resume does not.**
+`spike3.py` + `bootstrap3.sh` (removed, as above). Two attempts; the first failed usefully. **QLoRA runs. Resume does not.**
 
 | Test | Result |
 | --- | --- |
@@ -137,7 +139,7 @@ Host-side `sha256sum` on the adapter failed with `Permission denied` — the con
 
 ## Spike 4 results — 2026-08-18 — THE TRAINER IMAGE WORKS
 
-`spike4.py` + `bootstrap4.sh` + [`../trainer/`](../trainer/README.md). Three attempts; the first two failed on my own tooling, not the platform.
+`spike4.py` + `bootstrap4.sh` (removed, as above) + [`../apps/trainer/`](../apps/trainer/README.md). Three attempts; the first two failed on my own tooling, not the platform.
 
 | Test | Result |
 | --- | --- |
@@ -232,7 +234,7 @@ a correction to [ADR-0005](../docs/adr/0005-the-dataset-size-limit-is-derived-fr
 
 ## Spike 5 — disk and download throughput
 
-`spike5.py` + `bootstrap5.sh` → [`findings-spike5.json`](findings-spike5.json).
+`spike5.py` + `bootstrap5.sh` (removed, as above) → [`findings-spike5.json`](findings-spike5.json).
 Two runs, a few rupees. **The kill criterion did not fire.**
 
 | Question | Answer |
@@ -370,8 +372,8 @@ ADR-0004's transport rules and not only for the disk ceiling.
 **Run 1 — `permission denied ... /var/run/docker.sock`.** Recorded as *"FSDP
 does not run in the pinned image"*. The probe had never reached the image. The
 `ubuntu` user on a `--vm` instance is not in the `docker` group, and
-[bootstrap4.sh](bootstrap4.sh) already used `sudo docker` — the knowledge simply
-did not carry over. **This is correction C16 repeating: a tooling failure filed
+`bootstrap4.sh` (removed; see git history) already used `sudo docker` — the
+knowledge simply did not carry over. **This is correction C16 repeating: a tooling failure filed
 as a platform one.** The fix is not only `sudo`; the probe now refuses to report
 anything about FSDP when the container reports no devices, because *a probe that
 could not run is not evidence about what it would have found.*
@@ -402,7 +404,7 @@ of them moved.
 ## Spike 7 — Axolotl's config schema
 
 `spike7.py` + `introspect_axolotl.py` → [`findings-spike7.json`](findings-spike7.json)
-and [`docs/data/axolotl-field-tiers.json`](../docs/data/axolotl-field-tiers.json).
+and [`packages/contracts/axolotl-field-tiers.json`](../packages/contracts/axolotl-field-tiers.json).
 No GPU, no VM, no money. Runs the **pinned digest** locally — reading the schema
 from a pip-installed Axolotl would measure a different trainer than the one that
 runs jobs.
@@ -678,6 +680,14 @@ because the alternative is remembering it.
 
 ## Files
 
+**The bootstrap scripts collapsed to one.** Spikes 2–5 each carried a
+near-duplicate bootstrap script (`bootstrap.sh`, `bootstrap3.sh`–`bootstrap5.sh`);
+they were the right artifact while the investigation ran and read as clutter
+once it concluded. They are removed, and [bootstrap6.sh](bootstrap6.sh) — the
+one representing the final approach — is what remains. Re-running an early
+spike needs its script retrieved from git history. The findings files all stay:
+they are the measured evidence.
+
 **Phase 0 (spikes 1-4)**
 
 - [spike.py](spike.py) — orchestration, run from your machine
@@ -686,7 +696,7 @@ because the alternative is remembering it.
 
 **Phase B (spikes 5-9)**
 
-- [spike5.py](spike5.py) + [bootstrap5.sh](bootstrap5.sh) — disk ceiling, download throughput
+- [spike5.py](spike5.py) — disk ceiling, download throughput (its bootstrap is removed, see above)
 - [spike6.py](spike6.py) + [bootstrap6.sh](bootstrap6.sh) — two devices, FSDP, sharded resume
 - [spike7.py](spike7.py) + [introspect_axolotl.py](introspect_axolotl.py) — Axolotl's config schema
 - [spike8.py](spike8.py) — the provider SDK surface

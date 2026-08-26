@@ -33,6 +33,7 @@ Three methods beyond the six the spec enumerates, each with a reason:
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import threading
 import time
@@ -45,6 +46,28 @@ from temper_core.errors import OrchestratorError
 SSH_READY_TIMEOUT_S = 300
 PUSH_TIMEOUT_S = 180
 FETCH_TIMEOUT_S = 600
+
+# The three wire commands the transport speaks. Defined once, read twice:
+# this module writes them and the transport tier's emulated endpoint
+# (tests/transport_endpoint.py) parses them, so the two sides cannot drift.
+# The shapes are the real machine's: a push lands via `cat`, a fetch reads
+# with `sudo` because artifacts are root-owned on the machine.
+STREAM_COMMAND = "bash -s"
+PUSH_PREFIX = "mkdir -p "
+PUSH_SEPARATOR = " && cat > "
+FETCH_PREFIX = "sudo cat "
+
+
+def push_command(dest: str) -> str:
+    """The wire command that writes `payload` bytes to `dest`."""
+    parent = dest.rsplit("/", 1)[0] or "/"
+    return f"{PUSH_PREFIX}{parent}{PUSH_SEPARATOR}{dest}"
+
+
+def fetch_command(path: str) -> str:
+    """The wire command that streams `path` back."""
+    return f"{FETCH_PREFIX}{path}"
+
 
 # The backstop for a stream that never ends, and deliberately *above* the
 # orchestrator's duration ceiling rather than below it. It used to be 90
@@ -120,6 +143,13 @@ class Provider(Protocol):
 
 
 def _ssh(handle: str) -> list[str]:
+    """Turn a machine's opaque handle into an `ssh` argument vector.
+
+    Split with `shlex`, not `str.split`: the transport tier drives this
+    against an endpoint whose handle carries a quoted identity path, and a
+    path with spaces in it must arrive at `ssh` as one argument. A provider
+    handle is whatever `create` returned; quoting is its grammar.
+    """
     base = handle.strip()
     if base.startswith("ssh "):
         base = base[4:]
@@ -135,7 +165,7 @@ def _ssh(handle: str) -> list[str]:
         "ServerAliveInterval=30",
         "-o",
         "BatchMode=yes",
-        *base.split(),
+        *shlex.split(base),
     ]
 
 
@@ -241,9 +271,8 @@ class JarvisLabsProvider:
     # -- moving bytes -------------------------------------------------------
 
     def push(self, machine: Machine, payload: bytes, dest: str) -> None:
-        parent = dest.rsplit("/", 1)[0] or "/"
         r = subprocess.run(
-            _ssh(machine.handle) + [f"mkdir -p {parent} && cat > {dest}"],
+            _ssh(machine.handle) + [push_command(dest)],
             input=payload,
             capture_output=True,
             timeout=PUSH_TIMEOUT_S,
@@ -256,7 +285,7 @@ class JarvisLabsProvider:
 
     def fetch(self, machine: Machine, path: str) -> bytes:
         r = subprocess.run(
-            _ssh(machine.handle) + [f"sudo cat {path}"],
+            _ssh(machine.handle) + [fetch_command(path)],
             capture_output=True,
             timeout=FETCH_TIMEOUT_S,
         )
@@ -273,7 +302,7 @@ class JarvisLabsProvider:
         the script stays small forever.
         """
         proc = subprocess.Popen(
-            _ssh(machine.handle) + ["bash -s"],
+            _ssh(machine.handle) + [STREAM_COMMAND],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
