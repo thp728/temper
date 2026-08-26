@@ -10,7 +10,6 @@ storage-seam addresses -- the dataset's object key and the job's artifact
 key -- and these models do not publish them: where an object lives is the
 seam's business, so neither a page nor a client learns it.
 """
-"""
 
 from __future__ import annotations
 
