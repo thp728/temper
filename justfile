@@ -1,13 +1,14 @@
+# Windows only: under the default sh, pnpm hands its children a POSIX-style
+# PATH, and the processes the e2e journeys spawn cannot resolve native tools
+# like `uv`.
+set windows-shell := ["pwsh", "-NoProfile", "-Command"]
+
 # One entry point. The pipeline runs these recipes, not a parallel definition of
 # them, which is the whole reason this file exists.
 #
 # One rule: no logic in a recipe. Every line is a single readable invocation of a
 # real command, so anyone without `just` installed reads the line and runs it.
 # That makes the prerequisite a convenience rather than a dependency.
-#
-# On Windows, add `--shell pwsh --shell-arg -NoProfile --shell-arg -Command`.
-# Under the default sh, pnpm hands its children a POSIX-style PATH and the
-# processes the e2e journeys spawn cannot find native tools.
 #
 # See docs/adr/0011-one-command-runs-every-task-and-one-defines-green.md.
 

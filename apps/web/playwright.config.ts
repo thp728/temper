@@ -6,7 +6,7 @@ import { BACKEND_PORT } from "./src/lib/backend";
 // (TEMPER_FAKE_PROVIDER swaps its own FakeProvider in for launched jobs).
 // Nothing here crosses a network boundary beyond loopback, and no journey can
 // reach the billing account -- which is why they can run on every push.
-const webPort = 3000;
+const webPort = Number(process.env.TEMPER_WEB_PORT ?? 3100);
 const backendUrl = process.env.TEMPER_BACKEND_URL ?? `http://127.0.0.1:${BACKEND_PORT}`;
 
 export default defineConfig({
@@ -20,9 +20,15 @@ export default defineConfig({
   webServer: [
     {
       command: "corepack pnpm dev",
+      // Not the developer-facing 3000: several agents (and humans) share this
+      // machine and its default-port dev servers. A foreign server on 3000
+      // would otherwise pass reuseExistingServer and the journeys would drive
+      // whatever code that process happens to serve. PORT is what `next dev`
+      // reads.
       url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
+      env: { ...process.env, PORT: String(webPort) },
     },
     {
       command: `uv run uvicorn temper_control_plane.main:app --port ${BACKEND_PORT} --log-level warning`,
