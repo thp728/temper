@@ -13,7 +13,7 @@ One execution of a job. A job has exactly one today; retry after an out-of-memor
 _Avoid_: run, try, retry
 
 **Job spec**:
-The full set of choices a job will train with — base model, dataset, and hyperparameters — captured when the job is created and immutable from that moment, so a completed job's claim about what it did cannot be changed after the fact.
+The full set of choices a job will train with — base model, dataset, and hyperparameters — captured when the job is created and immutable from that moment, so a completed job's claim about what it did cannot be changed after the fact. The copy the machine receives at launch is derived from this one before any money is spent: the same choices with every hyperparameter resolved, because the trainer applies values rather than choosing them ([ADR-0024](docs/adr/0024-the-control-plane-resolves-and-the-trainer-applies.md)).
 _Avoid_: run spec, config, settings
 
 **Cancelled**:

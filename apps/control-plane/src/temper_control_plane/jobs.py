@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from temper_control_plane import config, db, orchestrator
-from temper_core import catalog, feasibility
+from temper_core import catalog, feasibility, hyperparams
 
 
 def usable_dataset(dataset_id: str) -> dict:
@@ -69,6 +69,24 @@ def create(dataset_id: str, base_model: str, hyperparameters: dict) -> str:
                 "code": "unknown_model",
                 "message": f"'{base_model}' is not in the catalog.",
                 "available": [m["id"] for m in catalog.listing()],
+            },
+        )
+
+    # Refused here rather than left for the trainer's guard: resolution now
+    # happens before launch (#83), so an unknown key would be dropped by the
+    # resolver without ever reaching the machine -- and a key the caller
+    # believes is in effect but isn't is worse than a refusal.
+    unknown = sorted(
+        k for k in hyperparameters if k not in hyperparams.ALLOWED_OVERRIDES
+    )
+    if unknown:
+        raise HTTPException(
+            400,
+            {
+                "code": "unknown_hyperparameter",
+                "message": "Unknown hyperparameter keys are refused: "
+                f"{unknown}. Nothing was launched.",
+                "unknown": unknown,
             },
         )
 

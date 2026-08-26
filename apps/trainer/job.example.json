@@ -4,11 +4,20 @@
   "base_revision": "1cfa9a7208912126459214e8b04321603b3df60c",
   "messages_field": "messages",
 
-  "_comment_hyperparameters": "Only keys in ALLOWED_OVERRIDES are honoured. Anything else is echoed back in result.json under rejected_overrides rather than silently ignored — an override the caller thinks is in effect but isn't is worse than a refusal.",
+  "_comment_hyperparameters": "The COMPLETE resolved set. The control plane resolves every hyperparameter before launch (issue #83): defaults, alpha recomputed from rank when rank moves alone, rsLoRA inferred at rank >= 32. This trainer resolves nothing -- it applies exactly what it is given. A standalone job must supply every required key itself; a missing key fails with error_code spec_incomplete naming the keys, never a silent fallback. An unknown key is echoed back in result.json under rejected_overrides and not applied.",
   "hyperparameters": {
     "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.0,
     "learning_rate": 2e-4,
-    "num_epochs": 3
+    "num_epochs": 3,
+    "micro_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "sequence_len": 2048,
+    "warmup_ratio": 0.1,
+    "lr_scheduler": "cosine",
+    "val_set_size": 0.05,
+    "lora_use_rslora": false
   },
 
   "_comment_max_steps": "Optional. Overrides num_epochs; used by smoke tests to keep a run to a handful of steps.",

@@ -287,6 +287,27 @@ def test_job_creation_freezes_hyperparameters(client, tmp_path):
     assert job["hyperparameters"] == {"lora_r": 32}
 
 
+def test_unknown_hyperparameter_is_refused_at_creation(client, tmp_path):
+    """Issue #83: resolution happens before launch, so an unknown key can no
+    longer fall through to the trainer's guard to be echoed there -- it would
+    be silently dropped by the resolver first. Refused here, named back, and
+    nothing is launched."""
+    ds = valid_dataset(client, tmp_path)
+    r = client.post(
+        "/v1/jobs",
+        json={
+            "dataset_id": ds,
+            "hyperparameters": {"lora_r": 32, "maxSteps": 5},
+        },
+    )
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert detail["code"] == "unknown_hyperparameter"
+    assert detail["unknown"] == ["maxSteps"]
+    # A misspelling must not cost a provisioned machine: nothing was launched.
+    assert client.get("/v1/jobs").json()["jobs"] == []
+
+
 def test_job_records_exact_revision_it_trained_against(client, tmp_path):
     """A job records the exact revision it trained against, frozen at creation."""
     from temper_core import catalog
