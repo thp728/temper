@@ -12,7 +12,7 @@ the build, and the in-repo numbering began there. The **earlier decisions were
 logged in a private working vault** as they were made, between 2026-08-15
 and 2026-08-21: the choice of JarvisLabs VMs with an SSH-driven bootstrap,
 pinning the trainer image by digest, detecting thinking mode from the dataset,
-the parity boundary, Temporal for orchestration, and the rest. That log is
+the reference baseline, Temporal for orchestration, and the rest. That log is
 closed to new entries.
 
 **The ten platform decisions among them were copied into this directory on
@@ -43,7 +43,7 @@ repository becomes public at submission.
 | [0013](0013-assumptions-verified-before-code.md) | The architecture's own assumptions are verified before writing code | accepted | 2026-08-17 |
 | [0014](0014-training-runs-on-jarvislabs-vms-over-ssh.md) | Training runs on JarvisLabs VMs with an SSH-driven bootstrap | accepted | 2026-08-17 |
 | [0015](0015-trainer-image-pins-axolotl-by-digest.md) | The trainer image pins Axolotl by digest rather than resolving the stack | accepted | 2026-08-18 |
-| [0016](0016-parity-boundary-at-75-percent.md) | The parity boundary is ratified at 75%, with Together AI as the baseline | accepted | 2026-08-18 |
+| [0016](0016-together-ai-is-the-reference-baseline.md) | Together AI is the reference baseline | accepted | 2026-08-18 |
 | [0017](0017-the-architecture-cut-list.md) | The architecture cut list is ratified as drafted | accepted | 2026-08-18 |
 | [0018](0018-thinking-mode-is-detected-from-the-dataset.md) | Thinking mode is detected from the dataset, not fixed or exposed | accepted | 2026-08-18 |
 | [0019](0019-production-stack-after-the-checkpoint.md) | The product ships production-ready; scrappy only until the checkpoint | accepted | 2026-08-19 |
