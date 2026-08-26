@@ -16,7 +16,9 @@ setup:
     uv sync
 
 # The definition of green. Cheapest gate first, stops at the first failure.
-check: fmt-check lint types contracts-check test
+# The web half runs after contracts-check so client generation reads a
+# contract that has just been proven current.
+check: fmt-check lint types contracts-check test web-install web-client web-lint web-types web-test
 
 # Formatting, as a gate rather than as a fix.
 fmt-check:
@@ -61,6 +63,37 @@ dev:
 # Build the trainer image from the same sources a real job builds from.
 image:
     uv run python -m temper_control_plane.trainer_image
+
+# --- the web application (apps/web) ----------------------------------------
+# Every recipe is one plain command under apps/web; read the line and run it
+# if you lack `just` or `corepack`.
+
+# Web dependencies. Frozen: the lockfile is the supply-chain boundary.
+web-install:
+    cd apps/web && corepack pnpm install --frozen-lockfile
+
+# Regenerate the API client from the checked-in contract. The output is
+# gitignored; what keeps the halves honest is that web-types compiles against
+# whatever this produces, so a contract change that breaks the interface
+# fails here rather than in front of a user.
+web-client:
+    cd apps/web && corepack pnpm generate:client
+
+web-lint:
+    cd apps/web && corepack pnpm lint
+
+web-types:
+    cd apps/web && corepack pnpm typecheck
+
+# Component tests. No backend, no network: the generated client is mocked.
+web-test:
+    cd apps/web && corepack pnpm test
+
+# Browser journeys against both halves running for real. Costs no hardware:
+# upload and validation never touch the GPU provider, which is why these can
+# run everywhere.
+e2e:
+    cd apps/web && corepack pnpm exec playwright test
 
 # Install the fast pre-commit filter. Format, lint and secrets on staged files.
 hooks:

@@ -15,6 +15,197 @@
         "title": "Body_upload_dataset_v1_datasets_post",
         "type": "object"
       },
+      "DatasetRecord": {
+        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "created_at",
+          "status"
+        ],
+        "title": "DatasetRecord",
+        "type": "object"
+      },
+      "DatasetReport": {
+        "description": "What validation says about a dataset. The same dict\n`temper_core.validation.Report.to_dict()` produces, published typed.",
+        "properties": {
+          "enable_thinking": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enable Thinking"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "preview": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Preview",
+            "type": "array"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "schema_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Type"
+          },
+          "usable_rows": {
+            "title": "Usable Rows",
+            "type": "integer"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "valid",
+          "row_count",
+          "usable_rows",
+          "errors",
+          "warnings",
+          "preview"
+        ],
+        "title": "DatasetReport",
+        "type": "object"
+      },
+      "DatasetUploaded": {
+        "description": "The response to a successful upload: the report plus its identity.",
+        "properties": {
+          "enable_thinking": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enable Thinking"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "preview": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Preview",
+            "type": "array"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "schema_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Type"
+          },
+          "usable_rows": {
+            "title": "Usable Rows",
+            "type": "integer"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "valid",
+          "row_count",
+          "usable_rows",
+          "errors",
+          "warnings",
+          "preview",
+          "id",
+          "filename"
+        ],
+        "title": "DatasetUploaded",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -90,6 +281,36 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "ValidationIssue": {
+        "description": "One problem, named where it is: line number when one applies.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ValidationIssue",
+        "type": "object"
       }
     }
   },
@@ -154,7 +375,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetUploaded"
+                }
               }
             },
             "description": "Successful Response"
@@ -194,7 +417,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetRecord"
+                }
               }
             },
             "description": "Successful Response"

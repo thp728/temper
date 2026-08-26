@@ -28,6 +28,10 @@ from temper_control_plane import (
     jobs,
     orchestrator,
 )
+from temper_control_plane.contracts_models import (
+    DatasetRecord,
+    DatasetUploaded,
+)
 from temper_control_plane.web import router as web_router
 from temper_core import catalog
 
@@ -90,7 +94,12 @@ def list_models():
 # ---------------------------------------------------------------------------
 
 
-@app.post("/v1/datasets", tags=["datasets"], status_code=201)
+@app.post(
+    "/v1/datasets",
+    tags=["datasets"],
+    status_code=201,
+    response_model=DatasetUploaded,
+)
 def upload_dataset(request: Request, file: UploadFile = File(...)):
     """Upload and validate a JSONL dataset.
 
@@ -120,7 +129,11 @@ def list_datasets():
     return {"datasets": db.list_datasets()}
 
 
-@app.get("/v1/datasets/{dataset_id}", tags=["datasets"])
+@app.get(
+    "/v1/datasets/{dataset_id}",
+    tags=["datasets"],
+    response_model=DatasetRecord,
+)
 def get_dataset(dataset_id: str):
     ds = db.get_dataset(dataset_id)
     if not ds:

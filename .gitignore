@@ -35,3 +35,14 @@ __pycache__/
 .coverage
 coverage.xml
 htmlcov/
+
+# Web application (apps/web). node_modules and the Next build are derived;
+# the generated API client is derived too, from packages/contracts/openapi.json
+# -- which is why that file is checked in and the client is not.
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+/apps/web/src/lib/api/generated/
+test-results/
+playwright-report/
