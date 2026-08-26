@@ -285,3 +285,108 @@ def test_the_module_singleton_follows_the_configured_backend():
     """The singleton exists so call sites read `storage.STORE` without knowing
     which backend answered -- which is the whole point of the seam."""
     assert isinstance(storage.STORE, FilesystemStorage)
+
+
+# --- streamed reads and writes: the seam moves big objects too ----------------
+#
+# Spec 006's flat-memory clause, at the storage tier. `get` and `put` remain
+# for small whole objects -- configs, result documents -- but datasets and
+# artifacts cross as chunk streams, so the seam must stream in both
+# directions. What is asserted is external: joined chunks equal the bytes,
+# chunks arrive bounded, absence raises eagerly, and a failed streamed write
+# publishes nothing.
+
+
+def test_filesystem_get_stream_yields_the_bytes_in_bounded_chunks(fs):
+    payload = PAYLOAD * 40000  # ~880 KiB: several chunks' worth
+    fs.put("datasets/ds_1.jsonl", payload)
+
+    stream = fs.get_stream("datasets/ds_1.jsonl")
+    received = list(stream)
+
+    assert b"".join(received) == payload
+    assert len(received) > 1, "arrived as one blob, not a stream"
+    assert max(len(c) for c in received) <= storage.STREAM_CHUNK_BYTES
+
+
+def test_object_store_get_stream_yields_the_bytes_in_bounded_chunks(s3):
+    payload = PAYLOAD * 40000
+    s3.put("datasets/ds_1.jsonl", payload)
+
+    received = list(s3.get_stream("datasets/ds_1.jsonl"))
+
+    assert b"".join(received) == payload
+    assert len(received) > 1
+
+
+@pytest.mark.parametrize("store", ["fs", "s3"])
+def test_get_stream_of_a_missing_object_raises_before_the_first_chunk(
+    request, store
+):
+    """Eagerly, not at first `next`: a caller that must answer with a status
+    code can only do so before it starts streaming."""
+    backend = request.getfixturevalue(store)
+    with pytest.raises(ObjectNotFound):
+        backend.get_stream("datasets/ds_missing.jsonl")
+
+
+def test_filesystem_put_stream_stores_whole_from_chunks_and_overwrites(fs):
+    fs.put_stream("artifacts/j_1/w", iter([b"alpha", b"omega"]))
+    assert fs.get("artifacts/j_1/w") == b"alphaomega"
+
+    # Overwrite: an object at the key is replaced whole.
+    fs.put_stream("artifacts/j_1/w", iter([b"replacement"]))
+    assert fs.get("artifacts/j_1/w") == b"replacement"
+
+
+def test_a_failed_filesystem_put_stream_publishes_nothing(fs):
+    def broken():
+        yield b"half"
+        raise OSError("the source died mid-stream")
+
+    with pytest.raises(OSError):
+        fs.put_stream("artifacts/j_1/w", broken())
+
+    with pytest.raises(ObjectNotFound):
+        fs.get("artifacts/j_1/w")
+    # And no staging leftover sits beside where the object would be.
+    siblings = [
+        p.name for p in (fs._root / "artifacts" / "j_1").iterdir()
+    ] if (fs._root / "artifacts" / "j_1").is_dir() else []
+    assert not any(name.endswith(".part") for name in siblings)
+
+
+def test_an_object_store_put_stream_round_trips_across_many_parts(
+    s3, monkeypatch
+):
+    """The multipart path, exercised for real through boto3 against moto.
+
+    Part size turned down so several parts are produced quickly; what is
+    asserted is that an object spanning many parts reads back identical,
+    which is exactly the property a part boundary could break."""
+    monkeypatch.setattr(storage, "S3_PART_BYTES", 64 << 10)
+    payload = PAYLOAD * 1024  # ~1 MiB across 16+ parts
+
+    s3.put_stream("artifacts/j_1/w", iter([payload[i:i + 9973] for i in range(0, len(payload), 9973)]))
+
+    assert s3.get("artifacts/j_1/w") == payload
+
+
+def test_an_object_store_put_stream_below_one_part_is_a_single_put(
+    s3, monkeypatch
+):
+    monkeypatch.setattr(storage, "S3_PART_BYTES", 64 << 10)
+    s3.put_stream("artifacts/j_1/w", iter([b"small"]))
+    assert s3.get("artifacts/j_1/w") == b"small"
+
+
+def test_a_failed_object_store_put_stream_aborts_cleanly(s3):
+    def broken():
+        yield b"x" * (storage.S3_PART_BYTES + 1)
+        raise OSError("the source died mid-upload")
+
+    with pytest.raises(OSError):
+        s3.put_stream("artifacts/j_1/w", broken())
+
+    with pytest.raises(ObjectNotFound):
+        s3.get("artifacts/j_1/w")

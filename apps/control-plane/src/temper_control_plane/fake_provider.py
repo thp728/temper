@@ -40,6 +40,8 @@ from temper_core.errors import OrchestratorError
 from .limits import RunLimits
 from .provider import GpuChoice, Machine
 
+# Stage names, not method names: `push` and `fetch` are where a transfer --
+# streamed or otherwise -- can fail or pause.
 STAGES = ("select_gpu", "create", "await_ready", "push", "fetch", "stream")
 
 # Fixed rather than configurable: tests assert against these, and a knob no
@@ -166,22 +168,14 @@ class FakeProvider:
         self._enter("await_ready")
         return "SSH ready after 0s"
 
-    def push(self, machine: Machine, payload: bytes, dest: str) -> None:
-        self._enter("push")
-        self.pushed.append((dest, payload))
-
     def push_stream(
         self, machine: Machine, chunks: Iterable[bytes], dest: str
     ) -> None:
-        """The streaming push. Enters `push` and records into `pushed` exactly
-        as the buffered one, so fail_at and the recorded calls read the same
-        whichever way a caller feeds its bytes."""
+        """The streaming push. Enters `push` and records into `pushed` the
+        chunks joined whole, so fail_at and the recorded calls read the same
+        as any transfer and a caller's test asserts payload, not plumbing."""
         self._enter("push")
         self.pushed.append((dest, b"".join(chunks)))
-
-    def fetch(self, machine: Machine, path: str) -> bytes:
-        self._enter("fetch")
-        return self._adapter_bytes
 
     def fetch_stream(self, machine: Machine, path: str) -> Iterator[bytes]:
         """The streaming fetch. One chunk; a double holding test-sized bytes

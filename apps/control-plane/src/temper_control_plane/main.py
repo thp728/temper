@@ -11,16 +11,19 @@ product.
 
 from __future__ import annotations
 
-import io
+import itertools
 import sys
 import zipfile
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from typing import BinaryIO
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from temper_control_plane import (
+    chunks,
     config,
     datasets,
     db,
@@ -269,6 +272,91 @@ def get_events(job_id: str, after: int = 0):
     return {"events": events, "last_id": events[-1]["id"] if events else after}
 
 
+class _CountingSink:
+    """A write-only file object whose tell() counts rather than seeks.
+
+    The zip format wants offsets, and a pipe has none; answering tell() from
+    bytes written is what lets the archive be produced through one without
+    ever being held whole.
+    """
+
+    def __init__(self, inner: BinaryIO) -> None:
+        self._inner = inner
+        self._pos = 0
+
+    def write(self, data) -> int:
+        n = self._inner.write(data)
+        self._pos += n
+        return n
+
+    def tell(self) -> int:
+        return self._pos
+
+    def seekable(self) -> bool:
+        # Declared false on purpose: a pipe cannot seek, and telling zipfile
+        # so up front makes it write data descriptors instead of patching
+        # headers after the fact.
+        return False
+
+    def flush(self) -> None:
+        self._inner.flush()
+
+    def close(self) -> None:
+        # Present because the zip-writable protocol expects it; zipfile never
+        # calls it on a file object that was passed in, and closing once is
+        # the chunk helper's job anyway.
+        self._inner.close()
+
+
+def _open_member(key: str) -> Iterator[bytes] | None:
+    """The object's chunks with the first already flowing, or None if absent.
+
+    The peek is what lets a missing object refuse as a 409: once the
+    response starts, the status code has already gone out and a failure
+    could only be a broken download. Holding one bounded chunk is exactly
+    what streaming permits; `get_stream` raises before that first chunk for
+    an absent object -- which is why the call sits inside the try -- and an
+    object that is legitimately empty comes back as an exhausted iterator
+    rather than an absence.
+    """
+    try:
+        stream = storage.STORE.get_stream(key)
+        first = next(stream)
+    except StopIteration:
+        return iter(())
+    except ObjectNotFound:
+        return None
+    return itertools.chain([first], stream)
+
+
+def _zip_chunks(members: list[tuple[str, Iterator[bytes]]]) -> Iterator[bytes]:
+    """The zip of stored objects as bounded chunks.
+
+    Built per request rather than cached -- a stale zip beside fresh adapter
+    files is a worse failure than rebuilding it. Streamed rather than
+    buffered: the artifact is the payload that grows without bound, and
+    zipping into an in-memory buffer would hold every byte of a full
+    fine-tune per request. Members arrive as chunk streams from the storage
+    seam and are written through one at a time.
+
+    Zip entries get fixed timestamps: the archive is rebuilt per request, so
+    a clock in the headers would be noise, and deterministic bytes make two
+    downloads of one artifact comparable.
+    """
+
+    def pour(sink: BinaryIO) -> None:
+        with zipfile.ZipFile(
+            _CountingSink(sink), "w", zipfile.ZIP_DEFLATED
+        ) as z:
+            for arcname, member_chunks in members:
+                info = zipfile.ZipInfo(arcname)
+                with z.open(info, "w") as dst:
+                    for chunk in member_chunks:
+                        dst.write(chunk)
+
+    return chunks.piped_chunks(pour)
+
+
 @app.get("/v1/jobs/{job_id}/adapter", tags=["jobs"])
 def download_adapter(job_id: str):
     job = db.get_job(job_id)
@@ -284,20 +372,18 @@ def download_adapter(job_id: str):
             },
         )
     # Zipped, because an artifact is a set of objects: the weights plus the
-    # adapter_config.json that makes them loadable. Built per request rather
-    # than cached -- it is a few MB, and a stale zip beside fresh weights is a
-    # worse failure than rebuilding it.
+    # adapter_config.json that makes them loadable.
     #
-    # The weights are read from the key the job row records, so the address
-    # written at packaging time is the one read at download time. A missing
-    # weights object refuses loudly rather than downloading an empty archive:
-    # a download that "succeeds" with nothing in it looks like the deliverable
+    # Both objects are read from the keys the job row records -- the address
+    # written at packaging time is the one read at download time -- through
+    # streaming reads, so the payload is never held whole. A missing weights
+    # object refuses loudly rather than downloading an empty archive: a
+    # download that "succeeds" with nothing in it looks like the deliverable
     # and is not one -- the same failure shape as shipping a bare .safetensors.
     # A missing config alone still zips the weights, because a run that
     # produced none already reported that as an error event when it ended.
-    try:
-        weights = storage.STORE.get(artifact_key)
-    except ObjectNotFound:
+    weights = _open_member(artifact_key)
+    if weights is None:
         raise HTTPException(
             409,
             {
@@ -306,26 +392,17 @@ def download_adapter(job_id: str):
                 "object is gone. The job's event log says what happened "
                 "to it.",
             },
-        ) from None
-
-    zip_members = [("adapter_model.safetensors", weights)]
-    try:
-        zip_members.append(
-            (
-                "adapter_config.json",
-                storage.STORE.get(storage.artifact_config_key(artifact_key)),
-            )
         )
-    except ObjectNotFound:
-        pass
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for arcname, data in zip_members:
-            z.writestr(arcname, data)
-    buf.seek(0)
+    members: list[tuple[str, Iterator[bytes]]] = [
+        (storage.ADAPTER_WEIGHTS_NAME, weights)
+    ]
+    config_stream = _open_member(storage.artifact_config_key(artifact_key))
+    if config_stream is not None:
+        members.append((storage.ADAPTER_CONFIG_NAME, config_stream))
+
     return StreamingResponse(
-        buf,
+        _zip_chunks(members),
         media_type="application/zip",
         headers={
             "Content-Disposition": f'attachment; filename="{job_id}-adapter.zip"'

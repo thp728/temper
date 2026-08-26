@@ -7,10 +7,10 @@ local-process tests in `test_provider.py` cross pipes but not a connection.
 
 These tests start a real SSH server on 127.0.0.1 (`transport_endpoint.py`),
 build the *real* provider implementation without touching credentials, and
-drive its `push`, `fetch` and `stream` through the actual `ssh` binary against
-it. No GPU, no money, no API key: the endpoint mints an ephemeral keypair per
-test, so the suite stays hermetic while covering the tier where transport
-defects actually live.
+drive its `push_stream`, `fetch_stream` and `stream` through the actual `ssh`
+binary against it. No GPU, no money, no API key: the endpoint mints an
+ephemeral keypair per test, so the suite stays hermetic while covering the
+tier where transport defects actually live.
 """
 
 import time
@@ -30,46 +30,6 @@ def machine(tmp_path):
         yield JarvisLabsProvider.__new__(JarvisLabsProvider), endpoint
     finally:
         endpoint.stop()
-
-
-def test_push_then_fetch_round_trips_text_including_line_endings(machine):
-    """What went in comes out byte-identical, endings included.
-
-    This is the test the pre-fix implementation fails: text-mode stdin on
-    Windows translated every "\\n" to "\\r\\n" before the payload reached the
-    wire, so the stored bytes were not the pushed ones and this assertion
-    broke across the whole dataset path.
-    """
-    provider, endpoint = machine
-    dest = "/tmp/temper/dataset.jsonl"
-    payload = b'{"a": 1}\n{"b": 2}\r\n{"c": 3}\rlast line'
-
-    provider.push(Machine(1, endpoint.handle), payload, dest)
-
-    assert endpoint.files[dest] == payload
-    fetched = provider.fetch(Machine(1, endpoint.handle), dest)
-    assert fetched == payload
-
-
-def test_push_then_fetch_round_trips_binary_content_unmodified(machine):
-    """Every byte value survives, including NUL and high bytes.
-
-    Sized past any pipe or channel buffer (512 KB) so the transfer crosses
-    many chunk boundaries rather than moving in one piece.
-    """
-    provider, endpoint = machine
-    dest = "/tmp/temper/adapter.bin"
-    payload = bytes(range(256)) * 2048
-
-    assert len(payload) == 512 * 1024
-    provider.push(Machine(1, endpoint.handle), payload, dest)
-    assert provider.fetch(Machine(1, endpoint.handle), dest) == payload
-
-
-def test_fetch_of_a_file_that_is_not_there_returns_empty_bytes(machine):
-    """The documented contract: empty bytes mean it could not be read."""
-    provider, endpoint = machine
-    assert provider.fetch(Machine(1, "unused"), "/tmp/temper/absent") == b""
 
 
 def test_streamed_output_arrives_line_by_line_as_produced(machine):
@@ -141,12 +101,12 @@ def test_the_original_defect_manifests_here_exactly_as_it_did_on_the_machine(
 
 # --- streaming transfer ------------------------------------------------------
 #
-# Spec 006's expand half, at the tier that exists because bytes get changed
-# between the fake and the wire. The streaming methods reuse the buffered
-# pair's wire commands -- one grammar, two feeding modes -- so these tests
-# need no new endpoint behaviour, and that reuse is itself under test: if a
-# streaming method ever grew its own command shape, it would arrive here
-# unemulated and fail.
+# The only transfer tier there is now: spec 006's contract half deleted the
+# buffered pair, so these tests are the byte-identity proof for the one way
+# bytes move. They need no new endpoint behaviour -- the methods speak the
+# same `mkdir + cat` / `sudo cat` wire grammar the endpoint emulates, and
+# that reuse is itself under test: if a transfer method ever grew its own
+# command shape, it would arrive here unemulated and fail.
 
 
 def test_stream_push_then_stream_fetch_round_trips_text_including_line_endings(
@@ -196,7 +156,7 @@ def test_stream_push_then_stream_fetch_round_trips_binary_content_unmodified(
 
 
 def test_stream_fetch_of_a_file_that_is_not_there_yields_nothing(machine):
-    """The documented mirror of `fetch`'s empty-bytes contract."""
+    """The documented contract: yielding nothing means it could not be read."""
     provider, endpoint = machine
     assert (
         list(

@@ -43,6 +43,32 @@ def client(isolated, monkeypatch):
         yield c
 
 
+@pytest.fixture()
+def peak_memory():
+    """Peak Python-heap allocation, in bytes, while `run` executes.
+
+    The measurement behind spec 006's flat-memory clause. tracemalloc traces
+    this process's own allocations -- the control-plane side of a transfer,
+    which is the thing under test; RSS would bury the signal under the
+    interpreter baseline. Whatever `run` retains only in C-level buffers or
+    in another process is invisible here by construction, which is the right
+    blindness: an implementation that accumulates in Python objects is the
+    failure mode the clause names.
+    """
+
+    def measure(run):
+        import tracemalloc
+
+        tracemalloc.start()
+        try:
+            run()
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+    return measure
+
+
 @pytest.fixture(autouse=True)
 def no_real_provider(monkeypatch):
     from temper_control_plane import provider

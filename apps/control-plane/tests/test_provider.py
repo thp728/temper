@@ -40,6 +40,20 @@ def transport(monkeypatch, program: str) -> JarvisLabsProvider:
     return object.__new__(JarvisLabsProvider)
 
 
+def test_the_buffered_transfer_methods_are_gone():
+    """Spec 006's contract half: one way to move bytes, not two.
+
+    #30 added the streaming pair beside `push`/`fetch`; every caller has
+    since moved, and the buffered pair is deleted from the protocol and from
+    both implementations. Its absence is the deliverable, so it is asserted.
+    """
+    from temper_control_plane.fake_provider import FakeProvider
+
+    for implementation in (JarvisLabsProvider, FakeProvider):
+        assert not hasattr(implementation, "push")
+        assert not hasattr(implementation, "fetch")
+
+
 def test_ssh_command_from_the_provider_is_used_verbatim():
     """The provider hands back `ssh -p 1234 user@host`; the `ssh` is ours."""
     argv = provider_mod._ssh("ssh -p 1234 root@10.0.0.1")

@@ -469,6 +469,78 @@ def test_a_job_whose_stored_weights_are_gone_refuses_loudly(client, tmp_path):
     assert r.json()["detail"]["code"] == "artifact_missing"
 
 
+def test_the_download_zip_streams_without_holding_it_whole(
+    client, tmp_path, peak_memory
+):
+    """The download path hands the browser chunks, not a buffered whole.
+
+    This is the guard against the regression the streaming read exists to
+    prevent: the artifact is the payload that grows without bound, and a
+    `STORE.get` into an in-memory zip would hold every byte of a full
+    fine-tune per request behind an API whose name claims otherwise. The
+    real route handler runs against the real (filesystem) backend seeded by
+    the app's own fixtures; what is drained is the response body it built.
+    Bounds match test_orchestrator's -- independent measurements of the same
+    clause at another leg.
+    """
+    from temper_control_plane import db, main, storage
+
+    FLAT_SPREAD = 1 << 21
+    ABS_CEIL = 8 << 20
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    weights_key = storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
+    storage.STORE.put(
+        storage.artifact_key(job["id"], storage.ADAPTER_CONFIG_NAME),
+        b'{"r": 16}',
+    )
+    db.set_state(job["id"], "complete", "done", artifact_key=weights_key)
+
+    block = bytes(range(256)) * 1024
+
+    def drive():
+        # The real handler, against the real backend: member peeking, key
+        # derivation and the streamed zip all run; only the HTTP layer is
+        # skipped, because a test client buffering the response would put
+        # the payload inside the measurement. Starlette wraps a sync
+        # iterator in an async generator eagerly, so the body is consumed
+        # the way the server itself would.
+        import asyncio
+
+        response = main.download_adapter(job["id"])
+
+        async def total() -> int:
+            seen = 0
+            async for chunk in response.body_iterator:
+                seen += len(chunk)
+            return seen
+
+        return asyncio.run(total())
+
+    peaks = []
+    for size in (1 << 20, 32 << 20):
+        storage.STORE.put(weights_key, block * (size >> 20))
+        peaks.append(peak_memory(drive))
+        assert peaks[-1] > 0
+
+    # And the stream is a valid archive either way.
+    storage.STORE.put(weights_key, block * 3)
+    import io
+    import zipfile
+
+    joined = b"".join(asyncio_run(main.download_adapter(job["id"])))
+    with zipfile.ZipFile(io.BytesIO(joined)) as z:
+        assert sorted(z.namelist()) == [
+            "adapter_config.json",
+            "adapter_model.safetensors",
+        ]
+        assert z.read("adapter_model.safetensors") == block * 3
+
+    assert max(peaks) - min(peaks) < FLAT_SPREAD, f"peaks grew: {peaks}"
+    assert peaks[-1] < ABS_CEIL, f"peak scaled with the payload: {peaks}"
+
+
 # --- ops --------------------------------------------------------------------
 
 

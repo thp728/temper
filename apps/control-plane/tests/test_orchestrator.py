@@ -660,6 +660,27 @@ def test_a_corrupt_adapter_download_is_refused(harness):
     assert job["error_code"] == "artifact_corrupt"
 
 
+def test_an_unchecksummed_adapter_is_refused_rather_than_trusted(harness):
+    """Verification needs something to verify against.
+
+    The trainer records a checksum whenever it records a path, so a result
+    with one and not the other cannot be verified at all -- the download is
+    refused rather than delivered uncheckable. Streaming made this clause
+    load-bearing: chunks land on disk before any whole-file inspection could
+    have happened.
+    """
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result={k: v for k, v in RESULT.items() if k != "adapter_sha256"},
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    job_id = harness.run(provider)
+
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    assert job["error_code"] == "artifact_unverified"
+
+
 def test_an_unreadable_adapter_is_reported_without_failing_the_job(harness):
     provider = FakeProvider(
         lines=TRAINING_LINES, result=RESULT, adapter_bytes=b""
@@ -1342,3 +1363,201 @@ def test_a_job_cancelled_before_it_starts_never_provisions_anything(harness):
     job = db.get_job(job_id)
     assert job["status"] == "cancelled"
     assert provider.calls == [], "a cancelled job touched the provider"
+
+
+# --- payloads stream: spec 006's contract half ------------------------------
+#
+# The expand half (#30) gave the provider streaming methods; this is the
+# contract half, where the last buffered callers go. What is asserted here is
+# what a user or operator can observe, plus the one internal property the
+# whole change exists for: peak held memory does not scale with payload size.
+# The bounds match test_provider.py's -- independent measurements of the same
+# clause at a different tier, not shared constants to be imported.
+
+
+FLAT_SPREAD = 1 << 21  # 2 MiB
+ABS_CEIL = 8 << 20  # 8 MiB, against a 32 MiB payload
+PAYLOAD_SIZES = (1 << 20, 8 << 20, 32 << 20)  # 1, 8, 32 MiB
+
+
+def make_rows(total: int) -> bytes:
+    """A JSONL document of `total` bytes; rows repeat so it compresses
+    honestly."""
+    row = (json.dumps(chat("q" * 200, "a" * 200)) + "\n").encode("utf-8")
+    return row * (total // len(row) + 1)
+
+
+def drain(chunks) -> int:
+    """Consume a chunk iterator without holding it; return the byte count."""
+    seen = 0
+    for chunk in chunks:
+        seen += len(chunk)
+    return seen
+
+
+def members_of(archive: bytes) -> dict:
+    """Read a pushed archive back the way the machine would."""
+    found = {}
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:*") as tar:
+        for member in tar.getmembers():
+            found[member.name] = tar.extractfile(member).read()
+    return found
+
+
+def test_the_dataset_archive_streams_without_holding_it_whole(
+    isolated, peak_memory
+):
+    """Peak memory does not scale with the dataset being shipped.
+
+    The old producer read the object whole out of storage, gzipped it into
+    memory and handed the transport one buffer -- the exact shape spec 006
+    removes. Asserted both relatively (largest peak within slack of
+    smallest) and absolutely (a ceiling far below the largest payload).
+    """
+    from temper_control_plane import orchestrator, storage
+
+    peaks = []
+    for total in PAYLOAD_SIZES:
+        key = storage.dataset_key(f"ds_{total}")
+        storage.STORE.put(key, make_rows(total))
+        peaks.append(
+            peak_memory(lambda k=key: drain(orchestrator._dataset_chunks(k)))
+        )
+
+    assert max(peaks) - min(peaks) < FLAT_SPREAD, f"peaks grew: {peaks}"
+    assert peaks[-1] < ABS_CEIL, (
+        f"peak scaled with a {PAYLOAD_SIZES[-1] >> 20} MiB dataset: {peaks}"
+    )
+
+
+def test_the_dataset_archive_carries_the_object_byte_identical(isolated):
+    """What the machine untars is what the user uploaded."""
+    from temper_control_plane import orchestrator, storage
+
+    data = crlf_dataset() + "☕\n".encode()
+    key = storage.dataset_key("ds_crlf")
+    storage.STORE.put(key, data)
+
+    archive = b"".join(orchestrator._dataset_chunks(key))
+
+    members = members_of(archive)
+    assert list(members) == ["dataset.jsonl"]
+    assert members["dataset.jsonl"] == data
+
+
+def test_the_sources_archive_streams_with_its_members_intact():
+    """Small and bounded is no licence for a second buffering path: the
+    sources cross as chunks too, and arrive normalised as before."""
+    from temper_control_plane import orchestrator
+    from temper_control_plane.trainer_build import TRAINER_SOURCES, normalised
+
+    archive = b"".join(orchestrator._trainer_chunks())
+
+    members = members_of(archive)
+    assert sorted(members) == sorted(s.name for s in TRAINER_SOURCES)
+    for source in TRAINER_SOURCES:
+        assert members[source.name] == normalised(source)
+
+
+def test_a_vanishing_dataset_raises_rather_than_truncating(isolated):
+    """The truncation clause on the push side.
+
+    A stored dataset that disappears before the push is refused outright --
+    the typed absence error surfaces through the archive producer instead of
+    an empty-looking archive crossing the wire, so the job never reports a
+    half-dataset as delivered. The remote untar is the second line of
+    defence; the seam's eager absence error is the first.
+    """
+    from temper_control_plane import orchestrator, storage
+    from temper_control_plane.storage import ObjectNotFound
+
+    key = storage.dataset_key("ds_gone")
+    storage.STORE.put(key, b'{"messages": []}\n')
+    storage.STORE.delete(key)
+
+    with pytest.raises(ObjectNotFound):
+        orchestrator._dataset_chunks(key)
+
+
+class ChunkedAdapter:
+    """A provider double that fetches like a big artifact arrives: pieces."""
+
+    def __init__(self, payload: bytes, piece: int = 256 * 1024):
+        self._payload, self._piece = payload, piece
+
+    def fetch_stream(self, machine, path):
+        for i in range(0, len(self._payload), self._piece):
+            yield self._payload[i : i + self._piece]
+
+
+def test_collecting_a_large_artifact_stays_flat_in_memory(
+    harness, peak_memory
+):
+    """Artifact collection streams machine-to-storage holding one chunk.
+
+    Drives `_fetch_adapter` over payloads of growing size against a chunked
+    double; what lands behind the seam must read back byte-identical and the
+    traced peak must not follow the payload up.
+    """
+    from temper_control_plane import orchestrator, storage
+
+    peaks = []
+    for total in PAYLOAD_SIZES:
+        payload = bytes(range(256)) * (total // 256 + 1)
+        payload = payload[:total]
+        result = {
+            "adapter_path": "run/adapter_model.safetensors",
+            "adapter_sha256": hashlib.sha256(payload).hexdigest(),
+            "adapter_config": {"r": 16},
+        }
+        job_id = harness._create()
+
+        def collect(job_id=job_id, result=result, payload=payload):
+            return orchestrator._fetch_adapter(
+                ChunkedAdapter(payload), None, job_id, result
+            )
+
+        weights_key = collect()
+        peaks.append(peak_memory(collect))
+        assert storage.STORE.get(weights_key) == payload
+
+    assert max(peaks) - min(peaks) < FLAT_SPREAD, f"peaks grew: {peaks}"
+    assert peaks[-1] < ABS_CEIL, (
+        f"peak scaled with a {PAYLOAD_SIZES[-1] >> 20} MiB adapter: {peaks}"
+    )
+
+
+def test_an_unverified_or_corrupt_collection_stores_nothing(harness):
+    """The refusal deletes the staged object: nothing reachable by key is
+    left that looks like an artifact and is not one."""
+    from temper_core.errors import OrchestratorError
+
+    from temper_control_plane import orchestrator, storage
+
+    job_id = harness._create()
+
+    unverified = {
+        "adapter_path": "run/adapter_model.safetensors",
+        "adapter_config": {"r": 16},
+    }
+    with pytest.raises(
+        OrchestratorError, match="no adapter checksum"
+    ) as first:
+        orchestrator._fetch_adapter(
+            ChunkedAdapter(b"weights"), None, job_id, unverified
+        )
+    assert first.value.code == "artifact_unverified"
+
+    corrupt = {
+        "adapter_path": "run/adapter_model.safetensors",
+        "adapter_sha256": hashlib.sha256(b"other").hexdigest(),
+    }
+    with pytest.raises(OrchestratorError, match="SHA mismatch") as second:
+        orchestrator._fetch_adapter(
+            ChunkedAdapter(b"weights"), None, job_id, corrupt
+        )
+    assert second.value.code == "artifact_corrupt"
+
+    weights_key = storage.artifact_key(job_id, "adapter_model.safetensors")
+    with pytest.raises(storage.ObjectNotFound):
+        storage.STORE.get(weights_key)

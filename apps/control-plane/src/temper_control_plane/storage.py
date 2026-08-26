@@ -41,8 +41,10 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -50,6 +52,16 @@ from typing import Protocol
 from botocore.exceptions import ClientError
 
 from . import config
+
+# How much one streamed step reads or writes. Bounded, not tuned: the
+# flat-memory tests assert peak held memory does not scale with object size,
+# not that a particular chunk size was used.
+STREAM_CHUNK_BYTES = 256 * 1024
+
+# The multipart part size for streamed uploads to the object store. S3's own
+# floor is 5 MiB per non-final part; 8 MiB sits above it with headroom, and a
+# test turns it down to keep the multipart path fast.
+S3_PART_BYTES = 8 << 20
 
 # The two names an artifact consists of. Defined once here because the
 # orchestrator writes them and the download endpoint reads them: a value two
@@ -115,6 +127,27 @@ class Storage(Protocol):
 
     def get(self, key: str) -> bytes:
         """Read one object back, unchanged. Raises ObjectNotFound."""
+        ...
+
+    def get_stream(self, key: str) -> Iterator[bytes]:
+        """Yield the object's bytes in bounded chunks.
+
+        For payloads that grow without bound -- a dataset travelling to a
+        machine, an artifact travelling to a browser -- so that moving an
+        object never requires holding it. Raises ObjectNotFound like `get`,
+        eagerly: before the first chunk is due, so a caller can still turn
+        absence into a status code rather than a mid-stream failure.
+        """
+        ...
+
+    def put_stream(self, key: str, chunks: Iterable[bytes]) -> None:
+        """Store one object from chunks, holding at most one at a time.
+
+        Overwrites an existing object at the key, and publishes whole: no
+        reader ever observes a half-written object under `key`. If the chunk
+        source fails part-way, nothing is published and what was staged is
+        cleaned up.
+        """
         ...
 
     def delete(self, key: str) -> None:
@@ -186,6 +219,42 @@ class FilesystemStorage:
             return self._resolve(key).read_bytes()
         except FileNotFoundError:
             raise ObjectNotFound(key) from None
+
+    def get_stream(self, key: str) -> Iterator[bytes]:
+        # Opened here rather than inside the generator so that a missing
+        # object raises now, while the caller can still answer with a status
+        # code, and not at the first `next`.
+        try:
+            source = open(self._resolve(key), "rb")
+        except FileNotFoundError:
+            raise ObjectNotFound(key) from None
+        return self._chunks(source)
+
+    @staticmethod
+    def _chunks(source) -> Iterator[bytes]:
+        try:
+            while chunk := source.read(STREAM_CHUNK_BYTES):
+                yield chunk
+        finally:
+            source.close()
+
+    def put_stream(self, key: str, chunks: Iterable[bytes]) -> None:
+        final = self._resolve(key)
+        final.parent.mkdir(parents=True, exist_ok=True)
+        # Staged under a sibling name and moved into place only once every
+        # chunk has arrived, which is what makes the publish whole: a reader
+        # at `key` sees either the previous object or the complete new one,
+        # never a partial write. The same rule cleans up after a chunk
+        # source that dies part-way.
+        pending = final.with_name(final.name + ".part")
+        try:
+            with open(pending, "wb") as out:
+                for chunk in chunks:
+                    out.write(chunk)
+            os.replace(pending, final)
+        except BaseException:
+            pending.unlink(missing_ok=True)
+            raise
 
     def delete(self, key: str) -> None:
         self._resolve(key).unlink(missing_ok=True)
@@ -286,6 +355,98 @@ class S3Storage:
                 raise ObjectNotFound(key) from None
             raise
         return response["Body"].read()
+
+    def get_stream(self, key: str) -> Iterator[bytes]:
+        try:
+            response = self._client.get_object(
+                Bucket=self.bucket, Key=_checked(key)
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
+                raise ObjectNotFound(key) from None
+            raise
+        # The SDK's streaming body yields chunks as they arrive over the
+        # wire; nothing here reads the object whole and slices it.
+        return response["Body"].iter_chunks(STREAM_CHUNK_BYTES)
+
+    def put_stream(self, key: str, chunks: Iterable[bytes]) -> None:
+        _checked(key)
+        # A manual multipart upload: parts are accumulated to S3_PART_BYTES
+        # -- the last may be smaller, S3 allows exactly one such -- and each
+        # is handed to the store as it fills, so peak memory is one part
+        # however large the object is. boto3's transfer manager would also
+        # do this, but it demands a seekable file-like; an iterator of
+        # chunks is not one, and faking seekability would mean buffering.
+        part_number = 0
+        parts: list[dict] = []
+        buffer = bytearray()
+        upload_id: str | None = None
+        try:
+            for chunk in chunks:
+                buffer.extend(chunk)
+                while len(buffer) >= S3_PART_BYTES:
+                    part_number += 1
+                    if upload_id is None:
+                        upload_id = self._begin_upload(key)
+                    parts.append(
+                        self._upload_part(
+                            key, upload_id, part_number,
+                            bytes(buffer[:S3_PART_BYTES]),
+                        )
+                    )
+                    del buffer[:S3_PART_BYTES]
+            if upload_id is None:
+                # Never crossed a part boundary: a small object is one PUT,
+                # the same shape `put` takes, rather than a one-part
+                # multipart ceremony.
+                self._client.put_object(
+                    Bucket=self.bucket, Key=key, Body=bytes(buffer)
+                )
+                return
+            part_number += 1
+            parts.append(
+                self._upload_part(
+                    key, upload_id, part_number, bytes(buffer)
+                )
+            )
+            self._client.complete_multipart_upload(
+                Bucket=self.bucket,
+                Key=key,
+                UploadId=upload_id,
+                MultipartUpload={
+                    "Parts": [
+                        {"ETag": p["ETag"], "PartNumber": p["PartNumber"]}
+                        for p in parts
+                    ]
+                },
+            )
+        except BaseException:
+            # An abandoned multipart upload leaves billed, invisible parts
+            # behind unless it is aborted; that cleanup must happen even
+            # while the original failure propagates.
+            if upload_id is not None:
+                self._client.abort_multipart_upload(
+                    Bucket=self.bucket, Key=key, UploadId=upload_id
+                )
+            raise
+
+    def _begin_upload(self, key: str) -> str:
+        response = self._client.create_multipart_upload(
+            Bucket=self.bucket, Key=key
+        )
+        return response["UploadId"]
+
+    def _upload_part(
+        self, key: str, upload_id: str, part_number: int, body: bytes
+    ) -> dict:
+        response = self._client.upload_part(
+            Bucket=self.bucket,
+            Key=key,
+            UploadId=upload_id,
+            PartNumber=part_number,
+            Body=body,
+        )
+        return {"ETag": response["ETag"], "PartNumber": part_number}
 
     def delete(self, key: str) -> None:
         # S3 delete of an absent key succeeds by design; idempotency is free.

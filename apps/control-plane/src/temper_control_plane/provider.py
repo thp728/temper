@@ -26,17 +26,16 @@ Three methods beyond the six the spec enumerates, each with a reason:
   id *before* anything can fail. Folding readiness into `create` means a machine
   that exists but never answers is never recorded, and a machine nobody recorded
   is a machine nobody destroys.
-* `fetch` is the counterpart to `push`. Without it the adapter download would be
-  the one provider interaction still shelling out behind the seam's back.
+* `fetch_stream` is the counterpart to `push_stream`. Without it the artifact
+  download would be the one provider interaction still shelling out behind the
+  seam's back.
 * `close` releases whatever the implementation holds open. Plumbing, not domain.
 
-And two more since spec 006, the expand half of a streaming change:
-`push_stream` accepts an iterator of byte chunks and `fetch_stream` returns
-one. Payloads grow without bound now that a catalog model can be fully
-fine-tuned, so a transfer must never require the whole payload in memory. They
-reuse the buffered methods' wire commands and failure codes -- one grammar, two
-feeding modes -- and callers migrate one at a time; until they do, the buffered
-pair remains what production calls.
+Spec 006 in full: transfers take and return streams of chunks. The expand half
+(#30) added `push_stream`/`fetch_stream` beside a buffered pair; every caller
+has since moved, so the contract half (#41) deleted the pair -- one way to
+move bytes rather than two, and no transfer that ever needs the whole payload
+in memory.
 """
 
 from __future__ import annotations
@@ -73,7 +72,7 @@ FETCH_PREFIX = "sudo cat "
 
 
 def push_command(dest: str) -> str:
-    """The wire command that writes `payload` bytes to `dest`."""
+    """The wire command that writes streamed bytes to `dest`."""
     parent = dest.rsplit("/", 1)[0] or "/"
     return f"{PUSH_PREFIX}{parent}{PUSH_SEPARATOR}{dest}"
 
@@ -136,28 +135,21 @@ class Provider(Protocol):
     def await_ready(self, machine: Machine) -> str:
         """Block until the machine is usable. Returns a line worth logging."""
 
-    def push(self, machine: Machine, payload: bytes, dest: str) -> None: ...
-
     def push_stream(
         self, machine: Machine, chunks: Iterable[bytes], dest: str
     ) -> None:
         """Stream `chunks` to `dest`, holding at most one chunk whole.
 
-        Same wire command and failure codes as `push`. Refuses unless every
-        chunk reached the wire: an early-ending connection is a failure even
-        when the remote exits zero.
+        Refuses unless every chunk reached the wire: an early-ending
+        connection is a failure even when the remote exits zero.
         """
-
-    def fetch(self, machine: Machine, path: str) -> bytes:
-        """Read a file off the machine. Empty bytes mean it could not be read."""
 
     def fetch_stream(self, machine: Machine, path: str) -> Iterator[bytes]:
         """Yield `path`'s bytes in bounded chunks.
 
-        Yielding nothing is the mirror of `fetch`'s empty bytes: the file
-        could not be read. A read that dies part-way delivers what crossed
-        before it died -- truncation is caught downstream, against the
-        checksum the machine computed.
+        Yielding nothing means the file could not be read. A read that dies
+        part-way delivers what crossed before it died -- truncation is caught
+        downstream, against the checksum the machine computed.
         """
 
     def stream(self, machine: Machine, script: bytes) -> Iterator[str]:
@@ -303,35 +295,10 @@ class JarvisLabsProvider:
 
     # -- moving bytes -------------------------------------------------------
 
-    def push(self, machine: Machine, payload: bytes, dest: str) -> None:
-        r = subprocess.run(
-            _ssh(machine.handle) + [push_command(dest)],
-            input=payload,
-            capture_output=True,
-            timeout=PUSH_TIMEOUT_S,
-        )
-        if r.returncode != 0:
-            raise OrchestratorError(
-                "source_upload_failed",
-                r.stderr.decode("utf-8", "replace")[:300],
-            )
-
-    def fetch(self, machine: Machine, path: str) -> bytes:
-        r = subprocess.run(
-            _ssh(machine.handle) + [fetch_command(path)],
-            capture_output=True,
-            timeout=FETCH_TIMEOUT_S,
-        )
-        return r.stdout if r.returncode == 0 else b""
-
     def push_stream(
         self, machine: Machine, chunks: Iterable[bytes], dest: str
     ) -> None:
-        """Stream `chunks` to `dest` over the wire `push` already speaks.
-
-        The command is identical to the buffered push's -- one grammar, two
-        feeding modes -- so the remote cannot tell how the bytes were fed
-        and no new wire shape needs emulating at the transport tier.
+        """Stream `chunks` to `dest` over the wire `mkdir + cat` speaks.
 
         stderr goes to a scratch file rather than a pipe: a pipe nobody
         drains while this loop writes is a remote that can fill it and block,
@@ -343,11 +310,10 @@ class JarvisLabsProvider:
         -connection-died, so its exit status alone would let a truncated
         transfer be recorded as delivered.
 
-        The ceiling is PUSH_TIMEOUT_S of wall clock, inherited from the
-        buffered pair. At the payload sizes this method exists for, a total
-        wall-clock bound is the wrong shape -- an idle-aware bound is what
-        the caller migration will need -- and it is recorded as known rather
-        than silently inherited.
+        The ceiling is PUSH_TIMEOUT_S of wall clock. At the payload sizes
+        pushed today, a total wall-clock bound is the wrong shape -- an
+        idle-aware bound is what a growing catalog will need -- and it is
+        recorded as known rather than silently inherited.
         """
         with tempfile.TemporaryFile() as errors:
             proc = subprocess.Popen(
@@ -415,11 +381,10 @@ class JarvisLabsProvider:
     def fetch_stream(self, machine: Machine, path: str) -> Iterator[bytes]:
         """Yield `path`'s bytes in bounded chunks as they cross the wire.
 
-        The command is identical to the buffered fetch's; yielding nothing is
-        the mirror of its empty-bytes answer. A watchdog bounds a wedged read
-        exactly as the buffered timeout does, and cleanup also runs when the
-        consumer abandons the iterator, which is how cancellation will stop a
-        download.
+        Yielding nothing means the file could not be read. A watchdog bounds
+        a wedged read exactly as a blocking timeout would, and cleanup also
+        runs when the consumer abandons the iterator, which is how
+        cancellation will stop a download.
         """
         proc = subprocess.Popen(
             _ssh(machine.handle) + [fetch_command(path)],
