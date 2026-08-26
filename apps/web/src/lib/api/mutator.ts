@@ -21,6 +21,14 @@ export class ApiError extends Error {
   }
 }
 
+// The one fallback for "the server could not be reached at all" -- no status,
+// no body, no API code to carry. Defined once because both surfaces that
+// render it (the upload form's refusal panel and the report page's error
+// state) must say the same thing about the same situation.
+export const NETWORK_ERROR = Object.freeze(
+  new ApiError(0, "network_error", "Could not reach Temper."),
+);
+
 // In the browser: empty base -- requests are same-origin and the Next
 // rewrite proxies them to the control plane. On the server (the report page
 // renders there): an absolute URL is required by fetch, so the rewrite's
@@ -122,5 +130,11 @@ export const apiFetch = async <T>(
   if (!res.ok) {
     throw await toApiError(res);
   }
-  return (await res.json()) as T;
+  // A 204 (or any empty body) has nothing to parse; no endpoint returns one
+  // today, but a latent JSON.parse crash is not the way to find out.
+  const text = await res.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 };

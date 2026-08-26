@@ -20,7 +20,7 @@ setup:
 # contract that has just been proven current. `e2e` is inside the gate
 # because Spec 007's rule is that the journeys run on every push; they cost
 # no hardware, which is what makes that affordable.
-check: fmt-check lint types contracts-check test web-install web-client web-lint web-types web-test e2e
+check: fmt-check lint types contracts-check test web-install web-browsers web-client web-lint web-types web-test e2e
 
 # Formatting, as a gate rather than as a fix.
 fmt-check:
@@ -48,8 +48,8 @@ test:
 test-gpu:
     uv run pytest -m hardware --exitfirst
 
-# Regenerate the API contract. The interface's client generates from this file;
-# that step arrives with the web application (#38).
+# Regenerate the API contract. The web client generates from this file; the
+# gate regenerates and typechecks against the result, so drift fails a build.
 contracts:
     uv run python -m temper_control_plane.contracts
 
@@ -66,36 +66,47 @@ dev:
 image:
     uv run python -m temper_control_plane.trainer_image
 
-# --- the web application (apps/web) ----------------------------------------
-# Every recipe is one plain command under apps/web; read the line and run it
-# if you lack `just` or `corepack`.
+# --- the web application (apps/web) -----------------------------------------
+# Every recipe is a single invocation; read the line and run it if you lack
+# `just` or `corepack`.
 
 # Web dependencies. Frozen: the lockfile is the supply-chain boundary.
 web-install:
-    cd apps/web && corepack pnpm install --frozen-lockfile
+    corepack pnpm --dir apps/web install --frozen-lockfile
+
+# The browser binaries the journeys need. Idempotent and near-instant when
+# already present; this is what makes `just check` pass from a cold clone.
+web-browsers:
+    corepack pnpm --dir apps/web exec playwright install chromium
 
 # Regenerate the API client from the checked-in contract. The output is
 # gitignored; what keeps the halves honest is that web-types compiles against
 # whatever this produces, so a contract change that breaks the interface
 # fails here rather than in front of a user.
 web-client:
-    cd apps/web && corepack pnpm generate:client
+    corepack pnpm --dir apps/web generate:client
 
 web-lint:
-    cd apps/web && corepack pnpm lint
+    corepack pnpm --dir apps/web lint
 
 web-types:
-    cd apps/web && corepack pnpm typecheck
+    corepack pnpm --dir apps/web typecheck
 
 # Component tests. No backend, no network: the generated client is mocked.
 web-test:
-    cd apps/web && corepack pnpm test
+    corepack pnpm --dir apps/web test
 
 # Browser journeys against both halves running for real. Costs no hardware:
 # upload and validation never touch the GPU provider, which is why these can
-# run everywhere.
+# run everywhere. Boots both servers itself.
 e2e:
-    cd apps/web && corepack pnpm exec playwright test
+    corepack pnpm --dir apps/web exec playwright test
+
+# Both halves of the journey: control plane on :8000, shell on :3000.
+# Two lines because two processes must run; each line stands alone.
+dev-web:
+    uv run uvicorn temper_control_plane.main:app --port 8000 &
+    corepack pnpm --dir apps/web dev
 
 # Install the fast pre-commit filter. Format, lint and secrets on staged files.
 hooks:

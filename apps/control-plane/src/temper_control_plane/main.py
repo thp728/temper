@@ -29,6 +29,7 @@ from temper_control_plane import (
     orchestrator,
 )
 from temper_control_plane.contracts_models import (
+    DatasetList,
     DatasetRecord,
     DatasetUploaded,
 )
@@ -124,7 +125,11 @@ def upload_dataset(request: Request, file: UploadFile = File(...)):
     return {"id": ds_id, "filename": file.filename, **report}
 
 
-@app.get("/v1/datasets", tags=["datasets"])
+@app.get(
+    "/v1/datasets",
+    tags=["datasets"],
+    response_model=DatasetList,
+)
 def list_datasets():
     return {"datasets": db.list_datasets()}
 

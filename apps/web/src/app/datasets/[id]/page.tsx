@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import BackToUpload from "@/components/BackToUpload";
 import ReportView from "@/components/ReportView";
 import { getDatasetV1DatasetsDatasetIdGet } from "@/lib/api/generated/client";
-import { ApiError } from "@/lib/api/mutator";
+import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
 export const metadata: Metadata = {
   title: "Validation report",
@@ -19,7 +19,7 @@ async function loadDataset(id: string) {
     const apiError =
       err instanceof ApiError
         ? err
-        : new ApiError(0, "network_error", "Could not reach Temper.");
+        : NETWORK_ERROR;
     return { record: null, error: apiError };
   }
 }
@@ -34,12 +34,7 @@ function NotFound({ id }: { id: string }) {
         No dataset with id{" "}
         <code className="rounded bg-neutral-100 px-1">{id}</code>.
       </p>
-      <Link
-        href="/"
-        className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium hover:bg-neutral-100"
-      >
-        Back to upload
-      </Link>
+      <BackToUpload />
     </section>
   );
 }
@@ -60,20 +55,15 @@ export default async function DatasetPage({
   }
 
   return (
-    <section aria-labelledby="error-heading" className="space-y-4">
-      <h1 id="error-heading" className="text-2xl font-semibold">
-        Something went wrong
+    <section aria-labelledby="report-error-heading" className="space-y-4">
+      <h1 id="report-error-heading" className="text-2xl font-semibold">
+        The report could not be loaded
       </h1>
       <p>
         <code className="rounded bg-neutral-100 px-1">{error?.code}</code> —{" "}
         {error?.message}
       </p>
-      <Link
-        href="/"
-        className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium hover:bg-neutral-100"
-      >
-        Back to upload
-      </Link>
+      <BackToUpload />
     </section>
   );
 }

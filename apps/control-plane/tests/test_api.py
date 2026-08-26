@@ -173,6 +173,36 @@ def test_dataset_record_hides_the_server_file_path(client, tmp_path):
     assert "path" not in client.get(f"/v1/datasets/{ds}").json()
 
 
+def test_dataset_list_response_is_exactly_the_published_model(
+    client, tmp_path
+):
+    from temper_control_plane.contracts_models import DatasetList
+
+    valid_dataset(client, tmp_path)
+    body = client.get("/v1/datasets").json()
+    parsed = DatasetList.model_validate(body)
+    assert len(parsed.datasets) == 1
+    assert set(body) == {"datasets"}
+    # The list is a published shape like any other: no raw row leaks through.
+    assert all("path" not in ds for ds in body["datasets"])
+
+
+def test_preview_turns_are_published_typed(client, tmp_path):
+    """Preview rows are the weakest-typed corner of the report -- they hold
+    rows validation has not judged -- so this pins what the contract claims:
+    turns render as strings to the client, whatever the JSON line held."""
+    from temper_control_plane.contracts_models import DatasetUploaded
+
+    rows = [chat(f"q{i}", f"a{i}") for i in range(11)]
+    # Inside MAX_PREVIEW's window of three, so it actually reaches the report.
+    rows[2] = {"messages": ["a bare string turn", {"role": "user"}]}
+    body = upload(client, jsonl(tmp_path, rows)).json()
+    parsed = DatasetUploaded.model_validate(body)
+    turn = parsed.preview[2].messages[0]
+    assert turn.role is None
+    assert turn.content.startswith('"')  # preserved as its JSON form
+
+
 # --- jobs ------------------------------------------------------------------
 
 

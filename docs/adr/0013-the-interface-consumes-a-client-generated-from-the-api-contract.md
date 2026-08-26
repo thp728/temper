@@ -13,8 +13,9 @@ side to have no hand-written knowledge of response shapes — which in turn
 requires the API to *publish* shapes.
 
 It did not. `POST /v1/datasets` returned `{"id": ..., "filename": ..., **
-report_dict}` and `GET /v1/datasets/{id}` returned the raw database row,
-filesystem `path` included. An OpenAPI document generated from those handlers
+report_dict}`, and both `GET /v1/datasets/{id}` and `GET /v1/datasets`
+returned the raw database rows, filesystem `path` included. An OpenAPI
+document generated from those handlers
 describes no schema at all: any client generated from it types every dataset
 response `unknown`, and the "generated" client degenerates into hand-written
 types with a generator attached — the drift it exists to prevent, laundered
@@ -25,12 +26,13 @@ through tooling.
 **Three things, shipped together, because any one alone is decorative:**
 
 1. **The dataset endpoints publish Pydantic models**
-   (`contracts_models.py`: `ValidationIssue`, `DatasetReport`,
-   `DatasetUploaded`, `DatasetRecord`). The contract now describes the shape;
-   FastAPI validates responses against it, so the document cannot silently
-   diverge from what is sent. Publishing them removed `path` from the record
-   response — an absolute filesystem path reaching a browser was a leak of
-   machine layout that no consumer used.
+   (`contracts_models.py`: `ValidationIssue`, `PreviewTurn`, `PreviewRow`,
+   `DatasetReport`, `DatasetUploaded`, `DatasetRecord`, `DatasetList`). The
+   contract now describes the shape of every dataset endpoint; FastAPI
+   validates responses against it, so the document cannot silently
+   diverge from what is sent. Publishing them removed `path` from every
+   dataset response -- an absolute filesystem path reaching a browser was a
+   leak of machine layout that no consumer used.
 2. **`apps/web` generates its client from the checked-in contract with Orval**
    (ADR-0011's choice). The generated output is gitignored; the transport is a
    small hand-written mutator (`src/lib/api/mutator.ts`) that owns fetch, the

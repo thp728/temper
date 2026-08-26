@@ -12,9 +12,10 @@ filesystem path reaches neither a page nor a client.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ValidationIssue(BaseModel):
@@ -23,6 +24,51 @@ class ValidationIssue(BaseModel):
     line: int | None = None
     code: str
     message: str
+
+
+class PreviewTurn(BaseModel):
+    """One message turn inside a preview row.
+
+    Rows reach preview before validation has judged them, so their turns can
+    be malformed in ways the type cannot assume away. Rather than publish
+    `unknown` and push casting onto the interface, malformed values are
+    preserved as their JSON representation: nothing silently drops, and the
+    client renders strings, period.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    role: str | None = None
+    content: str | None = None
+
+    @field_validator("role", "content", mode="before")
+    @classmethod
+    def _stringify(cls, v: Any) -> Any:
+        return v if v is None or isinstance(v, str) else json.dumps(v)
+
+
+class PreviewRow(BaseModel):
+    """A parsed row as Temper understood it, before validation judges it.
+
+    Arbitrary keys are allowed because the row is whatever the JSON line held;
+    `messages` is typed because it is the key every supported schema shares.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    messages: list[PreviewTurn] | None = None
+
+    @field_validator("messages", mode="before")
+    @classmethod
+    def _coerce_turns(cls, v: Any) -> Any:
+        if isinstance(v, list):
+            return [
+                item
+                if isinstance(item, dict)
+                else {"content": json.dumps(item)}
+                for item in v
+            ]
+        return v
 
 
 class DatasetReport(BaseModel):
@@ -36,7 +82,7 @@ class DatasetReport(BaseModel):
     enable_thinking: bool | None = None
     errors: list[ValidationIssue]
     warnings: list[ValidationIssue]
-    preview: list[dict[str, Any]]
+    preview: list[PreviewRow]
 
 
 class DatasetUploaded(DatasetReport):
@@ -55,3 +101,9 @@ class DatasetRecord(BaseModel):
     created_at: float
     status: str
     report: DatasetReport | None = None
+
+
+class DatasetList(BaseModel):
+    """The response to listing datasets."""
+
+    datasets: list[DatasetRecord]

@@ -15,6 +15,23 @@
         "title": "Body_upload_dataset_v1_datasets_post",
         "type": "object"
       },
+      "DatasetList": {
+        "description": "The response to listing datasets.",
+        "properties": {
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetRecord"
+            },
+            "title": "Datasets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "datasets"
+        ],
+        "title": "DatasetList",
+        "type": "object"
+      },
       "DatasetRecord": {
         "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept.",
         "properties": {
@@ -77,8 +94,7 @@
           },
           "preview": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/PreviewRow"
             },
             "title": "Preview",
             "type": "array"
@@ -156,8 +172,7 @@
           },
           "preview": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/PreviewRow"
             },
             "title": "Preview",
             "type": "array"
@@ -240,6 +255,58 @@
           "dataset_id"
         ],
         "title": "JobRequest",
+        "type": "object"
+      },
+      "PreviewRow": {
+        "additionalProperties": true,
+        "description": "A parsed row as Temper understood it, before validation judges it.\n\nArbitrary keys are allowed because the row is whatever the JSON line held;\n`messages` is typed because it is the key every supported schema shares.",
+        "properties": {
+          "messages": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PreviewTurn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Messages"
+          }
+        },
+        "title": "PreviewRow",
+        "type": "object"
+      },
+      "PreviewTurn": {
+        "additionalProperties": true,
+        "description": "One message turn inside a preview row.\n\nRows reach preview before validation has judged them, so their turns can\nbe malformed in ways the type cannot assume away. Rather than publish\n`unknown` and push casting onto the interface, malformed values are\npreserved as their JSON representation: nothing silently drops, and the\nclient renders strings, period.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "title": "PreviewTurn",
         "type": "object"
       },
       "ValidationError": {
@@ -347,7 +414,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetList"
+                }
               }
             },
             "description": "Successful Response"

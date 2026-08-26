@@ -46,11 +46,24 @@ describe("ReportView", () => {
     return screen.getByText(name).nextElementSibling?.textContent;
   }
 
-  it("shows row count, usable rows and thinking mode in plain language", () => {
+  it("shows row count, usable rows, schema and thinking mode in plain language", () => {
     render(<ReportView record={record()} />);
     expect(statValue("Rows found")).toBe("12");
     expect(statValue("Usable rows")).toBe("12");
+    expect(statValue("Schema")).toBe("chat");
     expect(screen.getByText("Not detected")).toBeVisible();
+    // The label alone is a fact; the explanation says what it means for the
+    // run -- the old page's behaviour, moved.
+    expect(
+      screen.getByText(/trained to answer directly/),
+    ).toBeVisible();
+  });
+
+  it("moves focus to the report heading on arrival", () => {
+    render(<ReportView record={record()} />);
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveAttribute("tabindex", "-1");
+    expect(heading).toHaveFocus();
   });
 
   it("shows a preview of how the rows were understood", () => {
@@ -139,6 +152,9 @@ describe("ReportView", () => {
     const r = record({ report: { ...record().report!, enable_thinking: true } });
     render(<ReportView record={r} />);
     expect(screen.getByText("Detected")).toBeVisible();
+    expect(
+      screen.getByText(/thinking mode enabled/),
+    ).toBeVisible();
   });
 
   it("renders a file-level error without inventing a line number", () => {

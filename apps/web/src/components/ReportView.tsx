@@ -1,16 +1,33 @@
-import Link from "next/link";
+import BackToUpload from "@/components/BackToUpload";
+import FocusHeading from "@/components/FocusHeading";
 import type {
   DatasetRecord,
+  PreviewRow,
   ValidationIssue,
 } from "@/lib/api/generated/client";
 
 function thinkingText(enableThinking: boolean | null | undefined): string {
   if (enableThinking === true) return "Detected";
   if (enableThinking === false) return "Not detected";
-  return "Unknown";
+  return "Undetermined";
 }
 
-function where(issue: ValidationIssue): string {
+// What the detection means for the run, in the same terms the domain uses:
+// the label alone tells a user a fact, the explanation tells them what will
+// happen to their training because of it.
+function thinkingExplanation(
+  enableThinking: boolean | null | undefined,
+): string | null {
+  if (enableThinking === true) {
+    return "Assistant turns contain reasoning traces, so the model will be trained with thinking mode enabled.";
+  }
+  if (enableThinking === false) {
+    return "The model will be trained to answer directly.";
+  }
+  return "The dataset was not valid far enough to detect it.";
+}
+
+function issueLocation(issue: ValidationIssue): string {
   return issue.line === null || issue.line === undefined
     ? "Whole file"
     : `Line ${issue.line}`;
@@ -24,7 +41,7 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
         // for the lifetime of the page.
         <li key={i} className="rounded-md border border-neutral-200 bg-white p-3">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="font-medium">{where(issue)}</span>
+            <span className="font-medium">{issueLocation(issue)}</span>
             <code className="rounded bg-neutral-100 px-1 text-xs">
               {issue.code}
             </code>
@@ -36,10 +53,24 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
   );
 }
 
+function PreviewTurns({ row }: { row: PreviewRow }) {
+  const messages = row.messages ?? [];
+  return (
+    <ul className="mt-2 space-y-1 text-sm">
+      {messages.map((turn, j) => (
+        <li key={j}>
+          <span className="font-medium">{turn.role ?? "(no role)"}:</span>{" "}
+          <span className="text-neutral-700">{turn.content}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // The validation report: what was found, what blocks, what merely warns, and
 // how the first rows were understood. Everything on this page comes from the
 // published report shape -- the same dict the API returns, typed by the
-// generated client.
+// generated client. No hand-written casts.
 export default function ReportView({ record }: { record: DatasetRecord }) {
   const report = record.report;
   if (!report) {
@@ -55,9 +86,7 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
   return (
     <section aria-labelledby="report-heading" className="space-y-6">
       <div>
-        <h1 id="report-heading" className="text-2xl font-semibold break-all">
-          {record.filename}
-        </h1>
+        <FocusHeading>{record.filename}</FocusHeading>
         <p
           role="status"
           className={`mt-3 rounded-md border p-4 ${
@@ -72,7 +101,7 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
         </p>
       </div>
 
-      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-md border border-neutral-200 bg-white p-4">
           <dt className="text-sm text-neutral-500">Rows found</dt>
           <dd className="mt-1 text-2xl font-semibold">{report.row_count}</dd>
@@ -84,6 +113,12 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
           </dd>
         </div>
         <div className="rounded-md border border-neutral-200 bg-white p-4">
+          <dt className="text-sm text-neutral-500">Schema</dt>
+          <dd className="mt-1 text-lg font-semibold">
+            {report.schema_type ?? "Not recognised"}
+          </dd>
+        </div>
+        <div className="rounded-md border border-neutral-200 bg-white p-4">
           <dt className="text-sm text-neutral-500">Thinking mode</dt>
           <dd className="mt-1 text-lg font-semibold">
             {thinkingText(report.enable_thinking)}
@@ -91,11 +126,19 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
         </div>
       </dl>
 
+      <p className="text-sm text-neutral-600">
+        {thinkingExplanation(report.enable_thinking)}
+      </p>
+
       {report.errors.length > 0 && (
         <section aria-labelledby="problems-heading">
           <h2 id="problems-heading" className="text-lg font-semibold">
             Problems ({report.errors.length})
           </h2>
+          <p className="text-sm text-neutral-600">
+            This dataset cannot be trained on until every problem below is
+            fixed. Fix the named lines and upload again.
+          </p>
           <div className="mt-3">
             <IssueList issues={report.errors} />
           </div>
@@ -122,52 +165,28 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
             Preview — how your first rows were understood
           </h2>
           <div className="mt-3 space-y-3">
-            {report.preview.map((row, i) => {
-              const messages = Array.isArray(row.messages) ? row.messages : [];
-              return (
-                <div
-                  key={i}
-                  className="rounded-md border border-neutral-200 bg-white p-4"
-                >
-                  <p className="text-sm text-neutral-500">Row {i + 1}</p>
-                  {messages.length === 0 ? (
-                    <p className="mt-1 text-sm text-neutral-700">
-                      No messages list found in this row.
-                    </p>
-                  ) : (
-                    <ul className="mt-2 space-y-1 text-sm">
-                      {messages.map((m, j) => {
-                        const turn = m as { role?: unknown; content?: unknown };
-                        return (
-                          <li key={j}>
-                            <span className="font-medium">
-                              {String(turn.role)}:
-                            </span>{" "}
-                            <span className="text-neutral-700">
-                              {typeof turn.content === "string"
-                                ? turn.content
-                                : JSON.stringify(turn.content)}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              );
-            })}
+            {report.preview.map((row, i) => (
+              <div
+                key={i}
+                className="rounded-md border border-neutral-200 bg-white p-4"
+              >
+                <p className="text-sm text-neutral-500">Row {i + 1}</p>
+                {(row.messages?.length ?? 0) === 0 ? (
+                  <p className="mt-1 text-sm text-neutral-700">
+                    No messages list found in this row.
+                  </p>
+                ) : (
+                  <PreviewTurns row={row} />
+                )}
+              </div>
+            ))}
           </div>
         </section>
       )}
 
       <div className="flex gap-3">
         {blocked ? (
-          <Link
-            href="/"
-            className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
-          >
-            Back to upload
-          </Link>
+          <BackToUpload />
         ) : (
           <>
             {/* Until this journey's next screen is ported (#38), continuing
@@ -179,12 +198,7 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
             >
               Choose a model and continue
             </a>
-            <Link
-              href="/"
-              className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
-            >
-              Upload another dataset
-            </Link>
+            <BackToUpload />
           </>
         )}
       </div>

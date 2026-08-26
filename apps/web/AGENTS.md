@@ -25,8 +25,9 @@ by the app itself — they must never need hardware or credentials.
 ## Commands
 
 Everything runs through `just` from the repo root (`web-install`, `web-client`,
-`web-lint`, `web-types`, `web-test`, `e2e`). Without `just`, each recipe is a
-single command under `apps/web`.
+`web-lint`, `web-types`, `web-test`, `e2e`, `dev-web`). Without `just`, each
+recipe is a single command under `apps/web`. `dev-web` starts both halves:
+control plane on :8000, this app on :3000.
 
 ## Notes
 
@@ -34,7 +35,7 @@ single command under `apps/web`.
   `http://127.0.0.1:8000`.
 - Unported old screens are reachable through rewrites (`/jobs/*`) so a journey
   stays in one origin; each ported screen deletes its proxy entry in the same
-  change. See [ADR-0013](../../docs/adr/0013-the-interface-consumes-a-client-generated-from-the-contract.md).
+  change. See [ADR-0013](../../docs/adr/0013-the-interface-consumes-a-client-generated-from-the-api-contract.md).
 - jsdom enforces form constraint validation but never sets a file input's
   fakepath value, so submit-blocked-by-`required` cannot be exercised in
   component tests; the empty-file refusal is the component's own guard instead.

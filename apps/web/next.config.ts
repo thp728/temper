@@ -18,7 +18,10 @@ const nextConfig: NextConfig = {
       // Until a screen is ported, its existing server-rendered page is
       // proxied through this origin: the journey stays in one place and no
       // link crosses origins mid-flow. Ported screens replace these entries.
+      // The stylesheet comes with them -- an unstyled page is a broken page,
+      // whatever test asserts on its headings.
       { source: "/jobs/:path*", destination: `${backend}/jobs/:path*` },
+      { source: "/static/:path*", destination: `${backend}/static/:path*` },
     ];
   },
 };

@@ -17,15 +17,15 @@ function chat(user: string, assistant: string) {
   };
 }
 
-async function jsonlFile(rows: object[], name = "d.jsonl"): Promise<string> {
+async function tempFile(content: string, name = "d.jsonl"): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "temper-e2e-"));
   const file = path.join(dir, name);
-  await fs.writeFile(
-    file,
-    rows.map((r) => JSON.stringify(r)).join("\n") + "\n",
-    "utf8",
-  );
+  await fs.writeFile(file, content, "utf8");
   return file;
+}
+
+function jsonl(rows: object[]): string {
+  return rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
 }
 
 // Stat cards pair a visible label with a value; read them as pairs.
@@ -41,17 +41,26 @@ async function upload(page: Page, filePath: string) {
   await page.getByRole("button", { name: "Upload and validate" }).click();
 }
 
+async function uploadRows(page: Page, rows: object[]) {
+  await upload(page, await tempFile(jsonl(rows)));
+}
+
 test("an accepted dataset reaches its report and offers to proceed", async ({
   page,
 }) => {
   const rows = Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`));
-  await upload(page, await jsonlFile(rows));
+  await uploadRows(page, rows);
 
   await expect(page.getByText("Validation passed")).toBeVisible();
   await expect(statValue(page, "Rows found")).toHaveText("12");
   await expect(statValue(page, "Usable rows")).toHaveText("12");
-  // Thinking mode is stated in plain language, not as a boolean.
+  // The schema is named...
+  await expect(statValue(page, "Schema")).toHaveText("chat");
+  // ...and thinking mode is stated in plain language, not as a boolean.
   await expect(page.getByText("Not detected")).toBeVisible();
+  await expect(
+    page.getByText(/trained to answer directly/),
+  ).toBeVisible();
 
   // The preview shows how the first rows were understood.
   await expect(page.getByText(/user:/).first()).toBeVisible();
@@ -71,9 +80,15 @@ test("the journey continues through the not-yet-ported screens", async ({
 }) => {
   // Until model choice and launch are ported (#38), the shell hands off to
   // the existing server-rendered pages through the same origin. This is the
-  // proof that "nothing deleted yet" still means a walkable journey.
+  // proof that "nothing deleted yet" still means a walkable journey -- and
+  // that the handoff page arrives styled, since an unstyled page is broken
+  // whatever its headings say.
   const rows = Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`));
-  await upload(page, await jsonlFile(rows));
+  await uploadRows(page, rows);
+
+  const sheet = await page.request.get("/static/styles.css");
+  expect(sheet.status()).toBe(200);
+  expect(sheet.headers()["content-type"]).toContain("text/css");
 
   await page
     .getByRole("link", { name: "Choose a model and continue" })
@@ -92,11 +107,7 @@ test("a rejected dataset names each problem against its line", async ({
     "{not json}",
     JSON.stringify(chat("q", "   ")),
   ];
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "temper-e2e-"));
-  const bad = path.join(dir, "bad.jsonl");
-  await fs.writeFile(bad, lines.join("\n") + "\n", "utf8");
-
-  await upload(page, bad);
+  await upload(page, await tempFile(lines.join("\n") + "\n", "bad.jsonl"));
 
   await expect(page.getByText("This dataset was rejected")).toBeVisible();
   // The offending lines are named, with their stable codes.
@@ -114,9 +125,7 @@ test("a rejected dataset names each problem against its line", async ({
 test("a file the picker allows but the API refuses keeps its stable code", async ({
   page,
 }) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "temper-e2e-"));
-  const txt = path.join(dir, "notes.txt");
-  await fs.writeFile(txt, "not a dataset at all", "utf8");
+  const txt = await tempFile("not a dataset at all", "notes.txt");
 
   // setInputFiles bypasses the picker's accept filter, as a drag-and-drop
   // would; the refusal must come back typed rather than as a generic error.

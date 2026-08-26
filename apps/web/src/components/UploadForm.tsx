@@ -3,12 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { uploadDatasetV1DatasetsPost } from "@/lib/api/generated/client";
-import { ApiError } from "@/lib/api/mutator";
-
-interface Refusal {
-  code: string;
-  message: string;
-}
+import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
 // The upload step of the journey: choose a file, send it to the one ingest
 // path the API publishes, land on its validation report. A refusal -- wrong
@@ -19,16 +14,15 @@ export default function UploadForm() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const [refusal, setRefusal] = useState<ApiError | null>(null);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const file = inputRef.current?.files?.[0];
     if (!file) {
-      setRefusal({
-        code: "no_file",
-        message: "Choose a .jsonl dataset file first.",
-      });
+      setRefusal(
+        new ApiError(0, "no_file", "Choose a .jsonl dataset file first."),
+      );
       return;
     }
     setBusy(true);
@@ -40,15 +34,7 @@ export default function UploadForm() {
       router.push(`/datasets/${uploaded.id}`);
     } catch (err) {
       setStatus("");
-      setRefusal(
-        err instanceof ApiError
-          ? { code: err.code, message: err.message }
-          : {
-              code: "network_error",
-              message:
-                "Could not reach Temper. Is the control plane running?",
-            },
-      );
+      setRefusal(err instanceof ApiError ? err : NETWORK_ERROR);
     } finally {
       setBusy(false);
     }
