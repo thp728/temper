@@ -17,8 +17,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege, plus one grant the secrets scan needs: on pull_request
+# events gitleaks-action lists the PR's commits through the API rather than
+# reading them from git, and without `pull-requests: read` that call answers
+# 403 -- which is how the first pull-request run died while the push run,
+# scanning local history directly, went green on the same commit.
 permissions:
   contents: read
+  pull-requests: read
 
 # A second push to the same branch supersedes the first: the runs still in
 # queue would verify sources nobody is reading any more. This is most of what
