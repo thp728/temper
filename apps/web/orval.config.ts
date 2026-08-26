@@ -2,7 +2,7 @@ import { defineConfig } from "orval";
 
 // The client is generated from the checked-in contract, never hand-written.
 // A response shape that changes in packages/contracts/openapi.json breaks
-// this build instead of a page. Regenerate with `just client`.
+// this build instead of a page. Regenerate with `just web-client`.
 export default defineConfig({
   temper: {
     input: "../../packages/contracts/openapi.json",

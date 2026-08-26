@@ -7,6 +7,7 @@
 // (`{"detail": {"code": ..., "message": ...}}`), so errors surface typed
 // rather than as opaque status numbers. A body that is not that shape still
 // becomes an ApiError, never an unhandled parse failure.
+import { DEFAULT_BACKEND } from "@/lib/backend";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -24,11 +25,10 @@ export class ApiError extends Error {
 // rewrite proxies them to the control plane. On the server (the report page
 // renders there): an absolute URL is required by fetch, so the rewrite's
 // target itself is used. Both places read the same variable next.config.ts
-// reads; the literal below is only the unset default.
-const BACKEND_DEFAULT = "http://127.0.0.1:8000";
+// reads; the default below is only for when it is unset.
 const BASE_URL =
   process.env.TEMPER_BACKEND_URL ??
-  (typeof window === "undefined" ? BACKEND_DEFAULT : "");
+  (typeof window === "undefined" ? DEFAULT_BACKEND : "");
 
 interface ParsedDetail {
   code?: string;

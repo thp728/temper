@@ -17,8 +17,10 @@ setup:
 
 # The definition of green. Cheapest gate first, stops at the first failure.
 # The web half runs after contracts-check so client generation reads a
-# contract that has just been proven current.
-check: fmt-check lint types contracts-check test web-install web-client web-lint web-types web-test
+# contract that has just been proven current. `e2e` is inside the gate
+# because Spec 007's rule is that the journeys run on every push; they cost
+# no hardware, which is what makes that affordable.
+check: fmt-check lint types contracts-check test web-install web-client web-lint web-types web-test e2e
 
 # Formatting, as a gate rather than as a fix.
 fmt-check:

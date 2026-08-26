@@ -66,6 +66,24 @@ test("an accepted dataset reaches its report and offers to proceed", async ({
   ).toBeVisible();
 });
 
+test("the journey continues through the not-yet-ported screens", async ({
+  page,
+}) => {
+  // Until model choice and launch are ported (#38), the shell hands off to
+  // the existing server-rendered pages through the same origin. This is the
+  // proof that "nothing deleted yet" still means a walkable journey.
+  const rows = Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`));
+  await upload(page, await jsonlFile(rows));
+
+  await page
+    .getByRole("link", { name: "Choose a model and continue" })
+    .click();
+
+  await expect(
+    page.getByRole("heading", { name: "Choose a base model" }),
+  ).toBeVisible();
+});
+
 test("a rejected dataset names each problem against its line", async ({
   page,
 }) => {
@@ -121,8 +139,10 @@ test("the journey is keyboard-reachable and survives a small screen", async ({
   await expect(submit).toBeVisible();
 
   // The controls are reachable by keyboard alone: tab from the page's start
-  // until the action has focus, however many tab stops precede it.
-  for (let i = 0; i < 6 && !(await submit.evaluate((el) => el === document.activeElement)); i++) {
+  // until the action has focus. The cap is a failure guard, not an assertion
+  // about the page -- the header carries two links before the form.
+  const maxTabStops = 6;
+  for (let i = 0; i < maxTabStops && !(await submit.evaluate((el) => el === document.activeElement)); i++) {
     await page.keyboard.press("Tab");
   }
   await expect(submit).toBeFocused();
