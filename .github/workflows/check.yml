@@ -1,0 +1,95 @@
+# The pipeline quarter of ADR-0011's four points on one line: it runs the same
+# `just check` a developer runs, so there is one definition of green and this
+# file stays a trigger rather than becoming a second declaration of the gate
+# list. Splitting the gates into workflow steps would move that list into here,
+# where it would diverge from the justfile the first time a recipe is added --
+# the exact failure the ADR was written against.
+#
+# When a gate fails, `just` stops at the first failure and prints which recipe
+# it was (`error: recipe <name> failed on line N`) above that tool's own
+# diagnostics, so a red run names the gate that failed, not merely that
+# something did.
+
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A second push to the same branch supersedes the first: the runs still in
+# queue would verify sources nobody is reading any more. This is most of what
+# keeps the pipeline cheap enough to run on every push without being avoided.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: quality gate (just check)
+    runs-on: ubuntu-latest
+    # A development machine runs the whole gate warm in about ninety seconds;
+    # fifteen minutes bounds a hung run rather than being a wait anyone plans
+    # around. Measured baseline, not aspiration: see the PR wiring this up.
+    timeout-minutes: 15
+    steps:
+      # Full history, because the secrets scan below audits what has already
+      # landed rather than only this diff -- ADR-0011 assigns the history scan
+      # to the pipeline, and a secret caught before review is cheaper than one
+      # caught after, when the remedy is rewriting history.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: scan history for secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Named rather than assumed: whether the runner image ships `just` is an
+      # image detail that can change underneath us, and the gate's whole point
+      # is one entry point that exists.
+      - uses: extractions/setup-just@v4
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # Every web recipe invokes `corepack pnpm`, and the pnpm version comes
+      # from package.json's packageManager field, pinned by sha512 -- so this
+      # file never names a package manager, and the lockfile stays the
+      # supply-chain boundary.
+      - run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          # One definition, read not retyped: the Node major lives in .nvmrc,
+          # which developer version managers read too, so CI and laptops run
+          # the same runtime without this file restating it.
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      # The Playwright browser download is the slowest thing in the gate that
+      # caching can remove; the lockfile is the key because that is what moves
+      # the browser version. `web-browsers` fills whatever is missing, so a
+      # partial cache is correct, only slower.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
+
+      - name: just setup
+        run: just setup
+
+      # The gate itself. What it excludes, explicitly: `test` deselects the
+      # `hardware` marker with `-m "not hardware"` -- a readable line in the
+      # justfile, the marker registered in pyproject.toml -- and these runners
+      # hold no JL_API_KEY besides, so nothing needing credentials or a GPU can
+      # execute by accident. The deliberate inverse is `just test-gpu`, which
+      # provisions real machines and therefore appears nowhere in this file.
+      - name: just check
+        run: just check
