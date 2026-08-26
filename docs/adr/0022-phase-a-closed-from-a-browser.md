@@ -1,4 +1,4 @@
-# ADR-0025 — Phase A closes from a browser, and the test double's blind spot
+# ADR-0022 — Phase A closes from a browser, and the test double's blind spot
 
 - **Status:** accepted
 - **Date:** 2026-08-21

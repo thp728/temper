@@ -1,4 +1,4 @@
-# ADR-0023 — Temporal for orchestration; multi-GPU is a provisioning choice
+# ADR-0020 — Temporal for orchestration; multi-GPU is a provisioning choice
 
 - **Status:** accepted
 - **Date:** 2026-08-19

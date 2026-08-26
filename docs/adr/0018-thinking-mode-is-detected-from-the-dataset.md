@@ -1,4 +1,4 @@
-# ADR-0021 — Thinking mode is detected from the dataset, not fixed or exposed
+# ADR-0018 — Thinking mode is detected from the dataset, not fixed or exposed
 
 - **Status:** accepted
 - **Date:** 2026-08-18

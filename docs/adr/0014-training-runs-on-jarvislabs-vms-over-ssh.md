@@ -1,4 +1,4 @@
-# ADR-0016 — Training runs on JarvisLabs VMs with an SSH-driven bootstrap
+# ADR-0014 — Training runs on JarvisLabs VMs with an SSH-driven bootstrap
 
 - **Status:** accepted
 - **Date:** 2026-08-17

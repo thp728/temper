@@ -1,4 +1,4 @@
-# ADR-0020 — The architecture cut list is ratified as drafted
+# ADR-0017 — The architecture cut list is ratified as drafted
 
 - **Status:** accepted
 - **Date:** 2026-08-18
@@ -27,7 +27,7 @@ Keep three base models (rejected — 14B needs an A100-80GB or better, where L4 
 
 ## Consequences
 
-The demo has a cold start in front of whoever is watching. Single-tenant is assumed throughout, so nothing about the data model is proven under multi-tenancy. Spot pricing stays unreachable, which is separately forced by the VM execution model ([ADR-0016](0016-training-runs-on-jarvislabs-vms-over-ssh.md)).
+The demo has a cold start in front of whoever is watching. Single-tenant is assumed throughout, so nothing about the data model is proven under multi-tenancy. Spot pricing stays unreachable, which is separately forced by the VM execution model ([ADR-0014](0014-training-runs-on-jarvislabs-vms-over-ssh.md)).
 
 ## Rollback
 

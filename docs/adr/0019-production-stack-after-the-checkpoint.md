@@ -1,4 +1,4 @@
-# ADR-0022 — The product ships production-ready; scrappy only until the checkpoint
+# ADR-0019 — The product ships production-ready; scrappy only until the checkpoint
 
 - **Status:** accepted
 - **Date:** 2026-08-19

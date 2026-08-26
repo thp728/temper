@@ -1,4 +1,4 @@
-# ADR-0015 — The architecture's own assumptions are verified before writing code
+# ADR-0013 — The architecture's own assumptions are verified before writing code
 
 - **Status:** accepted
 - **Date:** 2026-08-17

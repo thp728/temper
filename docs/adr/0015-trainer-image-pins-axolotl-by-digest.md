@@ -1,4 +1,4 @@
-# ADR-0017 — The trainer image pins Axolotl by digest rather than resolving the stack
+# ADR-0015 — The trainer image pins Axolotl by digest rather than resolving the stack
 
 - **Status:** accepted
 - **Date:** 2026-08-18

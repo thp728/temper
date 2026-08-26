@@ -1,4 +1,4 @@
-# ADR-0024 — The first assembled run: it works, and three defects that reading caught before the GPU did
+# ADR-0021 — The first assembled run: it works, and three defects that reading caught before the GPU did
 
 - **Status:** accepted
 - **Date:** 2026-08-19
