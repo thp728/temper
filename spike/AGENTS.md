@@ -5,8 +5,10 @@ proved and what it cost.
 
 **This is a one-time-use directory, kept for reference.** The findings files are the measured
 evidence that lets numbers elsewhere in this repository be called measured, and they stay. The
-scripts are the investigation that produced them, not product code, and issue #26 collapses the four
-near-duplicate bootstraps to the one representing the final approach.
+scripts are the investigation that produced them, not product code. Issue #26 collapsed the
+near-duplicate bootstraps: `bootstrap6.sh` is the one representing the final
+approach and stays; the per-spike bootstraps for spikes 2–5 are in git history only, so re-running
+an early spike means retrieving its script from there first.
 
 **Code that graduates into the product takes its tests with it.** Streaming logic and
 `test_streaming.py` go to `packages/core/`; availability and price filtering and `test_spike5.py` go
@@ -18,7 +20,7 @@ to `apps/worker/`. Whatever stays here has no tests, because none of it is produ
 key fails and surfaces as `"ssh ready — no answer within 240s"`, which looks exactly like a dead VM.
 
 ```powershell
-& "d:\Dev\life-os\.venv\Scripts\python.exe" -u spike/spike4.py
+& "d:\Dev\life-os\.venv\Scripts\python.exe" -u spike/spike6.py
 ```
 
 `ssh-add -l` must list one ED25519 key first.

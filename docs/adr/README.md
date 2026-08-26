@@ -5,24 +5,31 @@ rejected and why. Written **as each change lands, not afterwards** — an entry
 written during the build records reasoning, an entry written after it
 reconstructs reasoning, and reconstruction is what fails under questioning.
 
-## Why the numbering starts at 0001 partway through the project
+## Why the numbers are not in date order
 
-It does not start partway through. This directory was created on 2026-08-21,
-about three-quarters of the way into the build, and that is the honest reason
-the first file here is dated so late — but it is not where the record begins.
+This directory was created on 2026-08-21, about three-quarters of the way into
+the build, and the in-repo numbering began there. The **first thirteen decisions
+were logged in a private working vault** as they were made, between 2026-08-15
+and 2026-08-21: the choice of JarvisLabs VMs with an SSH-driven bootstrap,
+pinning the trainer image by digest, detecting thinking mode from the dataset,
+the parity boundary, Temporal for orchestration, and the rest. That log is
+closed to new entries.
 
-The **first thirteen decisions were logged in a private working vault** as they
-were made, between 2026-08-14 and 2026-08-19: the choice of Axolotl over
-calling TRL and PEFT directly, pinning the trainer image by digest, locking the
-correctness settings, detecting thinking mode from the dataset, and the rest.
-That log is closed to new entries and stays as the record of the build to that
-date. **Its entries are copied into this directory before the repository
-becomes public**, in their original order, so the record does not appear to
-begin three-quarters of the way through.
+**Those thirteen entries were copied into this directory on 2026-08-26**
+([#26](https://github.com/thp728/temper/issues/26)), in their original order,
+as [0013](0013-the-project-opens-as-the-sole-priority.md) through
+[0025](0025-phase-a-closed-from-a-browser.md). Because numbers are assigned when
+a record lands — never reserved, never reused, never renumbered — records that
+were decided *earlier* carry *higher* numbers than records that landed before
+them. **The number says when a record entered this directory; the Date column
+says when the decision was made.** The index below is ordered by date so the
+record reads from its beginning.
 
-Until that copy happens, this index lists only the decisions made after the
-directory existed. Anything referenced here that is not yet a file is in the
-vault.
+Each copied entry keeps its original wording; it was edited only for a public
+audience (private-vault links replaced with descriptions of what they pointed
+at, file paths updated to where files now live), never rewritten — an entry that
+reconstructs its reasoning after the fact is the thing this project has
+consistently said fails under questioning.
 
 Records are written for a public audience from the first entry, because the
 repository becomes public at submission.
@@ -31,6 +38,18 @@ repository becomes public at submission.
 
 | ADR | Decision | Status | Date |
 | --- | --- | --- | --- |
+| [0013](0013-the-project-opens-as-the-sole-priority.md) | The project opens as the sole priority through submission | accepted | 2026-08-15 |
+| [0014](0014-the-first-build-block-goes-to-research.md) | The first build block goes to research instead of code | accepted | 2026-08-17 |
+| [0015](0015-assumptions-verified-before-code.md) | The architecture's own assumptions are verified before writing code | accepted | 2026-08-17 |
+| [0016](0016-training-runs-on-jarvislabs-vms-over-ssh.md) | Training runs on JarvisLabs VMs with an SSH-driven bootstrap | accepted | 2026-08-17 |
+| [0017](0017-trainer-image-pins-axolotl-by-digest.md) | The trainer image pins Axolotl by digest rather than resolving the stack | accepted | 2026-08-18 |
+| [0018](0018-the-product-is-called-temper.md) | The product is called Temper, in its own repository | accepted | 2026-08-18 |
+| [0019](0019-parity-boundary-at-75-percent.md) | The parity boundary is ratified at 75%, with Together AI as the baseline | accepted | 2026-08-18 |
+| [0020](0020-the-architecture-cut-list.md) | The architecture cut list is ratified as drafted | accepted | 2026-08-18 |
+| [0021](0021-thinking-mode-is-detected-from-the-dataset.md) | Thinking mode is detected from the dataset, not fixed or exposed | accepted | 2026-08-18 |
+| [0022](0022-production-stack-after-the-checkpoint.md) | The product ships production-ready; scrappy only until the checkpoint | accepted | 2026-08-19 |
+| [0023](0023-temporal-for-orchestration.md) | Temporal for orchestration; multi-GPU is a provisioning choice | accepted | 2026-08-19 |
+| [0024](0024-the-first-assembled-run-read-before-paid.md) | The first assembled run: it works, and three defects that reading caught before the GPU did | accepted | 2026-08-19 |
 | [0001](0001-event-channel-over-ssh-stdout.md) | The event channel is the machine's stdout, pulled over SSH | accepted | 2026-08-21 |
 | [0002](0002-stall-detection-and-a-duration-ceiling.md) | A stalled job and an over-long job are stopped separately, and named separately | accepted | 2026-08-21 |
 | [0003](0003-cancellation-is-destructive.md) | Cancelling destroys the machine, produces no adapter, and is not a failure | accepted — **flagged for reopening** (spike 8 found the provider can pause) | 2026-08-21 |
@@ -39,6 +58,7 @@ repository becomes public at submission.
 | [0006](0006-validation-runs-off-the-event-loop.md) | Validation runs off the event loop | accepted | 2026-08-21 |
 | [0007](0007-the-feasibility-warning-is-an-estimate-and-warns-rather-than-blocks.md) | The feasibility warning is an estimate from one measured run, and warns rather than blocks | accepted | 2026-08-21 |
 | [0008](0008-adapters-ship-as-fp32.md) | Adapters ship as fp32 — the artifact is exactly the weights that were trained | accepted | 2026-08-21 |
+| [0025](0025-phase-a-closed-from-a-browser.md) | Phase A closes from a browser, and the test double's blind spot is recorded | accepted | 2026-08-21 |
 | [0009](0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md) | The machine may write its own artifact to a pre-signed URL scoped to one key | accepted — supersedes [0004](0004-the-machine-is-a-pure-compute-node.md) in part | 2026-08-23 |
 
 | [0010](0010-the-repository-is-laid-out-as-apps-and-packages.md) | The repository is laid out as `apps/` and `packages/` | accepted | 2026-08-25 |
@@ -54,7 +74,10 @@ Numbers are assigned **when a record lands**, not reserved in advance. Specs
 used to name the number their decisions would take; they now name them by
 title, because a reservation is a plan and a plan that slips leaves gaps in a
 sequence that is supposed to mean chronology. Numbers are never reused and
-never renumbered.
+never renumbered. A number therefore says when a record entered this directory;
+the index's Date column says when the decision was made — the two differ for the
+thirteen entries copied in from the vault, which is why the index above is
+ordered by date rather than by number.
 
 ## Format
 

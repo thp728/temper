@@ -87,8 +87,8 @@ written during the build records reasoning; one written after reconstructs it, a
 what fails under questioning. Numbers are assigned when a record lands, never reserved. A decision
 is not edited once accepted; superseding it means a new record.
 
-The vault's `decisions.md` holds the first thirteen decisions and is closed to new entries. They are
-copied in before the repo goes public (issue #26).
+The vault's `decisions.md` held the first thirteen decisions and is closed to new entries. They are
+copied into `docs/adr/` as [0013]–[0025] (issue #26); new decisions land here only.
 
 ## Where things are
 
