@@ -143,7 +143,9 @@ class Provider(Protocol):
     ) -> None:
         """Stream `chunks` to `dest`, holding at most one chunk whole.
 
-        Same wire command and failure codes as `push`.
+        Same wire command and failure codes as `push`. Refuses unless every
+        chunk reached the wire: an early-ending connection is a failure even
+        when the remote exits zero.
         """
 
     def fetch(self, machine: Machine, path: str) -> bytes:
@@ -335,6 +337,17 @@ class JarvisLabsProvider:
         drains while this loop writes is a remote that can fill it and block,
         which would deadlock the very transfer this method exists to make
         unbounded.
+
+        The push is refused unless every chunk was handed to the wire: the
+        remote's `cat` cannot tell EOF-because-done from EOF-because-the
+        -connection-died, so its exit status alone would let a truncated
+        transfer be recorded as delivered.
+
+        The ceiling is PUSH_TIMEOUT_S of wall clock, inherited from the
+        buffered pair. At the payload sizes this method exists for, a total
+        wall-clock bound is the wrong shape -- an idle-aware bound is what
+        the caller migration will need -- and it is recorded as known rather
+        than silently inherited.
         """
         with tempfile.TemporaryFile() as errors:
             proc = subprocess.Popen(
@@ -352,11 +365,15 @@ class JarvisLabsProvider:
             watchdog = threading.Timer(PUSH_TIMEOUT_S, kill)
             watchdog.start()
             reaped = False
+            drained = False
             try:
                 try:
                     for chunk in chunks:
                         proc.stdin.write(chunk)
+                    # Only a close that did not raise counts: a failed flush
+                    # means the tail of the payload never left this process.
                     proc.stdin.close()
+                    drained = True
                 except OSError:
                     # The pipe died under us -- most often the watchdog
                     # killing the client, sometimes the remote exiting
@@ -380,6 +397,12 @@ class JarvisLabsProvider:
             if timed_out.is_set():
                 raise subprocess.TimeoutExpired(
                     cmd=push_command(dest), timeout=PUSH_TIMEOUT_S
+                )
+            if not drained:
+                raise OrchestratorError(
+                    "source_upload_failed",
+                    "The connection closed before every byte was written; "
+                    f"{dest} must not be treated as delivered.",
                 )
             if code != 0:
                 errors.seek(0)

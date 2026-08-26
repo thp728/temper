@@ -321,6 +321,26 @@ def test_push_stream_kills_a_push_that_outlives_the_backstop(monkeypatch):
         p.push_stream(Machine(1), endless, "/tmp/temper/ds.jsonl")
 
 
+def test_push_stream_refuses_a_connection_that_ends_early(monkeypatch):
+    """A truncated push is a failure even when the remote exits zero.
+
+    `cat > dest` cannot tell EOF-because-done from EOF-because-the
+    -connection-died, so exit status alone would record a half-delivered
+    file as uploaded. The child here stops reading after ten bytes and
+    exits 0 -- exactly what a remote looks like when the connection dies
+    part-way through -- and the push must still be refused.
+    """
+    early_exit_sink = "import sys\nsys.stdin.buffer.read(10)\n"
+    p = streaming_transport(monkeypatch, early_exit_sink)
+    endless = (b"x" * (1 << 20) for _ in itertools.count())
+
+    with pytest.raises(provider_mod.OrchestratorError) as e:
+        p.push_stream(Machine(1), endless, "/tmp/temper/ds.jsonl")
+    # The not-drained branch specifically: exit status was zero, so this
+    # refusal is the method's own verdict, not the remote's.
+    assert "before every byte" in str(e.value)
+
+
 def test_abandoning_a_fetch_stream_kills_the_command(monkeypatch):
     """Cancellation stops reading; the remote command must not survive it."""
     endless_feeder = (
@@ -335,6 +355,13 @@ def test_abandoning_a_fetch_stream_kills_the_command(monkeypatch):
     # No assertion beyond returning: a surviving child would hang the suite at
     # interpreter exit, which is exactly the failure being guarded against.
 
+
+# The flat-memory bounds, named once because both directions assert them:
+# the largest payload's peak must sit within FLAT_SPREAD of the smallest's,
+# and under ABS_CEIL -- a ceiling far below the largest payload, which any
+# accumulate-then-send implementation blows through immediately.
+FLAT_SPREAD = 1 << 21  # 2 MiB
+ABS_CEIL = 8 << 20  # 8 MiB, against a 32 MiB payload
 
 MEMORY_PAYLOADS = (1 << 20, 8 << 20, 32 << 20)  # 1, 8, 32 MiB
 
@@ -357,10 +384,10 @@ def test_push_stream_peak_memory_stays_flat_across_payload_sizes(monkeypatch):
             )
         )
 
-    assert max(peaks) - min(peaks) < (1 << 21), (
+    assert max(peaks) - min(peaks) < FLAT_SPREAD, (
         f"peaks grew with size: {peaks}"
     )
-    assert peaks[-1] < 8 << 20, (
+    assert peaks[-1] < ABS_CEIL, (
         f"peak scaled with a {MEMORY_PAYLOADS[-1] >> 20} MiB payload: {peaks}"
     )
 
@@ -381,9 +408,37 @@ def test_fetch_stream_peak_memory_stays_flat_across_payload_sizes(monkeypatch):
 
         peaks.append(peak_traced_during(consume))
 
-    assert max(peaks) - min(peaks) < (1 << 21), (
+    assert max(peaks) - min(peaks) < FLAT_SPREAD, (
         f"peaks grew with size: {peaks}"
     )
-    assert peaks[-1] < 8 << 20, (
+    assert peaks[-1] < ABS_CEIL, (
         f"peak scaled with a {MEMORY_PAYLOADS[-1] >> 20} MiB payload: {peaks}"
+    )
+
+
+def test_the_flat_memory_assertion_catches_an_accumulating_implementation(
+    monkeypatch,
+):
+    """The flat-memory assertions are not vacuous.
+
+    The same feeder drives a deliberately accumulating consumer -- the
+    defect spec 006 warns that streaming quietly becomes -- and its traced
+    peak must blow past the ceiling the real implementation is held under.
+    Against an implementation that accumulates in secret, the two tests
+    above would pass while memory scaled with every payload; this test is
+    the proof they would notice.
+    """
+    total = MEMORY_PAYLOADS[-1]
+    p = streaming_transport(monkeypatch, FEEDER, str(total))
+
+    def accumulate():
+        held = []
+        for chunk in p.fetch_stream(Machine(1), "/tmp/temper/out.bin"):
+            held.append(chunk)
+        return len(held)
+
+    peak = peak_traced_during(accumulate)
+    assert peak >= total, (
+        f"an accumulating consumer measured only {peak} bytes for a "
+        f"{total}-byte payload; the measurement is blind"
     )
