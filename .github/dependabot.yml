@@ -1,0 +1,10 @@
+# Action version drift is the supply-chain risk ADR-0011 names, and one config
+# file covers it. Scoped to GitHub Actions on purpose: pip and npm are already
+# bounded by their lockfiles and the frozen installs those lockfiles feed, and
+# opening them to Dependabot on top would buy noise rather than safety.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
