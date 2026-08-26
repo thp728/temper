@@ -112,23 +112,6 @@ module = "botocore.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# Adopting the type checker surfaced 23 findings in the applications, all of one
-# shape: a value that can be None used as if it cannot. `db.get_job` returns
-# `dict | None`, callers index it, and the guard that makes that safe is a
-# `raise` several frames away that mypy cannot follow.
-#
-# They are recorded in issue #85, not silenced. The suppression names the four
-# codes that family reports under, and it names the issue, so deleting it is a
-# checkable act rather than a judgement call. `misc` is wider than the family
-# -- it is mypy's catch-all, and three db.py findings arrive under it -- so this
-# hides more than the other three do. Recorded rather than glossed: closing #85
-# is what makes the control plane checked as thoroughly as the domain. Fixing them means adding a raising `require_job`, which is a
-# change to the orchestrator's behaviour on the path that spends money, and that
-# does not belong inside a directory move.
-module = "temper_control_plane.*"
-disable_error_code = ["union-attr", "index", "arg-type", "misc"]
-
-[[tool.mypy.overrides]]
 module = "temper_core.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true

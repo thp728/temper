@@ -1,4 +1,4 @@
-"""Stored objects are addressed by key, and old databases come along.
+"""Stored objects are addressed by key, and the raising companions over rows.
 
 Issue #22 renamed what the two location columns mean: `datasets.path` became
 `object_key`, `jobs.adapter_path` became `artifact_key`. A database written by
@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from temper_control_plane import db
+from temper_core.errors import OrchestratorError
 
 OLD_SCHEMA = """
 CREATE TABLE IF NOT EXISTS datasets (
@@ -114,3 +117,35 @@ def test_a_fresh_database_has_the_key_columns_from_birth(
     db.init()
     ds_id = db.create_dataset("d.jsonl", "datasets/ds_new.jsonl", "ds_new")
     assert db.get_dataset(ds_id)["object_key"] == "datasets/ds_new.jsonl"
+
+
+@pytest.fixture()
+def temp_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init()
+    return db
+
+
+def test_require_job_returns_the_row(temp_db, tmp_path):
+    ds_id = temp_db.create_dataset("d.jsonl", tmp_path / "d.jsonl")
+    job_id = temp_db.create_job(ds_id, "qwen3-4b", {})
+    assert temp_db.require_job(job_id)["id"] == job_id
+
+
+def test_require_dataset_returns_the_row(temp_db, tmp_path):
+    ds_id = temp_db.create_dataset("d.jsonl", tmp_path / "d.jsonl")
+    assert temp_db.require_dataset(ds_id)["id"] == ds_id
+
+
+def test_a_missing_job_row_raises_a_coded_error(temp_db):
+    with pytest.raises(OrchestratorError) as exc:
+        temp_db.require_job("job_absent")
+    assert exc.value.code == "job_not_found"
+    assert "job_absent" in str(exc.value)
+
+
+def test_a_missing_dataset_row_raises_a_coded_error(temp_db):
+    with pytest.raises(OrchestratorError) as exc:
+        temp_db.require_dataset("ds_absent")
+    assert exc.value.code == "dataset_not_found"
+    assert "ds_absent" in str(exc.value)

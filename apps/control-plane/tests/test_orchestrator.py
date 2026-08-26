@@ -567,6 +567,31 @@ def test_nothing_is_destroyed_when_no_machine_was_created(harness):
     assert "destroy" not in provider.calls
 
 
+def test_a_dataset_row_that_vanishes_mid_flight_fails_the_job_by_name(
+    harness, monkeypatch
+):
+    """The orchestration re-reads the dataset row after launch, and the row
+    can have changed by then. On the path that spends money that must arrive
+    as a coded failure on the job record -- never as a TypeError from
+    indexing None."""
+    from temper_control_plane import db, orchestrator
+
+    provider = FakeProvider()
+    job_id = harness.queued_job()
+
+    monkeypatch.setattr(db, "get_dataset", lambda ds_id: None)
+    orchestrator.run_job(
+        job_id,
+        provider=provider,
+        limits=simulated_limits(step=60.0, stall=900.0),
+    )
+
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    assert job["error_code"] == "dataset_not_found"
+    assert provider.created == [], "nothing may be provisioned without it"
+
+
 # --- failure at each stage --------------------------------------------------
 
 

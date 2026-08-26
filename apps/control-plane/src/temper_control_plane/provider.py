@@ -40,6 +40,7 @@ in memory.
 
 from __future__ import annotations
 
+import io
 import shlex
 import subprocess
 import tempfile
@@ -322,6 +323,10 @@ class JarvisLabsProvider:
                 stdout=subprocess.DEVNULL,
                 stderr=errors,
             )
+            # stdin=PIPE above guarantees the pipe; Popen's type is Optional
+            # for callers who passed something else.
+            stdin = proc.stdin
+            assert stdin is not None
             timed_out = threading.Event()
 
             def kill() -> None:
@@ -335,10 +340,10 @@ class JarvisLabsProvider:
             try:
                 try:
                     for chunk in chunks:
-                        proc.stdin.write(chunk)
+                        stdin.write(chunk)
                     # Only a close that did not raise counts: a failed flush
                     # means the tail of the payload never left this process.
-                    proc.stdin.close()
+                    stdin.close()
                     drained = True
                 except OSError:
                     # The pipe died under us -- most often the watchdog
@@ -347,7 +352,7 @@ class JarvisLabsProvider:
                     # wait; raising here would report a symptom instead of
                     # the cause.
                     try:
-                        proc.stdin.close()
+                        stdin.close()
                     except OSError:
                         pass
                 code = proc.wait()
@@ -391,6 +396,10 @@ class JarvisLabsProvider:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
+        # stdout=PIPE above guarantees the pipe; Popen's type is Optional
+        # for callers who passed something else.
+        stdout = proc.stdout
+        assert stdout is not None
         timed_out = threading.Event()
 
         def kill() -> None:
@@ -400,7 +409,7 @@ class JarvisLabsProvider:
         watchdog = threading.Timer(FETCH_TIMEOUT_S, kill)
         watchdog.start()
         try:
-            while chunk := proc.stdout.read(FETCH_CHUNK_BYTES):
+            while chunk := stdout.read(FETCH_CHUNK_BYTES):
                 yield chunk
         finally:
             # Also reached when the consumer abandons the iterator, which is
@@ -438,6 +447,15 @@ class JarvisLabsProvider:
             errors="replace",
             bufsize=1,
         )
+        # Both pipes are guaranteed by the PIPE arguments above; Popen's
+        # type is Optional for callers who passed something else.
+        # text=True additionally makes stdin a TextIOWrapper, which
+        # typeshed's coarse IO[Any] cannot say -- and the feed thread below
+        # writes bytes through its .buffer.
+        stdin = proc.stdin
+        assert isinstance(stdin, io.TextIOWrapper)
+        stdout = proc.stdout
+        assert stdout is not None
 
         def feed() -> None:
             # Written as bytes, through the text wrapper rather than to it.
@@ -450,9 +468,9 @@ class JarvisLabsProvider:
             # different newlines was the whole defect. stdout stays in text
             # mode, which is the direction the translation is wanted in.
             try:
-                proc.stdin.buffer.write(script)
-                proc.stdin.buffer.flush()
-                proc.stdin.close()
+                stdin.buffer.write(script)
+                stdin.buffer.flush()
+                stdin.close()
             except Exception:  # noqa: S110
                 # The process died. The read loop is what reports that,
                 # with the exit status and the output; raising here would
@@ -472,7 +490,7 @@ class JarvisLabsProvider:
         watchdog = threading.Timer(timeout, kill)
         watchdog.start()
         try:
-            for raw in proc.stdout:
+            for raw in stdout:
                 yield raw.rstrip("\r\n")
         finally:
             # Also reached when the consumer abandons the iterator, which is
