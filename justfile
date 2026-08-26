@@ -16,7 +16,11 @@ setup:
     uv sync
 
 # The definition of green. Cheapest gate first, stops at the first failure.
-check: fmt-check lint types contracts-check test
+# The web half runs after contracts-check so client generation reads a
+# contract that has just been proven current. `e2e` is inside the gate
+# because Spec 007's rule is that the journeys run on every push; they cost
+# no hardware, which is what makes that affordable.
+check: fmt-check lint types contracts-check test web-install web-browsers web-client web-lint web-types web-test e2e
 
 # Formatting, as a gate rather than as a fix.
 fmt-check:
@@ -44,8 +48,8 @@ test:
 test-gpu:
     uv run pytest -m hardware --exitfirst
 
-# Regenerate the API contract. The interface's client generates from this file;
-# that step arrives with the web application (#38).
+# Regenerate the API contract. The web client generates from this file; the
+# gate regenerates and typechecks against the result, so drift fails a build.
 contracts:
     uv run python -m temper_control_plane.contracts
 
@@ -58,9 +62,57 @@ contracts-check: contracts
 dev:
     uv run uvicorn temper_control_plane.main:app --reload
 
+# --- the web application (apps/web) -----------------------------------------
+# Every recipe is a single invocation; read the line and run it if you lack
+# `just` or `corepack`.
+
 # Build the trainer image from the same sources a real job builds from.
 image:
     uv run python -m temper_control_plane.trainer_image
+
+# --- the web application (apps/web) -----------------------------------------
+# Every recipe is a single invocation; read the line and run it if you lack
+# `just` or `corepack`.
+
+# Web dependencies. Frozen: the lockfile is the supply-chain boundary.
+web-install:
+    corepack pnpm --dir apps/web install --frozen-lockfile
+
+# The browser binaries the journeys need. Idempotent and near-instant when
+# already present; this is what makes `just check` pass from a cold clone.
+web-browsers:
+    corepack pnpm --dir apps/web exec playwright install chromium
+
+# Regenerate the API client from the checked-in contract. The output is
+# gitignored; what keeps the halves honest is that web-types compiles against
+# whatever this produces, so a contract change that breaks the interface
+# fails here rather than in front of a user.
+web-client:
+    corepack pnpm --dir apps/web generate:client
+
+web-lint:
+    corepack pnpm --dir apps/web lint
+
+web-types:
+    corepack pnpm --dir apps/web typecheck
+
+# Component tests. No backend, no network: the generated client is mocked.
+web-test:
+    corepack pnpm --dir apps/web test
+
+# Browser journeys against both halves running for real. Costs no hardware:
+# upload and validation never touch the GPU provider, which is why these can
+# run everywhere. Boots both servers itself.
+e2e:
+    corepack pnpm --dir apps/web exec playwright test
+
+# The shell half of the journey, with reload. Run it beside `just dev` in a
+# second terminal -- `just` runs each recipe line in its own shell, so
+# backgrounding the control plane here would orphan it the moment this line's
+# shell exits. The port each side uses is defined once, in
+# apps/web/src/lib/backend.ts.
+dev-web:
+    corepack pnpm --dir apps/web dev
 
 # Install the fast pre-commit filter. Format, lint and secrets on staged files.
 hooks:

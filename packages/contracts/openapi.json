@@ -15,6 +15,212 @@
         "title": "Body_upload_dataset_v1_datasets_post",
         "type": "object"
       },
+      "DatasetList": {
+        "description": "The response to listing datasets.",
+        "properties": {
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetRecord"
+            },
+            "title": "Datasets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "datasets"
+        ],
+        "title": "DatasetList",
+        "type": "object"
+      },
+      "DatasetRecord": {
+        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "created_at",
+          "status"
+        ],
+        "title": "DatasetRecord",
+        "type": "object"
+      },
+      "DatasetReport": {
+        "description": "What validation says about a dataset. The same dict\n`temper_core.validation.Report.to_dict()` produces, published typed.",
+        "properties": {
+          "enable_thinking": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enable Thinking"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "preview": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewRow"
+            },
+            "title": "Preview",
+            "type": "array"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "schema_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Type"
+          },
+          "usable_rows": {
+            "title": "Usable Rows",
+            "type": "integer"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "valid",
+          "row_count",
+          "usable_rows",
+          "errors",
+          "warnings",
+          "preview"
+        ],
+        "title": "DatasetReport",
+        "type": "object"
+      },
+      "DatasetUploaded": {
+        "description": "The response to a successful upload: the report plus its identity.",
+        "properties": {
+          "enable_thinking": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enable Thinking"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "preview": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewRow"
+            },
+            "title": "Preview",
+            "type": "array"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "schema_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Type"
+          },
+          "usable_rows": {
+            "title": "Usable Rows",
+            "type": "integer"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "valid",
+          "row_count",
+          "usable_rows",
+          "errors",
+          "warnings",
+          "preview",
+          "id",
+          "filename"
+        ],
+        "title": "DatasetUploaded",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -49,6 +255,58 @@
           "dataset_id"
         ],
         "title": "JobRequest",
+        "type": "object"
+      },
+      "PreviewRow": {
+        "additionalProperties": true,
+        "description": "A parsed row as Temper understood it, before validation judges it.\n\nArbitrary keys are allowed because the row is whatever the JSON line held;\n`messages` is typed because it is the key every supported schema shares.",
+        "properties": {
+          "messages": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PreviewTurn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Messages"
+          }
+        },
+        "title": "PreviewRow",
+        "type": "object"
+      },
+      "PreviewTurn": {
+        "additionalProperties": true,
+        "description": "One message turn inside a preview row.\n\nRows reach preview before validation has judged them, so their turns can\nbe malformed in ways the type cannot assume away. Rather than publish\n`unknown` and push casting onto the interface, malformed values are\npreserved as their JSON representation: nothing silently drops, and the\nclient renders strings, period.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "title": "PreviewTurn",
         "type": "object"
       },
       "ValidationError": {
@@ -90,6 +348,36 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "ValidationIssue": {
+        "description": "One problem, named where it is: line number when one applies.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ValidationIssue",
+        "type": "object"
       }
     }
   },
@@ -126,7 +414,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetList"
+                }
               }
             },
             "description": "Successful Response"
@@ -154,7 +444,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetUploaded"
+                }
               }
             },
             "description": "Successful Response"
@@ -194,7 +486,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetRecord"
+                }
               }
             },
             "description": "Successful Response"
