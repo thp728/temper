@@ -2,6 +2,16 @@
    decorated and disposable, so this only sets reading measure, spacing and a
    visible focus outline. */
 * { box-sizing: border-box; }
+/* Explicit light colours. The stylesheet deliberately sets nothing else
+   decorative, but a page with no colours at all inherits the *browser's*
+   canvas -- and a dark-canvas webview renders transparent as black, leaving
+   default black text invisible. Stating the colours is compatibility, not
+   decoration. */
+html {
+  background: #ffffff;
+  color: #111111;
+  color-scheme: light;
+}
 body {
   font-family: system-ui, sans-serif;
   line-height: 1.5;
