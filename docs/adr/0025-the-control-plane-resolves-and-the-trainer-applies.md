@@ -1,4 +1,4 @@
-# ADR-0024 — The control plane resolves; the trainer applies
+# ADR-0025 — The control plane resolves; the trainer applies
 
 - **Status:** accepted
 - **Date:** 2026-08-26
