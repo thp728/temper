@@ -127,6 +127,19 @@ class Harness:
     def job(self, job_id) -> dict:
         return self._client.get(f"/v1/jobs/{job_id}").json()
 
+    def stored(self, job_id) -> dict:
+        """The job's row as the control plane holds it.
+
+        The published record deliberately omits `adapter_path`: an absolute
+        filesystem path is server state, not something a client receives.
+        These tests verify what orchestration wrote, which includes exactly
+        that field, so they read the row rather than asking a response that
+        rightly does not carry it.
+        """
+        from temper_control_plane import db
+
+        return db.get_job(job_id)
+
     def events(self, job_id) -> list[dict]:
         return self._client.get(f"/v1/jobs/{job_id}/events").json()["events"]
 
@@ -249,7 +262,7 @@ def test_a_job_runs_to_completion_against_a_fake_provider(harness):
     assert job["result"]["adapter_path"] == RESULT["adapter_path"]
 
     # The artifact is the adapter *and* the config that makes it loadable.
-    directory = Path(job["adapter_path"]).parent
+    directory = Path(harness.stored(job_id)["adapter_path"]).parent
     assert (
         directory / "adapter_model.safetensors"
     ).read_bytes() == ADAPTER_BYTES
@@ -550,7 +563,7 @@ def test_failure_at_a_stage_fails_the_job_with_its_code(harness, stage, code):
     assert job["status"] == "failed"
     assert job["error_code"] == code
     assert job["error_message"]
-    assert job["adapter_path"] is None
+    assert harness.stored(job["id"])["adapter_path"] is None
     # A machine only exists from `create` onwards; before that there is
     # nothing to tear down, and after it there always is.
     if stage in ("select_gpu", "create"):
@@ -629,7 +642,7 @@ def test_an_unreadable_adapter_is_reported_without_failing_the_job(harness):
 
     job = harness.job(job_id)
     assert job["status"] == "complete"
-    assert job["adapter_path"] is None
+    assert harness.stored(job["id"])["adapter_path"] is None
     assert any(
         "fetch failed" in (e["message"] or "").lower()
         for e in harness.events(job_id)
@@ -863,7 +876,7 @@ def test_a_silent_job_is_killed_and_reports_that_it_stalled(harness):
     assert job["error_code"] == "gpu_stalled"
     assert "900" in job["error_message"]
     assert provider.destroyed, "a stalled job must not leave a machine billing"
-    assert job["adapter_path"] is None
+    assert harness.stored(job["id"])["adapter_path"] is None
 
 
 def test_a_job_that_runs_too_long_is_killed_and_says_so_differently(harness):
@@ -1046,7 +1059,7 @@ def test_cancelling_before_a_machine_exists_stops_the_job_cleanly(harness):
     job = cancelled_at(harness, provider)
 
     assert job["status"] == "cancelled"
-    assert job["adapter_path"] is None
+    assert harness.stored(job["id"])["adapter_path"] is None
     assert provider.created == [], "no machine should have been provisioned"
     assert "destroy" not in provider.calls, "there was nothing to destroy"
 
@@ -1069,7 +1082,7 @@ def test_cancelling_during_provisioning_destroys_the_machine(harness):
     assert provider.destroyed, (
         "a cancelled job must not leave a machine billing"
     )
-    assert job["adapter_path"] is None
+    assert harness.stored(job["id"])["adapter_path"] is None
 
 
 def test_cancelling_while_waiting_for_ssh_destroys_the_machine(harness):
@@ -1102,7 +1115,7 @@ def test_cancelling_during_the_image_build_destroys_the_machine(harness):
 
     assert job["status"] == "cancelled"
     assert provider.destroyed
-    assert job["adapter_path"] is None
+    assert harness.stored(job["id"])["adapter_path"] is None
     assert "fetch" not in provider.calls, (
         "nothing is retrieved from a cancelled job"
     )
@@ -1129,7 +1142,7 @@ def test_cancelling_during_training_destroys_the_machine(harness):
 
     assert job["status"] == "cancelled"
     assert provider.destroyed
-    assert job["adapter_path"] is None
+    assert harness.stored(job["id"])["adapter_path"] is None
     assert job["result"] is None, (
         "a cancelled job has no result document to report"
     )
@@ -1156,7 +1169,7 @@ def test_cancelling_while_the_adapter_is_being_retrieved_produces_none(
     job = cancelled_at(harness, provider)
 
     assert job["status"] == "cancelled"
-    assert job["adapter_path"] is None
+    assert harness.stored(job["id"])["adapter_path"] is None
     assert provider.destroyed
     assert not list(
         (harness._tmp_path / "artifacts").rglob("*.safetensors")
@@ -1272,7 +1285,7 @@ def test_cancelling_a_finished_job_is_refused_with_a_stable_code(harness):
 
     job = harness.job(job_id)
     assert job["status"] == "complete"
-    assert job["adapter_path"], (
+    assert harness.stored(job_id)["adapter_path"], (
         "a refused cancellation must not have touched the finished job"
     )
 

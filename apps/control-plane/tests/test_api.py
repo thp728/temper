@@ -47,6 +47,15 @@ def test_catalog_lists_pinned_models(client):
         assert m["revision"] != "main", "branch name is not a pinned revision"
 
 
+def test_models_response_is_exactly_the_published_model(client):
+    from temper_control_plane.contracts_models import ModelCatalog
+
+    body = client.get("/v1/models").json()
+    parsed = ModelCatalog.model_validate(body)
+    assert parsed.default in [m.id for m in parsed.models]
+    assert set(body) == set(ModelCatalog.model_fields)
+
+
 def test_catalog_revision_shown_alongside_licence_at_model_choice(
     client, tmp_path
 ):
@@ -203,6 +212,62 @@ def test_preview_turns_are_published_typed(client, tmp_path):
     assert turn.content.startswith('"')  # preserved as its JSON form
 
 
+# --- the launch preview -----------------------------------------------------
+# Issue #38. The shell's model-choice screen shows everything a job would
+# train with before launching: the dataset it would train on, the effective
+# specification, and any feasibility warning -- while there is still time to
+# act on it. One endpoint answers that question, through the same
+# usable_dataset refusal the launch itself applies, so the browser page and
+# the API cannot disagree about whether a dataset may start a job.
+
+
+def test_launch_preview_shows_dataset_spec_and_no_warning(client, tmp_path):
+    from temper_control_plane.contracts_models import JobSpecPreview
+    from temper_core import hyperparams
+
+    ds = valid_dataset(client, tmp_path)
+    body = client.get("/v1/jobs/spec", params={"dataset_id": ds}).json()
+    parsed = JobSpecPreview.model_validate(body)
+    assert parsed.dataset.id == ds
+    # The specification shown is the one the launch would freeze: resolved
+    # exactly as the trainer resolves overrides, which here are none.
+    assert parsed.hyperparameters == hyperparams.effective({})
+    assert parsed.warning is None
+
+
+def test_launch_preview_hides_the_stored_file_path(client, tmp_path):
+    ds = valid_dataset(client, tmp_path)
+    body = client.get("/v1/jobs/spec", params={"dataset_id": ds}).json()
+    assert "path" not in body["dataset"]
+
+
+def test_launch_preview_warns_before_launch_not_after(
+    client, tmp_path, monkeypatch
+):
+    from temper_control_plane import config
+
+    monkeypatch.setattr(config, "MAX_JOB_DURATION_S", 10)
+    ds = valid_dataset(client, tmp_path)
+    body = client.get("/v1/jobs/spec", params={"dataset_id": ds}).json()
+    assert body["warning"]["code"] == "duration_feasibility"
+
+
+def test_launch_preview_refuses_an_invalid_dataset_with_its_code(
+    client, tmp_path
+):
+    p = jsonl(tmp_path, [chat("q", "a")])  # too few rows
+    ds = upload(client, p).json()["id"]
+    r = client.get("/v1/jobs/spec", params={"dataset_id": ds})
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "dataset_invalid"
+
+
+def test_launch_preview_for_an_unknown_dataset_404s(client):
+    r = client.get("/v1/jobs/spec", params={"dataset_id": "ds_nope"})
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "not_found"
+
+
 # --- jobs ------------------------------------------------------------------
 
 
@@ -251,6 +316,40 @@ def test_unknown_model_is_refused_with_alternatives(client, tmp_path):
     r = client.post("/v1/jobs", json={"dataset_id": ds, "base_model": "gpt-9"})
     assert r.status_code == 400
     assert r.json()["detail"]["available"]
+
+
+def test_job_response_is_exactly_the_published_model(client, tmp_path):
+    from temper_control_plane.contracts_models import JobRecord
+
+    ds = valid_dataset(client, tmp_path)
+    body = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    JobRecord.model_validate(body)
+    assert set(body) == set(JobRecord.model_fields)
+    # The stored artifact path is server state; it reaches no client.
+    assert "adapter_path" not in body
+
+
+def test_created_and_fetched_jobs_publish_the_same_shape(client, tmp_path):
+    """One concept, one published shape: creating a job and fetching it later
+    answer with the same fields, so a client cannot be right about one and
+    wrong about the other."""
+    from temper_control_plane.contracts_models import JobRecord
+
+    ds = valid_dataset(client, tmp_path)
+    created = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    fetched = client.get(f"/v1/jobs/{created['id']}").json()
+    assert set(fetched) == set(created) == set(JobRecord.model_fields)
+
+
+def test_job_list_response_is_exactly_the_published_model(client, tmp_path):
+    from temper_control_plane.contracts_models import JobList
+
+    ds = valid_dataset(client, tmp_path)
+    client.post("/v1/jobs", json={"dataset_id": ds})
+    body = client.get("/v1/jobs").json()
+    parsed = JobList.model_validate(body)
+    assert len(parsed.jobs) == 1
+    assert all("adapter_path" not in j for j in body["jobs"])
 
 
 def test_queued_job_has_no_adapter_yet(client, tmp_path):
@@ -332,3 +431,18 @@ def test_completed_job_downloads_a_loadable_adapter(client, tmp_path):
             "adapter_model.safetensors",
         ]
         assert z.read("adapter_model.safetensors") == b"weights"
+
+
+# --- ops --------------------------------------------------------------------
+
+
+def test_health_advertises_which_provider_would_run(client, monkeypatch):
+    """A launch driven by the browser journeys must never be able to reach the
+    billing account, so they boot the control plane with TEMPER_FAKE_PROVIDER
+    and refuse to proceed unless /health says the switch took effect."""
+    from temper_control_plane import config
+
+    monkeypatch.setattr(config, "FAKE_PROVIDER", False)
+    assert client.get("/health").json()["provider"] == "real"
+    monkeypatch.setattr(config, "FAKE_PROVIDER", True)
+    assert client.get("/health").json()["provider"] == "fake"

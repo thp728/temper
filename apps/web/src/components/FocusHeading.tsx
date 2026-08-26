@@ -4,12 +4,14 @@ import { useEffect, useRef } from "react";
 
 // Spec 007 puts focus management on navigation alongside labelling and
 // announcements: a route change that leaves the keyboard where it was is a
-// route change a screen reader never announces. The report's heading receives
-// focus on mount, so arriving here starts reading at the top.
+// route change a screen reader never announces. The heading receives focus
+// on mount, so arriving at a screen starts reading at the top.
 export default function FocusHeading({
   children,
+  id = "report-heading",
 }: {
   children: React.ReactNode;
+  id?: string;
 }) {
   const ref = useRef<HTMLHeadingElement>(null);
 
@@ -20,7 +22,7 @@ export default function FocusHeading({
   return (
     <h1
       ref={ref}
-      id="report-heading"
+      id={id}
       tabIndex={-1}
       className="text-2xl font-semibold break-all outline-none"
     >

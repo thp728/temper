@@ -5,6 +5,10 @@
 # real command, so anyone without `just` installed reads the line and runs it.
 # That makes the prerequisite a convenience rather than a dependency.
 #
+# On Windows, add `--shell pwsh --shell-arg -NoProfile --shell-arg -Command`.
+# Under the default sh, pnpm hands its children a POSIX-style PATH and the
+# processes the e2e journeys spawn cannot find native tools.
+#
 # See docs/adr/0011-one-command-runs-every-task-and-one-defines-green.md.
 
 # Show every task. This is the index; the README points here rather than listing.

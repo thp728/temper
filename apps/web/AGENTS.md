@@ -41,9 +41,15 @@ control plane's address from one definition, `src/lib/backend.ts`.
 
 - Backend URL for the dev rewrite: `TEMPER_BACKEND_URL`, defaulting to the
   address in `src/lib/backend.ts`.
-- Unported old screens are reachable through rewrites (`/jobs/*`) so a journey
+- Unported old screens are reachable through rewrites, one entry per screen
+  (`/jobs`, `/jobs/:id`, `/jobs/:id/cancel` and their stylesheet) so a journey
   stays in one origin; each ported screen deletes its proxy entry in the same
   change. See [ADR-0023](../../docs/adr/0023-the-interface-consumes-a-client-generated-from-the-api-contract.md).
+- The browser journeys drive launches with `TEMPER_FAKE_PROVIDER=1`, which the
+  control plane honours by substituting its own FakeProvider. Playwright sets
+  it for the backend it boots, and every launch journey refuses to run unless
+  `/health` says `provider: "fake"` -- a reused dev server without the switch
+  could provision real machines.
 - jsdom enforces form constraint validation but never sets a file input's
   fakepath value, so submit-blocked-by-`required` cannot be exercised in
   component tests; the empty-file refusal is the component's own guard instead.

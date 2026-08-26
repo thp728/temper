@@ -29,6 +29,7 @@ runs.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -251,3 +252,34 @@ class FakeProvider:
         raise OrchestratorError(
             self._fail_code, f"fake provider failed at {stage}"
         )
+
+
+# --- a completed run, canned -------------------------------------------------
+# For surfaces that need a whole job to reach `complete` without hardware --
+# today the browser journeys, which boot the control plane with
+# TEMPER_FAKE_PROVIDER and drive a launch to its adapter. One definition, so
+# every surface that watches a finished run watches the same one.
+
+DEMO_ADAPTER_BYTES = b"demo adapter weights"
+
+DEMO_LINES = (
+    "[00:00:00] building trainer image",
+    "[00:00:02] image built in 2s",
+    "[00:00:02] running training",
+    "{'loss': 0.6931, 'step': 10, 'epoch': 0.5}",
+)
+
+DEMO_RESULT = {
+    "ok": True,
+    "stage": "train",
+    "adapter_path": "run/adapter_model.safetensors",
+    "adapter_sha256": hashlib.sha256(DEMO_ADAPTER_BYTES).hexdigest(),
+    "adapter_config": {"r": 16, "lora_alpha": 32},
+}
+
+
+def completed_run() -> FakeProvider:
+    """The fake configured as a small successful run, end to end."""
+    return FakeProvider(
+        lines=DEMO_LINES, result=DEMO_RESULT, adapter_bytes=DEMO_ADAPTER_BYTES
+    )

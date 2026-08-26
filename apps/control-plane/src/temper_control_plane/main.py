@@ -32,9 +32,13 @@ from temper_control_plane.contracts_models import (
     DatasetList,
     DatasetRecord,
     DatasetUploaded,
+    JobList,
+    JobRecord,
+    JobSpecPreview,
+    ModelCatalog,
 )
 from temper_control_plane.web import router as web_router
-from temper_core import catalog
+from temper_core import catalog, feasibility, hyperparams
 
 
 @asynccontextmanager
@@ -79,7 +83,7 @@ app.include_router(web_router)
 # ---------------------------------------------------------------------------
 
 
-@app.get("/v1/models", tags=["catalog"])
+@app.get("/v1/models", tags=["catalog"], response_model=ModelCatalog)
 def list_models():
     """The curated base-model catalog.
 
@@ -87,7 +91,10 @@ def list_models():
     easy, but *support* means testing its chat template, tokenizer quirks and
     packing compatibility. This list is a promise about what has been tested.
     """
-    return {"models": catalog.listing(), "default": catalog.DEFAULT_MODEL}
+    return {
+        "models": catalog.listing(),
+        "default": catalog.DEFAULT_MODEL,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +164,7 @@ class JobRequest(BaseModel):
     hyperparameters: dict = Field(default_factory=dict)
 
 
-@app.post("/v1/jobs", tags=["jobs"], status_code=201)
+@app.post("/v1/jobs", tags=["jobs"], status_code=201, response_model=JobRecord)
 def create_job(req: JobRequest):
     """Launch a fine-tuning job.
 
@@ -171,12 +178,39 @@ def create_job(req: JobRequest):
     return db.get_job(job_id)
 
 
-@app.get("/v1/jobs", tags=["jobs"])
+@app.get("/v1/jobs", tags=["jobs"], response_model=JobList)
 def list_jobs():
     return {"jobs": db.list_jobs()}
 
 
-@app.get("/v1/jobs/{job_id}", tags=["jobs"])
+@app.get("/v1/jobs/spec", tags=["jobs"], response_model=JobSpecPreview)
+def get_job_spec_preview(dataset_id: str):
+    """What a launch would train with, before anything is launched.
+
+    Consumed by the shell's model-choice screen (#38), which must show the
+    dataset, the effective specification and any feasibility warning while
+    the user can still act on them. Declared **before** `/v1/jobs/{job_id}`:
+    routes match in declaration order, and "spec" would otherwise be
+    captured as a job id.
+
+    Refusals come through `jobs.usable_dataset`, the same path the launch
+    itself applies -- a dataset that cannot start a job is refused here with
+    its stable code rather than at the moment of commitment.
+    """
+    ds = jobs.usable_dataset(dataset_id)
+    # Estimated against the defaults this screen launches with: the estimate
+    # must describe the job the button will start.
+    warn = feasibility.warning(
+        feasibility.usable_rows(ds), {}, config.MAX_JOB_DURATION_S
+    )
+    return {
+        "dataset": ds,
+        "hyperparameters": hyperparams.effective({}),
+        "warning": warn,
+    }
+
+
+@app.get("/v1/jobs/{job_id}", tags=["jobs"], response_model=JobRecord)
 def get_job(job_id: str):
     job = db.get_job(job_id)
     if not job:
@@ -270,4 +304,12 @@ def download_adapter(job_id: str):
 
 @app.get("/health", tags=["ops"])
 def health():
-    return {"ok": True}
+    # Which provider implementation a launch would use. The browser journeys
+    # boot this process with TEMPER_FAKE_PROVIDER and refuse to drive a
+    # launch unless this field confirms the switch took effect -- a launch
+    # that reaches for the billing account from a test is the one mistake
+    # this codebase refuses to make cheap.
+    return {
+        "ok": True,
+        "provider": "fake" if config.FAKE_PROVIDER else "real",
+    }

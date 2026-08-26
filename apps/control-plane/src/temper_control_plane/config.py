@@ -179,3 +179,13 @@ def _megabytes(name: str, default: float) -> float:
 MAX_DATASET_BYTES = int(
     _megabytes("TEMPER_MAX_DATASET_MB", 1024) * 1024 * 1024
 )
+
+
+# --- journey provider -------------------------------------------------------
+# **Off by default, and a lie about compute only.** TEMPER_FAKE_PROVIDER swaps
+# the in-package FakeProvider in for launched jobs, so the browser journeys
+# (apps/web/e2e) can drive a launch to completion with no hardware, no
+# credentials and no way to reach the billing account -- which is what makes
+# them runnable on every push. Everything else is real: the same API, the
+# same database, the same orchestrator transitions.
+FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))

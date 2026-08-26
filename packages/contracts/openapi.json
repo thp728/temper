@@ -15,6 +15,65 @@
         "title": "Body_upload_dataset_v1_datasets_post",
         "type": "object"
       },
+      "CatalogEntry": {
+        "description": "One base model in the curated catalog: what it is, under what terms,\nand pinned to which revision.\n\nEvery field is shown to a user choosing a model -- licence and revision\nare not metadata here; they are part of what the user is agreeing to\ntrain against.",
+        "properties": {
+          "context_length": {
+            "title": "Context Length",
+            "type": "integer"
+          },
+          "est_peak_vram_gb": {
+            "title": "Est Peak Vram Gb",
+            "type": "number"
+          },
+          "good_for": {
+            "title": "Good For",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "license": {
+            "title": "License",
+            "type": "string"
+          },
+          "license_url": {
+            "title": "License Url",
+            "type": "string"
+          },
+          "min_gpu": {
+            "title": "Min Gpu",
+            "type": "string"
+          },
+          "params_b": {
+            "title": "Params B",
+            "type": "number"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "repo",
+          "revision",
+          "params_b",
+          "license",
+          "license_url",
+          "context_length",
+          "good_for",
+          "min_gpu",
+          "est_peak_vram_gb"
+        ],
+        "title": "CatalogEntry",
+        "type": "object"
+      },
       "DatasetList": {
         "description": "The response to listing datasets.",
         "properties": {
@@ -221,6 +280,40 @@
         "title": "DatasetUploaded",
         "type": "object"
       },
+      "FeasibilityWarning": {
+        "description": "The duration-feasibility estimate, published as the dict\n`temper_core.feasibility.warning()` produces. An estimate everywhere it\nappears -- the message says so, so no client can present it as a quote.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "estimated_duration_s": {
+            "title": "Estimated Duration S",
+            "type": "number"
+          },
+          "max_duration_s": {
+            "title": "Max Duration S",
+            "type": "number"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "rows_per_second": {
+            "title": "Rows Per Second",
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "estimated_duration_s",
+          "max_duration_s",
+          "rows_per_second"
+        ],
+        "title": "FeasibilityWarning",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -232,6 +325,192 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JobList": {
+        "description": "The response to listing jobs.",
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobRecord"
+            },
+            "title": "Jobs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "title": "JobList",
+        "type": "object"
+      },
+      "JobRecord": {
+        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\n`adapter_path`: an absolute filesystem path is server state, and it had\nreached every raw job response before the interface consumed this API.\nThe artifact travels through the download endpoint instead.",
+        "properties": {
+          "base_model": {
+            "title": "Base Model",
+            "type": "string"
+          },
+          "base_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Revision"
+          },
+          "cancel_requested": {
+            "default": false,
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "dataset_id": {
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "gpu_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Type"
+          },
+          "hyperparameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hyperparameters"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "price_per_hour": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Per Hour"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FeasibilityWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "dataset_id",
+          "base_model",
+          "status",
+          "created_at"
+        ],
+        "title": "JobRecord",
         "type": "object"
       },
       "JobRequest": {
@@ -255,6 +534,57 @@
           "dataset_id"
         ],
         "title": "JobRequest",
+        "type": "object"
+      },
+      "JobSpecPreview": {
+        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.",
+        "properties": {
+          "dataset": {
+            "$ref": "#/components/schemas/DatasetRecord"
+          },
+          "hyperparameters": {
+            "additionalProperties": true,
+            "title": "Hyperparameters",
+            "type": "object"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeasibilityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "dataset",
+          "hyperparameters"
+        ],
+        "title": "JobSpecPreview",
+        "type": "object"
+      },
+      "ModelCatalog": {
+        "description": "The catalog and its default. The default is published beside the list\nbecause \"which one starts selected\" is a product decision, not something\na client should guess by ordering.",
+        "properties": {
+          "default": {
+            "title": "Default",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogEntry"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "models",
+          "default"
+        ],
+        "title": "ModelCatalog",
         "type": "object"
       },
       "PreviewRow": {
@@ -517,7 +847,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/JobList"
+                }
               }
             },
             "description": "Successful Response"
@@ -545,7 +877,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/JobRecord"
+                }
               }
             },
             "description": "Successful Response"
@@ -562,6 +896,49 @@
           }
         },
         "summary": "Create Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/spec": {
+      "get": {
+        "description": "What a launch would train with, before anything is launched.\n\nConsumed by the shell's model-choice screen (#38), which must show the\ndataset, the effective specification and any feasibility warning while\nthe user can still act on them. Declared **before** `/v1/jobs/{job_id}`:\nroutes match in declaration order, and \"spec\" would otherwise be\ncaptured as a job id.\n\nRefusals come through `jobs.usable_dataset`, the same path the launch\nitself applies -- a dataset that cannot start a job is refused here with\nits stable code rather than at the moment of commitment.",
+        "operationId": "get_job_spec_preview_v1_jobs_spec_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobSpecPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job Spec Preview",
         "tags": [
           "jobs"
         ]
@@ -585,7 +962,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/JobRecord"
+                }
               }
             },
             "description": "Successful Response"
@@ -747,7 +1126,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalog"
+                }
               }
             },
             "description": "Successful Response"

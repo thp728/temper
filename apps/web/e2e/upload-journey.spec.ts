@@ -75,20 +75,14 @@ test("an accepted dataset reaches its report and offers to proceed", async ({
   ).toBeVisible();
 });
 
-test("the journey continues through the not-yet-ported screens", async ({
+test("continuing hands over to the ported launch screen in this shell", async ({
   page,
 }) => {
-  // Until model choice and launch are ported (#38), the shell hands off to
-  // the existing server-rendered pages through the same origin. This is the
-  // proof that "nothing deleted yet" still means a walkable journey -- and
-  // that the handoff page arrives styled, since an unstyled page is broken
-  // whatever its headings say.
+  // Since #38 the next screen is part of this application, not a proxy
+  // handoff. The ported screen is recognised by what only it says -- the
+  // frozen-spec statement that replaces the form post.
   const rows = Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`));
   await uploadRows(page, rows);
-
-  const sheet = await page.request.get("/static/styles.css");
-  expect(sheet.status()).toBe(200);
-  expect(sheet.headers()["content-type"]).toContain("text/css");
 
   await page
     .getByRole("link", { name: "Choose a model and continue" })
@@ -97,6 +91,7 @@ test("the journey continues through the not-yet-ported screens", async ({
   await expect(
     page.getByRole("heading", { name: "Choose a base model" }),
   ).toBeVisible();
+  await expect(page.getByText(/cannot be changed afterwards/i)).toBeVisible();
 });
 
 test("a rejected dataset names each problem against its line", async ({
