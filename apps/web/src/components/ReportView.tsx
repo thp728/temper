@@ -213,13 +213,15 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
           <BackToUpload />
         ) : (
           <>
-            {/* Until this journey's next screen is ported (#38), continuing
-                hands over to the existing server-rendered create-job page,
-                proxied through this origin so the journey stays in one place. */}
             <Button asChild>
-              <a href={`/jobs/new?dataset_id=${encodeURIComponent(record.id)}`}>
+              <Link
+                href={{
+                  pathname: "/jobs/new",
+                  query: { dataset_id: record.id },
+                }}
+              >
                 Choose a model and continue
-              </a>
+              </Link>
             </Button>
             <BackToUpload />
           </>

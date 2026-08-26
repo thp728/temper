@@ -1,3 +1,8 @@
+# Windows only: under the default sh, pnpm hands its children a POSIX-style
+# PATH, and the processes the e2e journeys spawn cannot resolve native tools
+# like `uv`.
+set windows-shell := ["pwsh", "-NoProfile", "-Command"]
+
 # One entry point. The pipeline runs these recipes, not a parallel definition of
 # them, which is the whole reason this file exists.
 #

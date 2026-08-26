@@ -1,13 +1,13 @@
-"""The published shapes of the dataset endpoints.
+"""The published shapes of the API's responses.
 
 These exist because the web client is generated from this API's schema. A
 handler returning a dict merge publishes no shape at all: the generator emits
 `unknown`, and the interface ends up hand-typing what the contract refused to
 -- which is precisely the drift the generated client exists to prevent.
 
-They describe what crosses the HTTP boundary only. The stored row keeps its
-path column; `DatasetRecord` simply does not publish it, so an absolute
-filesystem path reaches neither a page nor a client.
+They describe what crosses the HTTP boundary only. Stored rows keep their
+path columns; `DatasetRecord` and `JobRecord` simply do not publish them, so
+an absolute filesystem path reaches neither a page nor a client.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ValidationIssue(BaseModel):
@@ -107,3 +107,92 @@ class DatasetList(BaseModel):
     """The response to listing datasets."""
 
     datasets: list[DatasetRecord]
+
+
+class CatalogEntry(BaseModel):
+    """One base model in the curated catalog: what it is, under what terms,
+    and pinned to which revision.
+
+    Every field is shown to a user choosing a model -- licence and revision
+    are not metadata here; they are part of what the user is agreeing to
+    train against."""
+
+    id: str
+    repo: str
+    revision: str
+    params_b: float
+    license: str
+    license_url: str
+    context_length: int
+    good_for: str
+    min_gpu: str
+    est_peak_vram_gb: float
+
+
+class ModelCatalog(BaseModel):
+    """The catalog and its default. The default is published beside the list
+    because "which one starts selected" is a product decision, not something
+    a client should guess by ordering."""
+
+    models: list[CatalogEntry]
+    default: str
+
+
+class FeasibilityWarning(BaseModel):
+    """The duration-feasibility estimate, published as the dict
+    `temper_core.feasibility.warning()` produces. An estimate everywhere it
+    appears -- the message says so, so no client can present it as a quote."""
+
+    code: str
+    message: str
+    estimated_duration_s: float
+    max_duration_s: float
+    rows_per_second: float
+
+
+class JobSpecPreview(BaseModel):
+    """What a launch would train with, before anything is launched.
+
+    The whole point of the launch screen is that nothing is a surprise after
+    committing: this is that answer as one published shape. `hyperparameters`
+    are the effective specification resolved exactly as the trainer resolves
+    overrides -- showing anything else would describe a job the trainer will
+    not run."""
+
+    dataset: DatasetRecord
+    hyperparameters: dict[str, Any]
+    warning: FeasibilityWarning | None = None
+
+
+class JobRecord(BaseModel):
+    """A job and the record of what became of it, published typed.
+
+    Like `DatasetRecord` for stored rows, this deliberately does not publish
+    `adapter_path`: an absolute filesystem path is server state, and it had
+    reached every raw job response before the interface consumed this API.
+    The artifact travels through the download endpoint instead."""
+
+    id: str
+    dataset_id: str
+    base_model: str
+    base_revision: str | None = None
+    hyperparameters: dict[str, Any] | None = None
+    status: str
+    cancel_requested: bool = False
+    created_at: float
+    started_at: float | None = None
+    finished_at: float | None = None
+    machine_id: int | None = None
+    gpu_type: str | None = None
+    price_per_hour: float | None = None
+    currency: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    warnings: list[FeasibilityWarning] = Field(default_factory=list)
+    result: dict[str, Any] | None = None
+
+
+class JobList(BaseModel):
+    """The response to listing jobs."""
+
+    jobs: list[JobRecord]

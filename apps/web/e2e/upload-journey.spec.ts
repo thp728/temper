@@ -1,48 +1,16 @@
 import { expect, type Page } from "@playwright/test";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { test } from "@playwright/test";
+import { chat, tempFile, jsonl, upload, uploadRows } from "./helpers";
 
 // A good test here drives the application the way a person does: find a
 // control by its accessible name, act on it, assert on what the user can
 // then see. No internal structure, no class names.
-
-function chat(user: string, assistant: string) {
-  return {
-    messages: [
-      { role: "user", content: user },
-      { role: "assistant", content: assistant },
-    ],
-  };
-}
-
-async function tempFile(content: string, name = "d.jsonl"): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "temper-e2e-"));
-  const file = path.join(dir, name);
-  await fs.writeFile(file, content, "utf8");
-  return file;
-}
-
-function jsonl(rows: object[]): string {
-  return rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
-}
 
 // Stat cards pair a visible label with a value; read them as pairs.
 function statValue(page: Page, name: string) {
   return page
     .getByText(name, { exact: true })
     .locator("xpath=following-sibling::dd");
-}
-
-async function upload(page: Page, filePath: string) {
-  await page.goto("/");
-  await page.getByLabel("Dataset file (.jsonl)").setInputFiles(filePath);
-  await page.getByRole("button", { name: "Upload and validate" }).click();
-}
-
-async function uploadRows(page: Page, rows: object[]) {
-  await upload(page, await tempFile(jsonl(rows)));
 }
 
 test("an accepted dataset reaches its report and offers to proceed", async ({
@@ -75,20 +43,14 @@ test("an accepted dataset reaches its report and offers to proceed", async ({
   ).toBeVisible();
 });
 
-test("the journey continues through the not-yet-ported screens", async ({
+test("continuing hands over to the ported launch screen in this shell", async ({
   page,
 }) => {
-  // Until model choice and launch are ported (#38), the shell hands off to
-  // the existing server-rendered pages through the same origin. This is the
-  // proof that "nothing deleted yet" still means a walkable journey -- and
-  // that the handoff page arrives styled, since an unstyled page is broken
-  // whatever its headings say.
+  // Since #38 the next screen is part of this application, not a proxy
+  // handoff. The ported screen is recognised by what only it says -- the
+  // frozen-spec statement that replaces the form post.
   const rows = Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`));
   await uploadRows(page, rows);
-
-  const sheet = await page.request.get("/static/styles.css");
-  expect(sheet.status()).toBe(200);
-  expect(sheet.headers()["content-type"]).toContain("text/css");
 
   await page
     .getByRole("link", { name: "Choose a model and continue" })
@@ -97,6 +59,7 @@ test("the journey continues through the not-yet-ported screens", async ({
   await expect(
     page.getByRole("heading", { name: "Choose a base model" }),
   ).toBeVisible();
+  await expect(page.getByText(/cannot be changed afterwards/i)).toBeVisible();
 });
 
 test("a rejected dataset names each problem against its line", async ({

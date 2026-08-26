@@ -536,5 +536,19 @@ class JarvisLabsProvider:
 
 
 def new_provider() -> Provider:
-    """The default provider. Callers that do not care get this one."""
+    """The default provider. Callers that do not care get this one.
+
+    TEMPER_FAKE_PROVIDER (config.FAKE_PROVIDER) substitutes the in-package
+    fake, for the browser journeys and a hardware-free demo: a launch driven
+    from a test must never be able to reach the billing account, and /health
+    advertises which implementation is in force so the journeys can refuse to
+    run against a process that could. Imported here rather than at module
+    level because fake_provider imports this module's dataclasses."""
+    from . import config
+
+    if config.FAKE_PROVIDER:
+        from .fake_provider import completed_run
+
+        return completed_run()
+
     return JarvisLabsProvider()
