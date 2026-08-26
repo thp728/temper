@@ -1,0 +1,27 @@
+{
+  "defaults": {
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.0,
+    "learning_rate": 2e-4,
+    "num_epochs": 3,
+    "micro_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "sequence_len": 2048,
+    "warmup_ratio": 0.1,
+    "lr_scheduler": "cosine",
+    "val_set_size": 0.05
+  },
+  "allowed_overrides": [
+    "lora_r",
+    "lora_alpha",
+    "learning_rate",
+    "num_epochs",
+    "max_steps",
+    "sequence_len",
+    "micro_batch_size",
+    "gradient_accumulation_steps",
+    "val_set_size",
+    "save_steps"
+  ]
+}

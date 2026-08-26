@@ -7,44 +7,51 @@ it is given without resolving anything -- there is one resolver, this one, and
 its answer is visible in the job's record. Alpha recomputes from rank when rank
 moves alone, and rsLoRA is inferred at rank >= 32, both before launch.
 
-This table was once a hand-maintained mirror of defaults in
-`apps/trainer/entrypoint.py`; those copies are gone now, so these literals are
-the definition until #82 moves them into `packages/contracts/`. The trainer's
-required-key set is pinned to `effective({})` by
-`apps/trainer/tests/test_agreement_with_the_domain.py`, which is what stops a
-default added here from failing every launch on the machine.
+The defaults and the overridable-key list are **not declared here**. They are
+data in `packages/contracts/trainer-defaults.json` -- the one definition
+(#82), read through this module and shipped into the trainer image at build
+time because the image never installs this package (ADR-0010). This module
+owns only the resolution rules around the data, so an edit to the JSON reaches
+the page and the run together or not at all.
+
+**Labelled assumption:** the read happens once at import and a missing file
+stops the process -- the config.py rule that a value which cannot be honoured
+must not be silently defaulted. That is only correct while this package lives
+in the workspace tree it walks; if temper_core ever ships as a wheel outside
+the monorepo, this lookup is the thing to revisit.
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
-DEFAULTS: dict[str, Any] = {
-    "lora_r": 16,
-    "lora_alpha": 32,  # α = 2r; recompute if r changes
-    "lora_dropout": 0.0,
-    "learning_rate": 2e-4,
-    "num_epochs": 3,
-    "micro_batch_size": 1,
-    "gradient_accumulation_steps": 8,  # effective batch 8; see wiki
-    "sequence_len": 2048,
-    "warmup_ratio": 0.1,
-    "lr_scheduler": "cosine",
-    "val_set_size": 0.05,
-}
 
-ALLOWED_OVERRIDES = {
-    "lora_r",
-    "lora_alpha",
-    "learning_rate",
-    "num_epochs",
-    "max_steps",
-    "sequence_len",
-    "micro_batch_size",
-    "gradient_accumulation_steps",
-    "val_set_size",
-    "save_steps",
-}
+def _contract_path() -> Path:
+    """Find the contract by walking up to the workspace root.
+
+    Marked on `pyproject.toml` beside `packages/` rather than depth-coded:
+    a counted `parents[N]` breaks silently when this file moves, which is
+    exactly how the control plane's own root lookup broke once already.
+    """
+    for parent in Path(__file__).resolve().parents:
+        candidate = (
+            parent / "packages" / "contracts" / ("trainer-defaults.json")
+        )
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"packages/contracts/trainer-defaults.json not found above "
+        f"{__file__}; the workspace tree is incomplete"
+    )
+
+
+CONTRACT_PATH = _contract_path()
+_loaded = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+
+DEFAULTS: dict[str, Any] = _loaded["defaults"]
+ALLOWED_OVERRIDES: set[str] = set(_loaded["allowed_overrides"])
 
 
 def effective(overrides: dict[str, Any] | None) -> dict[str, Any]:

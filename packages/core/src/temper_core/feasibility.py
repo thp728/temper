@@ -33,14 +33,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from temper_core.hyperparams import DEFAULTS
+
 # Measured, not chosen: 192 row-passes / 161.4s. See the module docstring
 # before changing this number or its derivation.
 ROWS_PER_SECOND = 192 / 161.4
-
-# Mirrors apps/trainer/entrypoint.py DEFAULTS["num_epochs"]. Duplicated rather than
-# imported because the control plane does not import trainer code -- but the
-# two must agree, and the trainer's default is the documented one.
-DEFAULT_EPOCHS = 3
 
 WARNING_CODE = "duration_feasibility"
 
@@ -71,14 +68,15 @@ def estimated_duration_s(
     """
     if hyperparams.get("max_steps") is not None:
         return None
-    try:
-        epochs = float(hyperparams.get("num_epochs", DEFAULT_EPOCHS))
-    except (TypeError, ValueError):
-        epochs = DEFAULT_EPOCHS
     # The trainer refuses bad overrides later; until then the estimate simply
-    # falls back to the default rather than crashing job creation.
+    # falls back to the trainer's own default rather than crashing job
+    # creation. The default is read, not retyped: there is one table.
+    try:
+        epochs = float(hyperparams.get("num_epochs", DEFAULTS["num_epochs"]))
+    except (TypeError, ValueError):
+        epochs = DEFAULTS["num_epochs"]
     if epochs <= 0:
-        epochs = DEFAULT_EPOCHS
+        epochs = DEFAULTS["num_epochs"]
     return usable_rows * epochs / ROWS_PER_SECOND
 
 

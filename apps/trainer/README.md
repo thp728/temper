@@ -83,9 +83,12 @@ produces — that equality is pinned by `test_agreement_with_the_domain.py`.
 
 ## What is settable, and what is not
 
-Everything under `hyperparameters` is applied as given; the resolver decides
-what may appear there (`ALLOWED_OVERRIDES` in `packages/core`). **Default-
-locked, not hidden** — chat-template resolution, `train_on_inputs: false`,
+The defaults and the overridable keys are **data in one place**:
+[`packages/contracts/trainer-defaults.json`](../../packages/contracts/trainer-defaults.json),
+read by `temper_core.hyperparams` to resolve the spec before launch (#82).
+Everything under `hyperparameters` is then applied as given; the resolver
+decides what may appear there (`ALLOWED_OVERRIDES` in that file).
+**Default-locked, not hidden** — chat-template resolution, `train_on_inputs: false`,
 EOS handling, NF4 double-quant, `lora_target_linear`, bf16, seed — are
 constants of this entrypoint, not resolved values. They are the
 highest-frequency silent-failure surface: they pass every obvious health check

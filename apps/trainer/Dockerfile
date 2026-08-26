@@ -34,20 +34,27 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # resolution problem this base exists to avoid. If something is genuinely
 # missing, it belongs in a pinned requirements file with its own review, not an
 # unpinned RUN pip install.
-# Both modules, not just the entrypoint. `thinking.py` arrived after this
-# Dockerfile was written and after spike 4 last built the image, so the COPY
-# was never updated -- and because `from thinking import ...` is a top-level
-# import, the container would have died before the `finally` that writes
+#
+# Everything the entrypoint imports, plus the one data file that defines
+# what it will validate. The contract ships in the same layer as the code:
+# defaults are data in `packages/contracts/trainer-defaults.json` (#82),
+# read by `temper_core.hyperparams` to resolve the spec before launch (#83),
+# and the image bakes the same file so data and code share one digest once
+# the pipeline builds it. `thinking.py` arrived after this Dockerfile was
+# written and after spike 4 last built the image, so the COPY was never
+# updated -- and because `from thinking import ...` is a top-level import,
+# the container would have died before the `finally` that writes
 # result.json, surfacing to the orchestrator as the useless
-# "trainer produced no result.json". Caught by reading, not by paying for it.
+# "trainer produced no result.json". Caught by reading, not by paying for
+# it.
 #
 # The build context is assembled, not a directory you can point at. `thinking.py`
 # lives in packages/core because the control plane validates thinking mode with
-# the same module this image runs, so the orchestrator flattens both sources into
+# the same module this image runs, so the orchestrator flattens every source into
 # one context before building. `just image` does the same thing locally, and
 # TRAINER_SOURCES in the orchestrator is the list both use. A source added here
 # and not there fails test_trainer_context.py.
-COPY entrypoint.py thinking.py /opt/trainer/
+COPY entrypoint.py thinking.py trainer-defaults.json /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.

@@ -16,7 +16,7 @@ Two seams, per the spec's testing decisions:
 
 import pytest
 
-from temper_core import feasibility
+from temper_core import feasibility, hyperparams
 
 # The control plane's ceiling, as a number rather than as an import. The
 # domain takes the ceiling as an argument precisely so it does not have to
@@ -117,7 +117,9 @@ def test_warning_at_exact_equality_does_not_fire():
     """The estimate is crude; a boundary value is inside its own error bar.
     Only plainly-over fires."""
     rows = int(
-        CEILING_S * feasibility.ROWS_PER_SECOND / feasibility.DEFAULT_EPOCHS
+        CEILING_S
+        * feasibility.ROWS_PER_SECOND
+        / hyperparams.DEFAULTS["num_epochs"]
     )
     assert (
         feasibility.warning(

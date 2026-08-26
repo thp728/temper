@@ -1,4 +1,4 @@
-"""Trainer entrypoint — job spec in, adapter + result out.
+"""Trainer entrypoint ΓÇö job spec in, adapter + result out.
 
 Runs inside the pinned image. The orchestrator writes a job spec and a dataset
 to /job, runs this container, and reads /out.
@@ -10,7 +10,7 @@ to /job, runs this container, and reads /out.
 Design notes worth keeping, because each is a decision:
 
 * **Axolotl owns the training loop, we own the contract.** We render YAML and
-  invoke `axolotl train`. We do not call TRL/PEFT directly — spike 3 showed
+  invoke `axolotl train`. We do not call TRL/PEFT directly ΓÇö spike 3 showed
   those APIs move underneath you (TRL 1.x dropped `warmup_ratio` from
   SFTConfig), while Axolotl's config surface stayed stable and still exposes it.
 * **Correctness settings are not user-settable.** Chat template resolution,
@@ -44,6 +44,29 @@ from typing import IO
 from thinking import MixedThinkingDataset
 from thinking import detect as detect_thinking
 
+
+def _contract_path() -> Path:
+    """Find the single definition of the trainer's defaults.
+
+    Sibling first: in the image this file sits beside trainer-defaults.json at
+    /opt/trainer (copied by the Dockerfile), and in the repo it sits in
+    apps/trainer. Falls back to the workspace tree so an import under the test
+    suite resolves without the image. The trainer never installs
+    packages/core (ADR-0010), so it reads the data, not the resolver module.
+    """
+    sibling = Path(__file__).resolve().parent / "trainer-defaults.json"
+    if sibling.is_file():
+        return sibling
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "packages" / "contracts" / "trainer-defaults.json"
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "packages/contracts/trainer-defaults.json not found beside this file "
+        "or anywhere in the workspace tree"
+    )
+
+
 JOB_DIR = Path(os.environ.get("JOB_DIR", "/job"))
 OUT_DIR = Path(os.environ.get("OUT_DIR", "/out"))
 CONFIG = OUT_DIR / "config.yaml"
@@ -53,24 +76,17 @@ LOG = OUT_DIR / "train.log"
 # The trainer resolves nothing (#83): the control plane applies its resolver to
 # the user's overrides before launch and writes the full resolved set into the
 # job spec, so there is one resolver, the visible one. What remains here is the
-# guard: these are the keys this entrypoint reads when it renders config.yaml.
-# A spec missing any of them stops the job before the GPU does any work --
-# training on a number nobody chose is worse than not training -- and a key
-# outside the set is refused loudly and echoed back rather than dropped.
-REQUIRED_HYPERPARAMETERS = {
-    "lora_r",
-    "lora_alpha",
-    "lora_dropout",
-    "learning_rate",
-    "num_epochs",
-    "micro_batch_size",
-    "gradient_accumulation_steps",
-    "sequence_len",
-    "warmup_ratio",
-    "lr_scheduler",
-    "val_set_size",
-    "lora_use_rslora",
-}
+# guard: the keys this entrypoint enforces are not declared here. They are read
+# from the single definition in packages/contracts/trainer-defaults.json (#82),
+# copied beside this file at build time and resolved through the same data by the
+# control-plane resolver. A default added there without the trainer learning it
+# would fail this guard before the GPU does any work -- training on a number
+# nobody chose is worse than not training -- and the equality is pinned by
+# apps/trainer/tests/test_agreement_with_the_domain.py, so the two cannot
+# drift. `lora_use_rslora` is in the resolved set because the resolver infers it
+# at rank >= 32 rather than carrying it in the data.
+_CONTRACT = json.loads(_contract_path().read_text(encoding="utf-8"))
+REQUIRED_HYPERPARAMETERS = set(_CONTRACT["defaults"]) | {"lora_use_rslora"}
 KNOWN_HYPERPARAMETERS = REQUIRED_HYPERPARAMETERS | {
     # Optional wherever they appear; smoke tests use them to keep a job short.
     "max_steps",
@@ -123,8 +139,8 @@ def iter_output_lines(
 
     Not `for line in stream`, for two reasons:
 
-    * **Progress bars never send a newline.** tqdm — which transformers uses
-      for every epoch — redraws with a carriage return. A reader that waits
+    * **Progress bars never send a newline.** tqdm ΓÇö which transformers uses
+      for every epoch ΓÇö redraws with a carriage return. A reader that waits
       for `\n` sees nothing for the whole length of a bar, which on a training
       phase that *is* one bar is indistinguishable from the silence this
       channel exists to remove. So `\r` ends a line here too.
@@ -159,7 +175,7 @@ def run_streaming(cmd: list[str]) -> tuple[int, list[str]]:
     Three things here are load-bearing, and dropping any one of them
     reintroduces the silence:
 
-    * `bufsize=0` so the pipe is read raw — a buffered reader waits to fill a
+    * `bufsize=0` so the pipe is read raw ΓÇö a buffered reader waits to fill a
       block before handing us anything.
     * `PYTHONUNBUFFERED` in the child's environment, because the child is
       itself Python and will otherwise buffer its own stdout when it sees a
@@ -288,7 +304,7 @@ def build_config(
             # cross-example contamination. Off until measured per model.
             "sample_packing": False,
             "logging_steps": 1,
-            "save_safetensors": True,  # never torch .bin — see spike 3 / C14
+            "save_safetensors": True,  # never torch .bin ΓÇö see spike 3 / C14
             "save_total_limit": 3,
         }
     )
@@ -379,7 +395,7 @@ def main() -> int:
         result["base_model"] = job.get("base_model")
         result["base_revision"] = job.get("base_revision")
         log(
-            f"job {job.get('job_id')} — base_model={job.get('base_model')}"
+            f"job {job.get('job_id')} ΓÇö base_model={job.get('base_model')}"
             f"@{job.get('base_revision') or 'unpinned'}"
         )
 
