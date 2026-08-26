@@ -62,6 +62,10 @@ contracts-check: contracts
 dev:
     uv run uvicorn temper_control_plane.main:app --reload
 
+# --- the web application (apps/web) -----------------------------------------
+# Every recipe is a single invocation; read the line and run it if you lack
+# `just` or `corepack`.
+
 # Build the trainer image from the same sources a real job builds from.
 image:
     uv run python -m temper_control_plane.trainer_image
@@ -102,10 +106,12 @@ web-test:
 e2e:
     corepack pnpm --dir apps/web exec playwright test
 
-# Both halves of the journey: control plane on :8000, shell on :3000.
-# Two lines because two processes must run; each line stands alone.
+# The shell half of the journey, with reload. Run it beside `just dev` in a
+# second terminal -- `just` runs each recipe line in its own shell, so
+# backgrounding the control plane here would orphan it the moment this line's
+# shell exits. The port each side uses is defined once, in
+# apps/web/src/lib/backend.ts.
 dev-web:
-    uv run uvicorn temper_control_plane.main:app --port 8000 &
     corepack pnpm --dir apps/web dev
 
 # Install the fast pre-commit filter. Format, lint and secrets on staged files.
