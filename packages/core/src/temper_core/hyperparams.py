@@ -36,8 +36,8 @@ def _contract_path() -> Path:
     exactly how the control plane's own root lookup broke once already.
     """
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / "packages" / "contracts" / (
-            "trainer-defaults.json"
+        candidate = (
+            parent / "packages" / "contracts" / ("trainer-defaults.json")
         )
         if candidate.is_file():
             return candidate
