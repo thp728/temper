@@ -44,11 +44,14 @@ client runs in a threadpool rather than blocking a handler
 
 **The control plane resolves; the trainer applies (#83).** The job spec written at launch carries
 `hyperparams.effective(overrides)` whole; the trainer holds no defaults and resolves nothing -- one
-resolver, and it is the visible one. The table lives in `temper_core.hyperparams` (with
-`feasibility.DEFAULT_EPOCHS` still a known duplicate); the trainer's required-key set is pinned to
-the resolver's output by an app-side test, because a default added to the resolver without the
-trainer learning to read it would fail every launch on the machine. Issue #82 moves the table into
-`packages/contracts/`. Do not add another copy anywhere else.
+resolver, and it is the visible one. The table that resolver reads is
+`packages/contracts/trainer-defaults.json` (#82), read through `temper_core.hyperparams` and shipped
+into the trainer image at build time. Never declare these values as literals anywhere: a scan in
+`apps/trainer/tests/test_agreement_with_the_domain.py` fails on any module-level literal bound to
+those names. It watches the names the copies historically travelled under, so a paste is caught; a
+fresh name for the same numbers is not, and stays a review concern. The trainer's required-key set
+is pinned to the resolver's output by an app-side test, because a default added to the resolver
+without the trainer learning to read it would fail every launch on the machine.
 
 ## Testing
 

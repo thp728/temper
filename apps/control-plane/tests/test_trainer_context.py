@@ -36,8 +36,13 @@ def _copied_by_the_dockerfile() -> set[str]:
 
 
 def test_every_source_shipped_is_a_source_the_image_copies():
+    """Everything in the context except the Dockerfile itself must be copied
+    into the image -- data files included. The contract is the single
+    definition read by the resolver path (#82, #83); a missed source would
+    mean code and data no longer bake at one digest, or a container that
+    dies at import because `thinking.py` was omitted."""
     shipped = {
-        p.name for p in trainer_build.TRAINER_SOURCES if p.suffix == ".py"
+        p.name for p in trainer_build.TRAINER_SOURCES if p.name != "Dockerfile"
     }
     assert shipped == _copied_by_the_dockerfile()
 

@@ -35,10 +35,17 @@ TRAINER_DIR = REPO_ROOT / "apps" / "trainer"
 # the control plane validates thinking mode with the same module the image runs,
 # and a second copy beside the entrypoint is the kind of hand-mirrored
 # definition ADR-0010 forbids.
+#
+# `trainer-defaults.json` is the single definition of the trainer's defaults
+# and overridable keys (#82). The control plane reads it through
+# `temper_core.hyperparams` to resolve the spec before launch (#83); the
+# trainer validates that spec, and the image ships the same file so data and
+# code bake at one digest once the pipeline builds it.
 TRAINER_SOURCES = (
     TRAINER_DIR / "Dockerfile",
     TRAINER_DIR / "entrypoint.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
+    REPO_ROOT / "packages" / "contracts" / "trainer-defaults.json",
 )
 
 

@@ -4,14 +4,25 @@ The create-job page promises the user a set of hyperparameters. Since #83 that
 promise is what launches: the orchestrator writes `effective()` into the job
 spec and the trainer applies it without resolving anything, so these tests
 define the contract both ends rely on -- defaults, the allowed overrides,
-alpha tracking rank, rsLoRA inferred.
-
-The table here is the definition; #82 moves it into `packages/contracts/`.
-The trainer's required-key set is pinned against `effective({})` by
+alpha tracking rank, rsLoRA inferred. The table that defines it is now
+`packages/contracts/trainer-defaults.json` (#82), read by `hyperparams`; the
+values themselves are pinned below so an edit to the data file fails a test
+instead of silently changing every launch. The trainer's required-key set is
+pinned against `effective({})` by
 `apps/trainer/tests/test_agreement_with_the_domain.py`.
 """
 
+from pathlib import Path
+
 from temper_core import hyperparams
+
+
+def test_the_table_is_loaded_from_the_contract_file():
+    """Read, not declared. The path is asserted rather than trusted: if this
+    module ever resolves somewhere else, trainer and page read different
+    tables and nothing else in the suite would notice."""
+    assert Path(hyperparams.CONTRACT_PATH).name == "trainer-defaults.json"
+    assert Path(hyperparams.CONTRACT_PATH).is_file()
 
 
 def test_defaults_are_what_the_trainer_will_use():
