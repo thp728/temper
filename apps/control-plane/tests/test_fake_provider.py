@@ -10,8 +10,8 @@ from temper_control_plane.fake_provider import FakeProvider
 
 
 def test_push_stream_records_the_chunks_like_a_push():
-    """Same observability as the buffered push, so streamed callers' tests
-    read exactly like buffered ones: one entry in `pushed`, payload whole."""
+    """One entry in `pushed`, payload whole: a streamed transfer is recorded
+    exactly as any transfer, so callers' tests assert payload, not plumbing."""
     p = FakeProvider()
     p.push_stream(None, iter([b"alpha\n", b"omega\n"]), "/tmp/temper/ds")
     assert p.pushed == [("/tmp/temper/ds", b"alpha\nomega\n")]
@@ -22,12 +22,12 @@ def test_fetch_stream_yields_the_adapter_as_chunks():
     assert list(p.fetch_stream(None, "/tmp/temper/adapter")) == [b"weights"]
 
 
-def test_streaming_transfers_enter_the_buffered_stages():
-    """A streamed transfer fails and pauses where the buffered one does.
+def test_streaming_transfers_enter_the_push_and_fetch_stages():
+    """A transfer fails and pauses at its stage, whichever way it is fed.
 
-    `fail_at="push"` must stop a streamed upload at the same seam, so a
-    caller migrating from buffered to streaming keeps its failure-path
-    tests without rewriting them.
+    `fail_at="push"` must stop an upload at the same seam the orchestrator's
+    stage boundaries know about, so failure-path tests hold without caring
+    how the bytes moved.
     """
     p = FakeProvider(fail_at="push", fail_code="source_upload_failed")
     try:

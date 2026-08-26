@@ -45,12 +45,15 @@ import json
 import tarfile
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import suppress
+from typing import BinaryIO, NamedTuple
 
 from temper_core import catalog, events, hyperparams
 from temper_core.errors import Cancelled, OrchestratorError
 
 from . import db, storage
+from .chunks import ChunkReader, piped_chunks
 from .limits import RunLimits, guard
 from .provider import Provider, new_provider
 from .trainer_build import TRAINER_SOURCES, normalised
@@ -116,41 +119,81 @@ CANCEL_ACK = (
 CANCEL_MESSAGE = "Cancelled at your request. No adapter was produced."
 
 
-def _trainer_tarball() -> bytes:
-    """Ship the image's sources as one tar. One round trip, no scp dependency.
+class _TarMember(NamedTuple):
+    """One archive entry, with a lazy byte source.
+
+    A chunk reader (a storage object mid-stream) is pulled through block by
+    block at pour time, so nothing is held between describing the members
+    and the transfer actually running; raw `bytes` -- the normalised
+    sources, small and bounded by the repo itself -- travel in their own
+    buffer.
+    """
+
+    name: str
+    size: int
+    source: bytes | ChunkReader
+
+
+def _pour_tar(members: list[_TarMember], sink: BinaryIO) -> None:
+    """Write the gzipped tar of `members` to `sink`, streaming throughout.
+
+    Stream mode (`w|`) writes without seeking, which is what makes a pipe
+    possible; addfile copies each member through in blocks, and the one at a
+    time rule means peak cost is a block of the largest member plus the gzip
+    window -- never the archive, never the dataset.
+    """
+    with tarfile.open(fileobj=sink, mode="w|gz") as tar:
+        for member in members:
+            info = tarfile.TarInfo(name=member.name)
+            info.size, info.mode = member.size, 0o644
+            if isinstance(member.source, bytes):
+                tar.addfile(info, io.BytesIO(member.source))
+            else:
+                # A reader over a streamed object: addfile pulls exactly
+                # `size` bytes through it, in blocks, and never holds the
+                # member whole.
+                tar.addfile(info, member.source)
+
+
+def _trainer_chunks() -> Iterator[bytes]:
+    """The trainer image's sources as one streamed tar.gz.
 
     Members are flat: the machine untars into a single directory and builds
     there, so a member name is a build-context file name and the Dockerfile's
     COPY reads the same whichever directory a source came from.
     """
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for source in TRAINER_SOURCES:
-            data = normalised(source)
-            info = tarfile.TarInfo(name=source.name)
-            info.size, info.mode = len(data), 0o644
-            tar.addfile(info, io.BytesIO(data))
-    return buf.getvalue()
+    members = []
+    for source in TRAINER_SOURCES:
+        data = normalised(source)
+        members.append(_TarMember(source.name, len(data), data))
+    return piped_chunks(lambda sink: _pour_tar(members, sink))
 
 
-def _dataset_tarball(dataset_bytes: bytes) -> bytes:
-    """Ship the dataset as one tar of raw bytes.
+def _dataset_chunks(dataset_object_key: str) -> Iterator[bytes]:
+    """The dataset as one streamed tar.gz of its raw bytes.
 
     The same transport as the sources above, with one deliberate difference:
     **no line-ending normalisation.** Rewriting CRLF is correct for a shell
     script and a Dockerfile and wrong for user data, which must arrive
-    byte-identical -- a dataset silently edited in transit is a bug
-    that looks like anything else.
+    byte-identical -- a dataset silently edited in transit is a bug that
+    looks like anything else.
 
-    The bytes come from the storage seam by key (`_attempt`), so this function
-    neither knows nor cares where they were kept.
+    The member streams out of the storage seam by key: no code on this side
+    ever holds the whole payload. One honest cost is paid for that -- a tar
+    header states the member's size up front and the seam exposes streams,
+    not sizes, so the object is read twice: once to count, once to travel.
+    Both passes hold one chunk, and on the default backend the second read
+    lands in the page cache.
     """
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        info = tarfile.TarInfo(name="dataset.jsonl")
-        info.size, info.mode = len(dataset_bytes), 0o644
-        tar.addfile(info, io.BytesIO(dataset_bytes))
-    return buf.getvalue()
+    total = sum(
+        len(chunk) for chunk in storage.STORE.get_stream(dataset_object_key)
+    )
+    member = _TarMember(
+        "dataset.jsonl",
+        total,
+        ChunkReader(storage.STORE.get_stream(dataset_object_key)),
+    )
+    return piped_chunks(lambda sink: _pour_tar([member], sink))
 
 
 def _remote_script(
@@ -305,15 +348,40 @@ def _fetch_adapter(
     produced nothing to store. The key -- not a path -- is what the job row
     records; only `storage` knows what it resolves to.
 
-    Verification order is deliberate: the checksum is checked against the
-    bytes that crossed the transport *before* anything is stored, so a
-    silently truncated transfer never becomes an object that looks fine.
+    Both halves stream: fetch_stream yields the machine's bytes in chunks,
+    and put_stream stores them one chunk at a time while this function
+    hashes the same chunks on the way past. Verification therefore completes
+    only once every chunk has been stored, so the order claimed elsewhere --
+    *verified before stored* -- holds here as *deleted unless verified*: a
+    mismatched, unverifiable or empty transfer has its object removed again
+    before this function returns. Nothing records the key against the job
+    until then, so no reader can reach even the transient object.
     """
     rel = result.get("adapter_path")
     if not rel:
         return None
-    payload = provider.fetch(machine, f"/tmp/out/{rel}")
-    if not payload:
+
+    weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
+    digest = hashlib.sha256()
+    received = 0
+
+    def hashed(chunks: Iterator[bytes]) -> Iterator[bytes]:
+        # The same iteration feeds the store and the hash: the bytes are
+        # never held twice, because they are never held at all.
+        nonlocal received
+        for chunk in chunks:
+            digest.update(chunk)
+            received += len(chunk)
+            yield chunk
+
+    storage.STORE.put_stream(
+        weights_key,
+        hashed(provider.fetch_stream(machine, f"/tmp/out/{rel}")),
+    )
+
+    if received == 0:
+        # The mirror of an empty read: nothing came off the machine.
+        storage.STORE.delete(weights_key)
         db.add_event(
             job_id,
             "error",
@@ -322,23 +390,29 @@ def _fetch_adapter(
         return None
 
     # Verify against the hash the container computed. A silently truncated
-    # transfer produces a file that looks fine and is not.
-    got = hashlib.sha256(payload).hexdigest()
+    # transfer produces an object that looks fine and is not; hashing as
+    # chunks arrive catches it without ever holding the payload. The hash is
+    # mandatory: the trainer records it whenever it records a path, so a
+    # result without one cannot be verified at all -- refused rather than
+    # delivered uncheckable.
+    got = digest.hexdigest()
     want = result.get("adapter_sha256")
-    if want and got != want:
+    if not want:
+        storage.STORE.delete(weights_key)
+        raise OrchestratorError(
+            "artifact_unverified",
+            "The run result carried no adapter checksum, so the download "
+            "cannot be verified; it was refused rather than delivered "
+            "uncheckable.",
+        )
+    if got != want:
+        storage.STORE.delete(weights_key)
         raise OrchestratorError(
             "artifact_corrupt",
             f"Adapter SHA mismatch: container reported {want[:16]}…, "
             f"downloaded file is {got[:16]}…",
         )
-
-    weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
-    storage.STORE.put(weights_key, payload)
-    db.add_event(
-        job_id,
-        "log",
-        f"Adapter verified, {len(payload) / 1e6:.1f} MB",
-    )
+    db.add_event(job_id, "log", f"Adapter verified, {received / 1e6:.1f} MB")
 
     # A bare .safetensors is not a loadable adapter: PEFT needs
     # adapter_config.json beside it to know the rank, alpha and target modules.
@@ -512,9 +586,16 @@ def _attempt(
     cancelled()
     db.add_event(job_id, "log", provider.await_ready(machine))
     cancelled()
-    provider.push(machine, _trainer_tarball(), TRAINER_TARBALL)
-    dataset_bytes = storage.STORE.get(dataset["object_key"])
-    provider.push(machine, _dataset_tarball(dataset_bytes), DATASET_TARBALL)
+    # Both archives stream: push_stream holds at most one chunk, and the
+    # dataset member is pulled through the storage seam in chunks, so the
+    # control plane's memory has nothing to do with the size of the dataset
+    # or the repo.
+    provider.push_stream(machine, _trainer_chunks(), TRAINER_TARBALL)
+    provider.push_stream(
+        machine,
+        _dataset_chunks(dataset["object_key"]),
+        DATASET_TARBALL,
+    )
 
     # Checked between stages as well as inside the stream: the guard below can
     # only notice the ceiling while lines are arriving, and everything above

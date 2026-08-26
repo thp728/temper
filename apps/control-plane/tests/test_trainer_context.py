@@ -21,6 +21,11 @@ import tarfile
 from temper_control_plane import orchestrator, trainer_build
 
 
+def _sources_archive() -> bytes:
+    """The trainer sources archive exactly as a push would stream it."""
+    return b"".join(orchestrator._trainer_chunks())
+
+
 def _copied_by_the_dockerfile() -> set[str]:
     text = (trainer_build.TRAINER_DIR / "Dockerfile").read_text(
         encoding="utf-8"
@@ -41,7 +46,7 @@ def test_the_tarball_carries_every_named_source_flat():
     """Flat on purpose: the machine untars into one directory and builds there,
     so the archive's member names are the build context's file names."""
     with tarfile.open(
-        fileobj=io.BytesIO(orchestrator._trainer_tarball()), mode="r:gz"
+        fileobj=io.BytesIO(_sources_archive()), mode="r:gz"
     ) as tar:
         names = set(tar.getnames())
     assert names == {p.name for p in trainer_build.TRAINER_SOURCES}
@@ -65,7 +70,7 @@ def test_sources_are_normalised_to_lf():
     anything but a line-ending bug. .gitattributes is the first defence and
     this is the second."""
     with tarfile.open(
-        fileobj=io.BytesIO(orchestrator._trainer_tarball()), mode="r:gz"
+        fileobj=io.BytesIO(_sources_archive()), mode="r:gz"
     ) as tar:
         for member in tar.getmembers():
             assert b"\r\n" not in tar.extractfile(member).read(), member.name
@@ -78,7 +83,7 @@ def test_the_local_build_context_matches_what_the_machine_receives(tmp_path):
     on_disk = {p.name: p.read_bytes() for p in context.iterdir()}
 
     with tarfile.open(
-        fileobj=io.BytesIO(orchestrator._trainer_tarball()), mode="r:gz"
+        fileobj=io.BytesIO(_sources_archive()), mode="r:gz"
     ) as tar:
         in_transit = {
             m.name: tar.extractfile(m).read() for m in tar.getmembers()
