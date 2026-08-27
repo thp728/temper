@@ -31,9 +31,19 @@ test.beforeAll(async ({ playwright }) => {
 
 // Stat cards and definition lists pair a visible label with a value; read
 // them as pairs -- see helpers.ts.
-async function uploadValidatedRows(page: Page, rows: object[]) {
+async function uploadValidatedRows(
+  page: Page,
+  rows: object[],
+  // Validation is asynchronous since #31 and streams the whole file, so how
+  // long "Validation passed" takes is a function of the row count, not a
+  // constant. Twelve rows land inside Playwright's 5s default; the 36,000-row
+  // feasibility case does not, and failed on a loaded CI runner while passing
+  // on a quiet one from the same commit. Scale the wait with the input rather
+  // than raising the default for every journey.
+  timeout = 5_000,
+) {
   await uploadRows(page, rows);
-  await expect(page.getByText("Validation passed")).toBeVisible();
+  await expect(page.getByText("Validation passed")).toBeVisible({ timeout });
 }
 
 async function continueToLaunch(page: Page) {
@@ -244,7 +254,7 @@ test("a feasibility warning arrives before the launch, while it can still be act
   const rows = Array.from({ length: 36_000 }, (_, i) =>
     chat(`question ${i}`, `answer ${i}`),
   );
-  await uploadValidatedRows(page, rows);
+  await uploadValidatedRows(page, rows, 90_000);
   await continueToLaunch(page);
 
   // Scoped: Next's own route announcer is also an alert.
