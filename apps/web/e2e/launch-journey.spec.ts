@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { BACKEND_PORT } from "../src/lib/backend";
+import { E2E_BACKEND_PORT } from "../src/lib/backend";
 import {
   chat,
   jsonl,
@@ -23,7 +23,7 @@ import {
 // effect -- launching against the wrong process could provision real
 // machines, and that is never a test failure worth risking money over.
 const backendHealth =
-  process.env.TEMPER_BACKEND_URL ?? `http://127.0.0.1:${BACKEND_PORT}`;
+  process.env.TEMPER_BACKEND_URL ?? `http://127.0.0.1:${E2E_BACKEND_PORT}`;
 
 test.beforeAll(async ({ playwright }) => {
   await requireFakeProvider(() => playwright.request.newContext(), backendHealth);
@@ -125,15 +125,8 @@ test("a job is chosen, reviewed and launched from the shell", async ({
   await expect(page).toHaveURL(/\/jobs\/job_/);
   await expect(page.getByText("qwen3-8b")).toBeVisible();
 
-  // The watch screen is not ported yet (#39/#40): it is proxied through this
-  // origin, stylesheet included -- an unstyled page is a broken page, whatever
-  // its headings say.
-  const sheet = await page.request.get("/static/styles.css");
-  expect(sheet.status()).toBe(200);
-  expect(sheet.headers()["content-type"]).toContain("text/css");
-
-  // The fake provider runs the job to completion in moments; the watch page
-  // follows it there on its own.
+  // The fake provider runs the job to completion in moments; the running-job
+  // view follows it there on its own.
   await expect(pairedValue(page, "State")).toHaveText("complete", {
     timeout: 20_000,
   });

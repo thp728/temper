@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { BACKEND_PORT } from "../src/lib/backend";
+import { E2E_BACKEND_PORT } from "../src/lib/backend";
 import {
   chat,
   pairedValue,
@@ -20,7 +20,7 @@ import {
 // moments, so no journey here needs hardware or credentials. Like every
 // launch-driving spec, this one refuses to run against a backend where that
 // did not take effect (see helpers.requireFakeProvider).
-const backend = process.env.TEMPER_BACKEND_URL ?? `http://127.0.0.1:${BACKEND_PORT}`;
+const backend = process.env.TEMPER_BACKEND_URL ?? `http://127.0.0.1:${E2E_BACKEND_PORT}`;
 
 test.beforeAll(async ({ playwright }) => {
   await requireFakeProvider(() => playwright.request.newContext(), backend);

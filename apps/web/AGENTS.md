@@ -41,14 +41,19 @@ control plane's address from one definition, `src/lib/backend.ts`.
 
 - Backend URL for the dev rewrite: `TEMPER_BACKEND_URL`, defaulting to the
   address in `src/lib/backend.ts`.
-- Unported old screens are reachable through rewrites, one entry per screen
-  (`/jobs/:id/cancel` and the stylesheet) so a journey stays in one origin;
-  each ported screen deletes its proxy entry in the same change. The job list
-  and `/jobs/:id` record are ported (#40); what remains proxies the old watch
-  page's cancel form post until #39 ports live watching -- which means a
-  non-terminal job's record temporarily offers no cancel control at all, and
-  the retained proxy is reachable only by typing its address. See
-  [ADR-0023](../../docs/adr/0023-the-interface-consumes-a-client-generated-from-the-api-contract.md).
+- Unported old screens are reachable through rewrites, one entry per screen,
+  so a journey stays in one origin; each ported screen deletes its proxy entry
+  in the same change. All five screens are ported now (upload + report #28,
+  launch #38, the job list and `/jobs/:id` record #40, live watching #39), so
+  the only remaining rewrite is the API's own `/v1/:path*`. A non-terminal
+  job's page is `RunningJobView` (client component): it renders the durable
+  history server-side, then streams the rest over `GET /v1/jobs/:id/stream`
+  (server-sent events; the one channel the generated fetch client cannot
+  carry, so the URL lives in `src/lib/jobs/stream.ts` beside the parser). The
+  stream ends only at a terminal state and the page reloads into the
+  server-rendered record. See
+  [ADR-0023](../../docs/adr/0023-the-interface-consumes-a-client-generated-from-the-api-contract.md)
+  and [ADR-0034](../../docs/adr/0034-the-running-job-surface-consumes-a-server-pushed-event-stream.md).
 - The browser journeys drive launches with `TEMPER_FAKE_PROVIDER=1`, which the
   control plane honours by substituting its own FakeProvider. Playwright sets
   it for the backend it boots, and every launch journey refuses to run unless

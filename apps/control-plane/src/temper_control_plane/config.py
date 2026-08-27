@@ -210,6 +210,14 @@ MAX_DATASET_BYTES = int(
 # real: the same API, the same database, the same orchestrator transitions.
 FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))
 
+# How long the simulated machine waits between output lines. Zero (default)
+# completes a canned run in milliseconds, which is what the suite wants except
+# when a journey is *watching*: the live-job journeys (issue #39) need a run
+# that lasts long enough to see output arrive without a refresh and to cancel
+# mid-run, so the journeys' own control plane is booted with a positive value.
+# Fake-only -- the real provider's cadence is the trainer's, not this knob's.
+FAKE_LINE_DELAY_S = float(os.environ.get("TEMPER_FAKE_LINE_DELAY_S") or 0)
+
 
 # --- stored objects ----------------------------------------------------------
 # Spec 006 / issue #22: every stored object sits behind one storage seam, and

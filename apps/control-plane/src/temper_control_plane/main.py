@@ -11,10 +11,13 @@ product.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
+import json
 import sys
+import time
 import zipfile
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from typing import BinaryIO
 
@@ -523,6 +526,126 @@ def get_events(job_id: str, after: int = 0):
         raise HTTPException(404, "No such job.")
     events = db.get_events(job_id, after_id=after)
     return {"events": events, "last_id": events[-1]["id"] if events else after}
+
+
+# How often the live stream re-reads the durable log, and how long it may stay
+# silent before sending a keep-alive comment. Both are tuning, not contract:
+# the stream's shape -- events pushed as they are recorded, ending only at a
+# terminal state -- is what the interface consumes.
+STREAM_POLL_S = 0.25
+STREAM_HEARTBEAT_S = 15.0
+
+
+def _stream_cursor(request: Request, after: int) -> int:
+    """Where a client's history ends: the `Last-Event-ID` a reconnecting
+    EventSource replays, else the `after` it asked for on first connection.
+
+    The two are the same idea in two moments. On first connection the browser
+    knows only what the server-rendered page already showed, so it passes that
+    as `after`; once the stream is open the browser replays the last event id
+    it actually received, so nothing is re-sent and nothing is skipped.
+    """
+    header = request.headers.get("last-event-id")
+    if header and header.strip():
+        try:
+            return int(header.strip())
+        except ValueError:
+            # A header we cannot parse is not a cursor: fall back to the query
+            # parameter rather than inventing one the client never held.
+            pass
+    return after
+
+
+def _sse_event(e: dict) -> str:
+    """One job event as a server-sent event.
+
+    `id` is what EventSource replays on reconnect; the payload is the same
+    `JobEvent` the polling endpoint publishes, so the interface parses one
+    shape wherever it reads a job's history.
+    """
+    payload = {
+        "id": e["id"],
+        "job_id": e["job_id"],
+        "ts": e["ts"],
+        "kind": e["kind"],
+        "message": e.get("message"),
+        "data": e.get("data"),
+    }
+    return f"id: {e['id']}\nevent: job\ndata: {json.dumps(payload)}\n\n"
+
+
+async def _job_event_stream(
+    request: Request, job_id: str, cursor: int
+) -> AsyncIterator[str]:
+    """The job's events, oldest-first, as they are recorded.
+
+    The durable log is the source, never this connection: a visitor returning
+    to the page or a stream that dropped is caught up from the database, which
+    is the same answer the polling endpoint gives -- live streaming and durable
+    history are one log, not two. The loop polls it, because a worker thread
+    writes events and this process has no broker to subscribe to; the poll is
+    one indexed query every quarter second. The stream ends only when the job
+    is terminal -- every event, including the terminal transition itself, is
+    delivered before it closes, which is the interface's cue that the record
+    has stopped changing.
+
+    DB reads go through `asyncio.to_thread`: they are quick local reads, but a
+    blocking read on the event loop would stall every other request for as long
+    as a connection stays open, which is exactly the mistake the upload path
+    records in its own docstring.
+    """
+    last_send = time.monotonic()
+    while True:
+        if await request.is_disconnected():
+            return
+        job = await asyncio.to_thread(db.get_job, job_id)
+        if job is None:
+            # The row cannot be absent (the endpoint refused a missing job
+            # before streaming), but a re-read that comes back empty ends the
+            # stream rather than looping on a ghost.
+            return
+        for e in await asyncio.to_thread(
+            db.get_events, job_id, after_id=cursor
+        ):
+            cursor = e["id"]
+            yield _sse_event(e)
+        if job["status"] in db.TERMINAL_STATES:
+            return
+        now = time.monotonic()
+        if now - last_send >= STREAM_HEARTBEAT_S:
+            yield ": heartbeat\n\n"
+            last_send = now
+        await asyncio.sleep(STREAM_POLL_S)
+
+
+@app.get("/v1/jobs/{job_id}/stream", tags=["jobs"])
+async def stream_job(request: Request, job_id: str, after: int = 0):
+    """Server-pushed events for a running job, replacing the watch page's poll.
+
+    The interface's live channel (Spec 007): one connection, events delivered
+    as they are recorded, no page refresh. `after` is where the client's
+    history already ends -- the page renders the durable log first and streams
+    from its last id, so leaving and returning shows continuous history rather
+    than starting at the moment of return. A dropped connection reconnects on
+    its own: EventSource replays `Last-Event-ID`, this endpoint honours it, and
+    the stream ends only when the job reaches a terminal state.
+
+    The interface consumes this with a browser `EventSource`; the generated
+    fetch client cannot, which is why this endpoint (like the adapter
+    download) is transport the contract documents rather than a function the
+    client calls.
+    """
+    if not await asyncio.to_thread(db.get_job, job_id):
+        raise HTTPException(404, "No such job.")
+    return StreamingResponse(
+        _job_event_stream(request, job_id, _stream_cursor(request, after)),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 class _CountingSink:
