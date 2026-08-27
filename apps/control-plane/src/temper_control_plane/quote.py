@@ -231,13 +231,13 @@ def _no_fit_refusal(err: selection.NoFittingHardwareError) -> QuoteRefused:
         }
         code = (
             "configuration_does_not_fit"
-            if err.capacity_gb is not None and err.peak_gb > err.capacity_gb
+            if err.is_memory_refusal
             else "provider_capacity_unavailable"
         )
     else:
         code = "provider_capacity_unavailable"
     if code == "configuration_does_not_fit":
-        if err.method == "qlora":
+        if err.method == selection.EXECUTABLE_METHODS[0]:
             guidance = (
                 " To make it fit, choose a smaller model or a shorter "
                 "sequence."
@@ -327,17 +327,14 @@ def build_quote(
             else None,
         )
     except selection.NoFittingHardwareError as e:
-        refusal = _no_fit_refusal(e)
         # Memory blocks whether or not the user demanded the configuration
         # (issue #54): an unpinned job that fits no card is refused at creation
         # with the same arithmetic the search refused with, not launched to
         # discover the OOM on a machine it is paying for. Availability alone --
         # it fits, but nothing is free -- keeps the warn posture: that is a
         # fact about the moment, not about the configuration.
-        if demanded or (
-            refuse_unfittable and refusal.code == "configuration_does_not_fit"
-        ):
-            raise refusal from e
+        if demanded or (refuse_unfittable and e.is_memory_refusal):
+            raise _no_fit_refusal(e) from e
         return None
     try:
         disk_plan = disk.required_disk(

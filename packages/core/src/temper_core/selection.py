@@ -142,6 +142,19 @@ class NoFittingHardwareError(Exception):
             return self.peak_gb - self.capacity_gb
         return None
 
+    @property
+    def is_memory_refusal(self) -> bool:
+        """Whether the refusal is on memory grounds (the predicted peak sits
+        over the card's capacity), as opposed to availability alone (it fits,
+        but nothing is free). The one classification the search's refusal
+        naming and the creation gate both read -- a peak-vs-capacity
+        comparison never lives in two places, so it cannot drift."""
+        return (
+            self.peak_gb is not None
+            and self.capacity_gb is not None
+            and self.peak_gb > self.capacity_gb
+        )
+
 
 def _cheaper(
     current: HardwarePlan | None, candidate: HardwarePlan

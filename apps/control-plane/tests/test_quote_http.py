@@ -422,6 +422,34 @@ def test_a_fitting_configuration_is_not_blocked_on_any_memory_ground(
     assert hardware["chosen"] == "H200"
 
 
+def test_availability_alone_is_not_a_refusal_at_creation(
+    client, tmp_path, monkeypatch
+):
+    """Issue #54's over-eager-refusal warning, on the discriminating case: the
+    configuration *would* fit a card, but none of that card is free right now.
+    That is a fact about the moment, not about the configuration -- refusing
+    it would block work that could run once hardware frees -- so the launch
+    proceeds and the quote is absent, exactly as the estimate half warns."""
+    from temper_control_plane import quote as quote_mod
+    from temper_core.selection import GpuAvailability
+
+    # One L4 that would hold the default 4B QLoRA job, with nothing free.
+    monkeypatch.setattr(
+        quote_mod,
+        "QUOTE_PROVIDER",
+        FakeProvider(
+            availability=[GpuAvailability("L4", 41.31, 0)], currency="INR"
+        ),
+    )
+    ds = valid_dataset(client, tmp_path)
+    r = client.post("/v1/jobs", json={"dataset_id": ds})
+    assert r.status_code == 201
+    job = r.json()
+    assert job["status"] == "queued"
+    # No quote: nothing free, so nothing to price -- never a refusal.
+    assert job["quote"] is None
+
+
 def upload(client, path):
     with open(path, "rb") as f:
         return client.post(
