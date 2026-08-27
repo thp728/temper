@@ -190,6 +190,7 @@ test("a plan decision can be overridden and the launch refuses what the trainer 
 // actually used.
 test("a runnable override is frozen into the job and still marked after the run", async ({
   page,
+  request,
 }) => {
   await uploadValidatedRows(
     page,
@@ -209,6 +210,23 @@ test("a runnable override is frozen into the job and still marked after the run"
 
   await page.getByRole("button", { name: "Launch job" }).click();
   await expect(page).toHaveURL(/\/jobs\/job_/);
+
+  // Since #39 the job page opens on the live running view and hands back to
+  // the finished record only at a terminal state, so asserting the frozen
+  // marks straight after the launch is a race with however fast this runner
+  // gets the job to an ending. It passed on one CI runner and failed on a
+  // slower one from the same commit. Wait for the ending itself rather than
+  // widening a timeout, which would only make the race rarer.
+  const jobId = page.url().split("/jobs/")[1];
+  await expect
+    .poll(
+      async () => {
+        const rec = await request.get(`${backendHealth}/v1/jobs/${jobId}`);
+        return (await rec.json()).status;
+      },
+      { timeout: 60_000 },
+    )
+    .toMatch(/^(complete|failed|cancelled)$/);
 
   // The frozen quote carries the override's mark and its value onto the
   // finished record -- the explanation survives the job like the spec does.
