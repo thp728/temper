@@ -80,6 +80,7 @@ repository becomes public at submission.
 | [0037](0037-every-run-records-what-was-predicted-against-what-happened.md) | Every run records what was predicted against what happened | accepted | 2026-08-27 |
 | [0038](0038-the-token-count-is-produced-by-a-phase-of-its-own-bounded-and-recorded-with-the-dataset-version.md) | The token count is produced by a phase of its own, bounded, and recorded with the dataset version | accepted | 2026-08-27 |
 | [0040](0040-an-override-names-its-failure-mode-and-a-locked-setting-is-not-a-refused-input.md) | An override names its failure mode, is recorded in the job spec, and a locked setting is not a refused input | accepted | 2026-08-27 |
+| [0042](0042-every-export-asserts-the-training-and-artifact-templates-tokenize-identically.md) | Every export asserts the training and artifact templates tokenize identically | accepted | 2026-08-27 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

@@ -46,9 +46,16 @@ TRAINER_DIR = REPO_ROOT / "apps" / "trainer"
 # schema. The trainer's known-key set is derived from it -- a key unknown to
 # the trainer is refused loudly and echoed back -- and it ships in the image so
 # the trainer's guard and the generated surface read the same universe.
+#
+# `template_probe.py` (issue #59) is the export-time template probe: a fixed
+# conversation tokenised through the training template and the artifact's
+# serialised template, identical ids required. It lives beside the entrypoint
+# because only the trainer runs it -- the control plane stores the probe's
+# result, it does not perform the probe.
 TRAINER_SOURCES = (
     TRAINER_DIR / "Dockerfile",
     TRAINER_DIR / "entrypoint.py",
+    TRAINER_DIR / "template_probe.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
     REPO_ROOT / "packages" / "contracts" / "trainer-defaults.json",
     REPO_ROOT / "packages" / "contracts" / "axolotl-schema.json",
