@@ -6,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import ImportForm from "@/components/ImportForm";
 import UploadForm from "@/components/UploadForm";
 
 export const metadata: Metadata = {
@@ -34,6 +35,19 @@ export default function UploadPage() {
         </CardHeader>
         <CardContent>
           <UploadForm />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Or import from a public repository</CardTitle>
+          <CardDescription>
+            Start without preparing a file: give a public dataset repository
+            and its rows are fetched and validated through the same path an
+            upload uses.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ImportForm />
         </CardContent>
       </Card>
     </section>

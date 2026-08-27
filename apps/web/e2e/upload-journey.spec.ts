@@ -131,3 +131,53 @@ test("the journey is keyboard-reachable and survives a small screen", async ({
   );
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+// --- import from a public repository (issue #45) -----------------------------
+// The journeys boot the control plane with TEMPER_FAKE_PROVIDER, which swaps
+// the remote-dataset seam for a canned fake -- importing reaches no network,
+// exactly like a launch reaches no GPU. The fake knows three references: one
+// that imports to a valid report, one that fails validation, and one whose
+// split resolves to nothing.
+
+async function importRepo(page: Page, repo: string) {
+  await page.goto("/");
+  await page.getByLabel("Public repository").fill(repo);
+  await page.getByRole("button", { name: "Import and validate" }).click();
+}
+
+test("an imported repository reaches its validation report", async ({ page }) => {
+  await importRepo(page, "acme/demo-chat");
+
+  // The imported rows went through the identical validation path: the same
+  // report an upload of the same rows would produce.
+  await expect(page.getByText("Validation passed")).toBeVisible();
+  await expect(statValue(page, "Rows found")).toHaveText("12");
+  await expect(statValue(page, "Usable rows")).toHaveText("12");
+  await expect(
+    page.getByRole("link", { name: "Choose a model and continue" }),
+  ).toBeVisible();
+});
+
+test("an import that fails validation is kept with its report", async ({
+  page,
+}) => {
+  await importRepo(page, "acme/demo-broken");
+
+  await expect(page.getByText("This dataset was rejected")).toBeVisible();
+  // The same line-numbered errors an upload of these rows would carry.
+  await expect(page.getByText("Line 1")).toBeVisible();
+  await expect(page.getByText("missing_messages")).toBeVisible();
+  await expect(page.getByText("Line 2")).toBeVisible();
+  await expect(page.getByText("no_assistant_turn")).toBeVisible();
+});
+
+test("a split that resolves to nothing is refused with its reason", async ({
+  page,
+}) => {
+  await importRepo(page, "acme/empty-split");
+
+  // The refusal keeps its stable code on the form, like every other refusal.
+  const alert = page.getByRole("main").getByRole("alert");
+  await expect(alert).toContainText("split_empty");
+  await expect(alert).toContainText("no rows");
+});

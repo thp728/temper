@@ -1,0 +1,30 @@
+Review-driven corrections to the import surface
+
+Code review of the branch surfaced six findings; this commit addresses them:
+
+- The remote refusal code `dataset_not_found` collided with the orchestration
+  path's `dataset_not_found` ("no dataset with this id"), giving one stable
+  code two meanings. The remote case is now `repo_not_found`, so a code says
+  one thing or a client cannot tell them apart.
+- A fetch can fail at any point -- DNS, a dropped connection mid-read, a body
+  that is not JSON -- and those escaped as an unhandled 500 instead of a coded
+  reason. `_api` now turns every request failure into `fetch_failed`, pinned by
+  a new seam test.
+- "A split resolving to nothing is refused with that reason" only held when
+  `/size` reported a row count. The source now also refuses `split_empty` when
+  a stream turns out to carry no rows, so the criterion holds even when the
+  server reports nothing, pinned by a new seam test.
+- The default-config/split conventions were literals in the real resolver and
+  retyped in its double. They now live once in `remote_datasets.py`
+  (DEFAULT_CONFIG / DEFAULT_SPLITS) and the fake reads them.
+- `import_dataset` duplicated `ingest`'s size-ceiling store-and-clean-up
+  shape; both now share `_store_counted`, so the ceiling and the clean-up
+  cannot drift between an upload and an import.
+- The shared `too_large` message said "upload limit", which was wrong for an
+  import; it now says "dataset size limit".
+
+Also fixed a race in the parity test: the token-count fields (issue #42) are
+produced by a separate asynchronous phase, so comparing an imported report to
+an uploaded one read at slightly different moments could differ on them. The
+test now compares the validation-produced fields, which is the claim being
+made.

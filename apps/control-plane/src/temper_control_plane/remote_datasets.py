@@ -95,16 +95,13 @@ class RemoteDatasetSource(Protocol):
     """A resolved reference: the provenance, and a stream of JSONL bytes."""
 
     @property
-    def repo(self) -> str:
-        ...
+    def repo(self) -> str: ...
 
     @property
-    def config(self) -> str | None:
-        ...
+    def config(self) -> str | None: ...
 
     @property
-    def split(self) -> str | None:
-        ...
+    def split(self) -> str | None: ...
 
     def stream(self) -> Iterator[bytes]:
         """The dataset's rows as JSONL bytes, in bounded chunks.

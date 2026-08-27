@@ -85,6 +85,7 @@ repository becomes public at submission.
 | [0042](0042-every-export-asserts-the-training-and-artifact-templates-tokenize-identically.md) | Every export asserts the training and artifact templates tokenize identically | accepted | 2026-08-27 |
 | [0043](0043-memory-blocks-at-creation-while-time-and-cost-warn.md) | Memory blocks at job creation while time and cost warn, and the two halves differ on the cost of being wrong | accepted | 2026-08-28 |
 | [0044](0044-the-server-rendered-pages-are-deleted-and-the-interfaces-never-coexist.md) | The server-rendered pages are deleted, and the two interfaces never coexist | accepted | 2026-08-28 |
+| [0044](0044-imported-datasets-are-the-same-bytes-through-the-same-validation-path.md) | Imported datasets are the same bytes, through the same validation path as an upload | accepted | 2026-08-28 |
 | [0045](0045-the-artifact-is-the-deliverable-and-the-adapter-is-one-kind-of-it.md) | The artifact is the deliverable, and the adapter is one kind of it | accepted | 2026-08-28 |
 | [0046](0046-the-trainer-image-is-built-by-the-pipeline-and-referenced-by-digest.md) | The trainer image is built by the pipeline and referenced by digest, never built on the machine | accepted | 2026-08-27 |
 | [0048](0048-the-held-out-split-is-the-platforms-and-rides-the-existing-event-stream.md) | The held-out split is the platform's, and held-out loss rides the existing event stream | accepted | 2026-08-28 |

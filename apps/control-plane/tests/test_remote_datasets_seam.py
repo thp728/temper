@@ -247,7 +247,8 @@ def test_stream_surfaces_a_mid_stream_fetch_failure(monkeypatch):
         if "offset=0" in url:
             body = {
                 "rows": [
-                    {"row_idx": i, "row": r} for i, r in enumerate(chat_rows(100))
+                    {"row_idx": i, "row": r}
+                    for i, r in enumerate(chat_rows(100))
                 ]
             }
         else:
