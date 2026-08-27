@@ -298,13 +298,17 @@ def launch_running_job(
     """Launch from the browser form and let the job run on its thread."""
     import threading
 
-    from temper_control_plane import orchestrator
+    from temper_control_plane import fake_models, orchestrator
 
     def start(job_id):
         threading.Thread(
             target=orchestrator.run_job,
             args=(job_id,),
-            kwargs={"provider": provider, "limits": limits},
+            kwargs={
+                "provider": provider,
+                "limits": limits,
+                "models": fake_models.catalog_models(),
+            },
             daemon=True,
             name=f"job-{job_id[:8]}",
         ).start()
@@ -326,13 +330,16 @@ def run_finished_job(
     client, monkeypatch, tmp_path, provider, limits=None
 ) -> str:
     """Launch and drive the job to a terminal state before returning."""
-    from temper_control_plane import orchestrator
+    from temper_control_plane import fake_models, orchestrator
 
     monkeypatch.setattr(
         orchestrator,
         "launch",
         lambda job_id: orchestrator.run_job(
-            job_id, provider=provider, limits=limits
+            job_id,
+            provider=provider,
+            limits=limits,
+            models=fake_models.catalog_models(),
         ),
     )
     path = launch_from_form(client, tmp_path)
@@ -408,7 +415,7 @@ def test_watch_page_offers_cancel_in_every_working_state(
     # provisioning (before the machine exists), preparing (waiting for SSH),
     # training (mid-stream): one pause point per working state.
     providers = [
-        FakeProvider(pause_at_stage="select_gpu"),
+        FakeProvider(pause_at_stage="gpu_availability"),
         FakeProvider(
             lines=OUTPUT_LINES, result=RESULT, pause_at_stage="await_ready"
         ),

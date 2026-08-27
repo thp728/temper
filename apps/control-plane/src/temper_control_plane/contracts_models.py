@@ -205,6 +205,8 @@ class JobRecord(BaseModel):
     finished_at: float | None = None
     machine_id: int | None = None
     gpu_type: str | None = None
+    device_count: int | None = None
+    method: str | None = None
     price_per_hour: float | None = None
     currency: str | None = None
     error_code: str | None = None

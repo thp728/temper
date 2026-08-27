@@ -116,7 +116,13 @@ def test_launching_with_the_key_yields_a_failed_job_record(
     ds_id = r.json()["id"]
 
     def start(job_id):
-        orchestrator.run_job(job_id, provider=completed_run())
+        from temper_control_plane import fake_models
+
+        orchestrator.run_job(
+            job_id,
+            provider=completed_run(),
+            models=fake_models.catalog_models(),
+        )
 
     monkeypatch.setattr(orchestrator, "launch", start)
     r = client.post(

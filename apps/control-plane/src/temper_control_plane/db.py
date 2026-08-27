@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at   REAL,
     machine_id    INTEGER,
     gpu_type      TEXT,
+    device_count  INTEGER,
+    method        TEXT,          -- qlora | lora | full; issue #55's decision
     price_per_hour REAL,
     currency      TEXT,
     error_code    TEXT,
@@ -138,6 +140,8 @@ ADDED_COLUMNS = (
     ("jobs", "cancel_requested", "INTEGER NOT NULL DEFAULT 0"),
     ("jobs", "warnings_json", "TEXT"),
     ("jobs", "base_revision", "TEXT"),
+    ("jobs", "device_count", "INTEGER"),
+    ("jobs", "method", "TEXT"),
 )
 
 

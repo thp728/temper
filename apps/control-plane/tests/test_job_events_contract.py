@@ -42,7 +42,13 @@ def finished_job_id(client, monkeypatch):
     ds_id = r.json()["id"]
 
     def start(job_id):
-        orchestrator.run_job(job_id, provider=completed_run())
+        from temper_control_plane import fake_models
+
+        orchestrator.run_job(
+            job_id,
+            provider=completed_run(),
+            models=fake_models.catalog_models(),
+        )
 
     monkeypatch.setattr(orchestrator, "launch", start)
     r = client.post("/v1/jobs", json={"dataset_id": ds_id})

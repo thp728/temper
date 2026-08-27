@@ -141,8 +141,10 @@ def predict_peak(
     lora_r: int,
     sequence_len: int,
     micro_batch_size: int,
+    device_count: int = 1,
 ) -> PeakMemory:
-    """The predicted peak VRAM for training `facts` with `method`.
+    """The predicted **per-device** peak VRAM for training `facts` with
+    `method` across `device_count` devices.
 
     A pure function of the model's facts and the run's shape -- no I/O, so
     it is exercised the same way whether `facts` came from a live resolve or
@@ -150,18 +152,35 @@ def predict_peak(
     "trainable" means: full fine-tuning trains every parameter, so its
     gradients and optimizer state are sized on `facts.params` rather than
     the LoRA adapter.
+
+    `device_count` only changes the arithmetic for `method="full"`: spike 6
+    proved FSDP FULL_SHARD divides weights, gradients and optimizer state
+    evenly across ranks for a full fine-tune, so the per-device share of
+    those three pools shrinks as devices are added. LoRA and QLoRA have never
+    run sharded, and their trainable set is small enough already that
+    sharding it would not plausibly change whether a job fits -- so for them
+    `device_count` is accepted (the selection search calls every method the
+    same way) but changes nothing: more devices simply replicate the same
+    per-device footprint. Activations and the fixed overhead never shard
+    either way, because each device still runs its own micro-batch.
     """
     if method not in WEIGHT_BYTES_PER_PARAM:
         raise ValueError(
             f"unknown method {method!r}; expected one of "
             f"{sorted(WEIGHT_BYTES_PER_PARAM)}"
         )
+    if device_count < 1:
+        raise ValueError(f"device_count must be >= 1, got {device_count}")
     trainable = (
         facts.params if method == "full" else trainable_params(facts, lora_r)
     )
     weights_gb = facts.params * WEIGHT_BYTES_PER_PARAM[method] / BYTES_PER_GB
     gradients_gb = trainable * GRADIENT_BYTES_PER_PARAM / BYTES_PER_GB
     optimizer_gb = trainable * OPTIMIZER_BYTES_PER_PARAM / BYTES_PER_GB
+    if method == "full" and device_count > 1:
+        weights_gb /= device_count
+        gradients_gb /= device_count
+        optimizer_gb /= device_count
     activations_gb = (
         2
         * sequence_len

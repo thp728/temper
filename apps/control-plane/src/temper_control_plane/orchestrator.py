@@ -49,16 +49,17 @@ from collections.abc import Iterator
 from contextlib import suppress
 from typing import BinaryIO, NamedTuple
 
-from temper_core import catalog, events, hyperparams
+from temper_core import catalog, events, hyperparams, selection
 from temper_core.errors import Cancelled, OrchestratorError
+from temper_core.models import Models
 
 from . import db, storage
 from .chunks import ChunkReader, piped_chunks
 from .limits import RunLimits, guard
+from .models import new_models
 from .provider import Provider, new_provider
 from .trainer_build import TRAINER_SOURCES, normalised
 
-GPU_PREFERENCE = ["L4", "RTX-PRO6000", "H100"]
 STORAGE_GB = 100  # platform minimum for VM instances
 
 TRAINER_TARBALL = "/tmp/trainer.tar.gz"
@@ -532,7 +533,11 @@ def _cancellation_check(job_id: str):
 
 
 def _attempt(
-    provider: Provider, job_id: str, machines: list, limits: RunLimits
+    provider: Provider,
+    job_id: str,
+    machines: list,
+    limits: RunLimits,
+    models: Models,
 ) -> tuple[str, str, dict]:
     """Do the work. Returns the terminal state to record, but never records it.
 
@@ -557,6 +562,9 @@ def _attempt(
             f"Model '{job['base_model']}' is not in the catalog.",
         )
     enable_thinking = bool(dataset.get("enable_thinking"))
+    revision = job.get("base_revision") or model.revision
+    facts = models.resolve(model.repo, revision)
+    hp = hyperparams.effective(job["hyperparameters"] or {})
 
     # Checked at every boundary between stages, for the same reason the
     # duration ceiling is: inside a provider call nothing is interruptible, so
@@ -566,21 +574,33 @@ def _attempt(
 
     cancelled()
     limits.check_duration()
-    db.set_state(job_id, "provisioning", "Selecting a GPU")
-    gpu = provider.select_gpu(GPU_PREFERENCE)
+    db.set_state(job_id, "provisioning", "Selecting hardware")
+    try:
+        plan = selection.select_hardware(
+            facts,
+            lora_r=hp["lora_r"],
+            sequence_len=hp["sequence_len"],
+            micro_batch_size=hp["micro_batch_size"],
+            availability=provider.gpu_availability(),
+            currency=provider.currency(),
+        )
+    except selection.NoFittingHardwareError as e:
+        raise OrchestratorError("provider_capacity_unavailable", str(e)) from e
     cancelled()
     db.set_state(
         job_id,
         "provisioning",
-        f"Provisioning {gpu.gpu_type} at "
-        f"{gpu.price_per_hour}{gpu.currency}/hr",
-        gpu_type=gpu.gpu_type,
-        price_per_hour=gpu.price_per_hour,
-        currency=gpu.currency,
+        f"Provisioning {plan.device_count}x {plan.gpu_type} ({plan.method}) "
+        f"at {plan.price_per_hour}{plan.currency}/hr",
+        gpu_type=plan.gpu_type,
+        price_per_hour=plan.price_per_hour,
+        currency=plan.currency,
+        device_count=plan.device_count,
+        method=plan.method,
     )
 
     machine = provider.create(
-        gpu.gpu_type, STORAGE_GB, f"temper-{job_id[:12]}"
+        plan.gpu_type, plan.device_count, STORAGE_GB, f"temper-{job_id[:12]}"
     )
     machines.append(machine)
     db.set_state(
@@ -650,6 +670,7 @@ def run_job(
     job_id: str,
     provider: Provider | None = None,
     limits: RunLimits | None = None,
+    models: Models | None = None,
 ) -> None:
     """Drive one job to a terminal state. Always tears down.
 
@@ -659,7 +680,12 @@ def run_job(
     The limits are injected for the same reason, and they carry their own
     clock: a fifteen-minute silence and a twenty-four-hour run are both things
     the suite has to be able to reach, and it cannot reach them by waiting.
+
+    `models` resolves the base model to the facts hardware selection prices
+    against; omit it and the real, network-backed resolver is built, mirroring
+    the provider.
     """
+    models = models or new_models()
     # Stamped here, so the ceiling counts from the moment the job began rather
     # than from the moment output started.
     limits = (limits or RunLimits.from_config()).start()
@@ -705,7 +731,7 @@ def run_job(
     wall_started = time.time()
     try:
         try:
-            outcome = _attempt(provider, job_id, machines, limits)
+            outcome = _attempt(provider, job_id, machines, limits, models)
         except Cancelled as e:
             # No error code and no error message: the user's own decision is
             # not a defect, and a `cancelled` job carrying an error code would
@@ -745,6 +771,7 @@ def launch(
     job_id: str,
     provider: Provider | None = None,
     limits: RunLimits | None = None,
+    models: Models | None = None,
 ) -> None:
     """Start a job on a background thread.
 
@@ -755,7 +782,7 @@ def launch(
     """
     threading.Thread(
         target=run_job,
-        args=(job_id, provider, limits),
+        args=(job_id, provider, limits, models),
         daemon=True,
         name=f"job-{job_id[:8]}",
     ).start()

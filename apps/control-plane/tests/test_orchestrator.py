@@ -62,22 +62,25 @@ class Harness:
         self._monkeypatch = monkeypatch
         self._tmp_path = tmp_path
 
-    def run(self, provider, hyperparameters=None, limits=None) -> str:
-        from temper_control_plane import orchestrator
+    def run(
+        self, provider, hyperparameters=None, limits=None, models=None
+    ) -> str:
+        from temper_control_plane import fake_models, orchestrator
 
+        models = models or fake_models.catalog_models()
         # Run inline rather than on a thread: the job is the system under test,
         # so the test should observe its finished state rather than race it.
         self._monkeypatch.setattr(
             orchestrator,
             "launch",
             lambda job_id: orchestrator.run_job(
-                job_id, provider=provider, limits=limits
+                job_id, provider=provider, limits=limits, models=models
             ),
         )
         return self._create(hyperparameters)
 
     def run_on_a_thread(
-        self, provider, hyperparameters=None, limits=None
+        self, provider, hyperparameters=None, limits=None, models=None
     ) -> str:
         """Start the job and return while it is still going.
 
@@ -87,14 +90,15 @@ class Harness:
         It is also the only form in which a job can be cancelled at all — a
         request that cancels one has to arrive while it is running.
         """
-        from temper_control_plane import orchestrator
+        from temper_control_plane import fake_models, orchestrator
 
+        models = models or fake_models.catalog_models()
         on_a_thread = orchestrator.launch  # before it is replaced below
         self._monkeypatch.setattr(
             orchestrator,
             "launch",
             lambda job_id: on_a_thread(
-                job_id, provider=provider, limits=limits
+                job_id, provider=provider, limits=limits, models=models
             ),
         )
         return self._create(hyperparameters)
@@ -341,12 +345,14 @@ def upload_raw(harness, data: bytes, name="d.jsonl") -> str:
 
 
 def launch_dataset(harness, provider, dataset_id) -> str:
-    from temper_control_plane import orchestrator
+    from temper_control_plane import fake_models, orchestrator
 
     harness._monkeypatch.setattr(
         orchestrator,
         "launch",
-        lambda job_id: orchestrator.run_job(job_id, provider=provider),
+        lambda job_id: orchestrator.run_job(
+            job_id, provider=provider, models=fake_models.catalog_models()
+        ),
     )
     r = harness._client.post("/v1/jobs", json={"dataset_id": dataset_id})
     assert r.status_code == 201, r.text
@@ -559,12 +565,25 @@ def test_a_transient_destroy_failure_is_retried_rather_than_given_up_on(
 
 def test_nothing_is_destroyed_when_no_machine_was_created(harness):
     provider = FakeProvider(
-        fail_at="select_gpu", fail_code="provider_capacity_unavailable"
+        fail_at="gpu_availability", fail_code="provider_capacity_unavailable"
     )
     job_id = harness.run(provider)
 
     assert harness.job(job_id)["error_code"] == "provider_capacity_unavailable"
     assert "destroy" not in provider.calls
+
+
+def test_a_job_with_nothing_available_to_fit_it_fails_before_provisioning(
+    harness,
+):
+    """The domain refusal, distinct from the provider call itself failing:
+    the provider answered fine, and nothing it has free is predicted to fit
+    this job."""
+    provider = FakeProvider(availability=())
+    job_id = harness.run(provider)
+
+    assert harness.job(job_id)["error_code"] == "provider_capacity_unavailable"
+    assert provider.created == []
 
 
 def test_a_dataset_row_that_vanishes_mid_flight_fails_the_job_by_name(
@@ -598,7 +617,7 @@ def test_a_dataset_row_that_vanishes_mid_flight_fails_the_job_by_name(
 @pytest.mark.parametrize(
     "stage,code",
     [
-        ("select_gpu", "provider_capacity_unavailable"),
+        ("gpu_availability", "provider_capacity_unavailable"),
         ("create", "provider_capacity_unavailable"),
         ("await_ready", "ssh_unreachable"),
         ("await_ready", "ssh_auth_failed"),
@@ -617,7 +636,7 @@ def test_failure_at_a_stage_fails_the_job_with_its_code(harness, stage, code):
     assert harness.stored(job["id"])["artifact_key"] is None
     # A machine only exists from `create` onwards; before that there is
     # nothing to tear down, and after it there always is.
-    if stage in ("select_gpu", "create"):
+    if stage in ("gpu_availability", "create"):
         assert "destroy" not in provider.calls
     else:
         assert provider.destroyed, "a created machine is always destroyed"
@@ -1126,7 +1145,7 @@ def cancelled_at(harness, provider) -> dict:
 def test_cancelling_before_a_machine_exists_stops_the_job_cleanly(harness):
     """Cancellation is not a privilege of jobs that got as far as training."""
     provider = FakeProvider(
-        lines=TRAINING_LINES, result=RESULT, pause_at_stage="select_gpu"
+        lines=TRAINING_LINES, result=RESULT, pause_at_stage="gpu_availability"
     )
     job = cancelled_at(harness, provider)
 

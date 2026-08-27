@@ -36,18 +36,30 @@ import time
 from collections.abc import Iterable, Iterator, Sequence
 
 from temper_core.errors import OrchestratorError
+from temper_core.selection import GpuAvailability
 
 from .limits import RunLimits
-from .provider import GpuChoice, Machine
+from .provider import Machine
 
 # Stage names, not method names: `push` and `fetch` are where a transfer --
 # streamed or otherwise -- can fail or pause.
-STAGES = ("select_gpu", "create", "await_ready", "push", "fetch", "stream")
+STAGES = (
+    "gpu_availability",
+    "create",
+    "await_ready",
+    "push",
+    "fetch",
+    "stream",
+)
 
 # Fixed rather than configurable: tests assert against these, and a knob no
 # test turns is a knob that only makes the double harder to read.
 MACHINE_ID = 4242
-GPU = GpuChoice("L4", 41.31, "INR")
+# 8 free devices, matching what spike 6 measured every VM-capable type
+# showing -- enough headroom that a test asking for more than one device
+# never has to invent a second row.
+DEFAULT_AVAILABILITY = (GpuAvailability("L4", 41.31, 8),)
+DEFAULT_CURRENCY = "INR"
 
 # How long a silent stream stays silent. Long enough that no limit under test
 # can lose the race, short enough that a suite which somehow reaches it ends.
@@ -116,6 +128,8 @@ class FakeProvider:
         adapter_bytes: bytes = b"weights",
         pause_at_stage: str | None = None,
         pause_at_line: int | None = None,
+        availability: Sequence[GpuAvailability] = DEFAULT_AVAILABILITY,
+        currency: str = DEFAULT_CURRENCY,
     ) -> None:
         if fail_at is not None and fail_at not in STAGES:
             raise ValueError(f"unknown stage {fail_at!r}")
@@ -134,6 +148,8 @@ class FakeProvider:
         self._adapter_bytes = adapter_bytes
         self._pause_at_stage = pause_at_stage
         self._pause_at_line = pause_at_line
+        self._availability = availability
+        self._currency = currency
 
         # A pause the test drives: `paused` is set when the job reaches the
         # chosen point, and it stays there until the test sets `resume`. The
@@ -154,11 +170,16 @@ class FakeProvider:
 
     # -- protocol -----------------------------------------------------------
 
-    def select_gpu(self, preference: Sequence[str]) -> GpuChoice:
-        self._enter("select_gpu")
-        return GPU
+    def gpu_availability(self) -> Sequence[GpuAvailability]:
+        self._enter("gpu_availability")
+        return self._availability
 
-    def create(self, gpu_type: str, storage_gb: int, name: str) -> Machine:
+    def currency(self) -> str:
+        return self._currency
+
+    def create(
+        self, gpu_type: str, num_gpus: int, storage_gb: int, name: str
+    ) -> Machine:
         self._enter("create")
         machine = Machine(MACHINE_ID, handle=f"fake://{name}")
         self.created.append(machine)

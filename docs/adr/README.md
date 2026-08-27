@@ -69,6 +69,7 @@ repository becomes public at submission.
 | [0025](0025-the-control-plane-resolves-and-the-trainer-applies.md) | The control plane resolves every hyperparameter; the trainer applies values rather than choosing them | accepted | 2026-08-26 |
 | [0026](0026-the-simulated-machine-fails-when-a-journey-asks.md) | The simulated machine fails when a journey asks it to, through the real failure path | accepted | 2026-08-26 |
 | [0028](0028-peak-memory-is-predicted-through-a-model-facts-seam.md) | Peak memory is predicted through a model-facts seam, not stored per catalog entry | accepted | 2026-08-27 |
+| [0029](0029-hardware-is-selected-cheapest-fit-first-not-preferred-in-order.md) | Hardware is selected cheapest-fit-first, not preferred in order | accepted | 2026-08-27 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
