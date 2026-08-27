@@ -85,6 +85,23 @@ test("a running job is watched live to completion, without a refresh", async ({
     timeout: 15_000,
   });
 
+  // The held-out loss rides the same stream, and the split that produced it
+  // is part of the run's narration (issue #53).
+  await expect(pairedValue(page, "Latest held-out loss")).toContainText(
+    "0.52",
+    { timeout: 15_000 },
+  );
+  await expect(page.getByRole("log")).toContainText("held-out split", {
+    timeout: 15_000,
+  });
+
+  // Training and held-out loss are drawn on one chart, live: the chart is on
+  // the page while the job is still running.
+  await expect(
+    page.getByRole("img", { name: /training loss and held-out loss/i }),
+  ).toBeVisible();
+  await expect(page.getByText("Held-out loss")).toBeVisible();
+
   // The job runs to completion on its own and the page hands back to the
   // finished record, which offers the artifact.
   await expect(pairedValue(page, "State")).toHaveText("complete", {
