@@ -182,12 +182,15 @@ MAX_DATASET_BYTES = int(
 
 
 # --- journey provider -------------------------------------------------------
-# **Off by default, and a lie about compute only.** TEMPER_FAKE_PROVIDER swaps
-# the in-package FakeProvider in for launched jobs, so the browser journeys
-# (apps/web/e2e) can drive a launch to completion with no hardware, no
-# credentials and no way to reach the billing account -- which is what makes
-# them runnable on every push. Everything else is real: the same API, the
-# same database, the same orchestrator transitions.
+# **Off by default.** TEMPER_FAKE_PROVIDER swaps the in-package FakeProvider
+# in for launched jobs, so the browser journeys (apps/web/e2e) can drive a
+# launch to completion with no hardware, no credentials and no way to reach
+# the billing account -- which is what makes them runnable on every push.
+# `models.new_models()` also reads this flag: the model-choice screen calls
+# `/v1/models` on every load, and a journey that resolves real facts from
+# Hugging Face on every run trades that same "runs everywhere" guarantee for
+# a network dependency that costs nothing to remove. Everything else stays
+# real: the same API, the same database, the same orchestrator transitions.
 FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))
 
 

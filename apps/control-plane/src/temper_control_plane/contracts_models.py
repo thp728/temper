@@ -110,6 +110,26 @@ class DatasetList(BaseModel):
     datasets: list[DatasetRecord]
 
 
+class PeakMemoryEstimate(BaseModel):
+    """The predicted peak VRAM for training a model with its default
+    hyperparameters, and the headroom that leaves against its recommended
+    card. Published typed rather than folded into `CatalogEntry`'s flat
+    fields, because the breakdown -- not just the total -- is what makes the
+    prediction an explanation rather than a number to trust blindly."""
+
+    weights_gb: float
+    gradients_gb: float
+    optimizer_gb: float
+    activations_gb: float
+    overhead_gb: float
+    total_gb: float
+    trainable_params: int
+    tolerance: float
+    gpu_type: str
+    gpu_capacity_gb: float
+    headroom_gb: float
+
+
 class CatalogEntry(BaseModel):
     """One base model in the curated catalog: what it is, under what terms,
     and pinned to which revision.
@@ -127,7 +147,7 @@ class CatalogEntry(BaseModel):
     context_length: int
     good_for: str
     min_gpu: str
-    est_peak_vram_gb: float
+    peak_memory: PeakMemoryEstimate
 
 
 class ModelCatalog(BaseModel):

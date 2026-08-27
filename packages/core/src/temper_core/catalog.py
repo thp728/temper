@@ -38,7 +38,13 @@ class BaseModel:
     context_length: int
     good_for: str
     min_gpu: str
-    est_peak_vram_gb: float
+    # The machine-readable half of `min_gpu`: a key into
+    # `temper_core.gpus.CAPACITY_GB`, read wherever headroom against this
+    # model's recommended card is computed. `min_gpu` stays free text because
+    # it is shown, not parsed -- a display string and a lookup key are two
+    # different values, kept as two fields rather than one relying on
+    # regex-splitting the other.
+    min_gpu_type: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -67,9 +73,7 @@ CATALOG: dict[str, BaseModel] = {
             context_length=40960,
             good_for="Fast iteration and smaller datasets. The default.",
             min_gpu="L4 (24 GB)",
-            # Measured, not estimated: 5.31 GB observed on an L4 under QLoRA
-            # r=16 all-linear at sequence length 2048.
-            est_peak_vram_gb=5.3,
+            min_gpu_type="L4",
         ),
         BaseModel(
             id="qwen3-8b",
@@ -81,9 +85,7 @@ CATALOG: dict[str, BaseModel] = {
             context_length=32768,
             good_for="Higher quality when the dataset justifies it.",
             min_gpu="L4 (24 GB)",
-            # Extrapolated from the 4B measurement by parameter ratio, not
-            # observed. Flagged as such until an 8B run confirms it.
-            est_peak_vram_gb=9.5,
+            min_gpu_type="L4",
         ),
     ]
 }

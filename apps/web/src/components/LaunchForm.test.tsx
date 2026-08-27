@@ -25,6 +25,25 @@ vi.mock("@/lib/api/generated/client", async (importOriginal) => ({
 
 import { ApiError } from "@/lib/api/mutator";
 
+function peakMemory(
+  overrides: Partial<CatalogEntry["peak_memory"]> = {},
+): CatalogEntry["peak_memory"] {
+  return {
+    weights_gb: 2.01,
+    gradients_gb: 0.07,
+    optimizer_gb: 0.4,
+    activations_gb: 0.38,
+    overhead_gb: 2.5,
+    total_gb: 5.35,
+    trainable_params: 33030144,
+    tolerance: 0.15,
+    gpu_type: "L4",
+    gpu_capacity_gb: 24,
+    headroom_gb: 18.65,
+    ...overrides,
+  };
+}
+
 function entry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
   return {
     id: "qwen3-4b",
@@ -36,7 +55,7 @@ function entry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     context_length: 40960,
     good_for: "Fast iteration and smaller datasets. The default.",
     min_gpu: "L4 (24 GB)",
-    est_peak_vram_gb: 5.3,
+    peak_memory: peakMemory(),
     ...overrides,
   };
 }
@@ -51,7 +70,11 @@ const catalog: ModelCatalog = {
       params_b: 8.2,
       context_length: 32768,
       good_for: "Higher quality when the dataset justifies it.",
-      est_peak_vram_gb: 9.5,
+      peak_memory: peakMemory({
+        total_gb: 9.6,
+        trainable_params: 43646976,
+        headroom_gb: 14.4,
+      }),
     }),
   ],
   default: "qwen3-4b",
@@ -107,6 +130,17 @@ describe("LaunchForm", () => {
       expect(card).toHaveTextContent(`Licence ${m.license}`);
       expect(card).toHaveTextContent(m.revision);
     }
+  });
+
+  it("shows the predicted peak memory and headroom for every model, before launch", () => {
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    const card4b = optionCard("Qwen/Qwen3-4B");
+    expect(card4b).toHaveTextContent("5.35");
+    expect(card4b).toHaveTextContent("18.65");
+    expect(card4b).toHaveTextContent("L4");
+    const card8b = optionCard("Qwen/Qwen3-8B");
+    expect(card8b).toHaveTextContent("9.6");
+    expect(card8b).toHaveTextContent("14.4");
   });
 
   it("preselects the catalog default", () => {

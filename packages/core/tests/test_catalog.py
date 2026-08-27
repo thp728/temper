@@ -40,7 +40,7 @@ def test_catalog_with_branch_name_fails_a_check_rather_than_loading():
         context_length=4096,
         good_for="test",
         min_gpu="L4",
-        est_peak_vram_gb=5.0,
+        min_gpu_type="L4",
     )
     assert not is_pinned_revision(bad.revision)
     # The catalog module's import-time check would raise ValueError for such an entry

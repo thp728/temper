@@ -82,3 +82,22 @@ def no_real_provider(monkeypatch):
     monkeypatch.setattr(
         provider.JarvisLabsProvider, "_connect", staticmethod(refuse)
     )
+
+
+@pytest.fixture(autouse=True)
+def no_real_models(monkeypatch):
+    """No test resolves model facts over the network.
+
+    Unlike the provider, reaching Hugging Face costs nothing and risks no
+    billing account, so this is narrower than `no_real_provider`: only
+    `main.MODELS` -- the one seam application code actually calls through --
+    is replaced with the catalog's real facts, seeded once and checked into
+    `fake_models.py`, so `/v1/models` behaves exactly as it would in
+    production. It does not touch `urllib` globally, because other suites
+    (`test_storage.py`'s moto-backed HTTP round trip) legitimately make real
+    loopback requests; a test exercising `HuggingFaceModels` itself
+    monkeypatches `urllib.request.urlopen` locally instead.
+    """
+    from temper_control_plane import fake_models, main
+
+    monkeypatch.setattr(main, "MODELS", fake_models.catalog_models())

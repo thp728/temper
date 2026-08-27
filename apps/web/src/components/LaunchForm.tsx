@@ -115,6 +115,22 @@ export default function LaunchForm({
                     <dt className="inline"> · needs at least a </dt>
                     <dd className="inline">{m.min_gpu}</dd>
                   </div>
+                  <div>
+                    <dt className="inline">Predicted peak VRAM </dt>
+                    <dd className="inline">
+                      {m.peak_memory.total_gb.toFixed(2)} GB
+                    </dd>
+                    <dt className="inline"> · headroom on the {m.peak_memory.gpu_type} </dt>
+                    <dd className="inline">
+                      {m.peak_memory.headroom_gb.toFixed(2)} GB of{" "}
+                      {m.peak_memory.gpu_capacity_gb} GB
+                    </dd>
+                    <dt className="inline"> </dt>
+                    <dd className="inline">
+                      (estimate, ±
+                      {Math.round(m.peak_memory.tolerance * 100)}%)
+                    </dd>
+                  </div>
                 </dl>
               </span>
             </Label>
