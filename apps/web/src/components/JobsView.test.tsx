@@ -33,6 +33,12 @@ describe("JobsView", () => {
             status: "failed",
             error_code: "gpu_stalled",
           }),
+          job({
+            id: "job_cancelled02",
+            dataset_id: "ds_other42",
+            status: "cancelled",
+            result: null,
+          }),
         ]}
         datasetNames={{ ds_xyz789: "support-chats.jsonl", ds_other42: "poems.jsonl" }}
       />,
@@ -42,6 +48,9 @@ describe("JobsView", () => {
     expect(link).toHaveAttribute("href", "/jobs/job_abc123def456");
     expect(screen.getByText("complete")).toBeVisible();
     expect(screen.getByText("failed")).toBeVisible();
+    // A cancellation appears as its own outcome -- it is in no error code, so
+    // its presence can only come from the outcome column.
+    expect(screen.getByText("cancelled")).toBeVisible();
     // A failure names its stable code beside its outcome...
     expect(screen.getByText("gpu_stalled")).toBeVisible();
     // ...and each row identifies its job: model and dataset by name.

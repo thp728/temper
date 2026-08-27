@@ -1,7 +1,10 @@
 # Control plane
 
-FastAPI, SQLite, a thread per job, server-rendered HTML. Phase B replaces every one of those and
-keeps the domain logic. Moving to `apps/control-plane/` and `packages/core/` under issue #15.
+The API: FastAPI, SQLite, a thread per job. The server-rendered pages this
+once also served were deleted when the last screen was ported into
+`apps/web` (Spec 007) — this app now answers the `/v1` contract only, and
+the interface that consumes it lives in the web app. The domain logic sits in
+`packages/core` (moved here from this app's own source under issue #15).
 
 ## Seams that Phase B depends on
 

@@ -40,6 +40,13 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
   forbidOnly: !!process.env.CI,
+  // On a dedicated CI runner the machine belongs to this suite, so the
+  // default parallel workers are fine. On a developer machine several
+  // worktrees run their journeys at once (one agent per open issue), and the
+  // fake job's completion budget -- a few seconds of wall clock -- is blown by
+  // CPU contention before it ever reaches a terminal state. Serial locally
+  // keeps `just check` green wherever it runs; parallel in CI keeps it fast.
+  workers: process.env.CI ? undefined : 1,
   use: {
     baseURL: `http://127.0.0.1:${webPort}`,
     trace: "retain-on-failure",
