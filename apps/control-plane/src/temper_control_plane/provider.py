@@ -26,9 +26,11 @@ Three methods beyond the six the spec enumerates, each with a reason:
   id *before* anything can fail. Folding readiness into `create` means a machine
   that exists but never answers is never recorded, and a machine nobody recorded
   is a machine nobody destroys.
-* `fetch_stream` is the counterpart to `push_stream`. Without it the artifact
-  download would be the one provider interaction still shelling out behind the
-  seam's back.
+* `fetch_stream` is the counterpart to `push_stream`. The artifact no longer
+  travels through the control plane -- the machine writes it directly to a
+  scoped grant (ADR-0009) -- but fetch remains a transport primitive, driven
+  against a real endpoint by the transport tier (ADR-0027) and available to
+  any future path that needs bytes off a machine.
 * `close` releases whatever the implementation holds open. Plumbing, not domain.
 
 Spec 006 in full: transfers take and return streams of chunks. The expand half
