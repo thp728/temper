@@ -90,7 +90,11 @@ class Actuals:
     cost_minor: int | None
     storage_cost_usd_minor: int | None
     currency: str | None
-    phases: tuple[StageDuration, ...]
+    # The measured stages are called stages, not phases, on purpose: the
+    # quote prices *phases* (issue #72) and the machine passes through
+    # *states* -- reconciling the two vocabularies is calibration's job, in
+    # the one place they meet. Calling them the same word would hide that.
+    stages: tuple[StageDuration, ...]
 
 
 def _state_name(event: dict[str, Any]) -> str | None:
@@ -218,7 +222,7 @@ def measure(
         cost_minor=cost_minor,
         storage_cost_usd_minor=storage_minor,
         currency=currency if isinstance(currency, str) else None,
-        phases=_stage_durations(events),
+        stages=_stage_durations(events),
     )
 
 
@@ -230,8 +234,8 @@ def to_dict(actuals: Actuals) -> dict[str, Any]:
         "cost_minor": actuals.cost_minor,
         "storage_cost_usd_minor": actuals.storage_cost_usd_minor,
         "currency": actuals.currency,
-        "phases": [
+        "stages": [
             {"name": p.name, "duration_s": p.duration_s}
-            for p in actuals.phases
+            for p in actuals.stages
         ],
     }

@@ -101,16 +101,7 @@ function PhaseRow({ phase }: { phase: CalibrationPhase }) {
 }
 
 function RunRow({ run }: { run: CalibrationRun }) {
-  const comparison = (run.comparison ?? {}) as Record<
-    string,
-    {
-      actual?: number | null;
-      ratio?: number | null;
-    }
-  >;
-  const duration = comparison["duration"];
-  const peak = comparison["peak_memory"];
-  const cost = comparison["cost"];
+  const { duration, peak_memory: peak, cost } = run.comparison ?? {};
   return (
     <tr className="border-b">
       <td className="py-2 pr-3">
@@ -225,8 +216,9 @@ export default function CalibrationView({ data }: { data: Calibration }) {
           <p className="mt-2 text-xs text-muted-foreground">
             Each stage&apos;s prediction is the summed quote phases that map to
             it (issue #72), measured against the job&apos;s own stage
-            durations. Teardown is not isolable from the terminal transition
-            and is left out.
+            durations. `preparing` is the SSH wait; the on-machine image build
+            and the weights download happen inside `training`. Teardown is
+            not isolable from the terminal transition and is left out.
           </p>
         </div>
       )}

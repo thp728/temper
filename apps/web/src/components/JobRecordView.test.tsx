@@ -192,14 +192,14 @@ describe("JobRecordView", () => {
           actuals: {
             duration_s: 600,
             peak_memory_gb: 5.31,
-            cost_minor: 400,
-            currency: "INR",
-            phases: [
-              { name: "provisioning", duration_s: 5 },
-              { name: "preparing", duration_s: 55 },
-              { name: "training", duration_s: 480 },
-              { name: "packaging", duration_s: 60 },
-            ],
+              cost_minor: 400,
+              currency: "INR",
+              stages: [
+                { name: "provisioning", duration_s: 5 },
+                { name: "preparing", duration_s: 55 },
+                { name: "training", duration_s: 480 },
+                { name: "packaging", duration_s: 60 },
+              ],
           },
         })}
         events={[]}

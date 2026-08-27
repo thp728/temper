@@ -85,6 +85,16 @@ visible statement that the estimate over-predicted by more than 2x, not a
 number folded into a better-looking average. Each roll reports its own count:
 "calibrated against N real runs" is only as honest as N is visible.
 
+The bucket mapping follows where the machine actually spends the time, not
+where the quote's names would like it to be: the orchestrator's `preparing`
+state spans the SSH wait and the archive pushes, so the quote's `readiness`
+predicts it; its `training` state — entered as "Building image and training" —
+spans the on-machine image build (the quote's `image_pull`), the weights
+download as the container loads (`model_download`), and the training itself,
+so those three quote phases together predict the measured `training` stage.
+This is the one place the two vocabularies meet, so it is the one place they
+are mapped.
+
 **The comparison is visible on a finished job.** The record shows each metric
 side by side — predicted (estimate) against actual (measured/derived) — with
 the ratio and a sentence naming where the actual landed relative to the

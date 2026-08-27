@@ -241,7 +241,10 @@ function ComparisonSection({ job }: { job: JobRecord }) {
           predictedNote="predicted (estimate)"
           actual={
             actuals.cost_minor != null && actuals.currency != null
-              ? formatMinorCost(actuals.cost_minor, actuals.currency, 100)
+              ? // The actuals' cost is derived in the same currency and minor
+                // unit the quote priced (the frozen rate's), so the quote's
+                // published minor unit is the unit to show, never a literal.
+                formatMinorCost(actuals.cost_minor, actuals.currency, quote.minor_unit)
               : "—"
           }
           actualNote="derived from measured duration × frozen rate"
@@ -253,10 +256,10 @@ function ComparisonSection({ job }: { job: JobRecord }) {
         />
       </div>
 
-      {(actuals.phases ?? []).length > 0 && (
+      {(actuals.stages ?? []).length > 0 && (
         <div className="rounded-lg border bg-card p-4">
           <dl className="divide-y divide-border">
-            {actuals.phases!.map((p) => (
+            {actuals.stages!.map((p) => (
               <div
                 key={p.name}
                 className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5 py-1"

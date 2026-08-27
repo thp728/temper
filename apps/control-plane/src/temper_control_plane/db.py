@@ -516,11 +516,19 @@ def require_job(job_id: str) -> dict:
     return job
 
 
-def list_jobs(limit: int = 50) -> list[dict]:
+def list_jobs(limit: int | None = 50) -> list[dict]:
+    """The job list, newest first. `limit=None` reads every row: the job list
+    endpoint caps at 50, but an aggregate that says "across N runs" must not
+    silently drop the runs older than its reader's page."""
     with connect() as c:
-        rows = c.execute(
-            "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if limit is None:
+            rows = c.execute(
+                "SELECT * FROM jobs ORDER BY created_at DESC"
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
     return [
         _present(
             _with_warnings(

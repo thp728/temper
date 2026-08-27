@@ -317,7 +317,7 @@ def test_a_completed_job_records_its_actuals_against_the_quote(harness):
     assert actuals["cost_minor"] is not None
     assert actuals["currency"] == "INR"
     # The stages are the job's own, each measured from the state events.
-    by_name = {p["name"]: p["duration_s"] for p in actuals["phases"]}
+    by_name = {p["name"]: p["duration_s"] for p in actuals["stages"]}
     assert set(by_name) == {
         "provisioning",
         "preparing",
@@ -352,7 +352,7 @@ def test_a_failed_job_records_duration_and_cost_and_no_peak(harness):
     assert actuals["duration_s"] is not None
     assert actuals["peak_memory_gb"] is None
     assert actuals["cost_minor"] is not None
-    assert set(p["name"] for p in actuals["phases"]) == {
+    assert set(p["name"] for p in actuals["stages"]) == {
         "provisioning",
         "preparing",
         "training",
@@ -1626,6 +1626,11 @@ def test_a_job_cancelled_before_it_starts_never_provisions_anything(harness):
     job = db.get_job(job_id)
     assert job["status"] == "cancelled"
     assert provider.calls == [], "a cancelled job touched the provider"
+    # Still recorded (issue #77): the attempt consumed the wall time from
+    # creation to the cancellation, even though no machine was provisioned.
+    assert job["actuals"]["duration_s"] is not None
+    assert job["actuals"]["peak_memory_gb"] is None
+    assert all(p["duration_s"] is None for p in job["actuals"]["stages"])
 
 
 # --- payloads stream: spec 006's contract half ------------------------------

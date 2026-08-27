@@ -359,7 +359,11 @@ class JobActuals(BaseModel):
     cost_minor: int | None = None
     storage_cost_usd_minor: int | None = None
     currency: str | None = None
-    phases: list[StageActual] = Field(default_factory=list)
+    # The measured stages are stages, not phases: the quote prices phases
+    # (issue #72) and the machine passes through states, and reconciling the
+    # two vocabularies is calibration's job -- calling them the same word
+    # would hide that.
+    stages: list[StageActual] = Field(default_factory=list)
 
 
 class JobRecord(BaseModel):
@@ -447,11 +451,46 @@ class CalibrationMetric(BaseModel):
 
 class CalibrationPhase(CalibrationMetric):
     """One measured stage's rollup, plus the quote phases (issue #72) that
-    predict it. `preparing` bundles readiness + image_pull + model_download,
-    the orchestrator's own bundling of the job's stages."""
+    predict it. `preparing` is the SSH wait (readiness); `training` carries
+    image_pull + model_download + training, because the on-machine image
+    build and the weights download happen inside the orchestrator's
+    `training` state."""
 
     name: str
     quotes_phases: list[str] = Field(default_factory=list)
+
+
+class RangeComparison(BaseModel):
+    """One ranged metric's per-run comparison (duration, cost): the predicted
+    range with its midpoint, the measured actual, and where the actual landed
+    relative to the range (`under`/`inside`/`over`), with the ratio against
+    the midpoint."""
+
+    predicted_low: float | None = None
+    predicted_high: float | None = None
+    predicted_midpoint: float | None = None
+    actual: float | None = None
+    ratio: float | None = None
+    direction: Literal["under", "inside", "over"] | None = None
+
+
+class PointComparison(BaseModel):
+    """One point metric's per-run comparison (peak memory): the predicted
+    point, the measured actual, and the ratio. Peak blocks rather than warns,
+    so it is a point, not a range, and there is no `inside` to land in."""
+
+    predicted: float | None = None
+    actual: float | None = None
+    ratio: float | None = None
+
+
+class RunComparison(BaseModel):
+    """One job's prediction-vs-measurement record, per metric, published
+    typed so the interface renders it without hand-declaring the shape."""
+
+    duration: RangeComparison = RangeComparison()
+    peak_memory: PointComparison = PointComparison()
+    cost: RangeComparison = RangeComparison()
 
 
 class CalibrationRun(BaseModel):
@@ -463,7 +502,7 @@ class CalibrationRun(BaseModel):
     base_model: str
     status: str
     created_at: float
-    comparison: dict[str, Any]
+    comparison: RunComparison = RunComparison()
 
 
 class Calibration(BaseModel):

@@ -85,7 +85,7 @@ def test_wall_duration_is_finished_minus_created():
 
 def test_each_stage_duration_is_the_gap_to_the_next_state_transition():
     m = actuals.measure(job(), run_events(), None)
-    by_name = {p.name: p.duration_s for p in m.phases}
+    by_name = {p.name: p.duration_s for p in m.stages}
     assert by_name == {
         "provisioning": 5.0,  # 1000 -> 1005
         "preparing": 55.0,  # 1005 -> 1060
@@ -104,7 +104,7 @@ def test_a_stage_never_reached_measures_none_not_a_guess():
     m = actuals.measure(
         job(status="cancelled", finished_at=1007.0), events, None
     )
-    by_name = {p.name: p.duration_s for p in m.phases}
+    by_name = {p.name: p.duration_s for p in m.stages}
     assert by_name["provisioning"] == 7.0
     assert by_name["preparing"] is None
     assert by_name["training"] is None
@@ -115,7 +115,7 @@ def test_a_run_with_no_finished_at_measures_no_duration():
     m = actuals.measure(job(finished_at=None), run_events(), None)
     assert m.duration_s is None
     # But the stages it passed through are still measurable from its events.
-    assert m.phases[1].duration_s == 55.0
+    assert m.stages[1].duration_s == 55.0
 
 
 def test_the_state_name_reads_from_data_not_from_the_narration():
@@ -146,7 +146,7 @@ def test_the_state_name_reads_from_data_not_from_the_narration():
         },
     ]
     m = actuals.measure(job(finished_at=1060.0), events, None)
-    by_name = {p.name: p.duration_s for p in m.phases}
+    by_name = {p.name: p.duration_s for p in m.stages}
     assert by_name["provisioning"] == 55.0
     assert by_name["preparing"] == 5.0
 
@@ -178,7 +178,7 @@ def test_an_event_without_data_falls_back_to_its_message():
         },
     ]
     m = actuals.measure(job(finished_at=1010.0), events, None)
-    by_name = {p.name: p.duration_s for p in m.phases}
+    by_name = {p.name: p.duration_s for p in m.stages}
     assert by_name["provisioning"] == 5.0
 
 
@@ -261,5 +261,5 @@ def test_to_dict_matches_the_frozen_shape():
     assert d["peak_memory_gb"] == 5.31
     assert d["cost_minor"] == 413
     assert d["currency"] == "INR"
-    assert [p["name"] for p in d["phases"]] == list(actuals.MEASURED_STAGES)
-    assert d["phases"][2] == {"name": "training", "duration_s": 240.0}
+    assert [p["name"] for p in d["stages"]] == list(actuals.MEASURED_STAGES)
+    assert d["stages"][2] == {"name": "training", "duration_s": 240.0}

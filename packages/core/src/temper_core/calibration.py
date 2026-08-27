@@ -38,12 +38,20 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 # Which of the quote's phases (issue #72) predict each measured stage
-# (temper_core.actuals). In the orchestrator's own words, `preparing` covers
-# readiness, image pull and model download; teardown is not isolable.
+# (temper_core.actuals). The mapping follows where the machine actually spends
+# the time: the orchestrator's `preparing` state spans the SSH wait and the
+# archive pushes, and its `training` state -- entered as "Building image and
+# training" -- spans the on-machine image build (the quote's `image_pull`),
+# the model weights download that happens as the container loads, and the
+# training itself. So the quote's `readiness` predicts `preparing`, and
+# `image_pull` + `model_download` + `training` together predict the measured
+# `training` stage. Teardown is not isolable from the terminal transition and
+# is left out. This is the one place the two vocabularies meet, so it is the
+# one place they are mapped.
 PHASE_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("provisioning", ("provisioning",)),
-    ("preparing", ("readiness", "image_pull", "model_download")),
-    ("training", ("training",)),
+    ("preparing", ("readiness",)),
+    ("training", ("image_pull", "model_download", "training")),
 )
 
 Direction = Literal["under", "inside", "over"]
@@ -211,7 +219,7 @@ def _phase_predicted_s(
 
 def _phase_actual_s(actuals: dict[str, Any], name: str) -> float | None:
     """The measured duration of stage `name`, or None when it was never reached."""
-    for p in actuals.get("phases") or []:
+    for p in actuals.get("stages") or []:
         if isinstance(p, dict) and p.get("name") == name:
             value = p.get("duration_s")
             return float(value) if isinstance(value, (int, float)) else None

@@ -410,7 +410,7 @@ def calibration_summary():
     along so an outlier can be named rather than pointed at.
     """
     runs = []
-    for job in db.list_jobs():
+    for job in db.list_jobs(limit=None):
         if job.get("status") not in db.TERMINAL_STATES:
             continue
         if not job.get("quote") or not job.get("actuals"):

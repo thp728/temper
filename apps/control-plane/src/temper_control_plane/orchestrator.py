@@ -808,6 +808,9 @@ def run_job(
     # the thread that picks it up -- should cost nothing at all, and building a
     # client is the first thing on this path that can talk to the account.
     if db.cancel_requested(job_id):
+        # Still recorded (issue #77): the attempt consumed the wall time from
+        # creation to the cancellation, even though no machine was provisioned.
+        _record_actuals(job_id, None, "cancelled", time.time())
         db.set_state(job_id, "cancelled", CANCEL_MESSAGE)
         return
 
@@ -819,6 +822,7 @@ def run_job(
         try:
             provider = new_provider()
         except OrchestratorError as e:
+            _record_actuals(job_id, None, "failed", time.time())
             db.set_state(
                 job_id,
                 "failed",
@@ -831,6 +835,7 @@ def run_job(
             # Nothing was provisioned, so there is nothing to tear down -- but
             # the job still has to reach a terminal state rather than sit in
             # `queued` forever because the SDK failed to import.
+            _record_actuals(job_id, None, "failed", time.time())
             db.set_state(
                 job_id,
                 "failed",

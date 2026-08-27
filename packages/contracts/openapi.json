@@ -123,7 +123,7 @@
         "type": "object"
       },
       "CalibrationPhase": {
-        "description": "One measured stage's rollup, plus the quote phases (issue #72) that\npredict it. `preparing` bundles readiness + image_pull + model_download,\nthe orchestrator's own bundling of the job's stages.",
+        "description": "One measured stage's rollup, plus the quote phases (issue #72) that\npredict it. `preparing` is the SSH wait (readiness); `training` carries\nimage_pull + model_download + training, because the on-machine image\nbuild and the weights download happen inside the orchestrator's\n`training` state.",
         "properties": {
           "count": {
             "title": "Count",
@@ -211,9 +211,12 @@
             "type": "string"
           },
           "comparison": {
-            "additionalProperties": true,
-            "title": "Comparison",
-            "type": "object"
+            "$ref": "#/components/schemas/RunComparison",
+            "default": {
+              "cost": {},
+              "duration": {},
+              "peak_memory": {}
+            }
           },
           "created_at": {
             "title": "Created At",
@@ -232,8 +235,7 @@
           "job_id",
           "base_model",
           "status",
-          "created_at",
-          "comparison"
+          "created_at"
         ],
         "title": "CalibrationRun",
         "type": "object"
@@ -611,11 +613,11 @@
             ],
             "title": "Peak Memory Gb"
           },
-          "phases": {
+          "stages": {
             "items": {
               "$ref": "#/components/schemas/StageActual"
             },
-            "title": "Phases",
+            "title": "Stages",
             "type": "array"
           },
           "storage_cost_usd_minor": {
@@ -1093,6 +1095,46 @@
         "title": "PeakMemoryEstimate",
         "type": "object"
       },
+      "PointComparison": {
+        "description": "One point metric's per-run comparison (peak memory): the predicted\npoint, the measured actual, and the ratio. Peak blocks rather than warns,\nso it is a point, not a range, and there is no `inside` to land in.",
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "predicted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          }
+        },
+        "title": "PointComparison",
+        "type": "object"
+      },
       "PreviewRow": {
         "additionalProperties": true,
         "description": "A parsed row as Temper understood it, before validation judges it.\n\nArbitrary keys are allowed because the row is whatever the JSON line held;\n`messages` is typed because it is the key every supported schema shares.",
@@ -1413,6 +1455,103 @@
           "dataset_id"
         ],
         "title": "QuoteRequest",
+        "type": "object"
+      },
+      "RangeComparison": {
+        "description": "One ranged metric's per-run comparison (duration, cost): the predicted\nrange with its midpoint, the measured actual, and where the actual landed\nrelative to the range (`under`/`inside`/`over`), with the ratio against\nthe midpoint.",
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "under",
+                  "inside",
+                  "over"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "predicted_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted High"
+          },
+          "predicted_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Low"
+          },
+          "predicted_midpoint": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Midpoint"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          }
+        },
+        "title": "RangeComparison",
+        "type": "object"
+      },
+      "RunComparison": {
+        "description": "One job's prediction-vs-measurement record, per metric, published\ntyped so the interface renders it without hand-declaring the shape.",
+        "properties": {
+          "cost": {
+            "$ref": "#/components/schemas/RangeComparison",
+            "default": {}
+          },
+          "duration": {
+            "$ref": "#/components/schemas/RangeComparison",
+            "default": {}
+          },
+          "peak_memory": {
+            "$ref": "#/components/schemas/PointComparison",
+            "default": {}
+          }
+        },
+        "title": "RunComparison",
         "type": "object"
       },
       "StageActual": {

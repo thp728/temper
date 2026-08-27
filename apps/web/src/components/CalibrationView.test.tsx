@@ -42,12 +42,22 @@ function calibration(): Calibration {
       {
         name: "preparing",
         count: 2,
-        mean_predicted: 211,
+        mean_predicted: 54,
         mean_actual: 55,
-        mean_ratio: 0.26,
-        min_ratio: 0.26,
-        max_ratio: 0.26,
-        quotes_phases: ["readiness", "image_pull", "model_download"],
+        mean_ratio: 1.02,
+        min_ratio: 1.02,
+        max_ratio: 1.02,
+        quotes_phases: ["readiness"],
+      },
+      {
+        name: "training",
+        count: 2,
+        mean_predicted: 597,
+        mean_actual: 210,
+        mean_ratio: 0.35,
+        min_ratio: 0.35,
+        max_ratio: 0.35,
+        quotes_phases: ["image_pull", "model_download", "training"],
       },
     ],
     runs: [
@@ -93,9 +103,10 @@ describe("CalibrationView", () => {
   it("shows the stage-by-stage reconciliation of the two vocabularies", () => {
     render(<CalibrationView data={calibration()} />);
     expect(screen.getByRole("heading", { name: "Stage by stage" })).toBeVisible();
-    expect(screen.getByText("preparing")).toBeVisible();
+    expect(screen.getAllByText(/preparing/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/readiness/).length).toBeGreaterThan(0);
     expect(
-      screen.getByText(/readiness \+ image_pull \+ model_download/),
+      screen.getByText(/image_pull \+ model_download \+ training/),
     ).toBeVisible();
   });
 

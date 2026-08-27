@@ -18,8 +18,10 @@ Four properties are load-bearing and each is asserted directly:
 * **A run with a missing figure contributes no ratio**, so the average never
   absorbs a guess in with a measurement.
 * **The phase buckets reconcile the quote's phases with the job's measured
-  stages** in exactly one place, mapping readiness + image_pull +
-  model_download to the `preparing` stage (the orchestrator's own bundling).
+  stages** in exactly one place: readiness maps to `preparing`, and
+  image_pull + model_download + training map to the measured `training`
+  stage, because the on-machine image build and the weights download happen
+  inside the orchestrator's `training` state.
 """
 
 from __future__ import annotations
@@ -105,7 +107,7 @@ def actuals(**overrides) -> dict:
         "cost_minor": 344,
         "storage_cost_usd_minor": 1,
         "currency": "INR",
-        "phases": [
+        "stages": [
             {"name": "provisioning", "duration_s": 5.0},
             {"name": "preparing", "duration_s": 55.0},
             {"name": "training", "duration_s": 210.0},
@@ -185,12 +187,22 @@ def test_a_missing_actual_keeps_the_other_metrics_comparable():
 # --- the phase buckets --------------------------------------------------------
 
 
-def test_the_preparing_bucket_sums_readiness_image_pull_and_download():
-    # Midpoints: (40+68)/2=54, (87+183)/2=135, (9+35)/2=22 -> 211 total.
+def test_the_preparing_bucket_is_readiness_alone():
+    # The orchestrator's `preparing` state spans the SSH wait and the archive
+    # pushes; the on-machine image build and the weights download happen
+    # inside the `training` state. So readiness predicts preparing, and
+    # image_pull + model_download + training predict the measured training
+    # stage. Midpoint of readiness (40+68)/2 = 54.
+    pred = calibration._phase_predicted_s(quote(), ("readiness",))
+    assert pred == 54
+
+
+def test_the_training_bucket_sums_image_pull_download_and_training():
+    # Midpoints: (87+183)/2=135, (9+35)/2=22, (80+800)/2=440 -> 597 total.
     pred = calibration._phase_predicted_s(
-        quote(), ("readiness", "image_pull", "model_download")
+        quote(), ("image_pull", "model_download", "training")
     )
-    assert pred == 54 + 135 + 22
+    assert pred == 135 + 22 + 440
 
 
 def test_phase_actual_reads_the_measured_stage():
@@ -239,11 +251,16 @@ def test_aggregate_phase_rows_bucket_the_two_vocabularies():
     names = [p["name"] for p in agg["phases"]]
     assert names == ["provisioning", "preparing", "training"]
     by_name = {p["name"]: p for p in agg["phases"]}
-    # The preparing bucket's predicted is the summed midpoint (211), against
-    # the measured preparing stage (55): over-predicted -> ratio < 1.
-    assert by_name["preparing"]["mean_predicted"] == 211
+    # Preparing's prediction is readiness alone (54), against the measured
+    # preparing stage (55): close, ratio ~1. The training bucket carries the
+    # image pull + download + training predictions (597) against the measured
+    # training stage (210): over-predicted -> ratio < 1.
+    assert by_name["preparing"]["mean_predicted"] == 54
     assert by_name["preparing"]["mean_actual"] == 55
-    assert by_name["preparing"]["mean_ratio"] == 55 / 211
+    assert by_name["preparing"]["mean_ratio"] == 55 / 54
+    assert by_name["training"]["mean_predicted"] == 135 + 22 + 440
+    assert by_name["training"]["mean_actual"] == 210
+    assert by_name["training"]["mean_ratio"] == 210 / 597
 
 
 def test_aggregate_carries_the_runs_so_an_outlier_can_be_named():
