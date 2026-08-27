@@ -10,6 +10,7 @@ boundary once it is published.
 import json
 
 import pytest
+from helpers import wait_validated
 
 
 @pytest.fixture()
@@ -40,6 +41,7 @@ def finished_job_id(client, monkeypatch):
         },
     )
     ds_id = r.json()["id"]
+    wait_validated(client, ds_id)  # the job needs the finished report
 
     def start(job_id):
         from temper_control_plane import fake_models

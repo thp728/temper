@@ -158,34 +158,43 @@ def _megabytes(name: str, default: float) -> float:
     if value <= 0:
         raise ValueError(
             f"{name}={raw!r} must be greater than zero. There is no value "
-            f"that means 'no limit': an unbounded upload fails as an "
-            f"out-of-memory crash instead of a typed error."
+            f"that means 'no limit': an unbounded upload ties the control "
+            f"plane up in validation for longer than any user should wait, "
+            f"and a limit nobody can adjust gets treated as arbitrary."
         )
     return value
 
 
 # --- dataset size limit -----------------------------------------------------
-# **1 GB, derived rather than chosen.** Validation holds the whole dataset in
-# memory, and its peak resident memory was measured across five dataset sizes,
-# one fresh process each (method and table in docs/adr/0004, "The measured
-# memory multiplier"): it converges to **4.8x the file size** -- 10 MB -> 67.6 MB
-# up to 200 MB -> 959.4 MB, the higher ratios at small sizes being fixed
-# interpreter overhead. At 4.8x, a 1 GB dataset peaks around 4.8 GB: roughly
-# 15% of the development machine's memory, with headroom for concurrent work.
-# One gigabyte is approximately 577,000 conversational rows.
+# **1.3 GB, derived from the measured streaming throughput, not from memory.**
+# Validation now streams one row at a time
+# ([ADR-0036](../docs/adr/0036-the-dataset-size-limit-is-derived-from-measured-throughput.md)),
+# so the memory multiplier that produced ADR-0005's 1 GB figure is gone --
+# spike 9 measured the streaming path flat from 1 GB to 20 GB (peak RSS +4 MB
+# regardless of size). What the limit still protects is that validation
+# finishes within a tolerable synchronous wait: the mean streaming rate
+# measured on a real 1 GB file was **21.6 MB/s** (a floor -- the machine was
+# contended), and 60 seconds of waiting is the point at which a synchronous
+# upload stops reading as a wait and starts reading as a hang. That is
+# 21.6 MB/s x 60 s = 1296 MB, rounded up to a clean **1.3 GiB (1331.2 MB)** --
+# a rounding of under 3%, smaller than the uncertainty in a measured rate
+# that is itself a floor. The rate is **measured**; the 60-second wait is
+# **a judgment**, and both are recorded in the ADR so the number can be
+# revisited against a less contended measurement or a different tolerance.
 #
-# This is deliberately below the 25 GB named baseline, which is a property of a
+# One gigabyte is approximately 577,000 conversational rows; 1.3 GB is
+# approximately 750,000.
+#
+# Deliberately below the 25 GB named baseline, which is a property of a
 # multi-node fleet; on a single-GPU job with a 24-hour ceiling a dataset that
 # size cannot finish anyway. Advertising a limit the system cannot honour is
 # worse than being visibly below it.
 #
-# It is a limit of the current *in-memory* validation path, not a product rule:
-# streaming validation (Phase B, with the storage work) removes it.
-#
-# Configurable because the right number depends on the machine's memory, not on
-# this code. TEMPER_MAX_DATASET_MB, in megabytes.
+# Configurable because the right number depends on the deployment's tolerance
+# for a synchronous wait, not on this code. TEMPER_MAX_DATASET_MB, in
+# megabytes. 1.3 GiB is 1331.2 MB.
 MAX_DATASET_BYTES = int(
-    _megabytes("TEMPER_MAX_DATASET_MB", 1024) * 1024 * 1024
+    _megabytes("TEMPER_MAX_DATASET_MB", 1331.2) * 1024 * 1024
 )
 
 

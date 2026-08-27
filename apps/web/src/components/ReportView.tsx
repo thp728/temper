@@ -158,7 +158,7 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
       {report.errors.length > 0 && (
         <section aria-labelledby="problems-heading">
           <h2 id="problems-heading" className="text-lg font-semibold">
-            Problems ({report.errors.length})
+            Problems ({report.error_count ?? report.errors.length})
           </h2>
           <p className="text-sm text-muted-foreground">
             This dataset cannot be trained on until every problem below is
@@ -167,13 +167,19 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
           <div className="mt-3">
             <IssueList issues={report.errors} />
           </div>
+          {!!report.errors_suppressed && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              …and {report.errors_suppressed} more problem(s), not shown. The
+              count above is exact.
+            </p>
+          )}
         </section>
       )}
 
       {report.warnings.length > 0 && (
         <section aria-labelledby="warnings-heading">
           <h2 id="warnings-heading" className="text-lg font-semibold">
-            Warnings ({report.warnings.length})
+            Warnings ({report.warning_count ?? report.warnings.length})
           </h2>
           <p className="text-sm text-muted-foreground">
             These do not block proceeding.
@@ -181,6 +187,12 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
           <div className="mt-3">
             <IssueList issues={report.warnings} />
           </div>
+          {!!report.warnings_suppressed && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              …and {report.warnings_suppressed} more warning(s), not shown. The
+              count above is exact.
+            </p>
+          )}
         </section>
       )}
 

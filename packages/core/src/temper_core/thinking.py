@@ -35,6 +35,35 @@ class MixedThinkingDataset(ValueError):
     """Raised when only some assistant turns carry reasoning traces."""
 
 
+def mixed_thinking_message(
+    with_think: int,
+    without_think: int,
+    sample_with: list[int],
+    sample_without: list[int],
+    sample_cap: int = 5,
+) -> str:
+    """The one wording for a mixed dataset, shared by every caller.
+
+    The trainer decides thinking mode on the machine and the control plane
+    decides it during validation; both must say the same thing about the same
+    dataset, so the sentence is defined once here and read by both. The
+    ` thinking` tokens are built from chr() so the literal angle brackets
+    survive every edit to this file.
+    """
+    lt = chr(60)
+    gt = chr(62)
+    token = f"{lt}thinking{gt}"
+    return (
+        f"Dataset mixes reasoning traces with plain responses: "
+        f"{with_think} assistant turn(s) contain {token} blocks and "
+        f"{without_think} do not. Every row must be consistent, because "
+        f"the chat template is applied to the whole dataset -- a mixed set "
+        f"trains half the rows against the wrong template. "
+        f"With {token}, e.g. lines {sample_with[:sample_cap]}; "
+        f"without, e.g. lines {sample_without[:sample_cap]}."
+    )
+
+
 @dataclass
 class ThinkingReport:
     enable_thinking: bool
@@ -91,13 +120,13 @@ def detect(
 
     if with_t and without_t:
         raise MixedThinkingDataset(
-            f"Dataset mixes reasoning traces with plain responses: "
-            f"{len(with_t)} assistant turn(s) contain <think> blocks and "
-            f"{len(without_t)} do not. Every row must be consistent, because "
-            f"the chat template is applied to the whole dataset -- a mixed set "
-            f"trains half the rows against the wrong template. "
-            f"With <think>, e.g. lines {with_t[:sample_cap]}; "
-            f"without, e.g. lines {without_t[:sample_cap]}."
+            mixed_thinking_message(
+                len(with_t),
+                len(without_t),
+                with_t,
+                without_t,
+                sample_cap,
+            )
         )
 
     enabled = bool(with_t)

@@ -9,6 +9,7 @@ that costs money per run does not get run.
 import json
 
 import pytest
+from helpers import wait_validated
 
 
 def jsonl(tmp_path, rows, name="d.jsonl"):
@@ -29,6 +30,17 @@ def chat(user, assistant):
 def upload(client, path):
     with open(path, "rb") as f:
         return client.post("/v1/datasets", files={"file": (path.name, f)})
+
+
+def report_of(client, path):
+    """Upload `path` and return the finished validation report.
+
+    Validation is asynchronous: the upload returns the dataset's id while the
+    report is being produced in the background, so the report is read back off
+    the record once it lands."""
+    r = upload(client, path)
+    assert r.status_code == 202
+    return wait_validated(client, r.json()["id"])["report"]
 
 
 # --- catalog ---------------------------------------------------------------
@@ -102,59 +114,64 @@ def test_catalog_revision_shown_alongside_licence_at_model_choice(
 
 def test_valid_dataset_accepted(client, tmp_path):
     p = jsonl(tmp_path, [chat(f"q{i}", f"a{i}") for i in range(12)])
-    r = upload(client, p)
-    assert r.status_code == 201
-    body = r.json()
-    assert body["valid"] is True
-    assert body["usable_rows"] == 12
-    assert body["schema_type"] == "chat"
-    assert body["enable_thinking"] is False
+    report = report_of(client, p)
+    assert report["valid"] is True
+    assert report["usable_rows"] == 12
+    assert report["schema_type"] == "chat"
+    assert report["enable_thinking"] is False
 
 
 def test_too_few_rows_blocks(client, tmp_path):
     p = jsonl(tmp_path, [chat("q", "a") for _ in range(3)])
-    body = upload(client, p).json()
-    assert body["valid"] is False
-    assert any(e["code"] == "too_few_rows" for e in body["errors"])
+    report = report_of(client, p)
+    assert report["valid"] is False
+    assert any(e["code"] == "too_few_rows" for e in report["errors"])
 
 
 def test_malformed_json_names_the_line(client, tmp_path):
     p = tmp_path / "bad.jsonl"
     good = "\n".join(json.dumps(chat(f"q{i}", f"a{i}")) for i in range(11))
     p.write_text(good + "\n{not json}\n", encoding="utf-8")
-    body = upload(client, p).json()
-    err = [e for e in body["errors"] if e["code"] == "invalid_json"]
+    report = report_of(client, p)
+    err = [e for e in report["errors"] if e["code"] == "invalid_json"]
     assert err and err[0]["line"] == 12, "the offending line must be named"
 
 
 def test_empty_assistant_turn_is_an_error(client, tmp_path):
     rows = [chat(f"q{i}", f"a{i}") for i in range(11)] + [chat("q", "   ")]
-    body = upload(client, jsonl(tmp_path, rows)).json()
+    report = report_of(client, jsonl(tmp_path, rows))
     assert any(
-        e["code"] == "empty_target" and e["line"] == 12 for e in body["errors"]
+        e["code"] == "empty_target" and e["line"] == 12
+        for e in report["errors"]
     )
 
 
+def think_content(i: int) -> str:
+    """An assistant turn carrying a reasoning trace, built from chr() so the
+    literal angle brackets survive every edit to this file."""
+    return f"{chr(60)}think{chr(62)}r{i}{chr(60)}/think{chr(62)}a{i}"
+
+
 def test_mixed_thinking_dataset_blocks(client, tmp_path):
-    rows = [chat(f"q{i}", f"<think>r</think>a{i}") for i in range(6)]
+    rows = [chat(f"q{i}", think_content(i)) for i in range(6)]
     rows += [chat(f"q{i}", f"a{i}") for i in range(6)]
-    body = upload(client, jsonl(tmp_path, rows)).json()
-    assert body["valid"] is False
-    assert any(e["code"] == "mixed_thinking" for e in body["errors"])
+    report = report_of(client, jsonl(tmp_path, rows))
+    assert report["valid"] is False
+    assert any(e["code"] == "mixed_thinking" for e in report["errors"])
 
 
 def test_all_thinking_dataset_enables_thinking(client, tmp_path):
-    rows = [chat(f"q{i}", f"<think>r{i}</think>a{i}") for i in range(11)]
-    body = upload(client, jsonl(tmp_path, rows)).json()
-    assert body["valid"] is True and body["enable_thinking"] is True
+    rows = [chat(f"q{i}", think_content(i)) for i in range(11)]
+    report = report_of(client, jsonl(tmp_path, rows))
+    assert report["valid"] is True and report["enable_thinking"] is True
 
 
 def test_wrong_schema_explains_the_expected_shape(client, tmp_path):
     p = jsonl(
         tmp_path, [{"instruction": "x", "output": "y"} for _ in range(11)]
     )
-    body = upload(client, p).json()
-    e = [x for x in body["errors"] if x["code"] == "unrecognised_schema"]
+    report = report_of(client, p)
+    e = [x for x in report["errors"] if x["code"] == "unrecognised_schema"]
     assert e and "instruction" in e[0]["message"]  # tells them what it saw
 
 
@@ -166,26 +183,27 @@ def test_wrong_schema_explains_the_expected_shape(client, tmp_path):
 
 
 def test_upload_response_is_exactly_the_published_model(client, tmp_path):
-    from temper_control_plane.contracts_models import (
-        DatasetUploaded,
-        ValidationIssue,
-    )
+    """The upload answer is where validation is happening, not the report --
+    the report lands on the record so a large upload can be watched. The
+    response must parse against the published model and carry no field
+    outside it, in particular not the stored file path, which is server
+    state."""
+    from temper_control_plane.contracts_models import DatasetAccepted
 
     p = jsonl(tmp_path, [chat(f"q{i}", f"a{i}") for i in range(12)])
-    body = upload(client, p).json()
-    # Parses against the published model and carries no field outside it --
-    # in particular not the stored file path, which is server state.
-    parsed = DatasetUploaded.model_validate(body)
+    r = upload(client, p)
+    assert r.status_code == 202
+    body = r.json()
+    parsed = DatasetAccepted.model_validate(body)
     assert parsed.id == body["id"]
     assert parsed.filename == body["filename"]
-    assert set(body) == set(DatasetUploaded.model_fields)
-    # An issue parses as the published shape, line reference included.
-    bad = upload(client, jsonl(tmp_path, [chat("q", "a")])).json()
-    issues = DatasetUploaded.model_validate(bad).errors
-    assert any(
-        isinstance(i, ValidationIssue) and i.code == "too_few_rows"
-        for i in issues
-    )
+    assert parsed.status == "validating"
+    assert set(body) == set(DatasetAccepted.model_fields)
+    assert "report" not in body
+    # Let the background validation finish before this test's database is torn
+    # down -- a straggler thread writing to the next test's tables is worse
+    # than a test that waits.
+    wait_validated(client, parsed.id)
 
 
 def test_dataset_record_response_is_exactly_the_published_model(
@@ -226,13 +244,13 @@ def test_preview_turns_are_published_typed(client, tmp_path):
     """Preview rows are the weakest-typed corner of the report -- they hold
     rows validation has not judged -- so this pins what the contract claims:
     turns render as strings to the client, whatever the JSON line held."""
-    from temper_control_plane.contracts_models import DatasetUploaded
+    from temper_control_plane.contracts_models import DatasetReport
 
     rows = [chat(f"q{i}", f"a{i}") for i in range(11)]
     # Inside MAX_PREVIEW's window of three, so it actually reaches the report.
     rows[2] = {"messages": ["a bare string turn", {"role": "user"}]}
-    body = upload(client, jsonl(tmp_path, rows)).json()
-    parsed = DatasetUploaded.model_validate(body)
+    report = report_of(client, jsonl(tmp_path, rows))
+    parsed = DatasetReport.model_validate(report)
     turn = parsed.preview[2].messages[0]
     assert turn.role is None
     assert turn.content.startswith('"')  # preserved as its JSON form
@@ -299,7 +317,7 @@ def test_launch_preview_for_an_unknown_dataset_404s(client):
 
 def valid_dataset(client, tmp_path):
     p = jsonl(tmp_path, [chat(f"q{i}", f"a{i}") for i in range(12)])
-    return upload(client, p).json()["id"]
+    return wait_validated(client, upload(client, p).json()["id"])["id"]
 
 
 def test_job_creation_freezes_hyperparameters(client, tmp_path):
@@ -398,6 +416,7 @@ def test_job_records_exact_revision_it_trained_against(client, tmp_path):
 def test_job_on_invalid_dataset_is_refused(client, tmp_path):
     p = jsonl(tmp_path, [chat("q", "a")])  # too few rows
     ds = upload(client, p).json()["id"]
+    wait_validated(client, ds)  # the refusal needs the finished report
     r = client.post("/v1/jobs", json={"dataset_id": ds})
     assert r.status_code == 400
     assert r.json()["detail"]["code"] == "dataset_invalid"

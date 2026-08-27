@@ -34,9 +34,9 @@ from temper_control_plane import (
     storage,
 )
 from temper_control_plane.contracts_models import (
+    DatasetAccepted,
     DatasetList,
     DatasetRecord,
-    DatasetUploaded,
     DecisionOverride,
     EventPage,
     JobList,
@@ -185,33 +185,28 @@ def list_models():
 @app.post(
     "/v1/datasets",
     tags=["datasets"],
-    status_code=201,
-    response_model=DatasetUploaded,
+    status_code=202,
+    response_model=DatasetAccepted,
 )
 def upload_dataset(request: Request, file: UploadFile = File(...)):
-    """Upload and validate a JSONL dataset.
+    """Upload, store and validate a JSONL dataset.
 
-    **Deliberately a sync handler.** It was `async def`, which ran the
-    CPU-bound validation on the event loop and froze every other request for
-    as long as it ran -- measured at roughly 80 ms per megabyte, so a 200 MB
-    upload blocked the whole server for ~16 seconds. Declared `def` instead,
-    FastAPI dispatches it to its worker pool and a long validation blocks only
-    its own request. Regression-tested by
-    `test_upload_limits.test_large_upload_does_not_block_concurrent_requests`.
+    **Returns before validation finishes.** The request refuses an oversized
+    body on the declared Content-Length before reading anything, stores the
+    bytes as they arrive (so the control plane never holds the file whole),
+    and returns the dataset's id while validation runs in the background.
+    Progress and the report land on `GET /v1/datasets/{id}` -- that is what
+    lets a large upload show a proportion-complete bar instead of a frozen
+    page, and it is why this handler is deliberately a `def` worker-pool
+    handler (ADR-0006: CPU-bound work stays off the event loop).
 
-    Storage and validation live in `datasets.store_and_validate`, shared with
-    the browser's upload form, so the two surfaces cannot drift apart.
-
-    Datasets over `config.MAX_DATASET_BYTES` are refused before validation --
-    an unbounded upload fails as an out-of-memory crash rather than a typed
-    error, which is worse for the user and for the process.
+    Storage and validation live in `datasets.ingest`, shared with the browser's
+    upload form, so the two surfaces cannot drift apart.
     """
-    datasets.refuse_before_read(request.headers.get("content-length"))
-    data = file.file.read()
-    # A multipart part can arrive with no filename at all; the empty string
-    # fails the extension check as a coded 400 rather than crashing here.
-    ds_id, report = datasets.store_and_validate(file.filename or "", data)
-    return {"id": ds_id, "filename": file.filename, **report}
+    ds_id, status = datasets.ingest(
+        request.headers.get("content-length"), file.filename or "", file.file
+    )
+    return {"id": ds_id, "filename": file.filename or "", "status": status}
 
 
 @app.get(

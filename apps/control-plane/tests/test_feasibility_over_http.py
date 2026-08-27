@@ -11,6 +11,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from helpers import wait_validated
 
 from temper_control_plane import config
 
@@ -40,8 +41,8 @@ def chat_rows(n):
 def upload(client, rows):
     data = ("\n".join(json.dumps(r) for r in rows)).encode("utf-8")
     r = client.post("/v1/datasets", files={"file": ("d.jsonl", data)})
-    assert r.status_code == 201
-    return r.json()["id"]
+    assert r.status_code == 202
+    return wait_validated(client, r.json()["id"])["id"]
 
 
 def test_large_dataset_yields_a_warning_and_a_launched_job(

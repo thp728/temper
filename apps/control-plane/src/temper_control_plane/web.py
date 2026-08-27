@@ -96,8 +96,10 @@ def upload_form(request: Request, file: UploadFile = File(...)):
     """
     try:
         # A part with no filename fails the extension check as a coded
-        # refusal, the same answer the API gives.
-        ds_id, _report = datasets.ingest(
+        # refusal, the same answer the API gives. The form post returns once
+        # the bytes are stored; validation runs in the background and the
+        # report page it redirects to shows that progress.
+        ds_id, _status = datasets.ingest(
             request.headers.get("content-length"),
             file.filename or "",
             file.file,
@@ -119,7 +121,14 @@ def dataset_report(request: Request, ds_id: str):
             "Not found",
         )
     return templates.TemplateResponse(
-        request, "report.html", {"ds": ds, "report": ds.get("report") or {}}
+        request,
+        "report.html",
+        {
+            "ds": ds,
+            "report": ds.get("report") or {},
+            "progress": ds.get("progress") or {},
+            "validating": ds["status"] == "validating",
+        },
     )
 
 

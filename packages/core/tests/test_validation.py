@@ -1,9 +1,12 @@
 """Validation's two front doors agree, because they are one validator.
 
-`validate` reads a path; `validate_bytes` takes the bytes already held -- which
-is what an upload has before anything is stored. They must reach identical
-reports for identical bytes, because a verdict that depends on how the dataset
-was reached is not a verdict.
+`validate` streams a path; `validate_bytes` takes the bytes already held --
+which is what a caller that already holds the file has. They must reach
+identical reports for identical bytes, because a verdict that depends on how
+the dataset was reached is not a verdict. Both are thin wrappers over the
+single streaming core (`validate_chunks`); the streaming-specific promises --
+flat memory, capped lists, chunk-split robustness, progress -- are pinned in
+`test_validation_streaming.py`.
 """
 
 from __future__ import annotations
@@ -53,7 +56,8 @@ def test_invalid_utf8_names_the_problem_not_the_file():
 
 def test_the_path_entry_point_delegates_to_the_bytes_one(tmp_path):
     """One validator, two doors: the path form exists so callers holding a
-    file keep working, and it must stay a thin read over the pure core."""
+    file keep working, and it must stay a thin wrapper over the same core as
+    the bytes form."""
     p = Path(tmp_path) / "d.jsonl"
     p.write_bytes(dataset_bytes())
     assert validate(p).to_dict() == validate_bytes(dataset_bytes()).to_dict()

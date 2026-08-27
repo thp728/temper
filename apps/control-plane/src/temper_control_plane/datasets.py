@@ -1,12 +1,22 @@
 """The one dataset-ingest path, shared by the JSON API and the browser pages.
 
-Two entry points that store and validate differently would eventually report
-differently -- and the report is the product's best work before a run starts.
-Both the API handler and the upload form call `store_and_validate`, so a fix
-to validation lands everywhere at once.
+Two entry points that ingest differently would eventually report differently --
+and the report is the product's best work before a run starts. Both the API
+handler and the upload form call `ingest`, so a change to validation lands
+everywhere at once.
+
+Ingest is **asynchronous**. The request refuses an oversized body, stores the
+bytes, and returns while validation runs in the background -- validation of a
+large file takes long enough that a synchronous upload would read as a frozen
+page. The dataset row is created first (status "validating") so the pages have
+something to watch: they read `GET /v1/datasets/{id}`, whose `progress` field
+the validating thread writes as it goes, and the report lands on the same row
+when it finishes.
 """
 
 from __future__ import annotations
+
+import threading
 
 from fastapi import HTTPException
 
@@ -30,10 +40,10 @@ def too_large(actual: int, limit: int) -> HTTPException:
             "message": (
                 f"This dataset is {_fmt_size(actual)} ({actual:,} bytes); "
                 f"the current upload limit is {_fmt_size(limit)} "
-                f"({limit:,} bytes). The limit exists because validation "
-                f"holds the whole dataset in memory (about 4.8x its size), "
-                f"so it is a limit of the current in-memory validation path, "
-                f"not a product rule -- streaming validation will remove it."
+                f"({limit:,} bytes). The limit is a product decision derived "
+                f"from the measured validation throughput, so that validation "
+                f"completes within a tolerable wait -- see the decision record "
+                f"that replaced the old memory-derived ceiling."
             ),
             "limit_bytes": limit,
             "actual_bytes": actual,
@@ -48,15 +58,87 @@ def refuse_before_read(declared: str | None) -> None:
     the failure the limit exists to prevent. The declared length is the
     multipart body, so it slightly overstates the file itself -- close enough
     to refuse on, and it never understates it. The header can be absent or
-    lying, which is why the authoritative check after the read remains.
+    lying, which is why `ingest` also refuses mid-stream once the true size is
+    known.
     """
     limit = config.MAX_DATASET_BYTES
     if declared is not None and declared.isdigit() and int(declared) > limit:
         raise too_large(int(declared), limit)
 
 
-def store_and_validate(filename: str, data: bytes) -> tuple[str, dict]:
-    """Persist an upload and validate it. Returns (dataset id, report).
+def _chunks_of(fh):
+    """Read a file object in bounded chunks. Holds at most one chunk."""
+    while chunk := fh.read(storage.STREAM_CHUNK_BYTES):
+        yield chunk
+
+
+def _validate_in_background(ds_id: str, key: str, total_bytes: int) -> None:
+    """Validate the stored object on its own thread, writing progress and the
+    final report to the dataset row.
+
+    Runs off the request thread because validation is CPU-bound and a large
+    file takes tens of seconds: the row is created first so the pages watching
+    it can render progress while this runs. A validation that raises records a
+    coded failure rather than leaving the row stuck at "validating" forever.
+    """
+
+    def run() -> None:
+        try:
+
+            def on_progress(p) -> None:
+                db.set_dataset_progress(
+                    ds_id,
+                    {
+                        "bytes_read": p.bytes_read,
+                        "bytes_total": p.bytes_total,
+                        "rows": p.rows,
+                    },
+                )
+
+            report = validation.validate_chunks(
+                storage.STORE.get_stream(key),
+                total_bytes=total_bytes,
+                on_progress=on_progress,
+            ).to_dict()
+            db.finish_dataset(ds_id, report)
+        except Exception:
+            # A validation that dies must not strand the dataset at
+            # "validating" -- a page that never resolves is worse than one
+            # that reports a refusal. The synthetic report is a coded failure,
+            # the same shape every refusal wears.
+            db.finish_dataset(
+                ds_id,
+                {
+                    "valid": False,
+                    "row_count": 0,
+                    "usable_rows": 0,
+                    "schema_type": None,
+                    "enable_thinking": None,
+                    "errors": [
+                        {
+                            "line": None,
+                            "code": "validation_failed",
+                            "message": "Validation stopped unexpectedly. "
+                            "Upload the dataset again.",
+                        }
+                    ],
+                    "warnings": [],
+                    "preview": [],
+                    "error_count": 1,
+                    "warning_count": 0,
+                    "errors_suppressed": 0,
+                    "warnings_suppressed": 0,
+                },
+            )
+
+    threading.Thread(target=run, daemon=True, name=f"validate-{ds_id}").start()
+
+
+def ingest(
+    declared_length: str | None, filename: str, fileobj
+) -> tuple[str, str]:
+    """Refuse on the declared size, store the body, start validating in the
+    background. Returns (dataset id, status).
 
     A dataset that fails is still stored with its report attached, so the user
     can see exactly which lines to fix rather than re-uploading blind.
@@ -73,25 +155,31 @@ def store_and_validate(filename: str, data: bytes) -> tuple[str, dict]:
                 "filename": filename,
             },
         )
-
-    limit = config.MAX_DATASET_BYTES
-    if len(data) > limit:
-        raise too_large(len(data), limit)
+    refuse_before_read(declared_length)
 
     ds_id = db.new_id("ds")
     key = storage.dataset_key(ds_id)
-    storage.STORE.put(key, data)
     db.create_dataset(filename, key, ds_id=ds_id)
 
-    report = validation.validate_bytes(data).to_dict()
-    db.finish_dataset(ds_id, report)
-    return ds_id, report
+    total = 0
 
+    def counted_chunks():
+        nonlocal total
+        for chunk in _chunks_of(fileobj):
+            total += len(chunk)
+            if total > config.MAX_DATASET_BYTES:
+                # A lying or absent Content-Length must not defeat the
+                # ceiling: refuse once the true size is known. put_stream
+                # cleans up its own partial write; the row we created to be
+                # watched is deleted here.
+                raise too_large(total, config.MAX_DATASET_BYTES)
+            yield chunk
 
-def ingest(
-    declared_length: str | None, filename: str, fileobj
-) -> tuple[str, dict]:
-    """One ingest sequence for both surfaces: refuse on the declared size,
-    read, store, validate. Raises HTTPException with a stable code."""
-    refuse_before_read(declared_length)
-    return store_and_validate(filename, fileobj.read())
+    try:
+        storage.STORE.put_stream(key, counted_chunks())
+    except Exception:
+        db.delete_dataset(ds_id)
+        raise
+
+    _validate_in_background(ds_id, key, total)
+    return ds_id, "validating"
