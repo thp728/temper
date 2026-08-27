@@ -670,7 +670,7 @@
         "type": "object"
       },
       "JobSpecPreview": {
-        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\n`quotes` is keyed by catalog model id, because the quote depends on which\nmodel is chosen (a bigger model downloads more and may need different\nhardware): the plan shows the quote for whichever model is selected.",
+        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\nDeliberately quote-free: the plan page renders immediately and fetches the\nquote for the selected model afterwards, because an estimate never blocks\nthe surface it appears on (spec 005).",
         "properties": {
           "dataset": {
             "$ref": "#/components/schemas/DatasetRecord"
@@ -678,20 +678,6 @@
           "hyperparameters": {
             "additionalProperties": true,
             "title": "Hyperparameters",
-            "type": "object"
-          },
-          "quotes": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/Quote"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "title": "Quotes",
             "type": "object"
           },
           "warning": {
@@ -1270,7 +1256,7 @@
     },
     "/v1/jobs/spec": {
       "get": {
-        "description": "What a launch would train with, before anything is launched.\n\nConsumed by the shell's model-choice screen (#38), which must show the\ndataset, the effective specification, any feasibility warning and the\nquote while the user can still act on them. Declared **before**\n`/v1/jobs/{job_id}`: routes match in declaration order, and \"spec\" would\notherwise be captured as a job id.\n\nThe quote is computed per catalog model, because which model is chosen\nchanges what the job costs and how long it takes -- a bigger model\ndownloads more and may need different hardware. A model that cannot be\nquoted (provider unreachable, nothing fits) carries no quote rather than\nbreaking the page: the estimate never blocks.\n\nRefusals come through `jobs.usable_dataset`, the same path the launch\nitself applies -- a dataset that cannot start a job is refused here with\nits stable code rather than at the moment of commitment.",
+        "description": "What a launch would train with, before anything is launched.\n\nConsumed by the shell's model-choice screen (#38), which must show the\ndataset, the effective specification and any feasibility warning while\nthe user can still act on them. Declared **before** `/v1/jobs/{job_id}`:\nroutes match in declaration order, and \"spec\" would otherwise be\ncaptured as a job id.\n\nDeliberately quote-free: the quote is fetched separately\n(`GET /v1/quotes`) once a model is selected, so this page -- which\nrenders before anything is chosen -- never waits on live provider data.\nAn estimate never blocks the surface it appears on (spec 005).\n\nRefusals come through `jobs.usable_dataset`, the same path the launch\nitself applies -- a dataset that cannot start a job is refused here with\nits stable code rather than at the moment of commitment.",
         "operationId": "get_job_spec_preview_v1_jobs_spec_get",
         "parameters": [
           {
@@ -1506,6 +1492,67 @@
         "summary": "List Models",
         "tags": [
           "catalog"
+        ]
+      }
+    },
+    "/v1/quotes": {
+      "get": {
+        "description": "The quote for one (dataset, model) configuration, or null.\n\nFetched by the plan screen once a model is selected, so the page renders\nbefore the estimate does and the estimate never blocks it. A\nconfiguration that cannot be priced (provider unreachable, nothing fits)\nis null rather than an error -- the estimate warns, it does not refuse\n(spec 005).",
+        "operationId": "get_quote_v1_quotes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "base_model",
+            "required": false,
+            "schema": {
+              "default": "qwen3-4b",
+              "title": "Base Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Quote"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Quote V1 Quotes Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Quote",
+        "tags": [
+          "jobs"
         ]
       }
     }

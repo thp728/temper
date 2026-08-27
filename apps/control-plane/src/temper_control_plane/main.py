@@ -42,6 +42,7 @@ from temper_control_plane.contracts_models import (
     JobRecord,
     JobSpecPreview,
     ModelCatalog,
+    Quote,
 )
 from temper_control_plane.storage import ObjectNotFound
 from temper_control_plane.web import router as web_router
@@ -267,16 +268,15 @@ def get_job_spec_preview(dataset_id: str):
     """What a launch would train with, before anything is launched.
 
     Consumed by the shell's model-choice screen (#38), which must show the
-    dataset, the effective specification, any feasibility warning and the
-    quote while the user can still act on them. Declared **before**
-    `/v1/jobs/{job_id}`: routes match in declaration order, and "spec" would
-    otherwise be captured as a job id.
+    dataset, the effective specification and any feasibility warning while
+    the user can still act on them. Declared **before** `/v1/jobs/{job_id}`:
+    routes match in declaration order, and "spec" would otherwise be
+    captured as a job id.
 
-    The quote is computed per catalog model, because which model is chosen
-    changes what the job costs and how long it takes -- a bigger model
-    downloads more and may need different hardware. A model that cannot be
-    quoted (provider unreachable, nothing fits) carries no quote rather than
-    breaking the page: the estimate never blocks.
+    Deliberately quote-free: the quote is fetched separately
+    (`GET /v1/quotes`) once a model is selected, so this page -- which
+    renders before anything is chosen -- never waits on live provider data.
+    An estimate never blocks the surface it appears on (spec 005).
 
     Refusals come through `jobs.usable_dataset`, the same path the launch
     itself applies -- a dataset that cannot start a job is refused here with
@@ -288,13 +288,35 @@ def get_job_spec_preview(dataset_id: str):
     warn = feasibility.warning(
         feasibility.usable_rows(ds), {}, config.MAX_JOB_DURATION_S
     )
-    quotes = {m.id: _quote_for(ds, m, {}) for m in catalog.CATALOG.values()}
     return {
         "dataset": ds,
         "hyperparameters": hyperparams.effective({}),
         "warning": warn,
-        "quotes": quotes,
     }
+
+
+@app.get("/v1/quotes", tags=["jobs"], response_model=Quote | None)
+def get_quote(dataset_id: str, base_model: str = catalog.DEFAULT_MODEL):
+    """The quote for one (dataset, model) configuration, or null.
+
+    Fetched by the plan screen once a model is selected, so the page renders
+    before the estimate does and the estimate never blocks it. A
+    configuration that cannot be priced (provider unreachable, nothing fits)
+    is null rather than an error -- the estimate warns, it does not refuse
+    (spec 005).
+    """
+    ds = jobs.usable_dataset(dataset_id)
+    m = catalog.get(base_model)
+    if m is None:
+        raise HTTPException(
+            400,
+            {
+                "code": "unknown_model",
+                "message": f"'{base_model}' is not in the catalog.",
+                "available": [m["id"] for m in catalog.listing()],
+            },
+        )
+    return _quote_for(ds, m, {})
 
 
 @app.get("/v1/jobs/{job_id}", tags=["jobs"], response_model=JobRecord)

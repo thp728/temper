@@ -69,7 +69,9 @@ test("a job is chosen, reviewed and launched from the shell", async ({
 
   // ...and the cost-and-time estimate is shown before anything is spent:
   // a duration range (never a point) and a per-phase cost breakdown, in the
-  // account's currency, labelled an estimate.
+  // account's currency, labelled an estimate. It is fetched for the selected
+  // model after the page renders -- an estimate never blocks the surface it
+  // appears on -- so this assertion waits for it to arrive.
   await expect(
     page.getByRole("heading", { name: "Cost and time estimate" }),
   ).toBeVisible();

@@ -230,14 +230,13 @@ class JobSpecPreview(BaseModel):
     overrides -- showing anything else would describe a job the trainer will
     not run.
 
-    `quotes` is keyed by catalog model id, because the quote depends on which
-    model is chosen (a bigger model downloads more and may need different
-    hardware): the plan shows the quote for whichever model is selected."""
+    Deliberately quote-free: the plan page renders immediately and fetches the
+    quote for the selected model afterwards, because an estimate never blocks
+    the surface it appears on (spec 005)."""
 
     dataset: DatasetRecord
     hyperparameters: dict[str, Any]
     warning: FeasibilityWarning | None = None
-    quotes: dict[str, Quote | None] = Field(default_factory=dict)
 
 
 class JobRecord(BaseModel):

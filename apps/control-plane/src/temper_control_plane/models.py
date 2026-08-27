@@ -27,6 +27,7 @@ reachability.
 
 from __future__ import annotations
 
+import functools
 import json
 import urllib.error
 import urllib.request
@@ -89,55 +90,75 @@ def _license(repo: str, revision: str) -> str:
     return ""
 
 
+@functools.cache
+def _resolve_facts(repo: str, revision: str) -> ModelFacts:
+    """The facts for one pinned reference, cached per (repo, revision).
+
+    A pinned revision is immutable by definition (the catalog refuses branch
+    names), so the facts cannot change under a completed run -- and resolving
+    them costs a real network round trip per request, which ADR-0028
+    anticipated caching the day it was measured to matter. Keyed by the
+    reference alone, never by a resolver instance, so the cache holds no
+    object alive beyond the facts themselves.
+    """
+    config = _get_json(
+        _RAW_URL.format(repo=repo, revision=revision, path="config.json")
+    )
+    if config is None:
+        raise ValueError(
+            f"'{repo}' at revision '{revision}' has no config.json; "
+            f"cannot resolve its facts."
+        )
+    tokenizer_config = (
+        _get_json(
+            _RAW_URL.format(
+                repo=repo, revision=revision, path="tokenizer_config.json"
+            )
+        )
+        or {}
+    )
+
+    pad = _token_text(tokenizer_config.get("pad_token"))
+    eos = _token_text(tokenizer_config.get("eos_token"))
+
+    return ModelFacts(
+        architecture=config.get("model_type", "unknown"),
+        hidden_size=config["hidden_size"],
+        num_hidden_layers=config["num_hidden_layers"],
+        num_attention_heads=config["num_attention_heads"],
+        num_key_value_heads=config.get(
+            "num_key_value_heads", config["num_attention_heads"]
+        ),
+        head_dim=config.get(
+            "head_dim",
+            config["hidden_size"] // config["num_attention_heads"],
+        ),
+        intermediate_size=config["intermediate_size"],
+        vocab_size=config["vocab_size"],
+        tie_word_embeddings=bool(config.get("tie_word_embeddings", False)),
+        is_moe=any(config.get(k) for k in _MOE_KEYS),
+        has_chat_template="chat_template" in tokenizer_config,
+        # Absence reads as "not distinct" rather than "unknown": a
+        # tokenizer with no declared pad token commonly reuses EOS for
+        # padding, which is exactly the collapsed case this field names.
+        pad_eos_distinct=bool(pad) and bool(eos) and pad != eos,
+        context_length=config.get("max_position_embeddings", 0),
+        license=_license(repo, revision),
+    )
+
+
 class HuggingFaceModels:
     """Resolves facts by reading a repository's published config at its
-    pinned revision. Requires no credential: every file it reads is public."""
+    pinned revision. Requires no credential: every file it reads is public.
+
+    Resolution is cached per (repo, revision): a pinned revision is immutable
+    by definition, so the facts cannot change under a completed run -- and
+    resolving them costs a real network round trip per request, which
+    ADR-0028 anticipated caching the day it was measured to matter.
+    """
 
     def resolve(self, repo: str, revision: str) -> ModelFacts:
-        config = _get_json(
-            _RAW_URL.format(repo=repo, revision=revision, path="config.json")
-        )
-        if config is None:
-            raise ValueError(
-                f"'{repo}' at revision '{revision}' has no config.json; "
-                f"cannot resolve its facts."
-            )
-        tokenizer_config = (
-            _get_json(
-                _RAW_URL.format(
-                    repo=repo, revision=revision, path="tokenizer_config.json"
-                )
-            )
-            or {}
-        )
-
-        pad = _token_text(tokenizer_config.get("pad_token"))
-        eos = _token_text(tokenizer_config.get("eos_token"))
-
-        return ModelFacts(
-            architecture=config.get("model_type", "unknown"),
-            hidden_size=config["hidden_size"],
-            num_hidden_layers=config["num_hidden_layers"],
-            num_attention_heads=config["num_attention_heads"],
-            num_key_value_heads=config.get(
-                "num_key_value_heads", config["num_attention_heads"]
-            ),
-            head_dim=config.get(
-                "head_dim",
-                config["hidden_size"] // config["num_attention_heads"],
-            ),
-            intermediate_size=config["intermediate_size"],
-            vocab_size=config["vocab_size"],
-            tie_word_embeddings=bool(config.get("tie_word_embeddings", False)),
-            is_moe=any(config.get(k) for k in _MOE_KEYS),
-            has_chat_template="chat_template" in tokenizer_config,
-            # Absence reads as "not distinct" rather than "unknown": a
-            # tokenizer with no declared pad token commonly reuses EOS for
-            # padding, which is exactly the collapsed case this field names.
-            pad_eos_distinct=bool(pad) and bool(eos) and pad != eos,
-            context_length=config.get("max_position_embeddings", 0),
-            license=_license(repo, revision),
-        )
+        return _resolve_facts(repo, revision)
 
 
 def new_models() -> Models:

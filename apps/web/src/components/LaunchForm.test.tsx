@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LaunchForm from "@/components/LaunchForm";
@@ -19,9 +19,11 @@ vi.mock("next/navigation", () => ({
 // sees, with the transport mocked out. The real client is exercised by the
 // Playwright journeys.
 const createJobMock = vi.hoisted(() => vi.fn());
+const getQuoteMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/generated/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/generated/client")>()),
   createJobV1JobsPost: createJobMock,
+  getQuoteV1QuotesGet: getQuoteMock,
 }));
 
 import { ApiError } from "@/lib/api/mutator";
@@ -161,15 +163,6 @@ function preview(overrides: Partial<JobSpecPreview> = {}): JobSpecPreview {
       num_epochs: 3,
     },
     warning: null,
-    quotes: {
-      "qwen3-4b": quote(),
-      "qwen3-8b": quote({
-        duration_low_s: 400,
-        duration_high_s: 2000,
-        cost_low_minor: 460,
-        cost_high_minor: 2300,
-      }),
-    },
     ...overrides,
   };
 }
@@ -192,6 +185,8 @@ function optionCard(repo: string): HTMLElement {
 
 beforeEach(() => {
   createJobMock.mockReset();
+  getQuoteMock.mockReset();
+  getQuoteMock.mockResolvedValue(null);
   push.mockReset();
 });
 
@@ -312,45 +307,76 @@ describe("LaunchForm", () => {
     resolve({});
   });
 
-  it("shows the selected model's quote: a duration range, not a point", () => {
+  it("fetches and shows the selected model's quote: a duration range, not a point", async () => {
+    getQuoteMock.mockResolvedValue(quote());
     render(<LaunchForm catalog={catalog} preview={preview()} />);
-    // The default model's quote is shown by default, with its ranges.
-    const quote = screen.getByRole("heading", {
-      name: "Cost and time estimate",
+    // The default model's quote is fetched after the page renders, with its
+    // ranges.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    expect(getQuoteMock).toHaveBeenCalledWith({
+      dataset_id: "ds_abc123",
+      base_model: "qwen3-4b",
     });
-    expect(quote).toBeVisible();
     expect(screen.getByText(/never blocks a launch/i)).toBeVisible();
     expect(screen.getByText(/3m 58s–18m 59s/)).toBeVisible();
     expect(screen.getByText(/INR 2\.74 – INR 13\.08/)).toBeVisible();
   });
 
-  it("shows the per-phase breakdown of cost and duration", () => {
+  it("shows the per-phase breakdown of cost and duration", async () => {
+    getQuoteMock.mockResolvedValue(quote());
     render(<LaunchForm catalog={catalog} preview={preview()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
     for (const phase of ["provisioning", "readiness", "image_pull", "model_download", "training", "teardown"]) {
       expect(screen.getByText(phase)).toBeVisible();
     }
     expect(screen.getByText(/1m 27s–3m 03s/)).toBeVisible(); // image pull
   });
 
-  it("switches the quote when the selected model changes", async () => {
+  it("re-fetches the quote when the selected model changes", async () => {
+    getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    getQuoteMock.mockResolvedValue(
+      quote({
+        duration_low_s: 400,
+        duration_high_s: 2000,
+        cost_low_minor: 460,
+        cost_high_minor: 2300,
+      }),
+    );
     await user.click(screen.getByRole("radio", { name: /Qwen\/Qwen3-8B/ }));
+    await waitFor(() =>
+      expect(getQuoteMock).toHaveBeenLastCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-8b",
+      }),
+    );
     expect(screen.getByText(/6m 40s–33m 20s/)).toBeVisible();
     expect(screen.getByText(/INR 4\.60 – INR 23\.00/)).toBeVisible();
   });
 
   it("still offers the launch when a quote is absent", async () => {
+    getQuoteMock.mockResolvedValue(null);
     const user = userEvent.setup();
-    render(
-      <LaunchForm
-        catalog={catalog}
-        preview={preview({ quotes: { "qwen3-4b": null, "qwen3-8b": null } })}
-      />,
-    );
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
     // The estimate is shown as unavailable, and the launch is still offered:
     // an estimate warns, it never blocks (spec 005).
-    expect(screen.getByText(/could not be computed/i)).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByText(/could not be computed/i)).toBeVisible(),
+    );
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalled();
