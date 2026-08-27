@@ -1,4 +1,4 @@
-# ADR-0034 — Every run records what was predicted against what happened
+# ADR-0037 — Every run records what was predicted against what happened
 
 - **Status:** accepted
 - **Date:** 2026-08-27
