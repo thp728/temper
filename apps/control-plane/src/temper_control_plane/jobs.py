@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from fastapi import HTTPException
 
 from temper_control_plane import config, db, orchestrator
-from temper_core import catalog, feasibility, hyperparams, overrides
+from temper_core import catalog, feasibility, hyperparams, overrides, surface
 
 
 def usable_dataset(dataset_id: str) -> dict:
@@ -97,20 +97,14 @@ def create(
     # Refused here rather than left for the trainer's guard: resolution now
     # happens before launch (#83), so an unknown key would be dropped by the
     # resolver without ever reaching the machine -- and a key the caller
-    # believes is in effect but isn't is worse than a refusal.
-    unknown = sorted(
-        k for k in hyperparameters if k not in hyperparams.ALLOWED_OVERRIDES
-    )
-    if unknown:
-        raise HTTPException(
-            400,
-            {
-                "code": "unknown_hyperparameter",
-                "message": "Unknown hyperparameter keys are refused: "
-                f"{unknown}. Nothing was launched.",
-                "unknown": unknown,
-            },
-        )
+    # believes is in effect but isn't is worse than a refusal. The gate is the
+    # generated surface (issue #33): keys unknown to the trainer are refused
+    # and echoed back, keys the trainer knows but the platform does not expose
+    # are refused with their reason, and exposed values that violate the
+    # schema's expressed constraints are refused before anything is priced.
+    refusals = surface.validate_overrides(hyperparameters)
+    if refusals:
+        raise HTTPException(400, refusals[0])
 
     base_hp = hyperparams.effective(hyperparameters)
     frozen_hp = dict(hyperparameters)

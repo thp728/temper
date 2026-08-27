@@ -39,10 +39,11 @@ makes exposure safe.
 **The trainer resolves nothing (#83).** The job spec arrives carrying the full resolved set; this
 entrypoint applies it as given and holds no defaults of its own. A spec missing a required key
 fails loudly (`spec_incomplete`, keys named) rather than falling back; unknown keys are echoed
-back as `rejected_overrides`. Until #33 generates the known-key set from the pinned image's own
-schema, `REQUIRED_HYPERPARAMETERS` / `KNOWN_HYPERPARAMETERS` here are that set by hand -- and
-`test_agreement_with_the_domain.py` pins them to exactly what `temper_core.hyperparams.effective`
-produces.
+back as `rejected_overrides`. Since #33 the known-key set is generated from the pinned image's own
+schema (`axolotl-schema.json`, shipped into the image): *unknown* means unknown to the trainer,
+not absent from a hand-written list, and `test_agreement_with_the_domain.py` pins the trainer's
+sets to exactly what `temper_core.hyperparams.effective` and `temper_core.surface.known_keys`
+produce.
 
 **α tracks r at resolution time.** Move `lora_r` without `lora_alpha` and α recomputes as `2r`
 before launch, in `temper_core.hyperparams` -- never pair a new rank with a stale scale, and

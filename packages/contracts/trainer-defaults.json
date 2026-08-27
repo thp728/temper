@@ -12,18 +12,5 @@
     "lr_scheduler": "cosine",
     "val_set_size": 0.05,
     "save_total_limit": 3
-  },
-  "allowed_overrides": [
-    "lora_r",
-    "lora_alpha",
-    "learning_rate",
-    "num_epochs",
-    "max_steps",
-    "sequence_len",
-    "micro_batch_size",
-    "gradient_accumulation_steps",
-    "val_set_size",
-    "save_steps",
-    "simulated_failure_code"
-  ]
+  }
 }

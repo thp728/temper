@@ -20,7 +20,7 @@ from pathlib import Path
 
 import entrypoint
 
-from temper_core import hyperparams
+from temper_core import hyperparams, surface
 
 # Workspace root anchored on the contract the resolver reads. Everything the
 # scan walks is expressed relative to that result rather than found a second way.
@@ -53,6 +53,22 @@ def test_the_trainer_requires_exactly_what_the_resolver_produces():
     it, this fails here rather than as `spec_incomplete` on the GPU."""
     assert set(entrypoint.REQUIRED_HYPERPARAMETERS) == set(
         hyperparams.effective({})
+    )
+
+
+def test_the_trainer_knows_exactly_the_pinned_schema():
+    """Issue #33: 'unknown' means unknown to the trainer, and the trainer's
+    known-key set is the pinned image's own schema plus the one derived value
+    (`lora_use_rslora`) the resolver infers that the schema does not carry. If
+    the schema snapshot moves, or the entrypoint re-learns the set by hand,
+    this fails here rather than on a paid machine."""
+    assert set(entrypoint.KNOWN_HYPERPARAMETERS) == set(
+        surface.known_keys()
+    ) | {"lora_use_rslora"}
+    # The required set is a subset of what the trainer knows, so a resolved
+    # spec is never partially refused.
+    assert set(entrypoint.REQUIRED_HYPERPARAMETERS) <= set(
+        entrypoint.KNOWN_HYPERPARAMETERS
     )
 
 

@@ -317,10 +317,11 @@ DEMO_RESULT = {
 # The reserved hyperparameter through which a journey asks the simulated
 # machine to end with a named code -- the gap between "a job that succeeds"
 # (above) and Spec 007's failed-job journey, until #24 grows fault injection
-# into product surface. Registered in trainer-defaults.json's allowed_overrides
-# (#82) so creation's hyperparameter validation passes it through, but honoured
-# only here: the real trainer receives it and ignores it, the simulated machine
-# reads it and ends early on the ordinary failure path.
+# into product surface. It is a platform-internal key, not a trainer field, so
+# it is carried in `temper_core.surface.PLATFORM_INTERNAL_KEYS` (#33), which
+# is what lets creation's hyperparameter validation pass it through, but it is
+# honoured only here: the real trainer receives it and ignores it, the
+# simulated machine reads it and ends early on the ordinary failure path.
 SIMULATED_FAILURE_KEY = "simulated_failure_code"
 
 # Where `_remote_script` writes the jobspec into every script it ships, and

@@ -67,6 +67,29 @@ def _contract_path() -> Path:
     )
 
 
+def _schema_path() -> Path:
+    """Find the pinned image's configuration schema snapshot, sibling or tree.
+
+    Since #33 the trainer's known-key set is the schema of the pinned image
+    (issue #33): a key unknown to the trainer is refused loudly and echoed
+    back, and 'unknown' means unknown to the trainer, not absent from a
+    hand-written list. The snapshot ships beside this file in the image, the
+    same way trainer-defaults.json does, and falls back to the workspace tree
+    so the test suite resolves it without the image.
+    """
+    sibling = Path(__file__).resolve().parent / "axolotl-schema.json"
+    if sibling.is_file():
+        return sibling
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "packages" / "contracts" / "axolotl-schema.json"
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "packages/contracts/axolotl-schema.json not found beside this file "
+        "or anywhere in the workspace tree"
+    )
+
+
 JOB_DIR = Path(os.environ.get("JOB_DIR", "/job"))
 OUT_DIR = Path(os.environ.get("OUT_DIR", "/out"))
 CONFIG = OUT_DIR / "config.yaml"
@@ -85,12 +108,18 @@ LOG = OUT_DIR / "train.log"
 # apps/trainer/tests/test_agreement_with_the_domain.py, so the two cannot
 # drift. `lora_use_rslora` is in the resolved set because the resolver infers it
 # at rank >= 32 rather than carrying it in the data.
+#
+# The KNOWN set -- which keys this trainer will accept rather than echo back as
+# rejected -- is the schema of the pinned image itself (issue #33): a key
+# unknown to the trainer is refused loudly and echoed back, and 'unknown' means
+# unknown to the trainer, not absent from a hand-written list. The schema
+# snapshot ships beside this file, and `lora_use_rslora` is the one derived
+# value the resolver adds that the schema does not carry.
 _CONTRACT = json.loads(_contract_path().read_text(encoding="utf-8"))
+_SCHEMA = json.loads(_schema_path().read_text(encoding="utf-8"))
 REQUIRED_HYPERPARAMETERS = set(_CONTRACT["defaults"]) | {"lora_use_rslora"}
-KNOWN_HYPERPARAMETERS = REQUIRED_HYPERPARAMETERS | {
-    # Optional wherever they appear; smoke tests use them to keep a job short.
-    "max_steps",
-    "save_steps",
+KNOWN_HYPERPARAMETERS = {f["name"] for f in _SCHEMA["fields"]} | {
+    "lora_use_rslora"
 }
 
 # Top-level keys the job spec may carry. Spike 4 caught a real hole here: an

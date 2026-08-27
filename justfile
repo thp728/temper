@@ -53,14 +53,19 @@ test:
 test-gpu:
     uv run pytest -m hardware --exitfirst
 
-# Regenerate the API contract. The web client generates from this file; the
-# gate regenerates and typechecks against the result, so drift fails a build.
+# Regenerate the API contract and the advanced surface. The web client
+# generates from the API file; the advanced surface (issue #33) is generated
+# from the pinned trainer's schema and its tier data, so the interface and the
+# refusal gate read what build time produced. The gate regenerates and
+# typechecks against the result, so drift fails a build.
 contracts:
     uv run python -m temper_control_plane.contracts
+    uv run python -m temper_core.surface
 
-# Fails when the checked-in contract no longer matches what the application emits.
+# Fails when a checked-in contract no longer matches what the application emits.
 contracts-check: contracts
     git diff --exit-code packages/contracts/openapi.json
+    git diff --exit-code packages/contracts/advanced-surface.json
 
 # The control plane alone, against local defaults, with reload. ADR-0011 has this
 # starting the whole stack; that needs a compose file, which is #29.
