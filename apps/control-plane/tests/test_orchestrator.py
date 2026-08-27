@@ -1504,6 +1504,53 @@ def test_cancelling_while_the_artifact_is_being_written_produces_none(
         )
 
 
+def test_teardown_deletes_the_recorded_members_whatever_kind(harness):
+    """`_delete_stored_artifact` reads the artifact record's members, not just
+    the adapter pair.
+
+    Regression for the classification seam: a full-model artifact's members
+    are recorded at packaging time, and cancellation/teardown must discard
+    exactly those objects -- an adapter-shaped delete against a full-model
+    record would delete keys nothing was written to and orphan the real
+    objects. The record-driven branch is what makes teardown true for any
+    kind, not only for the adapter pair the machine writes before the record
+    exists.
+    """
+    from temper_control_plane import db, orchestrator, storage
+
+    job_id = harness._create()
+    member_keys = {
+        name: storage.artifact_key(job_id, name)
+        for name in ("model.safetensors", "config.json")
+    }
+    for key in member_keys.values():
+        storage.STORE.put(key, b"x")
+    db.set_state(
+        job_id,
+        "complete",
+        "done",
+        method="full",
+        artifact_key=member_keys["model.safetensors"],
+        artifact_json={
+            "members": [
+                {
+                    "name": "model.safetensors",
+                    "key": member_keys["model.safetensors"],
+                },
+                {"name": "config.json", "key": member_keys["config.json"]},
+            ],
+            "bytes": 2,
+            "sha256": "x",
+        },
+    )
+
+    orchestrator._delete_stored_artifact(job_id)
+
+    for key in member_keys.values():
+        with pytest.raises(storage.ObjectNotFound):
+            storage.STORE.get(key)
+
+
 def test_a_cancelled_job_is_not_recorded_as_a_failure(harness):
     """The user's own decision is not a defect, and must not read as one."""
     provider = FakeProvider(

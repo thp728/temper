@@ -380,25 +380,26 @@ def _consume(job_id: str, lines) -> dict:
 def _delete_stored_artifact(job_id: str) -> None:
     """Remove the objects one job's artifact consists of, if any.
 
-    Which objects those are comes from the artifact record when it exists --
-    its member keys, whatever kind they are -- and from the canonical adapter
-    pair otherwise (a row written before the record existed). Deletion
-    failures are suppressed deliberately: teardown must not mask the
+    Which objects those are comes from the same resolution the download path
+    reads (`db.artifact_members`): the record's member keys, whatever kind
+    they are -- so cancellation discards a full-model artifact's objects
+    exactly as it discards an adapter's. When the row records nothing yet
+    (the machine writes through the grant before `artifact_key` is set, so a
+    cancellation mid-write or a verification refusal can land first), the
+    canonical adapter pair is still deleted: it is the only set a QLoRA
+    machine could have written, and deleting an absent key is a no-op.
+    Deletion failures are suppressed deliberately: teardown must not mask the
     cancellation that caused them, and an orphaned object is cheaper than a
     half-reported state. (An object written by a machine whose run has since
     ended is an orphan in the same sense a stray machine is; ADR-0009 records
     that nothing reconciles them yet.)
     """
-    job = db.get_job(job_id)
-    record = (job or {}).get("artifact_json")
-    if record and record.get("members"):
-        keys = [m["key"] for m in record["members"] if m.get("key")]
-    else:
-        keys = [
-            storage.artifact_key(job_id, name)
-            for name in storage.ARTIFACT_MEMBERS
-        ]
-    for key in keys:
+    job = db.get_job(job_id) or {}
+    members = db.artifact_members(job) or [
+        (name, storage.artifact_key(job_id, name))
+        for name in artifacts.ADAPTER_MEMBER_NAMES
+    ]
+    for _, key in members:
         with suppress(Exception):
             storage.STORE.delete(key)
 

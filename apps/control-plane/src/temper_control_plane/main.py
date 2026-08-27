@@ -749,9 +749,8 @@ def download_artifact(job_id: str):
     job = db.get_job(job_id)
     if not job:
         raise HTTPException(404, "No such job.")
-    artifact_key = job.get("artifact_key")
-    record = job.get("artifact_record")
-    if not artifact_key and not record:
+    members = db.artifact_members(job)
+    if not members:
         raise HTTPException(
             409,
             {
@@ -766,32 +765,11 @@ def download_artifact(job_id: str):
     # (adapter, fully trained model, ...) by streaming whatever the record
     # names, without special-casing. A row written before the record existed is
     # described by the canonical adapter pair, so a legacy download behaves
-    # exactly as it always did.
+    # exactly as it always did. `artifact_members` is the one resolution both
+    # this path and teardown read.
     kind = artifacts.kind_for(job.get("method"))
-    if record and record.get("members"):
-        members: list[tuple[str, str]] = [
-            (m["name"], m["key"]) for m in record["members"] if m.get("key")
-        ]
-        declared_bytes = record.get("bytes")
-    else:
-        # The legacy shape: a row written before the artifact record existed
-        # named one weights key, and the config's address derives from it.
-        if artifact_key is None:
-            raise HTTPException(
-                409,
-                {
-                    "code": "no_artifact",
-                    "message": f"Job is '{job['status']}'; no artifact is available yet.",
-                },
-            )
-        members = [(storage.ADAPTER_WEIGHTS_NAME, artifact_key)]
-        members.append(
-            (
-                storage.ADAPTER_CONFIG_NAME,
-                storage.artifact_config_key(artifact_key),
-            )
-        )
-        declared_bytes = None
+    record = job.get("artifact_record")
+    declared_bytes = record.get("bytes") if record else None
 
     # All members are read from the keys the job row records -- the address
     # written at packaging time is the one read at download time -- through

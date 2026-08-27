@@ -716,6 +716,30 @@ def test_the_published_job_record_carries_the_artifact_and_its_kind(
     assert "artifact_key" not in body and "artifact_record" not in body
 
 
+def test_a_job_that_is_not_complete_publishes_no_artifact(client, tmp_path):
+    """An artifact is available exactly when the job is complete.
+
+    A cancelled or failed row can retain keys whose objects teardown already
+    deleted; publishing an artifact there would offer a download that cannot
+    succeed. The record is only published beside the `complete` state.
+    """
+    from temper_control_plane import db, storage
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    weights_key = storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
+    storage.STORE.put(weights_key, b"weights")
+    db.set_state(
+        job["id"],
+        "cancelled",
+        "Cancelled at your request. No artifact was produced.",
+        method="qlora",
+        artifact_key=weights_key,
+    )
+
+    assert client.get(f"/v1/jobs/{job['id']}").json()["artifact"] is None
+
+
 def test_the_download_zip_streams_without_holding_it_whole(
     client, tmp_path, peak_memory
 ):

@@ -606,40 +606,64 @@ def _with_warnings(job: dict | None) -> dict | None:
     return job
 
 
+def artifact_members(job: dict) -> list[tuple[str, str]]:
+    """The `(arcname, storage key)` pairs one job's artifact consists of.
+
+    The one place a job's artifact is resolved to its stored objects (issue
+    #32). The members come from the record the orchestrator assembled at
+    packaging time -- whatever kind it is -- and, for a row written before the
+    record existed, from the canonical adapter pair. The download path and the
+    teardown path both read this, so the two cannot disagree about what the
+    artifact is or drift apart in spelling (a value two components must agree
+    on is defined once and read, never retyped).
+    """
+    record = job.get("artifact_record")
+    if record and record.get("members"):
+        return [
+            (m["name"], m["key"])
+            for m in record["members"]
+            if m.get("name") and m.get("key")
+        ]
+    artifact_key = job.get("artifact_key")
+    if artifact_key:
+        # The legacy shape: a row written before the record existed named one
+        # weights key, and the adapter's member names are the canonical pair,
+        # each addressed by the seam's key helper.
+        return [
+            (name, storage.artifact_key(job["id"], name))
+            for name in artifacts.ADAPTER_MEMBER_NAMES
+        ]
+    return []
+
+
 def _with_artifact(job: dict | None) -> dict | None:
     """Publish the artifact record on a job row (issue #32).
 
     The artifact's kind is **derived from the job's method, never stored**: a
     QLoRA or LoRA run produces an adapter, a full fine-tune produces a fully
     trained model, and the derivation is what lets pre-existing rows read
-    correctly with no migration. The members come from the record the
-    orchestrator assembled at packaging time, or -- for a row written before
-    the record existed -- from the canonical adapter pair, so a legacy adapter
-    download is described exactly as it always was.
+    correctly with no migration. The members come from the same resolution the
+    download path and teardown use (`artifact_members`).
 
-    The published record is the safe subset: member *names* (arcnames) and the
-    load path, never the storage keys -- where an object lives is the seam's
-    business, not the browser's (the raw keys stay in `artifact_record`, which
-    no response model publishes).
+    An artifact is available exactly when the job is complete: a failed or
+    cancelled job that retains keys has had its objects deleted, so publishing
+    one there would offer a download that cannot succeed. The published record
+    is the safe subset: member *names* (arcnames) and the load path, never the
+    storage keys -- where an object lives is the seam's business, not the
+    browser's.
     """
     if job is None:
         return None
-    record = job.get("artifact_record")
-    artifact_key = job.get("artifact_key")
-    if not record and not artifact_key:
+    members = artifact_members(job)
+    if not members or job.get("status") != "complete":
         job["artifact"] = None
         return job
     kind = artifacts.kind_for(job.get("method"))
-    if record and record.get("members"):
-        names = [m["name"] for m in record["members"]]
-        bytes_ = record.get("bytes")
-    else:
-        names = list(artifacts.ADAPTER_MEMBER_NAMES)
-        bytes_ = None
+    record = job.get("artifact_record")
     job["artifact"] = {
         "kind": kind,
-        "members": names,
-        "bytes": bytes_,
+        "members": [name for name, _ in members],
+        "bytes": record.get("bytes") if record else None,
         "loading": artifacts.loading_instructions(kind),
     }
     return job
