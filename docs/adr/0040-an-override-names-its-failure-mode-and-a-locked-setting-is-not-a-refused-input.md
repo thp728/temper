@@ -1,4 +1,4 @@
-# ADR-0038 — An override names its failure mode, and a locked setting is not a refused input
+# ADR-0040 — An override names its failure mode, and a locked setting is not a refused input
 
 - **Status:** accepted
 - **Date:** 2026-08-27

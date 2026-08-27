@@ -40,15 +40,6 @@ repository becomes public at submission.
 
 | ADR | Decision | Status | Date |
 | --- | --- | --- | --- |
-| [0013](0013-assumptions-verified-before-code.md) | The architecture's own assumptions are verified before writing code | accepted | 2026-08-17 |
-| [0014](0014-training-runs-on-jarvislabs-vms-over-ssh.md) | Training runs on JarvisLabs VMs with an SSH-driven bootstrap | accepted | 2026-08-17 |
-| [0015](0015-trainer-image-pins-axolotl-by-digest.md) | The trainer image pins Axolotl by digest rather than resolving the stack | accepted | 2026-08-18 |
-| [0016](0016-together-ai-is-the-reference-baseline.md) | Together AI is the reference baseline | accepted | 2026-08-18 |
-| [0017](0017-the-architecture-cut-list.md) | The architecture cut list is ratified as drafted | accepted | 2026-08-18 |
-| [0018](0018-thinking-mode-is-detected-from-the-dataset.md) | Thinking mode is detected from the dataset, not fixed or exposed | accepted | 2026-08-18 |
-| [0019](0019-production-stack-after-the-checkpoint.md) | The product ships production-ready; scrappy only until the checkpoint | accepted | 2026-08-19 |
-| [0020](0020-temporal-for-orchestration.md) | Temporal for orchestration; multi-GPU is a provisioning choice | accepted | 2026-08-19 |
-| [0021](0021-the-first-assembled-run-read-before-paid.md) | The first assembled run: it works, and three defects that reading caught before the GPU did | accepted | 2026-08-19 |
 | [0001](0001-event-channel-over-ssh-stdout.md) | The event channel is the machine's stdout, pulled over SSH | accepted | 2026-08-21 |
 | [0002](0002-stall-detection-and-a-duration-ceiling.md) | A stalled job and an over-long job are stopped separately, and named separately | accepted | 2026-08-21 |
 | [0003](0003-cancellation-is-destructive.md) | Cancelling destroys the machine, produces no adapter, and is not a failure | accepted — **flagged for reopening** (spike 8 found the provider can pause) | 2026-08-21 |
@@ -57,17 +48,26 @@ repository becomes public at submission.
 | [0006](0006-validation-runs-off-the-event-loop.md) | Validation runs off the event loop | accepted | 2026-08-21 |
 | [0007](0007-the-feasibility-warning-is-an-estimate-and-warns-rather-than-blocks.md) | The feasibility warning is an estimate from one measured run, and warns rather than blocks | accepted | 2026-08-21 |
 | [0008](0008-adapters-ship-as-fp32.md) | Adapters ship as fp32 — the artifact is exactly the weights that were trained | accepted | 2026-08-21 |
-| [0022](0022-phase-a-closed-from-a-browser.md) | Phase A closes from a browser, and the test double's blind spot is recorded | accepted | 2026-08-21 |
 | [0009](0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md) | The machine may write its own artifact to a pre-signed URL scoped to one key | accepted — supersedes [0004](0004-the-machine-is-a-pure-compute-node.md) in part | 2026-08-23 |
-
 | [0010](0010-the-repository-is-laid-out-as-apps-and-packages.md) | The repository is laid out as `apps/` and `packages/` | accepted | 2026-08-25 |
 | [0011](0011-one-command-runs-every-task-and-one-defines-green.md) | One command runs every task, and one command defines green | accepted | 2026-08-25 |
 | [0012](0012-the-repository-ships-under-mit.md) | The repository ships under MIT | accepted | 2026-08-25 |
-| [0027](0027-the-transport-is-proven-against-a-real-endpoint.md) | The transport is proven against a real connection endpoint | accepted | 2026-08-26 |
+| [0013](0013-assumptions-verified-before-code.md) | The architecture's own assumptions are verified before writing code | accepted | 2026-08-17 |
+| [0014](0014-training-runs-on-jarvislabs-vms-over-ssh.md) | Training runs on JarvisLabs VMs with an SSH-driven bootstrap | accepted | 2026-08-17 |
+| [0015](0015-trainer-image-pins-axolotl-by-digest.md) | The trainer image pins Axolotl by digest rather than resolving the stack | accepted | 2026-08-18 |
+| [0016](0016-together-ai-is-the-reference-baseline.md) | Together AI is the reference baseline | accepted | 2026-08-18 |
+| [0017](0017-the-architecture-cut-list.md) | The architecture cut list is ratified as drafted | accepted | 2026-08-18 |
+| [0018](0018-thinking-mode-is-detected-from-the-dataset.md) | Thinking mode is detected from the dataset, not fixed or exposed | accepted | 2026-08-18 |
+| [0019](0019-production-stack-after-the-checkpoint.md) | The product ships production-ready; scrappy only until the checkpoint | accepted | 2026-08-19 |
+
+| [0020](0020-temporal-for-orchestration.md) | Temporal for orchestration; multi-GPU is a provisioning choice | accepted | 2026-08-19 |
+| [0021](0021-the-first-assembled-run-read-before-paid.md) | The first assembled run: it works, and three defects that reading caught before the GPU did | accepted | 2026-08-19 |
+| [0022](0022-phase-a-closed-from-a-browser.md) | Phase A closes from a browser, and the test double's blind spot is recorded | accepted | 2026-08-21 |
 | [0023](0023-the-interface-consumes-a-client-generated-from-the-api-contract.md) | The interface consumes a client generated from the API contract, and the two interfaces never coexist | accepted | 2026-08-26 |
 | [0024](0024-the-browser-journeys-launch-against-an-app-side-fake-provider.md) | The browser journeys launch against an app-side fake provider, and refuse to run against anything else | accepted | 2026-08-26 |
 | [0025](0025-the-control-plane-resolves-and-the-trainer-applies.md) | The control plane resolves every hyperparameter; the trainer applies values rather than choosing them | accepted | 2026-08-26 |
 | [0026](0026-the-simulated-machine-fails-when-a-journey-asks.md) | The simulated machine fails when a journey asks it to, through the real failure path | accepted | 2026-08-26 |
+| [0027](0027-the-transport-is-proven-against-a-real-endpoint.md) | The transport is proven against a real connection endpoint | accepted | 2026-08-26 |
 | [0028](0028-peak-memory-is-predicted-through-a-model-facts-seam.md) | Peak memory is predicted through a model-facts seam, not stored per catalog entry | accepted | 2026-08-27 |
 | [0029](0029-hardware-is-selected-cheapest-fit-first-not-preferred-in-order.md) | Hardware is selected cheapest-fit-first, not preferred in order | accepted | 2026-08-27 |
 | [0030](0030-disk-is-computed-not-a-platform-minimum-constant.md) | Disk is computed, not a platform-minimum constant | accepted | 2026-08-27 |
@@ -79,7 +79,7 @@ repository becomes public at submission.
 | [0036](0036-the-dataset-size-limit-is-derived-from-measured-throughput.md) | The dataset size limit is a product limit derived from measured throughput, not from memory — supersedes 0005 | accepted | 2026-08-27 |
 | [0037](0037-every-run-records-what-was-predicted-against-what-happened.md) | Every run records what was predicted against what happened | accepted | 2026-08-27 |
 | [0038](0038-the-token-count-is-produced-by-a-phase-of-its-own-bounded-and-recorded-with-the-dataset-version.md) | The token count is produced by a phase of its own, bounded, and recorded with the dataset version | accepted | 2026-08-27 |
-| [0038](0038-an-override-names-its-failure-mode-and-a-locked-setting-is-not-a-refused-input.md) | An override names its failure mode, is recorded in the job spec, and a locked setting is not a refused input | accepted | 2026-08-27 |
+| [0040](0040-an-override-names-its-failure-mode-and-a-locked-setting-is-not-a-refused-input.md) | An override names its failure mode, is recorded in the job spec, and a locked setting is not a refused input | accepted | 2026-08-27 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
