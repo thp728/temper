@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from helpers import wait_validated
 
 from temper_control_plane.fake_provider import FakeProvider
