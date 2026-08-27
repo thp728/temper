@@ -285,6 +285,57 @@ def test_a_job_runs_to_completion_against_a_fake_provider(harness):
     assert not provider.closed
 
 
+def test_disk_is_computed_and_passed_as_a_provisioning_parameter(harness):
+    """Issue #64: disk is no longer a constant equal to the platform
+    minimum. A tiny model's job still floors there, but the value reaching
+    `provider.create` must be the predictor's answer, not a hard-coded 100
+    that happens to equal it."""
+    from temper_core import disk
+
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    job_id = harness.run(provider)
+
+    job = harness.job(job_id)
+    assert job["status"] == "complete"
+    assert job["disk_gb"] == disk.PLATFORM_MIN_DISK_GB
+    assert job["storage_cost_usd_per_hour"] > 0
+
+    assert len(provider.create_calls) == 1
+    _, _, storage_gb, _ = provider.create_calls[0]
+    assert storage_gb == disk.PLATFORM_MIN_DISK_GB
+
+
+def test_a_job_needing_more_disk_than_the_ceiling_is_refused_before_launch(
+    harness, monkeypatch
+):
+    """Issue #64: a job whose disk requirement exceeds the measured 7200 GB
+    ceiling is refused before anything is provisioned -- the failure mode
+    `selection.NoFittingHardwareError` already has for memory, extended to
+    disk. Driven through retained checkpoints rather than a bigger model:
+    memory scales with weights alone, so a model large enough to blow the
+    disk ceiling under QLoRA (0.5 bytes/param) would already be refused for
+    memory (0.5 bytes/param, but against a card capped at 141 GB) before
+    disk is ever checked -- the two constraints cannot be separated that
+    way on the only method the live orchestrator offers today. An absurd
+    retained-checkpoint count isolates disk instead, since checkpoint count
+    has no effect on predicted memory."""
+    from temper_core import hyperparams
+
+    monkeypatch.setitem(hyperparams.DEFAULTS, "save_total_limit", 60_000)
+
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    job_id = harness.run(provider)
+
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    assert job["error_code"] == "disk_exceeds_ceiling"
+    assert provider.created == [], "nothing may be provisioned without disk"
+
+
 def test_scripted_output_lines_reach_the_event_log(harness):
     provider = FakeProvider(
         lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES

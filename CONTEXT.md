@@ -100,6 +100,10 @@ _Avoid_: instance, VM, box, node, server
 The pinned container image that runs one job on a machine. It owns the training loop; the platform owns the contract it runs under.
 _Avoid_: worker, runner, image, container
 
+**Disk**:
+The space provisioned on a machine to hold the downloaded weights, retained checkpoints, the trainer image and its working space. Computed per job from the model's facts, floored at the platform minimum and capped at the provider's measured ceiling — never a stored constant. Distinct from storage: storage addresses datasets and artifacts kept after a job ends; disk exists only for the lifetime of the machine and is destroyed with it.
+_Avoid_: storage (for this), volume, drive
+
 **Event**:
 An appended record of one thing that happened during a job — a state change, a measurement, a line of output, or an error. Every state change appends one, because a job whose state moved with no event recorded is a job that cannot be explained.
 _Avoid_: message, log entry, update

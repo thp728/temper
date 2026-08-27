@@ -162,6 +162,11 @@ class FakeProvider:
         # Observable afterwards.
         self.calls: list[str] = []
         self.created: list[Machine] = []
+        # What `create` was actually asked for -- (gpu_type, num_gpus,
+        # storage_gb, name), one per call. `created` alone shows what came
+        # back; this is how a test tells disk was passed as a computed
+        # parameter rather than a constant (issue #64).
+        self.create_calls: list[tuple[str, int, int, str]] = []
         self.destroy_attempts = 0
         self.destroyed = False
         self.pushed: list[tuple[str, bytes]] = []
@@ -181,6 +186,7 @@ class FakeProvider:
         self, gpu_type: str, num_gpus: int, storage_gb: int, name: str
     ) -> Machine:
         self._enter("create")
+        self.create_calls.append((gpu_type, num_gpus, storage_gb, name))
         machine = Machine(MACHINE_ID, handle=f"fake://{name}")
         self.created.append(machine)
         return machine
