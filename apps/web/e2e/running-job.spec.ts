@@ -36,8 +36,19 @@ async function launchViaApi(request: import("@playwright/test").APIRequestContex
       },
     },
   });
-  expect(uploaded.status()).toBe(201);
+  // 202, not 201: since #31 the upload returns as soon as the bytes are stored
+  // and validation runs in the background, so the dataset is not usable yet.
+  expect(uploaded.status()).toBe(202);
   const datasetId = (await uploaded.json()).id;
+  await expect
+    .poll(
+      async () => {
+        const rec = await request.get(`${backend}/v1/datasets/${datasetId}`);
+        return (await rec.json()).status;
+      },
+      { timeout: 30_000 },
+    )
+    .not.toBe("validating");
   const launched = await request.post(`${backend}/v1/jobs`, {
     data: { dataset_id: datasetId },
   });
