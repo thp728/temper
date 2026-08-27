@@ -8,22 +8,25 @@ about the image. It was caught by reading, not by paying for it.
 
 The reorg made that failure easier to reach, not harder: `thinking.py` now lives
 in `temper_core` because the domain validates thinking mode with it, so the
-build context is assembled from two directories rather than one. These tests are
-what keeps the two statements of that fact in step.
+build context is assembled from two directories rather than one. Since issue
+#44 the machine no longer builds -- the pipeline does, from this same named
+list -- so `write_context` is what both the local `just image` and the pipeline
+publish step call, and the two cannot diverge. These tests are what keeps the
+two statements of that fact in step.
 """
 
 from __future__ import annotations
 
-import io
 import re
-import tarfile
 
-from temper_control_plane import orchestrator, trainer_build
+from temper_control_plane import trainer_build
 
 
-def _sources_archive() -> bytes:
-    """The trainer sources archive exactly as a push would stream it."""
-    return b"".join(orchestrator._trainer_chunks())
+def _context_names(tmp_path) -> set[str]:
+    """The build context's file names, exactly as a build would receive them."""
+    return {
+        p.name for p in trainer_build.write_context(tmp_path / "ctx").iterdir()
+    }
 
 
 def _copied_by_the_dockerfile() -> set[str]:
@@ -47,14 +50,12 @@ def test_every_source_shipped_is_a_source_the_image_copies():
     assert shipped == _copied_by_the_dockerfile()
 
 
-def test_the_tarball_carries_every_named_source_flat():
-    """Flat on purpose: the machine untars into one directory and builds there,
-    so the archive's member names are the build context's file names."""
-    with tarfile.open(
-        fileobj=io.BytesIO(_sources_archive()), mode="r:gz"
-    ) as tar:
-        names = set(tar.getnames())
-    assert names == {p.name for p in trainer_build.TRAINER_SOURCES}
+def test_the_context_carries_every_named_source_flat(tmp_path):
+    """Flat on purpose: the context is one directory of flat names, so a build
+    context file name is what the Dockerfile's COPY reads."""
+    assert _context_names(tmp_path) == {
+        p.name for p in trainer_build.TRAINER_SOURCES
+    }
 
 
 def test_the_module_the_domain_validates_with_is_the_module_the_image_runs():
@@ -70,28 +71,21 @@ def test_the_module_the_domain_validates_with_is_the_module_the_image_runs():
     )
 
 
-def test_sources_are_normalised_to_lf():
+def test_sources_are_normalised_to_lf(tmp_path):
     """A CRLF Dockerfile fails inside the container in ways that read as
     anything but a line-ending bug. .gitattributes is the first defence and
     this is the second."""
-    with tarfile.open(
-        fileobj=io.BytesIO(_sources_archive()), mode="r:gz"
-    ) as tar:
-        for member in tar.getmembers():
-            assert b"\r\n" not in tar.extractfile(member).read(), member.name
-
-
-def test_the_local_build_context_matches_what_the_machine_receives(tmp_path):
-    """`just image` and a real job must build the same thing, or "it worked
-    locally" stops meaning anything about the job that is about to cost money."""
     context = trainer_build.write_context(tmp_path / "ctx")
-    on_disk = {p.name: p.read_bytes() for p in context.iterdir()}
+    for path in context.iterdir():
+        assert b"\r\n" not in path.read_bytes(), path.name
 
-    with tarfile.open(
-        fileobj=io.BytesIO(_sources_archive()), mode="r:gz"
-    ) as tar:
-        in_transit = {
-            m.name: tar.extractfile(m).read() for m in tar.getmembers()
-        }
 
-    assert on_disk == in_transit
+def test_the_build_context_is_deterministic(tmp_path):
+    """Two assemblies of the same sources are the same bytes, so `just image`
+    and the pipeline publish step -- both of which call `write_context` --
+    cannot disagree about what is being built (issue #44)."""
+    a = trainer_build.write_context(tmp_path / "a")
+    b = trainer_build.write_context(tmp_path / "b")
+    assert {p.name: p.read_bytes() for p in a.iterdir()} == {
+        p.name: p.read_bytes() for p in b.iterdir()
+    }

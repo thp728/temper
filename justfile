@@ -80,6 +80,13 @@ dev:
 image:
     uv run python -m temper_control_plane.trainer_image
 
+# Publish the trainer image to the registry, verify it is pullable by digest,
+# and rewrite the digest contract the orchestrator reads (#44). The pipeline
+# (`.github/workflows/image.yml`) runs this same command, then opens the pull
+# request that lands the digest. Needs docker and registry credentials.
+publish-image:
+    uv run python -m temper_control_plane.publish_trainer_image
+
 # --- the web application (apps/web) -----------------------------------------
 # Every recipe is a single invocation; read the line and run it if you lack
 # `just` or `corepack`.

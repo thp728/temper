@@ -1,0 +1,96 @@
+# Publish the trainer image and record its digest (issue #44).
+#
+# The trainer image is the work sample of the orchestration layer: what runs on
+# a machine is exactly the image the pipeline built, and nothing else. This
+# workflow builds it from the same named sources a job used to build from
+# (`temper_control_plane.trainer_build.TRAINER_SOURCES` -- the single list),
+# pushes it to GHCR, verifies it is pullable by digest, and rewrites
+# `packages/contracts/trainer-image.json`, which the orchestrator reads at
+# launch. The pull request that lands the new digest is what makes a digest
+# change a deliberate, visible change rather than a silent one.
+#
+# The tag is a comment; the digest is the contract (the same discipline as the
+# Dockerfile's FROM line). The orchestrator's machine pulls `image@digest` and
+# never a tag.
+#
+# Why not on every push: the image's base is ~8.5 GB, so a cold build and push
+# is minutes and gigabytes. The `paths` filter limits it to pushes that touch
+# the trainer image's own sources -- `TRAINER_SOURCES`, restated here because
+# GitHub's path filters cannot read Python. Keep the two in step: a source
+# added to that list belongs in this filter too. `workflow_dispatch` is the
+# deliberate re-publish a reviewer or operator can run by hand.
+
+name: publish-trainer-image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/trainer/Dockerfile"
+      - "apps/trainer/entrypoint.py"
+      - "packages/core/src/temper_core/thinking.py"
+      - "packages/contracts/trainer-defaults.json"
+      - "packages/contracts/axolotl-schema.json"
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+# Serialised rather than cancelled: two publishes racing would leave the
+# contract pointing at whichever finished last while both were "current".
+concurrency:
+  group: publish-trainer-image
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: build, publish, record the digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # A full checkout: the PR step branches off the published commit, so the
+      # module and the gate see the same tree the image was built from.
+      - uses: actions/checkout@v7
+
+      - uses: extractions/setup-just@v4
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: just setup
+        run: just setup
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # The one logic-bearing command, mirroring how check.yml delegates the
+      # gate to `just check`: build, push, capture the digest, verify
+      # pullability, rewrite the contract, write the PR body. Everything after
+      # this is the plain git/PR dance that lands the digest.
+      - name: Build, push and record the trainer image
+        run: uv run python -m temper_control_plane.publish_trainer_image
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+
+      - name: Open the digest-change pull request
+        run: |
+          set -euo pipefail
+          git config user.name "temper[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="image-publish-$(date +%s)"
+          git checkout -b "$branch"
+          git add packages/contracts/trainer-image.json
+          if git diff --cached --quiet; then
+            echo "no digest change; nothing to open"
+            exit 0
+          fi
+          git commit -m "Publish trainer image"
+          git push origin "HEAD:$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Publish trainer image" \
+            --body-file .build/publish-body.md

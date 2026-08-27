@@ -13,11 +13,48 @@ that have nothing to do with that.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from .config import REPO_ROOT
 
 TRAINER_DIR = REPO_ROOT / "apps" / "trainer"
+
+# The checked-in contract the pipeline's publish step writes and the
+# orchestrator reads (#44). It lives in `packages/contracts` because the two
+# sides cannot import one another: the pipeline writes it from the digest of
+# the image it just built, and the control plane reads it to know which image
+# a machine must pull. A value two components must agree on is defined once
+# and read, never retyped.
+PUBLISHED_IMAGE_CONTRACT = (
+    REPO_ROOT / "packages" / "contracts" / "trainer-image.json"
+)
+
+
+def published_reference() -> str | None:
+    """The published trainer image as `image@digest`, or None when the
+    pipeline has not published one yet.
+
+    The digest is the contract and the tag is a comment: the machine pulls
+    this reference by digest, so what runs is exactly what the pipeline built
+    and verified. A None answer means the image has never been published, and
+    the orchestrator refuses a real job rather than inventing a reference --
+    running something that was never built and verified is the failure this
+    whole arrangement exists to prevent.
+
+    Read at call time rather than at import because the answer legitimately
+    changes as the pipeline publishes: a control plane already running should
+    pick up a newly published digest without a restart, and this is data, not
+    a safety limit that must stay fixed mid-process.
+    """
+    doc = json.loads(PUBLISHED_IMAGE_CONTRACT.read_text(encoding="utf-8"))
+    if not doc.get("published"):
+        return None
+    reference = doc.get("reference")
+    if not isinstance(reference, str) or not reference:
+        return None
+    return reference
+
 
 # Named rather than globbed.
 #
