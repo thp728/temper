@@ -1,4 +1,4 @@
-# ADR-0044 — Imported datasets are the same bytes, through the same validation path
+# ADR-0047 — Imported datasets are the same bytes, through the same validation path
 
 - **Status:** accepted
 - **Date:** 2026-08-28
