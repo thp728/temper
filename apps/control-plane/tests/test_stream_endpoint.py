@@ -13,6 +13,7 @@ import threading
 import time
 
 import pytest
+from helpers import wait_validated
 
 from temper_control_plane.fake_provider import (
     DEMO_LINES,
@@ -51,8 +52,12 @@ def _upload_and_create(client):
             )
         },
     )
-    assert r.status_code == 201, r.text
+    # 202, not 201: since #31 the upload returns as soon as the bytes are
+    # stored and validation runs in the background, so a job cannot be created
+    # from the response alone -- wait for the verdict first.
+    assert r.status_code == 202, r.text
     ds_id = r.json()["id"]
+    wait_validated(client, ds_id)
     r = client.post("/v1/jobs", json={"dataset_id": ds_id})
     assert r.status_code == 201, r.text
     return r.json()["id"]
