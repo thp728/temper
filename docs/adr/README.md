@@ -75,11 +75,11 @@ repository becomes public at submission.
 | [0032](0032-every-calculated-default-carries-its-reason.md) | Every calculated default carries its reason and the alternatives that lost | accepted | 2026-08-27 |
 | [0033](0033-any-plan-decision-can-be-overridden-and-the-rest-recomputes.md) | Any plan decision can be overridden, and the rest recomputes | accepted | 2026-08-27 |
 | [0034](0034-the-advanced-surface-is-generated-from-the-trainers-schema.md) | The advanced surface is generated from the trainer's own schema | accepted | 2026-08-27 |
-| [0034](0034-the-running-job-surface-consumes-a-server-pushed-event-stream.md) | The running-job surface consumes a server-pushed event stream and hands back to the finished record at a terminal state | accepted | 2026-08-27 |
 | [0035](0035-the-control-plane-verifies-a-machine-written-artifact-by-streaming-it-back.md) | The control plane verifies a machine-written artifact by streaming it back | accepted | 2026-08-27 |
 | [0036](0036-the-dataset-size-limit-is-derived-from-measured-throughput.md) | The dataset size limit is a product limit derived from measured throughput, not from memory — supersedes 0005 | accepted | 2026-08-27 |
 | [0037](0037-every-run-records-what-was-predicted-against-what-happened.md) | Every run records what was predicted against what happened | accepted | 2026-08-27 |
 | [0038](0038-the-token-count-is-produced-by-a-phase-of-its-own-bounded-and-recorded-with-the-dataset-version.md) | The token count is produced by a phase of its own, bounded, and recorded with the dataset version | accepted | 2026-08-27 |
+| [0038](0038-the-running-job-surface-consumes-a-server-pushed-event-stream.md) | The running-job surface consumes a server-pushed event stream and hands back to the finished record at a terminal state | accepted | 2026-08-27 |
 | [0040](0040-an-override-names-its-failure-mode-and-a-locked-setting-is-not-a-refused-input.md) | An override names its failure mode, is recorded in the job spec, and a locked setting is not a refused input | accepted | 2026-08-27 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the

@@ -1,4 +1,4 @@
-# ADR-0034 — The running-job surface consumes a server-pushed event stream
+# ADR-0038 — The running-job surface consumes a server-pushed event stream
 
 - **Status:** accepted
 - **Date:** 2026-08-27
