@@ -74,7 +74,7 @@ repository becomes public at submission.
 | [0031](0031-the-predictor-warns-on-time-and-cost-as-a-range-composed-per-phase.md) | The predictor warns on time and cost, as a range, composed per phase | accepted | 2026-08-27 |
 | [0032](0032-every-calculated-default-carries-its-reason.md) | Every calculated default carries its reason and the alternatives that lost | accepted | 2026-08-27 |
 | [0033](0033-any-plan-decision-can-be-overridden-and-the-rest-recomputes.md) | Any plan decision can be overridden, and the rest recomputes | accepted | 2026-08-27 |
-| [0034](0034-the-advanced-surface-is-generated-from-the-trainers-schema.md) | The advanced surface is generated from the trainer's own schema | accepted | 2026-08-27 |
+| [0034](0034-every-run-records-what-was-predicted-against-what-happened.md) | Every run records what was predicted against what happened | accepted | 2026-08-27 |
 | [0035](0035-the-control-plane-verifies-a-machine-written-artifact-by-streaming-it-back.md) | The control plane verifies a machine-written artifact by streaming it back | accepted | 2026-08-27 |
 | [0036](0036-the-dataset-size-limit-is-derived-from-measured-throughput.md) | The dataset size limit is a product limit derived from measured throughput, not from memory — supersedes 0005 | accepted | 2026-08-27 |
 

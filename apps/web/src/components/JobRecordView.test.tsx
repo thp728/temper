@@ -65,6 +65,7 @@ function quote(): Quote {
     storage_cost_usd_total_low_minor: 1,
     storage_cost_usd_total_high_minor: 4,
     is_estimate: true,
+    peak_memory_gb: 5.4,
   };
 }
 
@@ -178,6 +179,56 @@ describe("JobRecordView", () => {
     ).toBeVisible();
     expect(screen.getByText(/3m 58s–18m 59s/)).toBeVisible();
     expect(screen.getByText(/INR 2\.74 – INR 13\.08/)).toBeVisible();
+  });
+
+  it("compares what was predicted against what happened on a finished job", () => {
+    // Issue #77: a finished job shows each metric's prediction against the
+    // measured figure, marked measured or derived, with a link to the
+    // aggregate.
+    render(
+      <JobRecordView
+        job={job({
+          quote: quote(),
+          actuals: {
+            duration_s: 600,
+            peak_memory_gb: 5.31,
+            cost_minor: 400,
+            currency: "INR",
+            phases: [
+              { name: "provisioning", duration_s: 5 },
+              { name: "preparing", duration_s: 55 },
+              { name: "training", duration_s: 480 },
+              { name: "packaging", duration_s: 60 },
+            ],
+          },
+        })}
+        events={[]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Prediction vs what happened" }),
+    ).toBeVisible();
+    // Duration: predicted 3m 58s–18m 59s (midpoint ~11m 29s), actual 10m.
+    expect(screen.getByText("measured")).toBeVisible();
+    expect(screen.getByText("derived from measured duration × frozen rate")).toBeVisible();
+    expect(screen.getByText(/10m 00s/)).toBeVisible();
+    // Peak memory: predicted 5.40 GB, measured 5.31 GB.
+    expect(screen.getByText("5.40 GB")).toBeVisible();
+    expect(screen.getByText("5.31 GB")).toBeVisible();
+    // The measured stages are shown, marked as the run's own.
+    expect(screen.getByText("packaging")).toBeVisible();
+    // The aggregate is one link away.
+    expect(
+      screen.getByRole("link", { name: "Predictions vs actuals across runs" }),
+    ).toHaveAttribute("href", "/calibration");
+  });
+
+  it("does not claim a comparison when the job has no actuals", () => {
+    render(<JobRecordView job={job()} events={[]} />);
+    expect(
+      screen.queryByRole("heading", { name: "Prediction vs what happened" }),
+    ).toBeNull();
   });
 
   it("keeps the full history of a finished job readable", () => {

@@ -87,6 +87,37 @@ test("a user comes back tomorrow, finds the job, and collects the adapter", asyn
   expect(bytes.subarray(0, 2).toString()).toBe("PK");
 });
 
+test("a finished job compares its prediction against what happened, and the aggregate shows it", async ({
+  page,
+}) => {
+  // Issue #77: the finished record shows what was predicted against what
+  // happened -- duration, peak memory and cost, each marked measured or
+  // derived -- and the aggregate view makes the same comparison across runs.
+  const jobId = await launchFromTheShell(page);
+
+  await expect(
+    page.getByRole("heading", { name: "Prediction vs what happened" }),
+  ).toBeVisible();
+  // The measured figures state their basis (spec 005's measured-vs-derived).
+  await expect(page.getByText("measured on the machine")).toBeVisible();
+  await expect(
+    page.getByText("derived from measured duration × frozen rate"),
+  ).toBeVisible();
+  // The run's own stages are shown, measured from its state transitions.
+  await expect(page.getByText("packaging")).toBeVisible();
+
+  // The aggregate is one link away, and this run is in it -- an outlier can
+  // be named rather than pointed at.
+  await page
+    .getByRole("link", { name: "Predictions vs actuals across runs" })
+    .click();
+  await expect(page).toHaveURL(/\/calibration$/);
+  await expect(
+    page.getByRole("heading", { name: "Predictions vs what happened" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: jobId })).toBeVisible();
+});
+
 test("a failed job says why in plain language, and keeps its stable code", async ({
   request,
   page,
