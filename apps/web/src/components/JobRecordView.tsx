@@ -344,6 +344,33 @@ export default function JobRecordView({
         </dl>
       </section>
 
+      {/* The advanced-surface overrides the user froze into the job spec
+          (issue #80): what the run actually trained with, shown after it is
+          over. The record carries the user's changes -- the resolver's typed
+          answer is what reached the trainer -- so this is exactly the
+          overrides, nothing more. */}
+      {job.hyperparameters && Object.keys(job.hyperparameters).length > 0 && (
+        <section aria-labelledby="settings-changed-heading" className="space-y-2">
+          <h2 id="settings-changed-heading" className="text-lg font-semibold">
+            Settings you changed
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            These were frozen into this job&apos;s specification at launch and
+            cannot be changed afterwards.
+          </p>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg border bg-card p-4 sm:grid-cols-3">
+            {Object.entries(job.hyperparameters).map(([key, value]) => (
+              <div key={key}>
+                <dt className="text-sm text-muted-foreground">
+                  <code>{key}</code>
+                </dt>
+                <dd className="font-medium">{String(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+
       {job.status === "complete" && <AdapterSection job={job} />}
       {job.status === "failed" && <FailedSection job={job} />}
       {job.status === "cancelled" && <CancelledSection />}

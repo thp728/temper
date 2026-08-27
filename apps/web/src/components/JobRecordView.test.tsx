@@ -271,4 +271,35 @@ describe("JobRecordView", () => {
       screen.queryByRole("link", { name: /Download the adapter/ }),
     ).toBeNull();
   });
+
+  // The advanced-surface overrides frozen into the job spec (issue #80) are
+  // shown on the finished run: the run says what it actually used.
+  it("shows the frozen settings the user changed on the finished run", () => {
+    render(
+      <JobRecordView
+        job={job({
+          hyperparameters: {
+            learning_rate: 0.0001,
+            num_epochs: 5,
+          },
+        })}
+        events={[]}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Settings you changed" }),
+    ).toBeVisible();
+    // The overrides are shown as frozen at launch, with their values.
+    expect(screen.getByText("learning_rate")).toBeVisible();
+    expect(screen.getByText("0.0001")).toBeVisible();
+    expect(screen.getByText("num_epochs")).toBeVisible();
+    expect(screen.getByText("5")).toBeVisible();
+  });
+
+  it("does not show a settings section when nothing was changed", () => {
+    render(<JobRecordView job={job()} events={[]} />);
+    expect(
+      screen.queryByRole("heading", { name: "Settings you changed" }),
+    ).toBeNull();
+  });
 });

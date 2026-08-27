@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import AdvancedSurface from "@/components/AdvancedSurface";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import {
   createJobV1JobsPost,
   getQuoteV1QuotesGet,
   recomputeQuoteV1QuotesPost,
+  type AdvancedSurface as AdvancedSurfaceModel,
   type DecisionOverride,
   type JobSpecPreview,
   type ModelCatalog,
@@ -37,9 +39,11 @@ import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 export default function LaunchForm({
   catalog,
   preview,
+  surface,
 }: {
   catalog: ModelCatalog;
   preview: JobSpecPreview;
+  surface: AdvancedSurfaceModel | null;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState(catalog.default);
@@ -48,45 +52,59 @@ export default function LaunchForm({
   const [refusal, setRefusal] = useState<ApiError | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [overrides, setOverrides] = useState<DecisionOverride[]>([]);
+  // The advanced-surface overrides (issue #80): name -> value as typed, for
+  // the settings the trainer exposes behind the disclosure. They ride the
+  // same recompute as the plan decisions and are frozen into the launch.
+  const [hyperparameters, setHyperparameters] = useState<
+    Record<string, string>
+  >({});
   const [planRefusal, setPlanRefusal] = useState<OverrideRefusal | null>(null);
   // Starts loading: the effect fetches the default model's quote on mount.
   const [quoteLoading, setQuoteLoading] = useState(true);
   // The last set of overrides the server accepted, so a refused change can be
   // reverted and the plan always describes a configuration that can launch.
-  const lastGood = useRef<DecisionOverride[]>([]);
+  const lastGood = useRef<{
+    overrides: DecisionOverride[];
+    hyperparameters: Record<string, string>;
+  }>({ overrides: [], hyperparameters: {} });
 
   // The quote depends on which model is selected (a bigger model downloads
   // more and may need different hardware) and on the pinned decisions, so it
   // is re-fetched on every change -- server-computed, never guessed at on the
-  // client. An override is re-requested, not applied locally (issue #79).
+  // client. An override is re-requested, not applied locally (issue #79); the
+  // advanced-surface overrides ride on the same request (issue #80).
   useEffect(() => {
     let cancelled = false;
-    const request =
-      overrides.length > 0
-        ? recomputeQuoteV1QuotesPost({
-            dataset_id: preview.dataset.id,
-            base_model: selected,
-            overrides,
-          })
-        : getQuoteV1QuotesGet({
-            dataset_id: preview.dataset.id,
-            base_model: selected,
-          });
+    const hasDemands =
+      overrides.length > 0 || Object.keys(hyperparameters).length > 0;
+    const request = hasDemands
+      ? recomputeQuoteV1QuotesPost({
+          dataset_id: preview.dataset.id,
+          base_model: selected,
+          overrides,
+          hyperparameters,
+        })
+      : getQuoteV1QuotesGet({
+          dataset_id: preview.dataset.id,
+          base_model: selected,
+        });
     request
       .then((q) => {
         if (cancelled) return;
         setQuote(q);
-        lastGood.current = overrides;
+        lastGood.current = { overrides, hyperparameters };
       })
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 400) {
           // An override that cannot be honoured is refused with the same
-          // arithmetic the predictor used (issue #79): shown beside the plan,
-          // and the plan reverts to the last valid configuration. The refusal
-          // is only cleared by the user's next action, never by the refetch
-          // this revert triggers.
-          setOverrides(lastGood.current);
+          // arithmetic the predictor used (issue #79, extended to the
+          // advanced surface by issue #80): shown beside the plan, and the
+          // plan reverts to the last valid configuration. The refusal is only
+          // cleared by the user's next action, never by the refetch this
+          // revert triggers.
+          setOverrides(lastGood.current.overrides);
+          setHyperparameters(lastGood.current.hyperparameters);
           setPlanRefusal({ code: err.code, message: err.message });
         } else {
           // An estimate that cannot be fetched is shown as absent, never as an
@@ -100,7 +118,7 @@ export default function LaunchForm({
     return () => {
       cancelled = true;
     };
-  }, [selected, preview.dataset.id, overrides]);
+  }, [selected, preview.dataset.id, overrides, hyperparameters]);
 
   function onModelChange(modelId: string) {
     setSelected(modelId);
@@ -109,14 +127,21 @@ export default function LaunchForm({
     // A pinned decision belongs to the configuration it was pinned against;
     // switching models starts a fresh plan.
     setOverrides([]);
+    setHyperparameters({});
     setPlanRefusal(null);
-    lastGood.current = [];
+    lastGood.current = { overrides: [], hyperparameters: {} };
   }
 
   function handleOverridesChange(next: DecisionOverride[]) {
     setQuoteLoading(true);
     setPlanRefusal(null);
     setOverrides(next);
+  }
+
+  function handleHyperparametersChange(next: Record<string, string>) {
+    setQuoteLoading(true);
+    setPlanRefusal(null);
+    setHyperparameters(next);
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -135,7 +160,7 @@ export default function LaunchForm({
       const job = await createJobV1JobsPost({
         dataset_id: preview.dataset.id,
         base_model: chosen,
-        hyperparameters: {},
+        hyperparameters,
         overrides,
       });
       setStatus("Job launched. Opening it…");
@@ -230,7 +255,7 @@ export default function LaunchForm({
           change to defaults never retroactively alters what a run did.
         </p>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg border bg-card p-4 sm:grid-cols-3">
-          {specEntries(preview).map(([key, value]) => (
+          {specEntries(preview, hyperparameters).map(([key, value]) => (
             <div key={key}>
               <dt className="text-sm text-muted-foreground">
                 <code>{key}</code>
@@ -265,6 +290,23 @@ export default function LaunchForm({
         </p>
       )}
 
+      {/* The advanced surface (issue #80): every dial the pinned trainer
+          exposes, behind an explicit disclosure, each naming what goes wrong.
+          It is generated from the trainer's own schema and published via
+          `GET /v1/surface`; a change re-requests the plan like any other
+          override, and a change that makes the job infeasible is refused
+          before launch. When the surface cannot be loaded the job is still
+          launchable -- with the defaults, which is what a first-time user
+          gets anyway. */}
+      {surface && (
+        <AdvancedSurface
+          surface={surface}
+          defaults={preview.hyperparameters ?? {}}
+          values={hyperparameters}
+          onChange={handleHyperparametersChange}
+        />
+      )}
+
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={busy} size="lg">
           {busy ? "Launching…" : "Launch job"}
@@ -289,9 +331,15 @@ export default function LaunchForm({
   );
 }
 
-function specEntries(preview: JobSpecPreview): [string, string][] {
-  return Object.entries(preview.hyperparameters ?? {}).map(([k, v]) => [
-    k,
-    String(v),
-  ]);
+function specEntries(
+  preview: JobSpecPreview,
+  advanced: Record<string, string>,
+): [string, string][] {
+  // The specification section shows what a launch would freeze: the effective
+  // defaults the server resolved, with any advanced-surface overrides (issue
+  // #80) merged on top. The server remains the source of truth at launch;
+  // this is the same preview the page promised before the advanced controls
+  // existed, kept honest as they are changed.
+  const merged = { ...(preview.hyperparameters ?? {}), ...advanced };
+  return Object.entries(merged).map(([k, v]) => [k, String(v)]);
 }
