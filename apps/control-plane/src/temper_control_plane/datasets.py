@@ -20,7 +20,8 @@ import threading
 
 from fastapi import HTTPException
 
-from temper_control_plane import config, db, storage
+from temper_control_plane import config as cfg
+from temper_control_plane import db, remote_datasets, storage
 from temper_core import counting, hyperparams, validation
 
 from . import tokenize
@@ -63,7 +64,7 @@ def refuse_before_read(declared: str | None) -> None:
     lying, which is why `ingest` also refuses mid-stream once the true size is
     known.
     """
-    limit = config.MAX_DATASET_BYTES
+    limit = cfg.MAX_DATASET_BYTES
     if declared is not None and declared.isdigit() and int(declared) > limit:
         raise too_large(int(declared), limit)
 
@@ -213,12 +214,12 @@ def ingest(
         nonlocal total
         for chunk in _chunks_of(fileobj):
             total += len(chunk)
-            if total > config.MAX_DATASET_BYTES:
+            if total > cfg.MAX_DATASET_BYTES:
                 # A lying or absent Content-Length must not defeat the
                 # ceiling: refuse once the true size is known. put_stream
                 # cleans up its own partial write; the row we created to be
                 # watched is deleted here.
-                raise too_large(total, config.MAX_DATASET_BYTES)
+                raise too_large(total, cfg.MAX_DATASET_BYTES)
             yield chunk
 
     try:
@@ -229,3 +230,56 @@ def ingest(
 
     _validate_in_background(ds_id, key, total)
     return ds_id, "validating"
+
+
+def import_dataset(
+    repo: str,
+    config: str | None = None,
+    split: str | None = None,
+) -> tuple[str, str, str]:
+    """Import a public dataset by reference, through the same ingest path as
+    an upload. Returns (dataset id, display name, status).
+
+    The reference is resolved first, and a reference that cannot be fetched --
+    repository missing, configuration unnamed, split absent, split empty -- is
+    refused with its reason before anything is stored. The rows are then
+    streamed straight from the remote source into storage, with the size
+    ceiling enforced mid-stream exactly as it is for a lying Content-Length on
+    an upload: `put_stream` publishes whole and cleans up its own partial
+    write, and the row created to be watched is deleted on refusal.
+
+    Validation and token counting then run in the background through the very
+    same functions an upload uses (`_validate_in_background` reads the stored
+    object), so an imported dataset that fails validation is stored with its
+    report like any other. There is one validator; the only difference is
+    where the bytes came from.
+    """
+    source = remote_datasets.RESOLVER.resolve(repo, config, split)
+    filename = source.display_name()
+
+    ds_id = db.new_id("ds")
+    key = storage.dataset_key(ds_id)
+    db.create_dataset(filename, key, ds_id=ds_id)
+
+    total = 0
+
+    def counted_chunks():
+        nonlocal total
+        for chunk in source.stream():
+            total += len(chunk)
+            if total > cfg.MAX_DATASET_BYTES:
+                # No declared size exists for a remote reference, so the
+                # ceiling can only be enforced as the true size becomes
+                # known -- the same mid-stream refusal a lying Content-Length
+                # earns on an upload.
+                raise too_large(total, cfg.MAX_DATASET_BYTES)
+            yield chunk
+
+    try:
+        storage.STORE.put_stream(key, counted_chunks())
+    except Exception:
+        db.delete_dataset(ds_id)
+        raise
+
+    _validate_in_background(ds_id, key, total)
+    return ds_id, filename, "validating"
