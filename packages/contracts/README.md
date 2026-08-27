@@ -11,6 +11,7 @@ Python processes could simply import: those live in `packages/core`.
 | `axolotl-field-tiers.json` | `temper_core.surface` reads it; the classification itself is issue #33's checked-in judgment | the generated advanced surface and the pre-launch refusal gate |
 | `advanced-surface.json` | `just contracts`, from `temper_core.surface` over the two files above | the interface's advanced surface (#80) and the refusal gate; drift here fails `just check` |
 | `trainer-defaults.json` | hand-maintained; each value's reasoning lives in the wiki and git history | `temper_core.hyperparams` (so the control plane), and the trainer entrypoint, which receives it via the image `COPY` |
+| `trainer-image.json` | the pipeline's publish step (`.github/workflows/image.yml`), from the digest of the image it just built, pushed and verified | the control plane's orchestrator, which has the machine pull the image by that digest (#44) |
 
 `trainer-defaults.json` is the one definition of the trainer's defaults (#82).
 The trainer image never installs a Python package, so this is the boundary
@@ -34,6 +35,15 @@ one tier (`calculated`, `exposed_with_named_failure_mode`,
 mode on every exposed one. It is data rather than code so a classification is
 reviewable in a diff; `temper_core.surface` refuses to import with a field in
 no tier (or a tier entry that is not a field), so a hole is a build failure.
+
+`trainer-image.json` (issue #44) is the published trainer image the
+orchestration references: the digest of the image the pipeline built, pushed
+and verified, and the reference (`image@digest`) the machine pulls. It is
+written by the pipeline's publish step and read by the control plane's
+orchestrator, so the pipeline and the product cannot disagree about which
+image runs. The digest is the contract and the tag is a comment, and a digest
+change lands as its own pull request rather than silently — see
+[ADR-0043](../../docs/adr/0046-the-trainer-image-is-built-by-the-pipeline-and-referenced-by-digest.md).
 
 ## The rule this directory exists for
 

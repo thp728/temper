@@ -436,6 +436,17 @@ class FakeProvider:
 
 DEMO_ADAPTER_BYTES = b"demo adapter weights"
 
+# The published-image reference tests inject so the pull-by-digest path is
+# exercised (issue #44). The checked-in contract starts unpublished -- the
+# refusal test pins that state -- so the suites that drive a real `run_job`
+# to completion hand it a reference the orchestrator will embed in the
+# machine's script. It is a fixture value, not a real image, and the simulated
+# machine never executes it.
+PUBLISHED_IMAGE_REFERENCE = (
+    "ghcr.io/thp728/temper/trainer@sha256:"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+)
+
 DEMO_LINES = (
     "[00:00:00] building trainer image",
     "[00:00:02] image built in 2s",

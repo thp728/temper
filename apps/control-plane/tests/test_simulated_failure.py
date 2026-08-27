@@ -36,7 +36,7 @@ def script_with(hyperparameters: dict) -> bytes:
     return (
         b"set -u\ncat > /tmp/job/job.json <<'JOBSPEC'\n"
         + spec.encode("utf-8")
-        + b"\nJOBSPEC\nsudo docker run temper-trainer:job\n"
+        + b"\nJOBSPEC\nsudo docker run ghcr.io/example/trainer@sha256:0\n"
     )
 
 

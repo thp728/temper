@@ -67,35 +67,28 @@ from .chunks import ChunkReader, piped_chunks
 from .limits import RunLimits, guard
 from .models import new_models
 from .provider import Provider, new_provider
-from .trainer_build import TRAINER_SOURCES, normalised
+from .trainer_build import published_reference
 
-TRAINER_TARBALL = "/tmp/trainer.tar.gz"
 DATASET_TARBALL = "/tmp/dataset.tar.gz"
-# The machine emits this when it fails before the trainer ever runs, so that a
-# pre-training failure still arrives as a result document naming its own code
-# rather than as "the trainer produced nothing".
-SOURCE_UNPACK_FAILED = json.dumps(
+# The reference the script carries when the simulated provider is in use
+# (TEMPER_FAKE_PROVIDER) and no image has been published. The simulated
+# machine executes no container, so this is only ever a well-formed stand-in
+# to keep the script shaped like the real one; it is deliberately not a
+# registry reference so it cannot be mistaken for one.
+_SIMULATED_REFERENCE = "temper-simulated:local"
+# The machine emits this when the image cannot be pulled, so that a pre-training
+# failure still arrives as a result document naming its own code rather than as
+# "the trainer produced nothing". An image that could not be pulled is not a
+# training failure, and telling a user otherwise sends them to read the wrong
+# output. Single quotes are forbidden in these strings -- the script echoes
+# them inside a single-quoted shell literal.
+PULL_FAILED = json.dumps(
     {
-        "stage": "source",
+        "stage": "pull",
         "ok": False,
-        "error_code": "source_upload_failed",
-        "error": "The trainer sources reached the machine but did not unpack.",
-    }
-)
-# Each of these is echoed *after* the result marker, so a failure that never
-# reached the trainer still arrives as a result document naming its own cause
-# rather than as "the trainer produced nothing". Each names its own code for the
-# same reason the unpack failure does: a build that never produced an image is
-# not a training failure, and telling a user otherwise sends them to read the
-# wrong output. Single quotes are forbidden in these strings -- the script
-# echoes them inside a single-quoted shell literal.
-BUILD_FAILED = json.dumps(
-    {
-        "stage": "build",
-        "ok": False,
-        "error_code": "image_build_failed",
-        "error": "The trainer image failed to build; the build output is in the "
-        "job events.",
+        "error_code": "image_pull_failed",
+        "error": "The trainer image could not be pulled; the pull output is "
+        "in the job events.",
     }
 )
 NO_RESULT = json.dumps(
@@ -163,18 +156,34 @@ def _pour_tar(members: list[_TarMember], sink: BinaryIO) -> None:
                 tar.addfile(info, member.source)
 
 
-def _trainer_chunks() -> Iterator[bytes]:
-    """The trainer image's sources as one streamed tar.gz.
+def _trainer_reference() -> str:
+    """The published trainer image the machine pulls, image@digest.
 
-    Members are flat: the machine untars into a single directory and builds
-    there, so a member name is a build-context file name and the Dockerfile's
-    COPY reads the same whichever directory a source came from.
+    The pipeline builds and publishes the image from the same named sources
+    `just image` builds from (issue #44), and this side reads the digest out
+    of the checked-in contract. The machine never builds: it pulls exactly the
+    image the pipeline built and verified, so what runs is exactly what was
+    built.
+
+    A digest that has not been published is refused -- before any machine is
+    provisioned -- unless the simulated provider is in use, which pulls no
+    image and therefore needs no published one. That exception exists for the
+    browser journeys (ADR-0024), which boot this process with
+    TEMPER_FAKE_PROVIDER and drive a launch to completion on a machine that
+    executes no container.
     """
-    members = []
-    for source in TRAINER_SOURCES:
-        data = normalised(source)
-        members.append(_TarMember(source.name, len(data), data))
-    return piped_chunks(lambda sink: _pour_tar(members, sink))
+    reference = published_reference()
+    if reference is not None:
+        return reference
+    if config.FAKE_PROVIDER:
+        return _SIMULATED_REFERENCE
+    raise OrchestratorError(
+        "image_not_published",
+        "The trainer image has not been published yet, so a real job "
+        "cannot launch. Run the pipeline's publish workflow "
+        "(`.github/workflows/image.yml`) and merge the pull request it "
+        "opens, which lands the digest this launch would pull.",
+    )
 
 
 def _dataset_chunks(dataset_object_key: str) -> Iterator[bytes]:
@@ -208,10 +217,17 @@ def _remote_script(
     job: dict,
     model: catalog.BaseModel,
     enable_thinking: bool,
+    reference: str,
     artifact_grant: storage.WriteGrant | None = None,
     checkpoint_grants: list[storage.WriteGrant] | None = None,
 ) -> bytes:
-    """The on-machine script: build the image, run the job, print the result.
+    """The on-machine script: pull the published image, run the job, report.
+
+    The image is not built here and never was expected to be: the pipeline
+    builds it from the same named sources `just image` builds from (issue #44),
+    and the machine pulls the published image by digest (`reference`), so what
+    runs is exactly what the pipeline built and verified. Nothing installs
+    into the image at run time.
 
     Nothing here carries the dataset. It arrived ahead of this script as its
     own archive on standard input, so the script stays a fixed few kilobytes
@@ -274,14 +290,6 @@ def _remote_script(
 set -u
 say() {{ echo "[$(date +%H:%M:%S)] $*" >&2; }}
 
-mkdir -p /tmp/trainer
-tar xzf {TRAINER_TARBALL} -C /tmp/trainer || {{
-  say "SOURCE UNPACK FAILED"
-  echo "{RESULT_MARKER}"
-  echo '{SOURCE_UNPACK_FAILED}'
-  exit 0
-}}
-
 # The trainer needs no inbound port, so it publishes none. That is the only
 # firewall mitigation that actually holds for Docker on this platform.
 sudo ufw allow 22/tcp >/dev/null 2>&1
@@ -294,17 +302,19 @@ cat > /tmp/job/job.json <<'JOBSPEC'
 {json.dumps(job_spec, indent=2)}
 JOBSPEC
 
-say "building trainer image"
+say "pulling trainer image"
 t0=$(date +%s)
-# --progress=plain: the default renderer redraws a live display, which is
-# unreadable once it is a line-oriented event log rather than a terminal.
-sudo docker build --progress=plain -t temper-trainer:job /tmp/trainer 1>&2 || {{
-  say "BUILD FAILED"
+# The digest is the contract and the tag is a comment (issue #44): the
+# pipeline published exactly this image and verified it is pullable, so the
+# machine pulls by digest and never builds. The pull's own output is the
+# record of what reached the machine.
+sudo docker pull {reference} 1>&2 || {{
+  say "PULL FAILED"
   echo "{RESULT_MARKER}"
-  echo '{BUILD_FAILED}'
+  echo '{PULL_FAILED}'
   exit 0
 }}
-say "image built in $(( $(date +%s) - t0 ))s"
+say "image pulled in $(( $(date +%s) - t0 ))s"
 
 say "running training"
 # PYTHONUNBUFFERED is the innermost of the three redirections. The trainer and
@@ -314,7 +324,7 @@ say "running training"
 sudo docker run --rm --gpus all \\
   -v /tmp/job:/job:ro -v /tmp/out:/out -e HF_HOME=/out/hf \\
   -e PYTHONUNBUFFERED=1 \\
-  temper-trainer:job 1>&2 || say "TRAINER EXITED NONZERO"
+  {reference} 1>&2 || say "TRAINER EXITED NONZERO"
 
 if [ -f /tmp/out/result.json ]; then
   echo "{RESULT_MARKER}"
@@ -843,6 +853,12 @@ def _attempt(
         [overrides.from_dict(d) for d in frozen_overrides],
     )
 
+    # The image the machine will pull, read before anything is provisioned.
+    # A job that cannot know which image it would run must not spend money
+    # finding that out: "nothing may be provisioned without it" holds for the
+    # published image exactly as it does for disk.
+    reference = _trainer_reference()
+
     # Checked at every boundary between stages, for the same reason the
     # duration ceiling is: inside a provider call nothing is interruptible, so
     # the boundaries are where a request to stop can actually be honoured. The
@@ -911,11 +927,11 @@ def _attempt(
     cancelled()
     db.add_event(job_id, "log", provider.await_ready(machine))
     cancelled()
-    # Both archives stream: push_stream holds at most one chunk, and the
+    # The dataset streams: push_stream holds at most one chunk, and the
     # dataset member is pulled through the storage seam in chunks, so the
-    # control plane's memory has nothing to do with the size of the dataset
-    # or the repo.
-    provider.push_stream(machine, _trainer_chunks(), TRAINER_TARBALL)
+    # control plane's memory has nothing to do with the size of the dataset.
+    # The trainer image travels as its published digest inside the script
+    # (issue #44) -- nothing to push, because the machine pulls it itself.
     provider.push_stream(
         machine,
         _dataset_chunks(dataset["object_key"]),
@@ -928,7 +944,7 @@ def _attempt(
     limits.check_duration()
     cancelled()
 
-    db.set_state(job_id, "training", "Building image and training")
+    db.set_state(job_id, "training", "Pulling image and training")
     # The machine writes its own artifact to a scoped grant (ADR-0009), so the
     # control plane hands it a URL rather than later pulling bytes through
     # itself. The grant covers one key -- the weights this job will produce --
@@ -954,6 +970,7 @@ def _attempt(
         job,
         model,
         enable_thinking,
+        reference,
         artifact_grant=grant,
         checkpoint_grants=checkpoint_grants,
     )

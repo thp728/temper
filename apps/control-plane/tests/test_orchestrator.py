@@ -38,8 +38,8 @@ RESULT = {
     "adapter_config": {"r": 16, "lora_alpha": 32},
 }
 TRAINING_LINES = [
-    "[10:00:01] building trainer image",
-    "[10:03:04] image built in 183s",
+    "[10:00:01] pulling trainer image",
+    "[10:03:04] image pulled in 183s",
     "[10:03:04] running training",
     "33%|###       | 10/30 [00:20<00:40,  2.00s/it]",
     "{'loss': 1.9042, 'grad_norm': 1.5, 'epoch': 0.5}",
@@ -228,9 +228,17 @@ class Harness:
 @pytest.fixture()
 def harness(isolated, tmp_path, monkeypatch):
     # Teardown retries sleep between attempts. Tests do not need to.
-    from temper_control_plane import main, orchestrator
+    from temper_control_plane import fake_provider, main, orchestrator
 
     monkeypatch.setattr(orchestrator, "DESTROY_RETRY_DELAY_S", 0)
+    # The checked-in image contract starts unpublished (issue #44); the suites
+    # that drive a real `run_job` inject a reference so the pull-by-digest
+    # path is exercised. The refusal is pinned by its own test, below.
+    monkeypatch.setattr(
+        orchestrator,
+        "published_reference",
+        lambda: fake_provider.PUBLISHED_IMAGE_REFERENCE,
+    )
 
     with TestClient(main.app) as c:
         yield Harness(c, monkeypatch, tmp_path)
@@ -473,9 +481,77 @@ def test_the_job_spec_reaches_the_machine(harness):
     script = provider.script.decode("utf-8")
     assert job_id in script
     assert '"lora_r": 32' in script
-    # Sources and dataset each travel as one binary payload rather than one
-    # round trip per file or an inline encoding.
-    assert len(provider.pushed) == 2
+    # Only the dataset travels as a binary payload (issue #44): the trainer
+    # image now reaches the machine as its published digest, embedded in the
+    # script, which the machine pulls itself rather than receiving the bytes.
+    assert len(provider.pushed) == 1
+
+
+def test_the_machine_pulls_the_published_image_by_digest(harness):
+    """Issue #44: the orchestrator references the pipeline-published image by
+    digest, and the machine never builds. The script's `docker pull` and
+    `docker run` both carry the reference, and `docker build` is gone."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    harness.run(provider)
+    script = provider.script.decode("utf-8")
+
+    from temper_control_plane import fake_provider
+
+    ref = fake_provider.PUBLISHED_IMAGE_REFERENCE
+    assert f"docker pull {ref}" in script
+    assert "docker run" in script
+    assert "docker run --rm --gpus all" in script
+    # The digest is the contract and the tag is a comment: the machine pulls
+    # the reference verbatim, never a tag that could silently resolve to
+    # something else.
+    assert script.count(ref) >= 2
+    assert "docker build" not in script
+    assert "temper-trainer:job" not in script
+
+
+def test_a_job_without_a_published_image_is_refused_before_provisioning(
+    harness, monkeypatch
+):
+    """Issue #44: the checked-in contract starts unpublished, and a real job
+    refuses before any machine exists. A job that cannot know which image it
+    would run must not spend money finding that out -- 'nothing may be
+    provisioned without it' holds for the image as it does for disk."""
+    from temper_control_plane import orchestrator
+
+    monkeypatch.setattr(orchestrator, "published_reference", lambda: None)
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    job_id = harness.run(provider)
+
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    assert job["error_code"] == "image_not_published"
+    assert provider.created == [], (
+        "nothing may be provisioned without a published image"
+    )
+    assert "destroy" not in provider.calls
+
+
+def test_the_simulated_provider_needs_no_published_image(harness, monkeypatch):
+    """ADR-0024's journeys boot with TEMPER_FAKE_PROVIDER and drive a launch
+    on a machine that executes no container, so an unpublished image must not
+    block them. The script still carries a well-formed stand-in reference so
+    it is shaped like the real one."""
+    from temper_control_plane import config, orchestrator
+
+    monkeypatch.setattr(orchestrator, "published_reference", lambda: None)
+    monkeypatch.setattr(config, "FAKE_PROVIDER", True)
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    job_id = harness.run(provider)
+
+    assert harness.job(job_id)["status"] == "complete"
+    script = provider.script.decode("utf-8")
+    assert "temper-simulated:local" in script
 
 
 def test_the_job_spec_carries_every_hyperparameter_resolved(harness):
@@ -899,25 +975,25 @@ def test_a_trainer_that_reports_failure_fails_the_job(harness):
 
 
 def test_a_failure_before_training_keeps_its_own_error_code(harness):
-    """An unpacking failure is not a training failure.
+    """A pull failure is not a training failure.
 
     The machine reports the stage that failed and the code that names it;
     telling a user their training failed sends them to read the wrong logs.
     """
     provider = FakeProvider(
-        lines=["[10:00:01] SOURCE UNPACK FAILED"],
+        lines=["[10:00:01] PULL FAILED"],
         result={
-            "stage": "source",
+            "stage": "pull",
             "ok": False,
-            "error_code": "source_upload_failed",
-            "error": "The trainer sources did not unpack.",
+            "error_code": "image_pull_failed",
+            "error": "The trainer image could not be pulled.",
         },
     )
     job_id = harness.run(provider)
 
     job = harness.job(job_id)
     assert job["status"] == "failed"
-    assert job["error_code"] == "source_upload_failed"
+    assert job["error_code"] == "image_pull_failed"
 
 
 def test_a_corrupt_adapter_download_is_refused(harness):
@@ -1166,7 +1242,7 @@ def test_the_machine_does_not_park_container_output_in_a_file(harness):
     # `2>&1` are not redirections to a file -- they fold the container's two
     # streams into the one the provider reads.
     to_a_file = re.compile(r">\s*(?![&\s])")
-    for command in ("docker build", "docker run"):
+    for command in ("docker pull", "docker run"):
         block = _command_block(script, command)
         assert not to_a_file.search(block), (
             f"{command} output is being parked in a file on the machine: {block}"
@@ -1428,8 +1504,8 @@ def test_cancelling_while_waiting_for_ssh_destroys_the_machine(harness):
     )
 
 
-def test_cancelling_during_the_image_build_destroys_the_machine(harness):
-    """Two lines in, the machine is building the image and nothing is trained."""
+def test_cancelling_during_the_image_pull_destroys_the_machine(harness):
+    """Two lines in, the machine is pulling the image and nothing is trained."""
     provider = FakeProvider(
         lines=TRAINING_LINES, result=RESULT, pause_at_line=2
     )
@@ -1771,20 +1847,6 @@ def test_the_dataset_archive_carries_the_object_byte_identical(isolated):
     members = members_of(archive)
     assert list(members) == ["dataset.jsonl"]
     assert members["dataset.jsonl"] == data
-
-
-def test_the_sources_archive_streams_with_its_members_intact():
-    """Small and bounded is no licence for a second buffering path: the
-    sources cross as chunks too, and arrive normalised as before."""
-    from temper_control_plane import orchestrator
-    from temper_control_plane.trainer_build import TRAINER_SOURCES, normalised
-
-    archive = b"".join(orchestrator._trainer_chunks())
-
-    members = members_of(archive)
-    assert sorted(members) == sorted(s.name for s in TRAINER_SOURCES)
-    for source in TRAINER_SOURCES:
-        assert members[source.name] == normalised(source)
 
 
 def test_a_vanishing_dataset_raises_rather_than_truncating(isolated):

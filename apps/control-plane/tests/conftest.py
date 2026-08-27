@@ -32,9 +32,17 @@ def isolated(tmp_path, monkeypatch):
 @pytest.fixture()
 def client(isolated, monkeypatch):
     # Never launch a real VM from a test.
-    from temper_control_plane import orchestrator
+    from temper_control_plane import fake_provider, orchestrator
 
     monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
+    # The checked-in image contract starts unpublished; tests that drive a
+    # real `run_job` (e.g. the simulated-machine journeys) inject a reference
+    # so the pull-by-digest path is exercised rather than the refusal.
+    monkeypatch.setattr(
+        orchestrator,
+        "published_reference",
+        lambda: fake_provider.PUBLISHED_IMAGE_REFERENCE,
+    )
     from fastapi.testclient import TestClient
 
     from temper_control_plane import main
