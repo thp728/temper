@@ -13,10 +13,17 @@ cannot do is supply its own inputs -- those cross seams this package owns:
   separate USD figure per ADR-0030, never silently converted into the
   account's currency.
 
-Everything here is an estimate, and nothing here blocks a launch. If the
-provider has nothing free, or the disk cannot be sized, or the model cannot be
-resolved, the answer is `None` -- no quote -- never a refusal, because time and
-cost are the half of the predictor that warns (spec 005).
+Everything here is an estimate, and on time and cost grounds nothing here
+blocks a launch. If the provider has nothing free, or the disk cannot be
+sized, or the model cannot be resolved, the answer is `None` -- no quote --
+never a refusal, because time and cost are the half of the predictor that
+warns (spec 005). Memory is the other half, and it blocks: on the
+job-creation path (`quote_for_launch`, issue #54) a configuration the
+`selection` search predicts will not fit any available card is refused with
+the same arithmetic the search refused with (`configuration_does_not_fit`),
+because being wrong about memory means an out-of-memory failure on a machine
+the user is paying for. The estimate surfaces (GET/POST `/v1/quotes`) keep the
+warn posture: they return None, they do not refuse.
 """
 
 from __future__ import annotations
@@ -105,6 +112,8 @@ def for_config(
     model: catalog.BaseModel,
     hyperparameters: dict,
     overrides_list: Sequence[overrides.Override] | None = None,
+    *,
+    refuse_unfittable: bool = False,
 ) -> dict[str, Any] | None:
     """The quote for one (dataset, model, hyperparameters, overrides)
     configuration, or None when it cannot be priced.
@@ -115,6 +124,14 @@ def for_config(
     a disk below the need -- raises `QuoteRefused` (or the core
     `overrides.OverrideError`), because a plan that cannot honour what the
     user asked for must refuse rather than silently show nothing.
+
+    `refuse_unfittable` is the memory half's refusal at job creation (issue
+    #54): the caller is committing to a machine, and a configuration that
+    fits no available card on memory grounds is refused with the arithmetic
+    even when nothing was overridden -- being wrong about memory costs an
+    out-of-memory failure on a machine the user is paying for, so memory
+    blocks where time and cost only warn. The estimate surfaces (GET/POST
+    `/v1/quotes`) leave it False: they warn, they do not refuse (spec 005).
     """
     p = provider_for_quote()
     if p is None:
@@ -129,6 +146,7 @@ def for_config(
             now=time.time(),
             ttl_s=config.QUOTE_TTL_S,
             overrides_list=overrides_list,
+            refuse_unfittable=refuse_unfittable,
         )
     except (QuoteRefused, overrides.OverrideError):
         raise
@@ -152,6 +170,15 @@ def quote_for_launch(
     configuration that cannot be priced produces no quote rather than a
     broken launch. An override that cannot be honoured raises, for the caller
     to refuse the launch.
+
+    This is the job-creation path, so the memory half blocks here (issue
+    #54): a configuration predicted not to fit any available card is refused
+    with `configuration_does_not_fit` and the arithmetic that refused it even
+    when nothing was overridden -- the launch refuses rather than discovering
+    an out-of-memory failure on a machine the user is paying for. A
+    configuration that *fits* but is not currently free still produces no
+    quote, never a refusal: that is a fact about the moment, and refusing it
+    would block work that could run once hardware frees.
     """
     from . import jobs
 
@@ -162,12 +189,14 @@ def quote_for_launch(
     m = catalog.get(base_model)
     if m is None:
         return None
-    return for_config(ds, m, hyperparameters, overrides_list)
+    return for_config(
+        ds, m, hyperparameters, overrides_list, refuse_unfittable=True
+    )
 
 
 def _no_fit_refusal(err: selection.NoFittingHardwareError) -> QuoteRefused:
-    """The override refusal for hardware that cannot be honoured, with the
-    arithmetic that refused it where the refusal was on memory grounds.
+    """The refusal for hardware that cannot be honoured, with the arithmetic
+    that refused it where the refusal was on memory grounds.
 
     `configuration_does_not_fit` is the memory half refusing with the same
     `memory.headroom_gb` numbers that did the refusing (spec 005: memory
@@ -180,6 +209,15 @@ def _no_fit_refusal(err: selection.NoFittingHardwareError) -> QuoteRefused:
     search owns its numbers, for a pinned configuration (#79) and for an
     unpinned one with a card free that nothing fits (issue #80) -- so this
     only renames it for the HTTP boundary.
+
+    On a memory refusal the message names what the user can change (spec
+    005's user story: "a smaller model, a shorter sequence, or a different
+    method"). The lighter-method lever is dropped when the refused method is
+    already the lightest that trains (qlora): recommending a heavier one
+    would mislead. Whether each lever helps is the refusal's own arithmetic
+    (fewer params shrink every pool, a shorter sequence shrinks activations,
+    a lighter method shrinks weights and the trainable set) -- named, not
+    hidden, and the same three levers the issue itself names.
     """
     arithmetic: dict[str, object] | None = None
     if err.peak_gb is not None:
@@ -189,6 +227,7 @@ def _no_fit_refusal(err: selection.NoFittingHardwareError) -> QuoteRefused:
             "device_count": err.device_count,
             "peak_gb": err.peak_gb,
             "capacity_gb": err.capacity_gb,
+            "shortfall_gb": err.shortfall_gb,
         }
         code = (
             "configuration_does_not_fit"
@@ -197,7 +236,20 @@ def _no_fit_refusal(err: selection.NoFittingHardwareError) -> QuoteRefused:
         )
     else:
         code = "provider_capacity_unavailable"
-    return QuoteRefused(code, str(err), arithmetic=arithmetic)
+    if code == "configuration_does_not_fit":
+        if err.method == "qlora":
+            guidance = (
+                " To make it fit, choose a smaller model or a shorter "
+                "sequence."
+            )
+        else:
+            guidance = (
+                " To make it fit, choose a smaller model, a shorter "
+                "sequence, or a lighter training method such as qlora."
+            )
+    else:
+        guidance = ""
+    return QuoteRefused(code, str(err) + guidance, arithmetic=arithmetic)
 
 
 def build_quote(
@@ -210,6 +262,7 @@ def build_quote(
     now: float,
     ttl_s: float,
     overrides_list: Sequence[overrides.Override] | None = None,
+    refuse_unfittable: bool = False,
 ) -> dict[str, Any] | None:
     """The quote for one (dataset, model, hyperparameters, overrides)
     configuration.
@@ -228,6 +281,14 @@ def build_quote(
     (hardware/disk arithmetic) or the core `overrides.OverrideError`
     (vocabulary, the precision-method coupling): the launch is refused with
     the same arithmetic, never silently fallen back to the predictor's pick.
+
+    `refuse_unfittable` (issue #54) makes the memory half refuse even when
+    nothing was demanded: the caller is committing to a machine, and a
+    configuration predicted not to fit any available card on memory grounds
+    (`configuration_does_not_fit`) is refused with the arithmetic rather than
+    silently unpriced. Availability alone (it fits, but nothing is free) still
+    returns None -- a refusal there would block work that could run once
+    hardware frees, which is the over-eager refusal this issue warns against.
     """
     try:
         facts = models.resolve(model.repo, model.revision)
@@ -266,8 +327,17 @@ def build_quote(
             else None,
         )
     except selection.NoFittingHardwareError as e:
-        if demanded:
-            raise _no_fit_refusal(e) from e
+        refusal = _no_fit_refusal(e)
+        # Memory blocks whether or not the user demanded the configuration
+        # (issue #54): an unpinned job that fits no card is refused at creation
+        # with the same arithmetic the search refused with, not launched to
+        # discover the OOM on a machine it is paying for. Availability alone --
+        # it fits, but nothing is free -- keeps the warn posture: that is a
+        # fact about the moment, not about the configuration.
+        if demanded or (
+            refuse_unfittable and refusal.code == "configuration_does_not_fit"
+        ):
+            raise refusal from e
         return None
     try:
         disk_plan = disk.required_disk(

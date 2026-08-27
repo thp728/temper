@@ -132,6 +132,16 @@ class NoFittingHardwareError(Exception):
         self.capacity_gb = capacity_gb
         super().__init__(message)
 
+    @property
+    def shortfall_gb(self) -> float | None:
+        """How far over capacity the refused peak sits, when both numbers
+        exist -- the "where the shortfall is" half of the arithmetic, defined
+        once here so the refusal surface and the search never disagree on it.
+        None when there was no single configuration to price (nothing free)."""
+        if self.peak_gb is not None and self.capacity_gb is not None:
+            return self.peak_gb - self.capacity_gb
+        return None
+
 
 def _cheaper(
     current: HardwarePlan | None, candidate: HardwarePlan
