@@ -280,6 +280,28 @@
         "title": "DatasetUploaded",
         "type": "object"
       },
+      "EventPage": {
+        "description": "A page of history with the last id served.\n\n`after` is what the client holds; `last_id` is where this page reaches,\nso a polling client resumes instead of re-reading or skipping.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/JobEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "last_id": {
+            "title": "Last Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "last_id"
+        ],
+        "title": "EventPage",
+        "type": "object"
+      },
       "FeasibilityWarning": {
         "description": "The duration-feasibility estimate, published as the dict\n`temper_core.feasibility.warning()` produces. An estimate everywhere it\nappears -- the message says so, so no client can present it as a quote.",
         "properties": {
@@ -325,6 +347,64 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JobEvent": {
+        "description": "One entry in a job's durable history.\n\nEvery state transition appends one, in the same transaction as the\ntransition itself. `data` carries the fields promoted from training\noutput at read time -- loss, step, epoch -- when the line carried them;\n`message` is always the original line or narration, so structuring the\nnumbers never costs the reader the text they arrived in.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "state",
+              "metric",
+              "log",
+              "error"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "ts",
+          "kind"
+        ],
+        "title": "JobEvent",
         "type": "object"
       },
       "JobList": {
@@ -1096,7 +1176,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
               }
             },
             "description": "Successful Response"

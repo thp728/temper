@@ -1,4 +1,4 @@
-# ADR-0013 — The transport is proven against a real connection endpoint
+# ADR-0027 — The transport is proven against a real connection endpoint
 
 - **Status:** accepted
 - **Date:** 2026-08-26

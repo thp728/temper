@@ -14,7 +14,7 @@ seam's business, so neither a page nor a client learns it.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -197,3 +197,30 @@ class JobList(BaseModel):
     """The response to listing jobs."""
 
     jobs: list[JobRecord]
+
+
+class JobEvent(BaseModel):
+    """One entry in a job's durable history.
+
+    Every state transition appends one, in the same transaction as the
+    transition itself. `data` carries the fields promoted from training
+    output at read time -- loss, step, epoch -- when the line carried them;
+    `message` is always the original line or narration, so structuring the
+    numbers never costs the reader the text they arrived in."""
+
+    id: int
+    job_id: str
+    ts: float
+    kind: Literal["state", "metric", "log", "error"]
+    message: str | None = None
+    data: dict[str, Any] | None = None
+
+
+class EventPage(BaseModel):
+    """A page of history with the last id served.
+
+    `after` is what the client holds; `last_id` is where this page reaches,
+    so a polling client resumes instead of re-reading or skipping."""
+
+    events: list[JobEvent]
+    last_id: int

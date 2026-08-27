@@ -35,6 +35,7 @@ from temper_control_plane.contracts_models import (
     DatasetList,
     DatasetRecord,
     DatasetUploaded,
+    EventPage,
     JobList,
     JobRecord,
     JobSpecPreview,
@@ -266,7 +267,7 @@ def cancel_job(job_id: str):
     }
 
 
-@app.get("/v1/jobs/{job_id}/events", tags=["jobs"])
+@app.get("/v1/jobs/{job_id}/events", tags=["jobs"], response_model=EventPage)
 def get_events(job_id: str, after: int = 0):
     """Durable event log. `after` is the last event id the client holds.
 

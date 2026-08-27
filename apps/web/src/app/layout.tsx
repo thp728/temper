@@ -28,7 +28,13 @@ export default function RootLayout({
             >
               Temper
             </Link>
-            <nav aria-label="Main">
+            <nav aria-label="Main" className="flex items-center gap-1">
+              <Link
+                href="/jobs"
+                className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Jobs
+              </Link>
               <Link
                 href="/"
                 className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
