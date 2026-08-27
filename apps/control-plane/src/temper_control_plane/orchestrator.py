@@ -208,6 +208,7 @@ def _remote_script(
     model: catalog.BaseModel,
     enable_thinking: bool,
     artifact_grant: storage.WriteGrant | None = None,
+    checkpoint_grants: list[storage.WriteGrant] | None = None,
 ) -> bytes:
     """The on-machine script: build the image, run the job, print the result.
 
@@ -220,6 +221,12 @@ def _remote_script(
     into the job spec: the machine writes its own artifact to it and holds no
     credential that outlives the job. The URL is opaque to the machine -- it is
     already an authorisation, scoped to one key, expiring with the job.
+
+    When `checkpoint_grants` is supplied, the same scoped write URLs (issue
+    #37) ride into the job spec: one per checkpoint slot, each scoped to
+    exactly one `checkpoints/...` key, each expiring with the job. The machine
+    writes each checkpoint as it is produced to the next slot, so checkpoints
+    leave the machine during training rather than only at its end.
 
     Nothing here is redirected to a file. That was the outermost of three
     redirections between the training framework and the user, and while any one
@@ -253,6 +260,15 @@ def _remote_script(
             "key": artifact_grant.key,
             "expires_at": artifact_grant.expires_at,
         }
+    if checkpoint_grants:
+        job_spec["checkpoint_grants"] = [
+            {
+                "url": grant.url,
+                "key": grant.key,
+                "expires_at": grant.expires_at,
+            }
+            for grant in checkpoint_grants
+        ]
     script = f"""
 set -u
 say() {{ echo "[$(date +%H:%M:%S)] $*" >&2; }}
@@ -374,6 +390,20 @@ def _delete_stored_artifact(job_id: str) -> None:
             storage.STORE.delete(storage.artifact_key(job_id, name))
 
 
+def _delete_stored_checkpoints(job_id: str) -> None:
+    """Remove every checkpoint slot one job may have written to, if any.
+
+    Called on the same cancellation paths as `_delete_stored_artifact`: a job
+    the user stopped keeps no recovery material either, for the same reason it
+    keeps no adapter. The slot count and names are read from the same
+    definition the grants were minted from, so what this deletes is exactly
+    what the machine could have written.
+    """
+    for key in storage.checkpoint_keys(job_id, config.CHECKPOINT_RETENTION):
+        with suppress(Exception):
+            storage.STORE.delete(key)
+
+
 def _collect_artifact(job_id: str, result: dict) -> str | None:
     """Verify the artifact the machine wrote, and publish its config.
 
@@ -463,6 +493,175 @@ def _collect_artifact(job_id: str, result: dict) -> str | None:
     return weights_key
 
 
+def _base_checkpoint_record(ckpt: dict) -> dict:
+    """The fields a reported checkpoint carries regardless of its verdict."""
+    base: dict = {}
+    for field in ("step", "slot"):
+        if ckpt.get(field) is not None:
+            base[field] = ckpt[field]
+    for loss_key in ("loss", "held_out_loss"):
+        if ckpt.get(loss_key) is not None:
+            base[loss_key] = ckpt[loss_key]
+    return base
+
+
+def _failed_checkpoint(job_id: str, ckpt: dict) -> dict:
+    """A checkpoint whose upload the machine itself recorded as failed."""
+    base = _base_checkpoint_record(ckpt)
+    error = (
+        ckpt.get("error") or "the machine did not report a successful upload"
+    )
+    db.add_event(
+        job_id,
+        "error",
+        f"Checkpoint at step {base.get('step')} was not uploaded: {error}",
+    )
+    return {**base, "verified": False, "error": error}
+
+
+def _superseded_checkpoint(job_id: str, ckpt: dict) -> dict:
+    """A checkpoint whose slot a newer checkpoint overwrote (retention).
+
+    Not a failure: the ring holds the newest `CHECKPOINT_RETENTION`
+    checkpoints by construction, so an older one is *evicted*, and recording
+    it as a checksum mismatch would misdescribe a design decision as
+    corruption. It is recorded as superseded -- present, verifiable at the
+    time it was written, no longer retained.
+    """
+    base = _base_checkpoint_record(ckpt)
+    db.add_event(
+        job_id,
+        "log",
+        f"Checkpoint at step {base.get('step')} superseded by a newer "
+        f"checkpoint (retention {config.CHECKPOINT_RETENTION})",
+    )
+    return {**base, "verified": False, "superseded": True}
+
+
+def _verify_checkpoint(job_id: str, ckpt: dict) -> dict:
+    """Verify one retained checkpoint against what landed, or record its fall.
+
+    Returns the record that becomes the job's answer about this checkpoint:
+    `verified: True` only when the stored slot object streams back to the
+    SHA-256 the machine reported for it, byte for byte. Anything short of that
+    -- an object that never landed, or one whose bytes do not hash -- is
+    recorded as `verified: False` with the reason, so a partially written
+    checkpoint is never presented as complete (issue #37).
+
+    Deliberately not terminal: the adapter is the deliverable, and a failed
+    checkpoint upload does not make a trained adapter untrained. What it does
+    is make that checkpoint unavailable for resumption, which the record and
+    the event say plainly.
+    """
+    base = _base_checkpoint_record(ckpt)
+    step = base.get("step")
+    slot = base.get("slot")
+
+    if not isinstance(slot, int):
+        db.add_event(
+            job_id,
+            "error",
+            f"Checkpoint at step {step} carried no usable slot; not recorded",
+        )
+        return {**base, "verified": False, "error": "no usable slot reported"}
+
+    want = ckpt.get("sha256")
+    if not want:
+        db.add_event(
+            job_id,
+            "error",
+            f"Checkpoint at step {step} carried no checksum; not recorded",
+        )
+        return {**base, "verified": False, "error": "no checksum reported"}
+
+    key = storage.checkpoint_key(job_id, slot)
+    digest = hashlib.sha256()
+    received = 0
+    try:
+        for chunk in storage.STORE.get_stream(key):
+            digest.update(chunk)
+            received += len(chunk)
+    except storage.ObjectNotFound:
+        db.add_event(
+            job_id,
+            "error",
+            f"Checkpoint at step {step} reported a slot, but no object landed "
+            f"at its storage key",
+        )
+        return {
+            **base,
+            "verified": False,
+            "error": "no object landed at the slot",
+        }
+
+    if digest.hexdigest() != want:
+        db.add_event(
+            job_id,
+            "error",
+            f"Checkpoint at step {step} did not match its reported checksum; "
+            f"it was not recorded as complete",
+        )
+        return {**base, "verified": False, "error": "checksum mismatch"}
+
+    db.add_event(
+        job_id,
+        "log",
+        f"Checkpoint at step {step} verified, {received / 1e6:.1f} MB",
+    )
+    return {
+        **base,
+        "key": key,
+        "sha256": want,
+        "bytes": received,
+        "verified": True,
+    }
+
+
+def _collect_checkpoints(job_id: str, result: dict) -> list[dict]:
+    """Verify the checkpoints the machine wrote, and record the verdicts.
+
+    Runs beside `_collect_artifact`, on whichever outcome the run reached --
+    a failed run's checkpoints are still recovery material, so they are
+    verified and recorded before the failure is reported, never presented as
+    complete without that verification. Streaming, never whole: checkpoints
+    are larger than adapters, so each stored object is pulled through the hash
+    one chunk at a time and held nowhere.
+
+    The verdicts distinguish the three things that can be true of a reported
+    checkpoint: verified (its slot still holds its bytes), superseded (its
+    slot was overwritten by a newer checkpoint -- retention, not corruption),
+    or failed (its upload never succeeded). Only the first is complete.
+    """
+    reported = result.get("checkpoints")
+    if not isinstance(reported, list) or not reported:
+        return []
+
+    successes = [
+        c for c in reported if isinstance(c, dict) and c.get("ok") is True
+    ]
+    successes.sort(key=lambda c: c.get("step", 0))
+    failures = [
+        c
+        for c in reported
+        if not (isinstance(c, dict) and c.get("ok") is True)
+    ]
+
+    retained = config.CHECKPOINT_RETENTION
+    retained_steps = (
+        {c.get("step") for c in successes[-retained:]}
+        if retained > 0
+        else set()
+    )
+
+    records = [_failed_checkpoint(job_id, ckpt) for ckpt in failures]
+    for ckpt in successes:
+        if ckpt.get("step") in retained_steps:
+            records.append(_verify_checkpoint(job_id, ckpt))
+        else:
+            records.append(_superseded_checkpoint(job_id, ckpt))
+    return sorted(records, key=lambda r: r.get("step", -1))
+
+
 def _discard_if_cancelled(job_id: str, check) -> None:
     """Throw away an artifact that arrived after the user asked to stop.
 
@@ -475,12 +674,14 @@ def _discard_if_cancelled(job_id: str, check) -> None:
     The machine writes its artifact directly now, so by the time this runs the
     object may already be in storage: the delete is what keeps a request
     answered with "no adapter will be produced" true even though an upload
-    already landed.
+    already landed. Checkpoints are discarded the same way -- a job the user
+    stopped keeps no recovery material either (issue #37).
     """
     try:
         check()
     except Cancelled:
         _delete_stored_artifact(job_id)
+        _delete_stored_checkpoints(job_id)
         raise
 
 
@@ -703,7 +904,22 @@ def _attempt(
         1.0, config.MAX_JOB_DURATION_S - (time.time() - job["created_at"])
     )
     grant = storage.STORE.mint_write_grant(weights_key, remaining)
-    script = _remote_script(job, model, enable_thinking, artifact_grant=grant)
+    # Issue #37: the machine also writes its own checkpoints as it produces
+    # them, one scoped grant per retention slot. The slot count is bounded
+    # configuration (storage never holds more checkpoint objects per job than
+    # this), and every grant carries the same remaining-ceiling lifetime as
+    # the artifact's -- no grant outlives the job it was minted for.
+    checkpoint_grants = [
+        storage.STORE.mint_write_grant(key, remaining)
+        for key in storage.checkpoint_keys(job_id, config.CHECKPOINT_RETENTION)
+    ]
+    script = _remote_script(
+        job,
+        model,
+        enable_thinking,
+        artifact_grant=grant,
+        checkpoint_grants=checkpoint_grants,
+    )
     # The guard sits between the transport and the reader, so both limits hold
     # for any provider rather than for the SSH one only.
     lines = guard(
@@ -714,6 +930,12 @@ def _attempt(
     )
     result = _consume(job_id, lines)
     if not result.get("ok"):
+        # A failed run's checkpoints are still recovery material: what the
+        # machine wrote and reported is verified and recorded before the job
+        # reports failure, so a later resumption can find what survived the
+        # machine. The outcome is unchanged -- this run produced no adapter --
+        # but its checkpoints are no longer orphaned bytes in the store.
+        db.set_checkpoints(job_id, _collect_checkpoints(job_id, result))
         # The result document names its own failure where it can. A stage that
         # failed before training started is not a training failure, and telling
         # a user otherwise sends them to read the wrong logs.
@@ -731,6 +953,8 @@ def _attempt(
     _discard_if_cancelled(job_id, cancelled)
     db.set_state(job_id, "packaging", "Verifying artifact")
     artifact_key = _collect_artifact(job_id, result)
+    checkpoints = _collect_checkpoints(job_id, result)
+    db.set_checkpoints(job_id, checkpoints)
     _discard_if_cancelled(job_id, cancelled)
     return (
         "complete",
@@ -857,8 +1081,11 @@ def run_job(
             #
             # The machine writes its artifact directly, so an upload that
             # landed before the cancellation was seen is discarded here rather
-            # than left readable as the deliverable.
+            # than left readable as the deliverable. Checkpoints are discarded
+            # with it (issue #37): a job the user stopped keeps no recovery
+            # material.
             _delete_stored_artifact(job_id)
+            _delete_stored_checkpoints(job_id)
             outcome = ("cancelled", str(e), {})
         except OrchestratorError as e:
             outcome = (

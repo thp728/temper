@@ -52,10 +52,19 @@ TRAINER_DIR = REPO_ROOT / "apps" / "trainer"
 # serialised template, identical ids required. It lives beside the entrypoint
 # because only the trainer runs it -- the control plane stores the probe's
 # result, it does not perform the probe.
+#
+# `checkpoints.py` (issue #37) is the trainer's checkpoint uploader. It lives
+# beside the entrypoint for the same reason `thinking.py` lives in the domain:
+# it is imported by the entrypoint, so it must ship in the image -- and being a
+# top-level import, a missing COPY would die at import, before the `finally`
+# that writes result.json. It stays beside the entrypoint rather than in the
+# domain because only the trainer runs it: the control plane never uploads
+# checkpoints, it mints the grants and verifies what landed.
 TRAINER_SOURCES = (
     TRAINER_DIR / "Dockerfile",
     TRAINER_DIR / "entrypoint.py",
     TRAINER_DIR / "template_probe.py",
+    TRAINER_DIR / "checkpoints.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
     REPO_ROOT / "packages" / "contracts" / "trainer-defaults.json",
     REPO_ROOT / "packages" / "contracts" / "axolotl-schema.json",

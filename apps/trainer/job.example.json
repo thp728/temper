@@ -28,5 +28,8 @@
   "resume_from_checkpoint": null,
 
   "_comment_artifact_upload": "Optional (ADR-0009). When the control plane supplies a scoped write URL, the machine PUTs its artifact directly to it and records the outcome in result.json under artifact_upload. A standalone run carries no grant and simply leaves the artifact on /out. The URL is minted for exactly one key and expires with the job; the machine holds no credential that outlives it.",
-  "artifact_upload": null
+  "artifact_upload": null,
+
+  "_comment_checkpoint_grants": "Optional (issue #37). When the control plane supplies scoped write URLs, one per retention slot, the machine PUTs each completed checkpoint to its slot as it is produced and records step, loss, slot, checksum and outcome in result.json under checkpoints. A standalone run carries no grants and leaves its checkpoints on /out. Each URL is minted for exactly one checkpoints/... key and expires with the job.",
+  "checkpoint_grants": null
 }

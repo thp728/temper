@@ -79,6 +79,9 @@ _Avoid_: saved template, stored template, the template
 **Template probe**:
 The check that runs on every export: a fixed probe conversation is tokenised through the template used in training and through the artifact's serialised template, and the token ids must be identical. A mismatch fails the export with the stable code `template_probe_mismatch`, and the failure names what differs rather than only that something did. It is the thing standing between an advanced user and a model that trains cleanly and answers wrongly.
 _Avoid_: template check, consistency check, template validation
+**Checkpoint**:
+A record of a run's state at a point in training - weights, optimiser, scheduler, step - written off the machine to object storage as it is produced, so that it survives the machine being destroyed. Each checkpoint records its step and its held-out loss where one exists, and is presented as complete only once the control plane has verified the stored bytes against the machine's reported checksum. Retention is bounded and configurable: a job keeps at most a set number of checkpoints, the newest.
+_Avoid_: snapshot (for training state), save, backup, resume point
 
 ## Storage
 
