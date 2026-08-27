@@ -59,7 +59,7 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # schema: the entrypoint reads it so that a key unknown to the trainer is
 # refused loudly and echoed back, with 'unknown' meaning unknown to the trainer
 # rather than absent from a hand-written list.
-COPY entrypoint.py thinking.py trainer-defaults.json axolotl-schema.json /opt/trainer/
+COPY entrypoint.py thinking.py template_probe.py trainer-defaults.json axolotl-schema.json /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.

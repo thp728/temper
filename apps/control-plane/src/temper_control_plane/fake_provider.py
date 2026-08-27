@@ -362,6 +362,17 @@ DEMO_RESULT = {
     # (issue #77); the simulated machine carries it so a journey's finished
     # job has an actual to compare against its prediction.
     "peak_memory_gb": 5.31,
+    # The export-time template probe (Spec 009 / issue #59) records its result
+    # with the artifact on every export; the simulated machine's canned success
+    # carries the same shape so every surface that reads a finished job reads
+    # one that includes the probe.
+    "template_probe": {
+        "ok": True,
+        "training_ids": 27,
+        "serialised_ids": 27,
+        "serialised_template": "{{ messages }}",
+        "serialised_kwargs": {"enable_thinking": False},
+    },
 }
 
 # The reserved hyperparameter through which a journey asks the simulated

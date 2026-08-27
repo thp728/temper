@@ -72,6 +72,14 @@ _Avoid_: model, fine-tuned model, tuned model, weights
 What a user downloads: the adapter together with the configuration that makes it loadable. An adapter without that configuration is not usable, so the two are not shipped separately.
 _Avoid_: output, result, download, bundle
 
+**Serialised template**:
+The concrete chat-template string recorded with an artifact — never the `tokenizer_default` directive, because a directive is for the trainer to interpret and a string is what a server can apply. The template probe tokenises through it and requires the ids to match what training applied.
+_Avoid_: saved template, stored template, the template
+
+**Template probe**:
+The check that runs on every export: a fixed probe conversation is tokenised through the template used in training and through the artifact's serialised template, and the token ids must be identical. A mismatch fails the export with the stable code `template_probe_mismatch`, and the failure names what differs rather than only that something did. It is the thing standing between an advanced user and a model that trains cleanly and answers wrongly.
+_Avoid_: template check, consistency check, template validation
+
 ## Storage
 
 **Object key**:

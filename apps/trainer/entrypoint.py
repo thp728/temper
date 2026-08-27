@@ -42,6 +42,13 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import IO
 
+from template_probe import (
+    PROBE_UNAVAILABLE_CODE,
+    ProbeOutcome,
+    TemplateProbeFailure,
+    resolve_template,
+    run_probe,
+)
 from thinking import MixedThinkingDataset
 from thinking import detect as detect_thinking
 
@@ -560,6 +567,62 @@ def upload_artifact(url: str, path: Path) -> dict:
     return {"ok": True, "bytes": size}
 
 
+def load_probe_tokenizer(job: dict):
+    """The tokenizer the probe compares both templates through.
+
+    transformers is provided by the base image, so the import is deliberately
+    inside this function: this trainer ships no dependencies of its own
+    (ADR-0010), and the host test suite never has transformers installed. The
+    model was downloaded during training, so from_pretrained resolves from the
+    HF cache rather than the network.
+    """
+    from transformers import AutoTokenizer  # noqa: PLC0415 - base image only
+
+    return AutoTokenizer.from_pretrained(
+        job["base_model"], revision=job.get("base_revision")
+    )
+
+
+def probe_export(job: dict, cfg: dict, tokenizer) -> ProbeOutcome:
+    """Run the export-time template probe (Spec 009 / issue #59).
+
+    The training side is what Axolotl applied: the tokenizer's own template
+    when `chat_template` is `tokenizer_default`, otherwise the directive as
+    given. The artifact's serialised side is what the job records as chosen
+    -- where #80's override surface writes its result -- falling back to the
+    config when nothing was recorded. Two sources, deliberately: a recorded
+    override that training never applied (or the reverse) is a real divergence
+    the probe can catch, not a value compared with itself. Identical token ids
+    are required; the probe runs on every export, whether or not anything was
+    overridden.
+
+    The probe's power to catch a divergence is proven by the deliberately
+    mismatched template in tests -- Spec 009's testing decision is that a probe
+    with no failing test has no evidence of working -- and it is load-bearing
+    once #80 lands, when a recorded override can genuinely disagree with what
+    trained.
+    """
+    training_tpl = cfg.get("chat_template", "tokenizer_default")
+    training_kwargs = cfg.get("chat_template_kwargs") or {}
+    training_template, training_kwargs = resolve_template(
+        tokenizer, chat_template=training_tpl, kwargs=training_kwargs
+    )
+
+    recorded = job.get("hyperparameters") or {}
+    serialised_tpl = recorded.get("chat_template", training_tpl)
+    serialised_kwargs = recorded.get("chat_template_kwargs") or training_kwargs
+    serialised_template, serialised_kwargs = resolve_template(
+        tokenizer, chat_template=serialised_tpl, kwargs=serialised_kwargs
+    )
+    return run_probe(
+        tokenizer,
+        training_template=training_template,
+        training_kwargs=training_kwargs,
+        serialised_template=serialised_template,
+        serialised_kwargs=serialised_kwargs,
+    )
+
+
 def main() -> int:
     started = time.time()
     result: dict = {"ok": False, "started_at": time.time()}
@@ -661,6 +724,44 @@ def main() -> int:
             return code
 
         result.update(collect_artifacts())
+
+        # The export-time template probe (Spec 009 / issue #59): a fixed probe
+        # conversation is tokenised through the template used in training and
+        # through the template serialised into the artifact, and the ids must
+        # be identical. It runs on EVERY export -- whether or not anything was
+        # overridden -- because a wrong thinking-mode detection produces a
+        # wrong template with no override involved. A mismatch fails the
+        # export with the stable code template_probe_mismatch; the message
+        # names what differs. If the probe cannot run at all it fails closed
+        # with template_probe_unavailable: a guard that silently disappears
+        # when it cannot run is no guard, and the templates are load-bearing
+        # for every advanced override.
+        try:
+            probe_outcome = probe_export(job, cfg, load_probe_tokenizer(job))
+            if not probe_outcome.ok:
+                raise TemplateProbeFailure(probe_outcome)
+        except TemplateProbeFailure as e:
+            result["error_code"] = e.error_code
+            result["template_probe"] = e.outcome.as_dict()
+            raise
+        except Exception as e:
+            # Same record shape as a failed probe, but the probe never ran:
+            # fail closed rather than let a guard that could not run read as a
+            # pass, and reuse the outcome's serialisation so the record shape
+            # stays the one the artifact records.
+            unavailable = ProbeOutcome(
+                ok=False,
+                error_code=PROBE_UNAVAILABLE_CODE,
+                message=(
+                    "the template probe could not run, so the export cannot "
+                    f"prove the templates agree: {type(e).__name__}: {e}"
+                ),
+            )
+            result["error_code"] = unavailable.error_code
+            result["template_probe"] = unavailable.as_dict()
+            raise
+        result["template_probe"] = probe_outcome.as_dict()
+
         if result.get("adapter_path"):
             # ADR-0009: when the control plane supplied a scoped write URL, the
             # machine puts its artifact to it directly. The outcome -- not a
