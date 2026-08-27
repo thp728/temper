@@ -230,6 +230,47 @@ def overrideable_keys() -> frozenset[str]:
     return frozenset(exposed_fields()) | PLATFORM_INTERNAL_KEYS
 
 
+def value_kind(name: str) -> str:
+    """How a field's value is rendered and typed: 'int', 'float' or 'string'.
+
+    Derived from the schema snapshot's own type string, not retyped: the type
+    tokens are split on '|', and an int or float anywhere in the union wins
+    (a field typed `str | float`, like `learning_rate`, is a float). The
+    interface generates its inputs from this, and `coerce_value` uses it, so
+    the two cannot disagree about what an exposed value is.
+    """
+    type_str = str(FIELDS[name].get("type", ""))
+    tokens = {t.strip() for t in type_str.split("|")}
+    if "int" in tokens:
+        return "int"
+    if "float" in tokens:
+        return "float"
+    return "string"
+
+
+def coerce_value(name: str, raw: Any) -> Any:
+    """`raw` as the schema's type for `name`, or unchanged when it cannot be.
+
+    An override arrives as a string from a browser form; the schema knows it
+    is an int or a float, so this normalises it to the typed value before it
+    reaches the resolver, the memory/disk arithmetic and the trainer's own
+    config -- a string that reaches a numeric field is a silent type drift.
+    A value the type cannot express is left as-is: refusing it is the
+    schema's enum/bounds gate's job (`validate_overrides`), not this one's.
+    """
+    if raw is None or not isinstance(raw, str):
+        return raw
+    kind = value_kind(name)
+    try:
+        if kind == "int":
+            return int(raw)
+        if kind == "float":
+            return float(raw)
+    except ValueError:
+        return raw
+    return raw
+
+
 def runtime_only_validators() -> dict[str, list[str] | int]:
     """The combinations that cannot be known ahead of launch, named as such.
 
@@ -382,10 +423,12 @@ def surface_document() -> dict[str, Any]:
             "tier": entry["tier"],
             "reason": entry["reason"],
         }
-        if entry["tier"] == EXPOSED_TIER and isinstance(
-            entry.get("failure_mode"), str
-        ):
-            doc["failure_mode"] = entry["failure_mode"]
+        if entry["tier"] == EXPOSED_TIER:
+            if isinstance(entry.get("failure_mode"), str):
+                doc["failure_mode"] = entry["failure_mode"]
+            # The render/coerce type, derived from the schema snapshot (see
+            # `value_kind`): the interface generates its input from this.
+            doc["type"] = value_kind(name)
         tiers_doc[entry["tier"]][name] = doc
 
     counts = {tier: len(tiers_doc[tier]) for tier in TIERS}

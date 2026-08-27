@@ -297,3 +297,41 @@ def test_the_runtime_only_validators_are_named_not_estimated():
     assert "check_fsdp_deepspeed" in rv["model_validators"]
     # The generated document carries them too, so the interface can name them.
     assert surface.surface_document()["runtime_only_validators"] == rv
+
+
+# --- typing and coercion ------------------------------------------------------
+
+
+def test_an_override_is_coerced_to_the_schema_type():
+    """An override typed in a browser arrives as a string; the schema knows
+    `lora_r` is an int and `num_epochs` a float, so the resolver coerces
+    rather than handing `"16"` to the trainer's pydantic model and hoping it
+    is lax -- a string that reaches a numeric field is a silent type drift."""
+    assert surface.coerce_value("lora_r", "16") == 16
+    assert surface.coerce_value("lora_alpha", "32") == 32
+    assert surface.coerce_value("num_epochs", "3") == 3.0
+    assert surface.coerce_value("learning_rate", "0.0002") == 0.0002
+    assert surface.coerce_value("sequence_len", "2048") == 2048
+    # A string field stays a string; an already-typed value is untouched.
+    assert surface.coerce_value("lr_scheduler", "cosine") == "cosine"
+    assert surface.coerce_value("lora_r", 16) == 16
+    assert surface.coerce_value("lora_r", None) is None
+    # A value the schema type cannot express is left as-is rather than raised
+    # -- the schema's own enum/bounds gate is what refuses it, not the typer.
+    assert surface.coerce_value("num_epochs", "many") == "many"
+
+
+def test_every_exposed_field_publishes_a_render_type():
+    """The interface generates its controls from the published surface, so it
+    needs to know how to render each exposed field (a number input or a text
+    input) without hand-listing the vocabulary -- the same generation rule as
+    the rest of the surface."""
+    doc = surface.surface_document()
+    exposed = doc["tiers"]["exposed_with_named_failure_mode"]
+    assert set(exposed) == set(surface.exposed_fields())
+    for name, entry in exposed.items():
+        assert entry["type"] in {"int", "float", "string"}, name
+    assert exposed["lora_r"]["type"] == "int"
+    assert exposed["learning_rate"]["type"] == "float"
+    assert exposed["num_epochs"]["type"] == "float"
+    assert exposed["val_set_size"]["type"] == "float"

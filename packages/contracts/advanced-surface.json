@@ -654,52 +654,62 @@
       "gradient_accumulation_steps": {
         "failure_mode": "It only exists as the product with micro_batch_size, so moving one without the other changes the effective batch and therefore the effective learning rate: the same LR on a different effective batch is a different run that looks identical on the page.",
         "reason": "How many micro-batches accumulate before one optimiser step; the effective batch is micro_batch_size times this.",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "int"
       },
       "learning_rate": {
         "failure_mode": "Too high and the loss diverges to NaN partway through a paid run; too low and the run underfits, completing with a loss curve that never descends. Either way the machine was already provisioned.",
         "reason": "The peak learning rate for the cosine schedule the platform defaults to.",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "float"
       },
       "lora_alpha": {
         "failure_mode": "Set far above 2r and the adapter dominates the frozen base, which can destabilise training into a diverging loss. Set far below 2r and the adapter barely changes the output: the run completes and looks fine while having almost no effect.",
         "reason": "The scale of the adapter. It tracks rank automatically (2r) when rank moves alone, so an explicit alpha is a deliberate departure from the tracking rule.",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "int"
       },
       "lora_r": {
         "failure_mode": "Set very low and the adapter has too few parameters to learn anything, and training 'succeeds' with a model that barely moved. Set at or above 32 and rsLoRA is inferred, changing how the adapter scales in a way the frozen spec records but a user may not have asked for. Very high ranks with alpha left at 2r can overfit a small dataset or exceed VRAM.",
         "reason": "The rank of the low-rank adapter. The platform's default is 16 with alpha tracking rank (2r).",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "int"
       },
       "max_steps": {
         "failure_mode": "Set below what the data actually needs and training stops looking finished: the run reports success and a clean log, and the adapter is quietly undertrained. This is the silent shape of a capped run.",
         "reason": "A hard cap on training steps. The platform uses it to keep smoke-test runs short; as a user override it is an early stop.",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "int"
       },
       "micro_batch_size": {
         "failure_mode": "Raised without room in VRAM and the run OOMs minutes in, after the machine is paid for. Lowered and the run is slower than the predictor priced, because the effective batch shrank.",
         "reason": "Rows per device per optimisation step, before gradient accumulation.",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "int"
       },
       "num_epochs": {
         "failure_mode": "Too few and the adapter underfits; too many on a small dataset and it overfits to the training rows, which a held-out eval catches only if there is one. Each epoch also bills against the run's duration ceiling.",
         "reason": "How many passes over the training set.",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "float"
       },
       "save_steps": {
         "failure_mode": "Set too frequently and checkpoint writes blow through the disk the platform sized from save_total_limit; set too rarely and resume has no recent checkpoint to continue from.",
         "reason": "How often a checkpoint is written (also the platform's smoke-test hook).",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "int"
       },
       "sequence_len": {
         "failure_mode": "Longer than the model's trained context and the job fails at data preparation, before the GPU does anything useful. Much shorter than the data and long conversations are truncated, silently losing the context a correct answer depends on.",
         "reason": "The sequence length rows are tokenised and packed to.",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "int"
       },
       "val_set_size": {
         "failure_mode": "Set to zero and there is no eval loss to watch and no checkpoint selection signal. Raised on a small dataset and too little data remains to train on, quietly shrinking what the run learns.",
         "reason": "The fraction of rows held out for evaluation during training.",
-        "tier": "exposed_with_named_failure_mode"
+        "tier": "exposed_with_named_failure_mode",
+        "type": "float"
       }
     },
     "known_but_unsupported": {

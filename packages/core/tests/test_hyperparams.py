@@ -61,3 +61,18 @@ def test_locked_settings_ignore_overrides():
     )
     assert eff["warmup_ratio"] == 0.1
     assert eff["lr_scheduler"] == "cosine"
+
+
+def test_overrides_are_coerced_to_the_schema_type():
+    """An override typed in a browser arrives as a string; the resolver
+    coerces it to the schema's type so the trainer's spec never carries a
+    string where a number belongs (issue #80)."""
+    eff = hyperparams.effective(
+        {"lora_r": "32", "learning_rate": "0.0001", "num_epochs": "5"}
+    )
+    assert eff["lora_r"] == 32
+    assert isinstance(eff["lora_r"], int)
+    assert eff["learning_rate"] == 0.0001
+    assert isinstance(eff["learning_rate"], float)
+    assert eff["num_epochs"] == 5.0
+    assert isinstance(eff["num_epochs"], float)
