@@ -58,3 +58,17 @@ export function latestHeldOutLoss(
   }
   return null;
 }
+
+// The two series a loss chart draws, split out of one metric stream. One
+// definition, so the running view and the finished record cannot drift about
+// which point belongs to which series.
+export function lossSeries(events: JobEvent[]): {
+  training: MetricPoint[];
+  heldOut: MetricPoint[];
+} {
+  const stream = metricStream(events);
+  return {
+    training: stream.filter((p) => p.loss !== undefined),
+    heldOut: stream.filter((p) => p.heldOutLoss !== undefined),
+  };
+}

@@ -191,26 +191,30 @@ describe("RunningJobView", () => {
   });
 
   it("charts training and held-out loss on one chart", () => {
+    const metric = (
+      id: number,
+      data: Record<string, number>,
+    ) => event({
+      id,
+      kind: "metric",
+      message: JSON.stringify(data),
+      data,
+    });
     renderView({
       events: [
         event({ id: 1, kind: "state", message: "training" }),
-        event({
-          id: 2,
-          kind: "metric",
-          message: "{'loss': 1.9, 'step': 1}",
-          data: { loss: 1.9, step: 1 },
-        }),
-        event({
-          id: 3,
-          kind: "metric",
-          message: "{'eval_loss': 0.52, 'epoch': 0.5}",
-          data: { held_out_loss: 0.52, epoch: 0.5 },
-        }),
+        metric(2, { loss: 1.9, step: 1 }),
+        metric(3, { held_out_loss: 0.7, epoch: 0.5 }),
+        metric(4, { loss: 0.9, step: 2 }),
+        metric(5, { held_out_loss: 0.6, epoch: 1.0 }),
       ],
     });
-    expect(
-      screen.getByRole("img", { name: /training loss and held-out loss/i }),
-    ).toBeInTheDocument();
+    // Both series are drawn, not just labelled: one line per series.
+    const svg = screen.getByRole("img", {
+      name: /training loss and held-out loss/i,
+    });
+    expect(svg).toBeInTheDocument();
+    expect(svg.querySelectorAll("polyline")).toHaveLength(2);
     expect(screen.getByText("Training loss")).toBeVisible();
     expect(screen.getByText("Held-out loss")).toBeVisible();
   });

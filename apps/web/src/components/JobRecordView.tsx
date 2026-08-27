@@ -3,6 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
 import LossChart from "@/components/LossChart";
+import PlateauNote from "@/components/PlateauNote";
 import QuoteView from "@/components/QuoteView";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +23,7 @@ import {
   rangeDirection,
   ratio,
 } from "@/lib/jobs/comparison";
-import { metricStream } from "@/lib/jobs/loss";
+import { lossSeries } from "@/lib/jobs/loss";
 import { heldOutPlateau } from "@/lib/jobs/plateau";
 import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
 
@@ -315,9 +316,7 @@ export default function JobRecordView({
   // because the overfitting signal is read after the run, not only while it
   // goes -- and a held-out loss that stopped improving is said in plain
   // language, not left as a number.
-  const stream = metricStream(events);
-  const training = stream.filter((p) => p.loss !== undefined);
-  const heldOut = stream.filter((p) => p.heldOutLoss !== undefined);
+  const { training, heldOut } = lossSeries(events);
   const plateau = heldOutPlateau(heldOut.map((p) => p.heldOutLoss!));
 
   return (
@@ -417,7 +416,7 @@ export default function JobRecordView({
           Loss
         </h2>
         <LossChart training={training} heldOut={heldOut} />
-        {plateau && <p className="rounded-lg border bg-muted/50 p-3 text-sm">{plateau.message}</p>}
+        {plateau && <PlateauNote message={plateau.message} />}
       </section>
 
       <section aria-labelledby="output-heading" className="space-y-2">

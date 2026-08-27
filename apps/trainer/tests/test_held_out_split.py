@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 import entrypoint
+import pytest
 
 from temper_core import hyperparams
 
@@ -114,6 +115,25 @@ def test_without_a_split_there_is_no_test_dataset():
     cfg, _rejected = entrypoint.build_config(complete_job())
     assert "test_datasets" not in cfg
     assert cfg["val_set_size"] == 0.0
+
+
+def test_the_eval_cadence_is_pinned_not_left_to_a_default():
+    """Held-out loss must be measured *during* the run (issue #53): the
+    chart and the plateau need more than one point. Pinning eval_strategy to
+    epoch-end keeps that from depending on an unpinned Axolotl default."""
+    cfg, _rejected = entrypoint.build_config(complete_job())
+    assert cfg["eval_strategy"] == "epoch"
+
+
+def test_a_spec_missing_val_set_size_fails_as_incomplete(tmp_path: Path):
+    """The split reads the effective val_set_size from the spec, so a spec
+    that omits it fails the named way (`spec_incomplete`) rather than as a
+    generic training anomaly."""
+    job = complete_job()
+    del job["hyperparameters"]["val_set_size"]
+    with pytest.raises(entrypoint.IncompleteJobSpec) as excinfo:
+        entrypoint.prepare_held_out_split(chat_rows(12), job, tmp_path)
+    assert "val_set_size" in str(excinfo.value)
 
 
 def test_the_split_fraction_is_the_effective_val_set_size(tmp_path: Path):

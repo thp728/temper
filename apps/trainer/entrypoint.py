@@ -519,6 +519,12 @@ def build_config(
     # our own split already used) because Axolotl accepts either
     # `test_datasets` or a `val_set_size` split, not both.
     cfg["val_set_size"] = 0.0
+    # The eval cadence is pinned rather than left to a default: criterion 4
+    # and the plateau (issue #53) both need held-out loss measured *during*
+    # the run, and relying on Axolotl's unpinned default would make that a
+    # hope. Evaluating at each epoch end gives the chart and the plateau
+    # their points.
+    cfg["eval_strategy"] = "epoch"
     if eval_path is not None:
         cfg["test_datasets"] = [
             {
@@ -743,21 +749,15 @@ def main() -> int:
             f"({think.with_think}/{think.assistant_turns} assistant turns have  thinking)"
         )
 
-        # The held-out split (issue #53): dedup first, then a deterministic
-        # hold-out, so a duplicated row can never land on both sides. The
-        # sizes are recorded in result.json and the split is written to
-        # separate files, so the held-out rows never enter the training file.
-        eval_path, split_record = prepare_held_out_split(parsed, job, OUT_DIR)
-        result["held_out_split"] = split_record
-        log(
-            f"held-out split: {split_record['held_out_rows']} of "
-            f"{split_record['rows_in']} rows held out for evaluation "
-            f"({split_record['rows_removed_duplicates']} duplicate(s) removed)"
-        )
-
         # An incomplete spec must fail as a named refusal here rather than as
-        # a training anomaly minutes into a paid machine.
+        # a training anomaly minutes into a paid machine. Both the held-out
+        # split (which reads the effective val_set_size from the spec) and
+        # the config build need the spec, so a spec missing a value fails
+        # the same named way whichever of the two trips first.
         try:
+            eval_path, split_record = prepare_held_out_split(
+                parsed, job, OUT_DIR
+            )
             cfg, rejected = build_config(
                 job,
                 enable_thinking=think.enable_thinking,
@@ -766,6 +766,16 @@ def main() -> int:
         except IncompleteJobSpec:
             result["error_code"] = "spec_incomplete"
             raise
+        # The held-out split (issue #53): dedup first, then a deterministic
+        # hold-out, so a duplicated row can never land on both sides. The
+        # sizes are recorded in result.json and the split is written to
+        # separate files, so the held-out rows never enter the training file.
+        result["held_out_split"] = split_record
+        log(
+            f"held-out split: {split_record['held_out_rows']} of "
+            f"{split_record['rows_in']} rows held out for evaluation "
+            f"({split_record['rows_removed_duplicates']} duplicate(s) removed)"
+        )
         # Recorded filtered to keys this trainer knows: the record should name
         # only values that were trained with, and anything else is already
         # echoed verbatim under rejected_overrides.

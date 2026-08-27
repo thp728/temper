@@ -58,10 +58,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from temper_core.split import normalise_text
+from temper_core.split import MIN_TRAIN_ROWS, normalise_text
 from temper_core.thinking import THINK_OPEN, mixed_thinking_message
 
-MIN_ROWS = 10  # hard floor: block
+# The hard floor: block below this. One definition -- the held-out split
+# (issue #53) must never drop the training set below the same number, so both
+# read the value from `temper_core.split` rather than each carrying a copy.
+MIN_ROWS = MIN_TRAIN_ROWS
 RECOMMENDED_ROWS = 50  # below this: warn
 MAX_PREVIEW = 3
 

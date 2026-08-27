@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
 import LossChart from "@/components/LossChart";
+import PlateauNote from "@/components/PlateauNote";
 import { Button } from "@/components/ui/button";
 import {
   TERMINAL_STATUSES,
@@ -12,7 +13,7 @@ import {
   latestLoss,
   shortRevision,
 } from "@/lib/jobs/display";
-import { latestHeldOutLoss, metricStream } from "@/lib/jobs/loss";
+import { latestHeldOutLoss, lossSeries } from "@/lib/jobs/loss";
 import { heldOutPlateau } from "@/lib/jobs/plateau";
 import { jobStreamUrl, parseJobEvent } from "@/lib/jobs/stream";
 import {
@@ -152,9 +153,7 @@ export default function RunningJobView({
   // view already appends to, so the chart re-renders as each measurement is
   // pushed -- no second request, no timer. A plateau in the held-out series
   // is a signal a non-specialist can read, so it is said in those words.
-  const stream = metricStream(events);
-  const training = stream.filter((p) => p.loss !== undefined);
-  const heldOut = stream.filter((p) => p.heldOutLoss !== undefined);
+  const { training, heldOut } = lossSeries(events);
   const plateau = heldOutPlateau(heldOut.map((p) => p.heldOutLoss!));
 
   const cancel = async () => {
@@ -234,12 +233,7 @@ export default function RunningJobView({
           // The plateau is announced as it appears: a live region so a
           // non-specialist is told, in plain language, that the held-out loss
           // has stopped improving and why that matters.
-          <p
-            role="status"
-            className="rounded-lg border bg-muted/50 p-3 text-sm"
-          >
-            {plateau.message}
-          </p>
+          <PlateauNote message={plateau.message} live />
         )}
       </section>
 
