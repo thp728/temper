@@ -60,11 +60,14 @@ test("a job is chosen, reviewed and launched from the shell", async ({
   await expect(card).toContainText("Apache-2.0");
   await expect(card.getByText(/^[a-f0-9]{40}$/)).toBeVisible();
 
-  // The settings are visible before launching, and say they freeze...
+  // The settings are visible before launching, and say they freeze... The
+  // advanced-settings disclosure (issue #80) also names the same fields, so
+  // read the specification section's own copy.
   await expect(page.getByText(/frozen at launch/i)).toBeVisible();
   await expect(page.getByText(/cannot be changed afterwards/i)).toBeVisible();
+  const spec = page.getByLabel("The job specification");
   for (const key of ["lora_r", "lora_alpha", "learning_rate", "num_epochs"]) {
-    await expect(page.getByText(key, { exact: true })).toBeVisible();
+    await expect(spec.getByText(key, { exact: true })).toBeVisible();
   }
 
   // ...and the cost-and-time estimate is shown before anything is spent:
@@ -253,15 +256,16 @@ test("the launch screen is keyboard-operable end to end", async ({ page }) => {
 
   // Reachable by keyboard alone: tab from the page's start until the action
   // has focus. The cap is a failure guard, not an assertion about the page --
-  // the decisions' disclosure widgets are legitimate tab stops, so the count
-  // is deliberately generous. The decisions load after the page draws (an
-  // estimate never blocks it), so wait for them before counting stops.
+  // the decisions' disclosure widgets and the advanced-settings disclosure's
+  // summary (issue #80) are legitimate tab stops, so the count is deliberately
+  // generous. The decisions load after the page draws (an estimate never
+  // blocks it), so wait for them before counting stops.
   await continueToLaunch(page);
   const launch = page.getByRole("button", { name: "Launch job" });
   await expect(
     page.getByRole("heading", { name: "Why this configuration" }),
   ).toBeVisible();
-  const maxTabStops = 20;
+  const maxTabStops = 24;
   for (
     let i = 0;
     i < maxTabStops && !(await launch.evaluate((el) => el === document.activeElement));
@@ -329,4 +333,124 @@ test("an unusable dataset never reaches a launchable form", async ({
   await page.goto("/jobs/new?dataset_id=ds_nope");
   await expect(page.getByText("Dataset not usable")).toBeVisible();
   await expect(page.getByText("not_found").first()).toBeVisible();
+});
+
+// The advanced surface (issue #80): every dial the pinned trainer exposes,
+// behind an explicit disclosure, each naming the specific thing that goes
+// wrong. An override is re-requested from the server and frozen into the job
+// spec, which the finished run shows.
+test("the advanced surface is behind a disclosure, names its failure modes, and an override is frozen onto the finished run", async ({
+  page,
+}) => {
+  await uploadValidatedRows(
+    page,
+    Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
+  );
+  await continueToLaunch(page);
+  await expect(
+    page.getByRole("heading", { name: "Cost and time estimate" }),
+  ).toBeVisible();
+
+  // The settings are behind an explicit disclosure, not a wall of dials: the
+  // disclosure is named, and no override control is reachable until it is
+  // opened.
+  const advanced = page.getByLabel("Advanced settings");
+  await expect(advanced).toBeVisible();
+  await expect(
+    page.getByRole("spinbutton", { name: "learning_rate override" }),
+  ).not.toBeVisible();
+
+  // Opening it is a deliberate act; each setting then carries the specific
+  // thing that goes wrong, inline -- not a general caution.
+  await advanced.locator("summary").click();
+  await expect(
+    page.getByRole("spinbutton", { name: "learning_rate override" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/diverges to NaN partway through a paid run/i),
+  ).toBeVisible();
+  // The distinction is explained, with both refused-input examples named.
+  await expect(
+    page.getByText(/Why some settings are adjustable and others are refused/i),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/mixes reasoning traces with plain answers/i),
+  ).toBeVisible();
+
+  // A trainer setting this product does not offer is visible with its reason,
+  // searchable rather than absent.
+  await page
+    .getByRole("searchbox", {
+      name: "Search the trainer's settings Temper does not offer",
+    })
+    .fill("wandb_project");
+  await expect(
+    page.getByText("wandb_project", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/experiment-tracking integration/i),
+  ).toBeVisible();
+
+  // An override is re-requested from the server and marked, and the frozen
+  // specification the page previews reflects it.
+  const lr = page.getByRole("spinbutton", { name: "learning_rate override" });
+  await lr.fill("0.0001");
+  await lr.blur();
+  await expect(page.getByText("you changed this").first()).toBeVisible();
+  await expect(
+    page.getByText("0.0001", { exact: true }).first(),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Launch job" }).click();
+  await expect(page).toHaveURL(/\/jobs\/job_/);
+
+  // The finished run shows the settings the user froze into the job spec: the
+  // run says what it actually used, after it is over.
+  await expect(pairedValue(page, "State")).toHaveText("complete", {
+    timeout: 20_000,
+  });
+  await expect(
+    page.getByRole("heading", { name: "Settings you changed" }),
+  ).toBeVisible();
+  await expect(page.getByText("learning_rate", { exact: true })).toBeVisible();
+  await expect(page.getByText("0.0001", { exact: true })).toBeVisible();
+});
+
+// An override that makes the job infeasible is refused before anything is
+// spent, with the same arithmetic the predictor used, and the control reverts
+// rather than leaving a lie in the form.
+test("an advanced override that makes the job infeasible is refused before launch", async ({
+  page,
+}) => {
+  await uploadValidatedRows(
+    page,
+    Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
+  );
+  await continueToLaunch(page);
+  await expect(
+    page.getByRole("heading", { name: "Cost and time estimate" }),
+  ).toBeVisible();
+
+  const advanced = page.getByLabel("Advanced settings");
+  await advanced.locator("summary").click();
+  const mbs = page.getByRole("spinbutton", {
+    name: "micro_batch_size override",
+  });
+  await expect(mbs).toBeVisible();
+
+  // A micro batch this large cannot fit anything the provider has free; the
+  // recompute refuses with the stable code and the arithmetic, and the control
+  // reverts to the default.
+  await mbs.fill("512");
+  await mbs.blur();
+  const alert = page.getByRole("main").getByRole("alert");
+  await expect(alert).toContainText("configuration_does_not_fit");
+  await expect(mbs).toHaveValue("1");
+
+  // Still here, still able to act: the refusal did not navigate away or
+  // disable the launch.
+  await expect(
+    page.getByRole("button", { name: "Launch job" }),
+  ).toBeEnabled();
+  await expect(page).not.toHaveURL(/\/jobs\/job_/);
 });
