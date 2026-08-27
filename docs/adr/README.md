@@ -79,7 +79,6 @@ repository becomes public at submission.
 | [0036](0036-the-dataset-size-limit-is-derived-from-measured-throughput.md) | The dataset size limit is a product limit derived from measured throughput, not from memory — supersedes 0005 | accepted | 2026-08-27 |
 | [0037](0037-every-run-records-what-was-predicted-against-what-happened.md) | Every run records what was predicted against what happened | accepted | 2026-08-27 |
 | [0038](0038-the-token-count-is-produced-by-a-phase-of-its-own-bounded-and-recorded-with-the-dataset-version.md) | The token count is produced by a phase of its own, bounded, and recorded with the dataset version | accepted | 2026-08-27 |
-| [0038](0038-the-running-job-surface-consumes-a-server-pushed-event-stream.md) | The running-job surface consumes a server-pushed event stream and hands back to the finished record at a terminal state | accepted | 2026-08-27 |
 | [0039](0039-the-running-job-surface-consumes-a-server-pushed-event-stream.md) | The running-job surface consumes a server-pushed event stream and hands back to the finished record at a terminal state | accepted | 2026-08-27 |
 | [0040](0040-an-override-names-its-failure-mode-and-a-locked-setting-is-not-a-refused-input.md) | An override names its failure mode, is recorded in the job spec, and a locked setting is not a refused input | accepted | 2026-08-27 |
 
