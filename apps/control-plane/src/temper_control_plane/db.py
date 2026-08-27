@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- Warnings attached at creation, frozen like the hyperparameters: what
     -- the user was told before launching is part of the run's record.
     warnings_json TEXT,
+    -- The quote the job launched under, frozen at creation and never updated
+    -- (issue #72): a completed job can say what it was predicted to cost and
+    -- how long it was predicted to take, not only what actually happened.
+    quote_json    TEXT,
     result_json   TEXT,
     -- The storage seam's address for this job's artifact weights.
     artifact_key  TEXT
@@ -146,6 +150,7 @@ ADDED_COLUMNS = (
     ("jobs", "method", "TEXT"),
     ("jobs", "disk_gb", "INTEGER"),
     ("jobs", "storage_cost_usd_per_hour", "REAL"),
+    ("jobs", "quote_json", "TEXT"),
 )
 
 
@@ -290,13 +295,14 @@ def create_job(
     hyperparams: dict,
     warnings: list | None = None,
     base_revision: str | None = None,
+    quote: dict | None = None,
 ) -> str:
     job_id = new_id("job")
     with connect() as c:
         c.execute(
             "INSERT INTO jobs (id, dataset_id, base_model, base_revision, "
-            "hyperparams_json, status, warnings_json, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "hyperparams_json, status, warnings_json, quote_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 job_id,
                 dataset_id,
@@ -305,6 +311,7 @@ def create_job(
                 json.dumps(hyperparams),
                 "queued",
                 json.dumps(warnings) if warnings else None,
+                json.dumps(quote) if quote else None,
                 time.time(),
             ),
         )
@@ -424,6 +431,7 @@ def get_job(job_id: str) -> dict | None:
                 "hyperparams_json": "hyperparameters",
                 "result_json": "result",
                 "warnings_json": "warnings",
+                "quote_json": "quote",
             },
         )
     )
@@ -456,6 +464,7 @@ def list_jobs(limit: int = 50) -> list[dict]:
                         "hyperparams_json": "hyperparameters",
                         "result_json": "result",
                         "warnings_json": "warnings",
+                        "quote_json": "quote",
                     },
                 )
             )
@@ -490,7 +499,15 @@ def active_jobs() -> list[dict]:
         ).fetchall()
     return [
         _present(
-            _with_warnings(_row(r, {"hyperparams_json": "hyperparameters"}))
+            _with_warnings(
+                _row(
+                    r,
+                    {
+                        "hyperparams_json": "hyperparameters",
+                        "quote_json": "quote",
+                    },
+                )
+            )
         )
         for r in rows
     ]

@@ -46,7 +46,12 @@ def usable_dataset(dataset_id: str) -> dict:
     return ds
 
 
-def create(dataset_id: str, base_model: str, hyperparameters: dict) -> str:
+def create(
+    dataset_id: str,
+    base_model: str,
+    hyperparameters: dict,
+    quote: dict | None = None,
+) -> str:
     """Validate the request, freeze the spec and launch. Returns the job id.
 
     Refuses an invalid dataset rather than discovering it on a GPU four minutes
@@ -56,6 +61,11 @@ def create(dataset_id: str, base_model: str, hyperparameters: dict) -> str:
     than a wrong warning. The warning is frozen onto the job row like the
     hyperparameters, so what the user was told before launching stays part of
     the run's record.
+
+    `quote` is the prediction the launch was shown, frozen alongside the
+    warning (issue #72). The caller computes it -- the seams that feed it live
+    beside the HTTP handlers -- and the job row carries it exactly as it was,
+    never updated: a completed job can say what it was predicted to cost.
 
     Raises HTTPException with a stable code for every refusal, whichever
     surface it arrived on.
@@ -104,6 +114,7 @@ def create(dataset_id: str, base_model: str, hyperparameters: dict) -> str:
         hyperparameters,
         warnings=warnings,
         base_revision=model.revision,
+        quote=quote,
     )
     if warn:
         db.add_event(

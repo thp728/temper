@@ -67,6 +67,24 @@ test("a job is chosen, reviewed and launched from the shell", async ({
     await expect(page.getByText(key, { exact: true })).toBeVisible();
   }
 
+  // ...and the cost-and-time estimate is shown before anything is spent:
+  // a duration range (never a point) and a per-phase cost breakdown, in the
+  // account's currency, labelled an estimate.
+  await expect(
+    page.getByRole("heading", { name: "Cost and time estimate" }),
+  ).toBeVisible();
+  await expect(page.getByText(/never blocks a launch/i)).toBeVisible();
+  for (const phase of [
+    "provisioning",
+    "readiness",
+    "image_pull",
+    "model_download",
+    "training",
+    "teardown",
+  ]) {
+    await expect(page.getByText(phase, { exact: true })).toBeVisible();
+  }
+
   // ...and the screen offers exactly one obvious action.
   await expect(page.getByRole("button", { name: "Launch job" })).toHaveCount(1);
 

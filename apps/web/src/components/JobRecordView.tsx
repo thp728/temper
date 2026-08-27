@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
+import QuoteView from "@/components/QuoteView";
 import { Button } from "@/components/ui/button";
 import {
   TERMINAL_STATUSES,
@@ -181,6 +182,13 @@ export default function JobRecordView({
       {job.status === "complete" && <AdapterSection job={job} />}
       {job.status === "failed" && <FailedSection job={job} />}
       {job.status === "cancelled" && <CancelledSection />}
+
+      {job.quote && (
+        // The quote the job launched under, frozen into the spec at launch
+        // and never updated: a finished run still says what it was predicted
+        // to cost and how long it was predicted to take (issue #72).
+        <QuoteView quote={job.quote} />
+      )}
 
       <section aria-labelledby="output-heading" className="space-y-2">
         <h2 id="output-heading" className="text-lg font-semibold">

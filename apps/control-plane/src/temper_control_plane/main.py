@@ -30,6 +30,7 @@ from temper_control_plane import (
     jobs,
     models,
     orchestrator,
+    quote,
     storage,
 )
 from temper_control_plane.contracts_models import (
@@ -53,6 +54,15 @@ from temper_core import catalog, feasibility, gpus, hyperparams, memory
 # of `conftest.no_real_provider` -- so the suite never depends on network
 # reachability.
 MODELS: models.Models = models.new_models()
+
+
+def _quote_for(
+    ds: dict, m: catalog.BaseModel, hyperparameters: dict
+) -> dict | None:
+    """The quote for one (dataset, model, hyperparameters) configuration, or
+    None when it cannot be priced. Never raises: the estimate warns, it does
+    not block (spec 005)."""
+    return quote.for_config(ds, m, hyperparameters)
 
 
 def _catalog_entry(m: catalog.BaseModel) -> dict:
@@ -230,9 +240,39 @@ def create_job(req: JobRequest):
     hyperparameters are frozen into the job row there: a run's spec is
     immutable once launched, so a later change to a default cannot
     retroactively alter what a finished run claims.
+
+    The quote the launch was shown is computed here and frozen onto the job
+    with the rest of the spec. It never blocks: if the provider is unreachable
+    or nothing fits, the job still launches -- an estimate warns, it does not
+    refuse (spec 005).
     """
-    job_id = jobs.create(req.dataset_id, req.base_model, req.hyperparameters)
+    job_id = jobs.create(
+        req.dataset_id,
+        req.base_model,
+        req.hyperparameters,
+        quote=_quote_for_launch(req),
+    )
     return db.get_job(job_id)
+
+
+def _quote_for_launch(req: JobRequest) -> dict | None:
+    """The quote for the configuration a launch commits to, or None.
+
+    Computed against the dataset and model the request names -- the same
+    inputs the plan screen priced -- so the frozen quote is the one the user
+    saw, unless availability changed in between (which is what expiry is
+    for). Refusals inside `jobs.usable_dataset` and `catalog.get` are the
+    caller's; this helper only prices, and a configuration that cannot be
+    priced produces no quote rather than a broken launch.
+    """
+    try:
+        ds = jobs.usable_dataset(req.dataset_id)
+    except HTTPException:
+        return None
+    m = catalog.get(req.base_model)
+    if m is None:
+        return None
+    return _quote_for(ds, m, req.hyperparameters)
 
 
 @app.get("/v1/jobs", tags=["jobs"], response_model=JobList)
@@ -245,10 +285,16 @@ def get_job_spec_preview(dataset_id: str):
     """What a launch would train with, before anything is launched.
 
     Consumed by the shell's model-choice screen (#38), which must show the
-    dataset, the effective specification and any feasibility warning while
-    the user can still act on them. Declared **before** `/v1/jobs/{job_id}`:
-    routes match in declaration order, and "spec" would otherwise be
-    captured as a job id.
+    dataset, the effective specification, any feasibility warning and the
+    quote while the user can still act on them. Declared **before**
+    `/v1/jobs/{job_id}`: routes match in declaration order, and "spec" would
+    otherwise be captured as a job id.
+
+    The quote is computed per catalog model, because which model is chosen
+    changes what the job costs and how long it takes -- a bigger model
+    downloads more and may need different hardware. A model that cannot be
+    quoted (provider unreachable, nothing fits) carries no quote rather than
+    breaking the page: the estimate never blocks.
 
     Refusals come through `jobs.usable_dataset`, the same path the launch
     itself applies -- a dataset that cannot start a job is refused here with
@@ -260,10 +306,12 @@ def get_job_spec_preview(dataset_id: str):
     warn = feasibility.warning(
         feasibility.usable_rows(ds), {}, config.MAX_JOB_DURATION_S
     )
+    quotes = {m.id: _quote_for(ds, m, {}) for m in catalog.CATALOG.values()}
     return {
         "dataset": ds,
         "hyperparameters": hyperparams.effective({}),
         "warning": warn,
+        "quotes": quotes,
     }
 
 

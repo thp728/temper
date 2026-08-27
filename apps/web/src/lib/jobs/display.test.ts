@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   failureExplanation,
   formatDuration,
+  formatDurationRange,
+  formatMinorCost,
   formatTimestamp,
   shortRevision,
 } from "@/lib/jobs/display";
@@ -40,6 +42,32 @@ describe("shortRevision", () => {
   it("leaves nothing to truncate when it is already short", () => {
     expect(shortRevision("abc")).toBe("abc");
     expect(shortRevision(null)).toBe("");
+  });
+});
+
+describe("formatDurationRange", () => {
+  it("shows both ends of a range, never a point", () => {
+    expect(formatDurationRange(60, 120)).toBe("1m 00s–2m 00s");
+  });
+
+  it("says when a phase is not estimable", () => {
+    expect(formatDurationRange(null, 120)).toBe("not estimable");
+    expect(formatDurationRange(60, undefined)).toBe("not estimable");
+  });
+});
+
+describe("formatMinorCost", () => {
+  it("shows a minor-unit cost with its currency, to two places", () => {
+    // 4131 paisa = ₹41.31, the measured L4 hourly rate.
+    expect(formatMinorCost(4131, "INR", 100)).toBe("INR 41.31");
+  });
+
+  it("respects the published minor unit, not a formatting assumption", () => {
+    expect(formatMinorCost(4131, "USD", 100)).toBe("USD 41.31");
+  });
+
+  it("renders an absent cost as a dash", () => {
+    expect(formatMinorCost(null, "INR", 100)).toBe("—");
   });
 });
 

@@ -171,6 +171,56 @@ class FeasibilityWarning(BaseModel):
     rows_per_second: float
 
 
+class QuotePhase(BaseModel):
+    """One phase's predicted duration and GPU cost, both ranges.
+
+    `duration_low_s`/`duration_high_s` are never equal: a quote shows a range,
+    never a point, because the throughput figures behind it are the softest
+    numbers in the model. A phase that cannot be estimated (training under a
+    `max_steps` cap, where run length is bounded by steps rather than data)
+    reports None rather than a guessed number."""
+
+    name: str
+    duration_low_s: float | None = None
+    duration_high_s: float | None = None
+    cost_low_minor: int | None = None
+    cost_high_minor: int | None = None
+
+
+class Quote(BaseModel):
+    """What a job is predicted to cost and how long it should take.
+
+    An estimate everywhere it appears (`is_estimate` and the interface both
+    say so), composed per phase rather than as one blended rate, with the cost
+    in the account's own currency as an integer in its smallest unit
+    (`cost_*_minor`) with the currency code alongside. It pins what it was
+    computed against -- `dataset_id`/`dataset_created_at` and `base_revision`
+    -- and `expires_at` says how long the prices and availability it reflects
+    are honoured for.
+
+    `storage_cost_usd_*` is the separate storage line, deliberately in USD
+    rather than the account's currency: ADR-0030 established that no live
+    per-account storage price exists to convert it against, and a labelled
+    USD figure is more honest than a silently assumed conversion."""
+
+    currency: str
+    minor_unit: int
+    dataset_id: str
+    dataset_created_at: float
+    base_revision: str
+    token_count: int | None = None
+    expires_at: float
+    phases: list[QuotePhase]
+    duration_low_s: float
+    duration_high_s: float
+    cost_low_minor: int
+    cost_high_minor: int
+    storage_cost_usd_per_hour: float
+    storage_cost_usd_total_low_minor: int
+    storage_cost_usd_total_high_minor: int
+    is_estimate: bool = True
+
+
 class JobSpecPreview(BaseModel):
     """What a launch would train with, before anything is launched.
 
@@ -178,11 +228,16 @@ class JobSpecPreview(BaseModel):
     committing: this is that answer as one published shape. `hyperparameters`
     are the effective specification resolved exactly as the trainer resolves
     overrides -- showing anything else would describe a job the trainer will
-    not run."""
+    not run.
+
+    `quotes` is keyed by catalog model id, because the quote depends on which
+    model is chosen (a bigger model downloads more and may need different
+    hardware): the plan shows the quote for whichever model is selected."""
 
     dataset: DatasetRecord
     hyperparameters: dict[str, Any]
     warning: FeasibilityWarning | None = None
+    quotes: dict[str, Quote | None] = Field(default_factory=dict)
 
 
 class JobRecord(BaseModel):
@@ -214,6 +269,7 @@ class JobRecord(BaseModel):
     error_code: str | None = None
     error_message: str | None = None
     warnings: list[FeasibilityWarning] = Field(default_factory=list)
+    quote: Quote | None = None
     result: dict[str, Any] | None = None
 
 

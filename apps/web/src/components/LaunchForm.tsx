@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import QuoteView from "@/components/QuoteView";
 import {
   createJobV1JobsPost,
   type JobSpecPreview,
@@ -15,10 +16,10 @@ import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
 // The launch step of the journey, and the point of commitment: choose a base
 // model from the catalog, read everything the job will train with -- the
-// effective specification and any feasibility warning arrive beside it --
-// and start it with one action. The specification shown here is what
-// POST /v1/jobs freezes; the screen launches with no overrides of its own,
-// so the preview and the job cannot disagree.
+// effective specification, any feasibility warning and the duration/cost
+// quote arrive beside it -- and start it with one action. The specification
+// shown here is what POST /v1/jobs freezes; the screen launches with no
+// overrides of its own, so the preview and the job cannot disagree.
 
 function specEntries(preview: JobSpecPreview): [string, string][] {
   return Object.entries(preview.hyperparameters ?? {}).map(([k, v]) => [
@@ -35,9 +36,14 @@ export default function LaunchForm({
   preview: JobSpecPreview;
 }) {
   const router = useRouter();
+  const [selected, setSelected] = useState(catalog.default);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [refusal, setRefusal] = useState<ApiError | null>(null);
+
+  // The quote is computed per model (a bigger model downloads more and may
+  // need different hardware); show the quote for whichever model is selected.
+  const quote = preview.quotes?.[selected];
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -90,6 +96,7 @@ export default function LaunchForm({
                 name="base_model"
                 value={m.id}
                 defaultChecked={m.id === catalog.default}
+                onChange={() => setSelected(m.id)}
                 className="mt-1 size-4"
               />
               {/* Label/value pairs stay a real description list: that
@@ -160,6 +167,19 @@ export default function LaunchForm({
         </dl>
       </section>
 
+      {/* The quote for the selected model: a duration range and a per-phase
+          cost breakdown, both labelled an estimate. Nothing here blocks a
+          launch -- it is shown so the money can be understood first. */}
+      {quote ? (
+        <QuoteView quote={quote} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          A cost and time estimate could not be computed for this model right
+          now. Launching will still work; you just will not see the numbers
+          first.
+        </p>
+      )}
+
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={busy} size="lg">
           {busy ? "Launching…" : "Launch job"}
@@ -183,3 +203,4 @@ export default function LaunchForm({
     </form>
   );
 }
+
