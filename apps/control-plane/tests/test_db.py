@@ -178,3 +178,125 @@ def test_list_jobs_reads_every_row_when_limit_is_none(temp_db):
         temp_db.create_job(ds_id, "qwen3-4b", {})
     assert len(temp_db.list_jobs(limit=None)) == 3
     assert len(temp_db.list_jobs(limit=1)) == 1
+
+
+# --- the counting phase (issue #42) ----------------------------------------
+
+
+def test_token_count_is_merged_into_the_report_the_quote_reads(temp_db):
+    """The count is produced by the phase that runs after validation, so it is
+    stored separately and merged into `report` on read -- the seam the quote
+    already reads. Before the phase runs, `token_count` is null."""
+    ds_id = temp_db.create_dataset(
+        "d.jsonl", "datasets/ds_count.jsonl", "ds_count"
+    )
+    temp_db.finish_dataset(
+        ds_id,
+        {
+            "valid": True,
+            "row_count": 2,
+            "usable_rows": 2,
+            "schema_type": "chat",
+            "enable_thinking": False,
+            "errors": [],
+            "warnings": [],
+            "preview": [],
+        },
+    )
+    assert temp_db.get_dataset(ds_id)["report"]["token_count"] is None
+
+    temp_db.finish_token_count(
+        ds_id,
+        {
+            "total_tokens": 12345,
+            "rows_counted": 2,
+            "sequence_len": 2048,
+            "truncated_rows": 0,
+            "max_row_tokens": 7000,
+            "histogram": [0, 1, 1],
+        },
+    )
+    record = temp_db.get_dataset(ds_id)
+    assert record["token_count_status"] == db.COUNT_PHASE_DONE
+    assert record["report"]["token_count"] == 12345
+    assert record["report"]["token_distribution"]["rows_counted"] == 2
+    # The count does not leak onto the record itself: it lives in the report.
+    assert "token_count" not in record
+
+
+def test_token_count_phase_states_transition_on_the_row(temp_db):
+    """The counting phase has its own state, recorded with the version: it is
+    'counting' while the pass runs, 'done' when it lands, 'failed' when it
+    cannot, and the dataset's own status never moves -- it was already
+    `valid`."""
+    ds_id = temp_db.create_dataset(
+        "d.jsonl", "datasets/ds_count2.jsonl", "ds_count2"
+    )
+    temp_db.finish_dataset(
+        ds_id,
+        {
+            "valid": True,
+            "row_count": 1,
+            "usable_rows": 1,
+            "schema_type": "chat",
+            "enable_thinking": False,
+            "errors": [],
+            "warnings": [],
+            "preview": [],
+        },
+    )
+    temp_db.begin_token_count(ds_id)
+    record = temp_db.get_dataset(ds_id)
+    assert record["token_count_status"] == db.COUNT_PHASE_COUNTING
+    assert record["status"] == "valid"
+
+    temp_db.set_counting_progress(
+        ds_id, {"bytes_read": 10, "bytes_total": 100, "rows": 5}
+    )
+    assert temp_db.get_dataset(ds_id)["counting_progress"]["rows"] == 5
+
+    temp_db.finish_token_count(
+        ds_id,
+        {
+            "total_tokens": 7,
+            "rows_counted": 1,
+            "sequence_len": 2048,
+            "truncated_rows": 0,
+            "max_row_tokens": 7,
+            "histogram": [1],
+        },
+    )
+    record = temp_db.get_dataset(ds_id)
+    assert record["token_count_status"] == db.COUNT_PHASE_DONE
+    assert record["counting_progress"] is None
+    assert record["report"]["token_count"] == 7
+
+
+def test_token_count_failure_leaves_the_dataset_valid_and_launchable(
+    temp_db,
+):
+    """A count that cannot be produced is an absent estimate, not a broken
+    dataset: the phase records `failed` and the report's count stays null."""
+    ds_id = temp_db.create_dataset(
+        "d.jsonl", "datasets/ds_count3.jsonl", "ds_count3"
+    )
+    temp_db.finish_dataset(
+        ds_id,
+        {
+            "valid": True,
+            "row_count": 1,
+            "usable_rows": 1,
+            "schema_type": "chat",
+            "enable_thinking": False,
+            "errors": [],
+            "warnings": [],
+            "preview": [],
+        },
+    )
+    temp_db.begin_token_count(ds_id)
+    temp_db.fail_token_count(ds_id)
+    record = temp_db.get_dataset(ds_id)
+    assert record["token_count_status"] == db.COUNT_PHASE_FAILED
+    assert record["status"] == "valid"
+    assert record["report"]["token_count"] is None
+    assert record["counting_progress"] is None

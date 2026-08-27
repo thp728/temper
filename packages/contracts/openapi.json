@@ -340,8 +340,18 @@
         "type": "object"
       },
       "DatasetRecord": {
-        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent.",
+        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent.\n\nThe token fields (issue #42) belong to the counting phase that runs after\nvalidation, so they ride on the record rather than inside the validation\ndict: `token_count_status` is the phase's own state (`counting` | `done` |\n`failed` | null), and `counting_progress` shows where it has got to while\nit runs. The count itself is merged into `report` once it lands.",
         "properties": {
+          "counting_progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValidationProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "title": "Created At",
             "type": "number"
@@ -377,6 +387,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "token_count_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Count Status"
           }
         },
         "required": [
@@ -389,7 +410,7 @@
         "type": "object"
       },
       "DatasetReport": {
-        "description": "What validation says about a dataset. The same dict\n`temper_core.validation.Report.to_dict()` produces, published typed.\n\nThe `error_count`/`warning_count` totals are the truth about how broken a\nfile is; the `errors`/`warnings` lists are capped at a hundred because the\nreport is held in memory and a file broken on every line must not become a\nreport proportional to the file. `*_suppressed` reconciles the two, so a\ncapped report says what it is not showing.",
+        "description": "What validation says about a dataset. The same dict\n`temper_core.validation.Report.to_dict()` produces, published typed.\n\nThe `error_count`/`warning_count` totals are the truth about how broken a\nfile is; the `errors`/`warnings` lists are capped at a hundred because the\nreport is held in memory and a file broken on every line must not become a\nreport proportional to the file. `*_suppressed` reconciles the two, so a\ncapped report says what it is not showing.\n\n`token_count`/`token_distribution` (issue #42) are produced by the\ncounting phase that runs after validation, so they are merged into the\nreport the API publishes and are null until the phase lands -- the quote\nreads `token_count` and renders the count absent while it is null\n(ADR-0031).",
         "properties": {
           "enable_thinking": {
             "anyOf": [
@@ -440,6 +461,27 @@
               }
             ],
             "title": "Schema Type"
+          },
+          "token_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Count"
+          },
+          "token_distribution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenDistribution"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "usable_rows": {
             "title": "Usable Rows",
@@ -1577,6 +1619,56 @@
           "name"
         ],
         "title": "StageActual",
+        "type": "object"
+      },
+      "TokenDistribution": {
+        "description": "The distribution of token counts across a dataset's rows (issue #42).\n\nBounded by construction: `histogram` is one count per `histogram_edges`\nbucket, never one entry per row, so the recorded distribution cannot grow\nwith the file -- the same cap that keeps the streaming validator flat.\n`truncated_rows` is the exact number of rows that would be truncated at\n`sequence_len` (the trainer default), counted during the pass rather than\nderived from the histogram afterwards.",
+        "properties": {
+          "histogram": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Histogram",
+            "type": "array"
+          },
+          "histogram_edges": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Histogram Edges",
+            "type": "array"
+          },
+          "max_row_tokens": {
+            "title": "Max Row Tokens",
+            "type": "integer"
+          },
+          "rows_counted": {
+            "title": "Rows Counted",
+            "type": "integer"
+          },
+          "sequence_len": {
+            "title": "Sequence Len",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "truncated_rows": {
+            "title": "Truncated Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_tokens",
+          "rows_counted",
+          "sequence_len",
+          "truncated_rows",
+          "max_row_tokens",
+          "histogram",
+          "histogram_edges"
+        ],
+        "title": "TokenDistribution",
         "type": "object"
       },
       "ValidationError": {

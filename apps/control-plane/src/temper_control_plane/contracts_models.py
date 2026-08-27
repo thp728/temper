@@ -74,6 +74,25 @@ class PreviewRow(BaseModel):
         return v
 
 
+class TokenDistribution(BaseModel):
+    """The distribution of token counts across a dataset's rows (issue #42).
+
+    Bounded by construction: `histogram` is one count per `histogram_edges`
+    bucket, never one entry per row, so the recorded distribution cannot grow
+    with the file -- the same cap that keeps the streaming validator flat.
+    `truncated_rows` is the exact number of rows that would be truncated at
+    `sequence_len` (the trainer default), counted during the pass rather than
+    derived from the histogram afterwards."""
+
+    total_tokens: int
+    rows_counted: int
+    sequence_len: int
+    truncated_rows: int
+    max_row_tokens: int
+    histogram: list[int]
+    histogram_edges: list[int]
+
+
 class DatasetReport(BaseModel):
     """What validation says about a dataset. The same dict
     `temper_core.validation.Report.to_dict()` produces, published typed.
@@ -82,7 +101,13 @@ class DatasetReport(BaseModel):
     file is; the `errors`/`warnings` lists are capped at a hundred because the
     report is held in memory and a file broken on every line must not become a
     report proportional to the file. `*_suppressed` reconciles the two, so a
-    capped report says what it is not showing."""
+    capped report says what it is not showing.
+
+    `token_count`/`token_distribution` (issue #42) are produced by the
+    counting phase that runs after validation, so they are merged into the
+    report the API publishes and are null until the phase lands -- the quote
+    reads `token_count` and renders the count absent while it is null
+    (ADR-0031)."""
 
     valid: bool
     row_count: int
@@ -96,6 +121,8 @@ class DatasetReport(BaseModel):
     warning_count: int = 0
     errors_suppressed: int = 0
     warnings_suppressed: int = 0
+    token_count: int | None = None
+    token_distribution: TokenDistribution | None = None
 
 
 class DatasetAccepted(BaseModel):
@@ -125,7 +152,13 @@ class DatasetRecord(BaseModel):
     """A stored dataset with its report attached -- including a dataset that
     failed validation, whose report is the reason it was kept. While it is
     `validating`, `progress` says how far validation has got and `report` is
-    absent."""
+    absent.
+
+    The token fields (issue #42) belong to the counting phase that runs after
+    validation, so they ride on the record rather than inside the validation
+    dict: `token_count_status` is the phase's own state (`counting` | `done` |
+    `failed` | null), and `counting_progress` shows where it has got to while
+    it runs. The count itself is merged into `report` once it lands."""
 
     id: str
     filename: str
@@ -133,6 +166,8 @@ class DatasetRecord(BaseModel):
     status: str
     report: DatasetReport | None = None
     progress: ValidationProgress | None = None
+    token_count_status: str | None = None
+    counting_progress: ValidationProgress | None = None
 
 
 class DatasetList(BaseModel):
