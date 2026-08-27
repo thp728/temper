@@ -167,6 +167,90 @@ def test_a_larger_micro_batch_never_predicts_less_peak_memory():
     assert four.total_gb > one.total_gb
 
 
+def test_more_devices_never_predicts_less_aggregate_memory():
+    """The property spec 005 names: adding GPUs must never reduce predicted
+    total memory. Sharding (full fine-tune only) divides weights, gradients
+    and optimizer state across devices, so the PER-DEVICE peak can shrink --
+    but activations and the fixed overhead are paid on every device, so the
+    CLUSTER-WIDE total (per-device peak times device count) never shrinks."""
+    one = memory.predict_peak(
+        QWEN3_4B,
+        method="full",
+        lora_r=16,
+        sequence_len=2048,
+        micro_batch_size=1,
+        device_count=1,
+    )
+    two = memory.predict_peak(
+        QWEN3_4B,
+        method="full",
+        lora_r=16,
+        sequence_len=2048,
+        micro_batch_size=1,
+        device_count=2,
+    )
+    assert two.total_gb * 2 >= one.total_gb * 1
+
+
+def test_sharding_reduces_full_fine_tunes_per_device_peak():
+    one = memory.predict_peak(
+        QWEN3_4B,
+        method="full",
+        lora_r=16,
+        sequence_len=2048,
+        micro_batch_size=1,
+        device_count=1,
+    )
+    two = memory.predict_peak(
+        QWEN3_4B,
+        method="full",
+        lora_r=16,
+        sequence_len=2048,
+        micro_batch_size=1,
+        device_count=2,
+    )
+    assert two.total_gb < one.total_gb
+
+
+def test_sharding_does_not_change_qlora_or_lora_per_device_peak():
+    """Only full fine-tuning's FSDP path has ever run sharded (spike 6).
+    LoRA and QLoRA's trainable set is tiny, so device_count is a throughput
+    lever for them, not a memory one -- more devices replicate the same
+    per-device footprint rather than dividing it."""
+    for method in ("qlora", "lora"):
+        one = memory.predict_peak(
+            QWEN3_4B,
+            method=method,
+            lora_r=16,
+            sequence_len=2048,
+            micro_batch_size=1,
+            device_count=1,
+        )
+        four = memory.predict_peak(
+            QWEN3_4B,
+            method=method,
+            lora_r=16,
+            sequence_len=2048,
+            micro_batch_size=1,
+            device_count=4,
+        )
+        assert four.total_gb == one.total_gb
+
+
+def test_device_count_below_one_is_refused():
+    import pytest
+
+    with pytest.raises(ValueError, match="device_count"):
+        memory.predict_peak(
+            QWEN3_4B,
+            method="qlora",
+            lora_r=16,
+            sequence_len=2048,
+            micro_batch_size=1,
+            device_count=0,
+        )
+
+
 def test_unknown_method_is_refused():
     import pytest
 

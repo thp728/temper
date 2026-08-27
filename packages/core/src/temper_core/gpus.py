@@ -2,8 +2,8 @@
 
 A card's capacity is a physical constant, not something that varies with
 what the provider currently has free -- so unlike price and availability
-(`temper_control_plane.provider.GpuChoice`, read live at provisioning time),
-it belongs here as data rather than behind the provider seam.
+(`temper_core.selection.GpuAvailability`, read live at provisioning time), it
+belongs here as data rather than behind the provider seam.
 
 L4 is measured, not read from a spec sheet: the trainer's real run
 (2026-08-19, `apps/trainer/README.md`) confirms 24 GB from the card itself.

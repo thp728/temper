@@ -465,6 +465,17 @@
             "title": "Dataset Id",
             "type": "string"
           },
+          "device_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Count"
+          },
           "error_code": {
             "anyOf": [
               {
@@ -535,6 +546,17 @@
               }
             ],
             "title": "Machine Id"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
           },
           "price_per_hour": {
             "anyOf": [

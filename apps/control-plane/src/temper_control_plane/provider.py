@@ -51,6 +51,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from temper_core.errors import OrchestratorError
+from temper_core.selection import GpuAvailability
 
 SSH_READY_TIMEOUT_S = 300
 PUSH_TIMEOUT_S = 180
@@ -101,19 +102,6 @@ def _stream_timeout() -> float:
 
 
 @dataclass(frozen=True)
-class GpuChoice:
-    """A GPU type the provider has free, and what it will cost per hour.
-
-    The currency is read from the account rather than assumed: this account
-    bills in INR, and a hard-coded `$` would misreport every price by ~85x.
-    """
-
-    gpu_type: str
-    price_per_hour: float
-    currency: str
-
-
-@dataclass(frozen=True)
 class Machine:
     """A GPU host provisioned for one job.
 
@@ -129,9 +117,19 @@ class Machine:
 class Provider(Protocol):
     """Everything the orchestrator is allowed to know about compute."""
 
-    def select_gpu(self, preference: Sequence[str]) -> GpuChoice: ...
+    def gpu_availability(self) -> Sequence[GpuAvailability]:
+        """What the provider has free right now, filtered to machine-capable
+        types -- `workload_type == "vm"`, since container-only capacity is a
+        separate pool a VM job can never draw from."""
 
-    def create(self, gpu_type: str, storage_gb: int, name: str) -> Machine: ...
+    def currency(self) -> str:
+        """The account's billing currency, read live rather than assumed:
+        this account bills in INR, and a hard-coded `$` would misreport
+        every price by roughly 85x."""
+
+    def create(
+        self, gpu_type: str, num_gpus: int, storage_gb: int, name: str
+    ) -> Machine: ...
 
     def await_ready(self, machine: Machine) -> str:
         """Block until the machine is usable. Returns a line worth logging."""
@@ -223,29 +221,28 @@ class JarvisLabsProvider:
 
     # -- provisioning -------------------------------------------------------
 
-    def select_gpu(self, preference: Sequence[str]) -> GpuChoice:
-        avail = {
-            r.gpu_type: r
+    def gpu_availability(self) -> Sequence[GpuAvailability]:
+        # Rows are kept one-per-node, never merged by gpu_type: two devices
+        # of the same type on different nodes cannot be attached to one
+        # machine (spike 6), so collapsing them would let the selection
+        # search believe capacity exists that no single node actually offers.
+        return [
+            GpuAvailability(r.gpu_type, r.price_per_hour, r.num_free_devices)
             for r in self._client.account.gpu_availability()
             if r.workload_type == "vm" and r.num_free_devices > 0
-        }
-        gpu = next((g for g in preference if g in avail), None)
-        if not gpu:
-            raise OrchestratorError(
-                "provider_capacity_unavailable",
-                "No VM-capable GPU free. Note that availability is "
-                "per-workload-type: some GPUs exist only for containers.",
-            )
-        return GpuChoice(
-            gpu, avail[gpu].price_per_hour, self._client.account.currency()
-        )
+        ]
 
-    def create(self, gpu_type: str, storage_gb: int, name: str) -> Machine:
+    def currency(self) -> str:
+        return self._client.account.currency()
+
+    def create(
+        self, gpu_type: str, num_gpus: int, storage_gb: int, name: str
+    ) -> Machine:
         # The SDK calls it an instance; on this side of the seam it is a
         # machine, and that translation is the seam's job.
         created = self._client.instances.create(
             gpu_type=gpu_type,
-            num_gpus=1,
+            num_gpus=num_gpus,
             template="vm",
             storage=storage_gb,
             name=name,
