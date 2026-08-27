@@ -10,7 +10,7 @@ That property is what ADR-0005's 1 GB upload ceiling was standing in for --
 the ceiling was derived from a validator that held the whole file (measured at
 5.93x its size, spike 9), and it is gone with the rewrite. The ceiling that
 replaces it is a product limit derived from measured throughput
-([ADR-0034](../docs/adr/0034-...)), not from how validation is written.
+([ADR-0036](../docs/adr/0036-the-dataset-size-limit-is-derived-from-measured-throughput.md)), not from how validation is written.
 
 Three things survive the rewrite, each pinned by a test:
 

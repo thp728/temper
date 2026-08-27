@@ -1,4 +1,4 @@
-# ADR-0034 — The dataset size limit is a product limit derived from measured throughput
+# ADR-0036 — The dataset size limit is a product limit derived from measured throughput
 
 - **Status:** accepted — supersedes [0005](0005-the-dataset-size-limit-is-derived-from-measured-memory.md)
 - **Date:** 2026-08-27

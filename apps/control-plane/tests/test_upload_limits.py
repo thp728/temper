@@ -6,7 +6,7 @@ was never considered. These tests pin the fixes, as they now stand:
 * a dataset over the configured limit is refused immediately, with a stable
   code and both the limit and the actual size named;
 * the limit is a product limit derived from the measured streaming throughput
-  (ADR-0034), no longer from the in-memory validator's memory multiplier;
+  (ADR-0036), no longer from the in-memory validator's memory multiplier;
 * validation runs in the background, so a large upload returns its id while
   validation works and never freezes the page that asked for it; and
 * validation progress is observable on the record while it runs.

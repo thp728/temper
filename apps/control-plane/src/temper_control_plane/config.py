@@ -168,7 +168,7 @@ def _megabytes(name: str, default: float) -> float:
 # --- dataset size limit -----------------------------------------------------
 # **1.3 GB, derived from the measured streaming throughput, not from memory.**
 # Validation now streams one row at a time
-# ([ADR-0034](../docs/adr/0034-the-dataset-size-limit-is-derived-from-measured-throughput.md)),
+# ([ADR-0036](../docs/adr/0036-the-dataset-size-limit-is-derived-from-measured-throughput.md)),
 # so the memory multiplier that produced ADR-0005's 1 GB figure is gone --
 # spike 9 measured the streaming path flat from 1 GB to 20 GB (peak RSS +4 MB
 # regardless of size). What the limit still protects is that validation
