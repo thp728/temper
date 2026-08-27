@@ -142,9 +142,36 @@ describe("JobRecordView", () => {
     expect(
       screen.getByText(/No output for 900\.0s \(stall limit\)/),
     ).toBeVisible();
+    // Proof that billing stopped reaches the page, in the machine's own words.
+    expect(screen.getByText(/machine destroyed/)).toBeVisible();
     // What the job was doing before it died stays readable.
     expect(screen.getByText("[00:00:00] building trainer image")).toBeVisible();
     expect(screen.queryByRole("link", { name: /Download the adapter/ })).toBeNull();
+  });
+
+  it("says an over-long job hit the ceiling, with its code and reason", () => {
+    render(
+      <JobRecordView
+        job={job({
+          status: "failed",
+          error_code: "gpu_max_duration_exceeded",
+          error_message: "Ran past the maximum duration a job may use.",
+          result: null,
+        })}
+        events={[]}
+      />,
+    );
+
+    expect(screen.getByText("gpu_max_duration_exceeded")).toBeVisible();
+    // The safety limit is explained, not left as a code.
+    expect(screen.getByText(/ran past the maximum duration a single job may use/i)).toBeVisible();
+  });
+
+  it("offers no cancel control once the job is terminal", () => {
+    render(<JobRecordView job={job()} events={[]} />);
+    expect(
+      screen.queryByRole("button", { name: "Cancel job" }),
+    ).toBeNull();
   });
 
   it("presents a cancellation as a decision rather than a defect", () => {
