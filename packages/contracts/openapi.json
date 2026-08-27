@@ -1,6 +1,70 @@
 {
   "components": {
     "schemas": {
+      "AdvancedSurface": {
+        "description": "The generated advanced surface, published for the interface to render.\n\nThe same document `temper_core.surface.surface_document()` produces (and\n`just contracts` materialises as `advanced-surface.json`), typed at the\nHTTP boundary so the generated client never falls back to `unknown`. The\nmetadata fields validate from the document's leading-underscore keys and\nserialize under their plain names: the underscore is a \"derived metadata\"\nmarker internal to the generator, not a shape worth publishing.",
+        "properties": {
+          "axolotl_version": {
+            "title": "Axolotl Version",
+            "type": "string"
+          },
+          "config_model": {
+            "title": "Config Model",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "known_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known Keys",
+            "type": "array"
+          },
+          "overrideable_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overrideable Keys",
+            "type": "array"
+          },
+          "platform_internal_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Platform Internal Keys",
+            "type": "array"
+          },
+          "runtime_only_validators": {
+            "$ref": "#/components/schemas/RuntimeOnlyValidators"
+          },
+          "source_image": {
+            "title": "Source Image",
+            "type": "string"
+          },
+          "tiers": {
+            "$ref": "#/components/schemas/SurfaceTiers"
+          }
+        },
+        "required": [
+          "source_image",
+          "axolotl_version",
+          "config_model",
+          "known_keys",
+          "platform_internal_keys",
+          "overrideable_keys",
+          "tiers",
+          "counts",
+          "runtime_only_validators"
+        ],
+        "title": "AdvancedSurface",
+        "type": "object"
+      },
       "Body_upload_dataset_v1_datasets_post": {
         "properties": {
           "file": {
@@ -13,231 +77,6 @@
           "file"
         ],
         "title": "Body_upload_dataset_v1_datasets_post",
-        "type": "object"
-      },
-      "Calibration": {
-        "description": "Predictions against measurements across every terminal job that has\nboth (issue #77). Each metric and phase reports its own count, so\n\"calibrated against N real runs\" is only as honest as N is visible.",
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "metrics": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/CalibrationMetric"
-            },
-            "title": "Metrics",
-            "type": "object"
-          },
-          "phases": {
-            "items": {
-              "$ref": "#/components/schemas/CalibrationPhase"
-            },
-            "title": "Phases",
-            "type": "array"
-          },
-          "runs": {
-            "items": {
-              "$ref": "#/components/schemas/CalibrationRun"
-            },
-            "title": "Runs",
-            "type": "array"
-          }
-        },
-        "required": [
-          "count",
-          "metrics",
-          "phases",
-          "runs"
-        ],
-        "title": "Calibration",
-        "type": "object"
-      },
-      "CalibrationMetric": {
-        "description": "One metric's rollup across runs (issue #77): how many were compared,\nwhat was predicted on average, what actually happened, and the spread of\nthe error ratio (actual over predicted midpoint; >1 under-predicts, <1\nover-predicts). `min_ratio`/`max_ratio` are where a systematically wrong\nestimate shows up rather than being absorbed into the mean.",
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "max_ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Ratio"
-          },
-          "mean_actual": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mean Actual"
-          },
-          "mean_predicted": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mean Predicted"
-          },
-          "mean_ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mean Ratio"
-          },
-          "min_ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Ratio"
-          }
-        },
-        "required": [
-          "count"
-        ],
-        "title": "CalibrationMetric",
-        "type": "object"
-      },
-      "CalibrationPhase": {
-        "description": "One measured stage's rollup, plus the quote phases (issue #72) that\npredict it. `preparing` is the SSH wait (readiness); `training` carries\nimage_pull + model_download + training, because the on-machine image\nbuild and the weights download happen inside the orchestrator's\n`training` state.",
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "max_ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Ratio"
-          },
-          "mean_actual": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mean Actual"
-          },
-          "mean_predicted": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mean Predicted"
-          },
-          "mean_ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mean Ratio"
-          },
-          "min_ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Ratio"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "quotes_phases": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Quotes Phases",
-            "type": "array"
-          }
-        },
-        "required": [
-          "count",
-          "name"
-        ],
-        "title": "CalibrationPhase",
-        "type": "object"
-      },
-      "CalibrationRun": {
-        "description": "One terminal job in the aggregate, so an outlier can be named rather\nthan pointed at: its identity, and its per-metric prediction-vs-measurement\nrecord.",
-        "properties": {
-          "base_model": {
-            "title": "Base Model",
-            "type": "string"
-          },
-          "comparison": {
-            "$ref": "#/components/schemas/RunComparison",
-            "default": {
-              "cost": {},
-              "duration": {},
-              "peak_memory": {}
-            }
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "number"
-          },
-          "job_id": {
-            "title": "Job Id",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "job_id",
-          "base_model",
-          "status",
-          "created_at"
-        ],
-        "title": "CalibrationRun",
         "type": "object"
       },
       "CatalogEntry": {
@@ -340,18 +179,8 @@
         "type": "object"
       },
       "DatasetRecord": {
-        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent.\n\nThe token fields (issue #42) belong to the counting phase that runs after\nvalidation, so they ride on the record rather than inside the validation\ndict: `token_count_status` is the phase's own state, typed as the literal\nvocabulary (`counting` | `done` | `failed` | null) so the contract is the\nsingle source of the state names both halves use, and `counting_progress`\nshows where it has got to while it runs. The count itself is merged into\n`report` once it lands.",
+        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent.",
         "properties": {
-          "counting_progress": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ValidationProgress"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "created_at": {
             "title": "Created At",
             "type": "number"
@@ -387,22 +216,6 @@
           "status": {
             "title": "Status",
             "type": "string"
-          },
-          "token_count_status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "counting",
-                  "done",
-                  "failed"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Token Count Status"
           }
         },
         "required": [
@@ -415,7 +228,7 @@
         "type": "object"
       },
       "DatasetReport": {
-        "description": "What validation says about a dataset. The same dict\n`temper_core.validation.Report.to_dict()` produces, published typed.\n\nThe `error_count`/`warning_count` totals are the truth about how broken a\nfile is; the `errors`/`warnings` lists are capped at a hundred because the\nreport is held in memory and a file broken on every line must not become a\nreport proportional to the file. `*_suppressed` reconciles the two, so a\ncapped report says what it is not showing.\n\n`token_count`/`token_distribution` (issue #42) are produced by the\ncounting phase that runs after validation, so they are merged into the\nreport the API publishes and are null until the phase lands -- the quote\nreads `token_count` and renders the count absent while it is null\n(ADR-0031).",
+        "description": "What validation says about a dataset. The same dict\n`temper_core.validation.Report.to_dict()` produces, published typed.\n\nThe `error_count`/`warning_count` totals are the truth about how broken a\nfile is; the `errors`/`warnings` lists are capped at a hundred because the\nreport is held in memory and a file broken on every line must not become a\nreport proportional to the file. `*_suppressed` reconciles the two, so a\ncapped report says what it is not showing.",
         "properties": {
           "enable_thinking": {
             "anyOf": [
@@ -466,27 +279,6 @@
               }
             ],
             "title": "Schema Type"
-          },
-          "token_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Token Count"
-          },
-          "token_distribution": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TokenDistribution"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "usable_rows": {
             "title": "Usable Rows",
@@ -613,75 +405,6 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
-      "JobActuals": {
-        "description": "The measured half of issue #77's comparison, frozen at terminal.\n\nDuration and peak memory are **measured**; the cost lines are **derived**\nfrom measured duration and the rate the job froze at launch -- nothing in\nthe product reads a bill (spec 005's out-of-scope note) -- so the\ninterface marks each figure measured or derived wherever both appear.\n`currency` travels with the cost so it is never shown without the unit\nthat gives it meaning.",
-        "properties": {
-          "cost_minor": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Minor"
-          },
-          "currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency"
-          },
-          "duration_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration S"
-          },
-          "peak_memory_gb": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Peak Memory Gb"
-          },
-          "stages": {
-            "items": {
-              "$ref": "#/components/schemas/StageActual"
-            },
-            "title": "Stages",
-            "type": "array"
-          },
-          "storage_cost_usd_minor": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage Cost Usd Minor"
-          }
-        },
-        "title": "JobActuals",
-        "type": "object"
-      },
       "JobEvent": {
         "description": "One entry in a job's durable history.\n\nEvery state transition appends one, in the same transaction as the\ntransition itself. `data` carries the fields promoted from training\noutput at read time -- loss, step, epoch -- when the line carried them;\n`message` is always the original line or narration, so structuring the\nnumbers never costs the reader the text they arrived in.",
         "properties": {
@@ -760,16 +483,6 @@
       "JobRecord": {
         "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead.",
         "properties": {
-          "actuals": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/JobActuals"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "base_model": {
             "title": "Base Model",
             "type": "string"
@@ -1142,46 +855,6 @@
         "title": "PeakMemoryEstimate",
         "type": "object"
       },
-      "PointComparison": {
-        "description": "One point metric's per-run comparison (peak memory): the predicted\npoint, the measured actual, and the ratio. Peak blocks rather than warns,\nso it is a point, not a range, and there is no `inside` to land in.",
-        "properties": {
-          "actual": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual"
-          },
-          "predicted": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predicted"
-          },
-          "ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ratio"
-          }
-        },
-        "title": "PointComparison",
-        "type": "object"
-      },
       "PreviewRow": {
         "additionalProperties": true,
         "description": "A parsed row as Temper understood it, before validation judges it.\n\nArbitrary keys are allowed because the row is whatever the JSON line held;\n`messages` is typed because it is the key every supported schema shares.",
@@ -1298,17 +971,6 @@
             },
             "title": "Override Options",
             "type": "object"
-          },
-          "peak_memory_gb": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Peak Memory Gb"
           },
           "phases": {
             "items": {
@@ -1479,7 +1141,7 @@
         "type": "object"
       },
       "QuoteRequest": {
-        "description": "The recompute a plan screen asks for when a decision is overridden\n(issue #79): the same inputs as `GET /v1/quotes`, plus the decisions to\npin. The response is the recomputed quote, or a coded refusal with the\narithmetic that refused it -- an override never mutates the plan it\nlanded on, it re-requests it.",
+        "description": "The recompute a plan screen asks for when a decision is overridden\n(issue #79): the same inputs as `GET /v1/quotes`, plus the decisions to\npin. The response is the recomputed quote, or a coded refusal with the\narithmetic that refused it -- an override never mutates the plan it\nlanded on, it re-requests it.\n\n`hyperparameters` (issue #80) are the advanced-surface settings the user\nhas overridden; they ride on the same recompute so the plan re-prices\naround them and refuses a configuration that no longer fits before it is\nlaunched.",
         "properties": {
           "base_model": {
             "default": "qwen3-4b",
@@ -1489,6 +1151,11 @@
           "dataset_id": {
             "title": "Dataset Id",
             "type": "string"
+          },
+          "hyperparameters": {
+            "additionalProperties": true,
+            "title": "Hyperparameters",
+            "type": "object"
           },
           "overrides": {
             "items": {
@@ -1504,176 +1171,92 @@
         "title": "QuoteRequest",
         "type": "object"
       },
-      "RangeComparison": {
-        "description": "One ranged metric's per-run comparison (duration, cost): the predicted\nrange with its midpoint, the measured actual, and where the actual landed\nrelative to the range (`under`/`inside`/`over`), with the ratio against\nthe midpoint.",
+      "RuntimeOnlyValidators": {
+        "description": "The combinations that cannot be known ahead of launch, named as such.\n\nAxolotl enforces these in arbitrary Python, so a generated form cannot\nknow what they will refuse until the job is running (Spec 009). The model\nvalidators are named; the field-validator names were not captured by the\nintrospection, so only their count is recorded.",
         "properties": {
-          "actual": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual"
+          "field_validator_count": {
+            "default": 0,
+            "title": "Field Validator Count",
+            "type": "integer"
           },
-          "direction": {
+          "model_validators": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Model Validators",
+            "type": "array"
+          }
+        },
+        "title": "RuntimeOnlyValidators",
+        "type": "object"
+      },
+      "SurfaceField": {
+        "description": "One trainer field as the advanced surface classifies it (issue #33).\n\nEvery field carries its tier and the reason it landed there; an exposed\nfield additionally carries the specific thing that goes wrong if it is set\nbadly (`failure_mode`) and how its value is typed (`type`: the interface\ngenerates its input from this rather than hand-listing the vocabulary).",
+        "properties": {
+          "failure_mode": {
             "anyOf": [
               {
-                "enum": [
-                  "under",
-                  "inside",
-                  "over"
-                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Direction"
+            "title": "Failure Mode"
           },
-          "predicted_high": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predicted High"
-          },
-          "predicted_low": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predicted Low"
-          },
-          "predicted_midpoint": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predicted Midpoint"
-          },
-          "ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ratio"
-          }
-        },
-        "title": "RangeComparison",
-        "type": "object"
-      },
-      "RunComparison": {
-        "description": "One job's prediction-vs-measurement record, per metric, published\ntyped so the interface renders it without hand-declaring the shape.",
-        "properties": {
-          "cost": {
-            "$ref": "#/components/schemas/RangeComparison",
-            "default": {}
-          },
-          "duration": {
-            "$ref": "#/components/schemas/RangeComparison",
-            "default": {}
-          },
-          "peak_memory": {
-            "$ref": "#/components/schemas/PointComparison",
-            "default": {}
-          }
-        },
-        "title": "RunComparison",
-        "type": "object"
-      },
-      "StageActual": {
-        "description": "One measured stage of a run: its name and how long the machine spent\nin it, from the job's own state transitions (issue #77). A stage never\nreached -- a job cancelled in provisioning has no `preparing` to measure\n-- records None rather than a guessed number.",
-        "properties": {
-          "duration_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration S"
-          },
-          "name": {
-            "title": "Name",
+          "reason": {
+            "title": "Reason",
             "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
           }
         },
         "required": [
-          "name"
+          "tier",
+          "reason"
         ],
-        "title": "StageActual",
+        "title": "SurfaceField",
         "type": "object"
       },
-      "TokenDistribution": {
-        "description": "The distribution of token counts across a dataset's rows (issue #42).\n\nBounded by construction: `histogram` is one count per `histogram_edges`\nbucket, never one entry per row, so the recorded distribution cannot grow\nwith the file -- the same cap that keeps the streaming validator flat.\n`truncated_rows` is the exact number of rows that would be truncated at\n`sequence_len` (the trainer default), counted during the pass rather than\nderived from the histogram afterwards.",
+      "SurfaceTiers": {
+        "description": "The three tiers of the generated surface, each a name-to-field map.\n\nOne per Spec 009's three tiers so the shape of the document says what the\ntiers are; a client reads `tiers[\"exposed_with_named_failure_mode\"]` to\nrender the overridable settings and `tiers[\"known_but_unsupported\"]` to\nshow the trainer's settings this product does not offer, with their\nreasons.",
         "properties": {
-          "histogram": {
-            "items": {
-              "type": "integer"
+          "calculated": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceField"
             },
-            "title": "Histogram",
-            "type": "array"
+            "title": "Calculated",
+            "type": "object"
           },
-          "histogram_edges": {
-            "items": {
-              "type": "integer"
+          "exposed_with_named_failure_mode": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceField"
             },
-            "title": "Histogram Edges",
-            "type": "array"
+            "title": "Exposed With Named Failure Mode",
+            "type": "object"
           },
-          "max_row_tokens": {
-            "title": "Max Row Tokens",
-            "type": "integer"
-          },
-          "rows_counted": {
-            "title": "Rows Counted",
-            "type": "integer"
-          },
-          "sequence_len": {
-            "title": "Sequence Len",
-            "type": "integer"
-          },
-          "total_tokens": {
-            "title": "Total Tokens",
-            "type": "integer"
-          },
-          "truncated_rows": {
-            "title": "Truncated Rows",
-            "type": "integer"
+          "known_but_unsupported": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceField"
+            },
+            "title": "Known But Unsupported",
+            "type": "object"
           }
         },
-        "required": [
-          "total_tokens",
-          "rows_counted",
-          "sequence_len",
-          "truncated_rows",
-          "max_row_tokens",
-          "histogram",
-          "histogram_edges"
-        ],
-        "title": "TokenDistribution",
+        "title": "SurfaceTiers",
         "type": "object"
       },
       "ValidationError": {
@@ -1799,28 +1382,6 @@
         "summary": "Health",
         "tags": [
           "ops"
-        ]
-      }
-    },
-    "/v1/calibration": {
-      "get": {
-        "description": "Predictions against measurements across terminal jobs (issue #77).\n\nThe aggregate the calibration view renders: per-metric and per-phase\nrolls of what was predicted against what happened, so a systematically\nwrong estimate is visible rather than absorbed into a better-looking\naverage. Only jobs that reached a terminal state and carry both a frozen\nquote and frozen actuals contribute -- an estimate with no run to measure\nit against is not calibration, it is a guess. The runs themselves ride\nalong so an outlier can be named rather than pointed at.",
-        "operationId": "calibration_summary_v1_calibration_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Calibration"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Calibration Summary",
-        "tags": [
-          "jobs"
         ]
       }
     },
@@ -2290,7 +1851,7 @@
         ]
       },
       "post": {
-        "description": "The plan recomputed around the user's overrides, or null.\n\nIssue #79: changing one decision re-requests the plan rather than mutating\nit locally, so the recomputation rules live in one place -- this endpoint\nand the launch path both read `quote.build_quote`. An override that cannot\nbe honoured is refused with a stable code and, on memory grounds, the same\narithmetic the predictor used (`configuration_does_not_fit`): the\nplan-with-overrides is a demand, not an estimate, and a demand that cannot\nbe met must say so.\n\nReturns null (never a refusal) only when the estimate itself cannot be\npriced -- provider unreachable, model unresolvable -- because an estimate\nwarns, it does not block (spec 005).",
+        "description": "The plan recomputed around the user's overrides, or null.\n\nIssue #79: changing one decision re-requests the plan rather than mutating\nit locally, so the recomputation rules live in one place -- this endpoint\nand the launch path both read `quote.build_quote`. An override that cannot\nbe honoured is refused with a stable code and, on memory grounds, the same\narithmetic the predictor used (`configuration_does_not_fit`): the\nplan-with-overrides is a demand, not an estimate, and a demand that cannot\nbe met must say so.\n\n`req.hyperparameters` (issue #80) are the advanced-surface settings the\nuser has overridden. They are run through the same pre-launch gate as a\nlaunch (`temper_core.surface.validate_overrides`), so a key unknown to the\ntrainer is echoed back and a known-but-unsupported key refused with its\nreason here too, and they re-price the plan -- a `micro_batch_size` that\nno longer fits is refused before anything is provisioned.\n\nReturns null (never a refusal) only when the estimate itself cannot be\npriced -- provider unreachable, model unresolvable -- because an estimate\nwarns, it does not block (spec 005).",
         "operationId": "recompute_quote_v1_quotes_post",
         "requestBody": {
           "content": {
@@ -2335,6 +1896,28 @@
         "summary": "Recompute Quote",
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/v1/surface": {
+      "get": {
+        "description": "The generated advanced surface, published for the interface to render.\n\nIssue #80. The exposed set, each field's tier with its reason and failure\nmode, and the runtime-only validators are all derived from the pinned\ntrainer's schema and its tier data (issue #33) -- the interface generates\nits advanced panel from this rather than hand-listing the vocabulary, so\nthe panel cannot drift from what the pre-launch gate refuses. The document\nis a pure function of two checked-in data files, so it is deterministic\nfor a given pinned image.",
+        "operationId": "get_advanced_surface_v1_surface_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdvancedSurface"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Advanced Surface",
+        "tags": [
+          "surface"
         ]
       }
     }

@@ -34,6 +34,7 @@ from temper_control_plane import (
     storage,
 )
 from temper_control_plane.contracts_models import (
+    AdvancedSurface,
     Calibration,
     DatasetAccepted,
     DatasetList,
@@ -57,6 +58,7 @@ from temper_core import (
     hyperparams,
     memory,
     overrides,
+    surface,
 )
 
 # The default resolver, built once at import: `HuggingFaceModels()` performs
@@ -179,6 +181,21 @@ def list_models():
     }
 
 
+@app.get("/v1/surface", tags=["surface"], response_model=AdvancedSurface)
+def get_advanced_surface():
+    """The generated advanced surface, published for the interface to render.
+
+    Issue #80. The exposed set, each field's tier with its reason and failure
+    mode, and the runtime-only validators are all derived from the pinned
+    trainer's schema and its tier data (issue #33) -- the interface generates
+    its advanced panel from this rather than hand-listing the vocabulary, so
+    the panel cannot drift from what the pre-launch gate refuses. The document
+    is a pure function of two checked-in data files, so it is deterministic
+    for a given pinned image.
+    """
+    return surface.surface_document()
+
+
 # ---------------------------------------------------------------------------
 # datasets
 # ---------------------------------------------------------------------------
@@ -282,6 +299,14 @@ def create_job(req: JobRequest):
     refuse (spec 005). The only exceptions are refusals of the user's own
     overrides, which are not absent estimates but demands that cannot be met.
     """
+    # The advanced-surface gate runs before anything is priced, the same
+    # refusal vocabulary the plan screen offers (issue #80): a key unknown to
+    # the trainer is echoed back, a known-but-unsupported key refused with its
+    # reason, a value outside the schema's expressed constraints refused --
+    # never silently dropped by the resolver.
+    refusals = surface.validate_overrides(req.hyperparameters)
+    if refusals:
+        raise HTTPException(400, refusals[0])
     override_list = _override_list(req.overrides)
     try:
         job_id = jobs.create(
@@ -374,10 +399,20 @@ def recompute_quote(req: QuoteRequest):
     plan-with-overrides is a demand, not an estimate, and a demand that cannot
     be met must say so.
 
+    `req.hyperparameters` (issue #80) are the advanced-surface settings the
+    user has overridden. They are run through the same pre-launch gate as a
+    launch (`temper_core.surface.validate_overrides`), so a key unknown to the
+    trainer is echoed back and a known-but-unsupported key refused with its
+    reason here too, and they re-price the plan -- a `micro_batch_size` that
+    no longer fits is refused before anything is provisioned.
+
     Returns null (never a refusal) only when the estimate itself cannot be
     priced -- provider unreachable, model unresolvable -- because an estimate
     warns, it does not block (spec 005).
     """
+    refusals = surface.validate_overrides(req.hyperparameters)
+    if refusals:
+        raise HTTPException(400, refusals[0])
     ds = jobs.usable_dataset(req.dataset_id)
     m = catalog.get(req.base_model)
     if m is None:
@@ -391,7 +426,10 @@ def recompute_quote(req: QuoteRequest):
         )
     try:
         return _quote_for(
-            ds, m, {}, overrides_list=_override_list(req.overrides)
+            ds,
+            m,
+            req.hyperparameters,
+            overrides_list=_override_list(req.overrides),
         )
     except (quote.QuoteRefused, overrides.OverrideError) as e:
         raise _refuse(e) from e

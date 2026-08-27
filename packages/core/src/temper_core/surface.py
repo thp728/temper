@@ -260,6 +260,10 @@ def coerce_value(name: str, raw: Any) -> Any:
     """
     if raw is None or not isinstance(raw, str):
         return raw
+    if name not in FIELDS:
+        # A platform-internal key (e.g. simulated_failure_code) is not a
+        # trainer field, so it has no schema type to coerce to.
+        return raw
     kind = value_kind(name)
     try:
         if kind == "int":

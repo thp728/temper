@@ -227,6 +227,72 @@ class ModelCatalog(BaseModel):
     default: str
 
 
+class SurfaceField(BaseModel):
+    """One trainer field as the advanced surface classifies it (issue #33).
+
+    Every field carries its tier and the reason it landed there; an exposed
+    field additionally carries the specific thing that goes wrong if it is set
+    badly (`failure_mode`) and how its value is typed (`type`: the interface
+    generates its input from this rather than hand-listing the vocabulary).
+    """
+
+    tier: str
+    reason: str
+    failure_mode: str | None = None
+    type: str | None = None
+
+
+class SurfaceTiers(BaseModel):
+    """The three tiers of the generated surface, each a name-to-field map.
+
+    One per Spec 009's three tiers so the shape of the document says what the
+    tiers are; a client reads `tiers["exposed_with_named_failure_mode"]` to
+    render the overridable settings and `tiers["known_but_unsupported"]` to
+    show the trainer's settings this product does not offer, with their
+    reasons."""
+
+    calculated: dict[str, SurfaceField] = Field(default_factory=dict)
+    exposed_with_named_failure_mode: dict[str, SurfaceField] = Field(
+        default_factory=dict
+    )
+    known_but_unsupported: dict[str, SurfaceField] = Field(default_factory=dict)
+
+
+class RuntimeOnlyValidators(BaseModel):
+    """The combinations that cannot be known ahead of launch, named as such.
+
+    Axolotl enforces these in arbitrary Python, so a generated form cannot
+    know what they will refuse until the job is running (Spec 009). The model
+    validators are named; the field-validator names were not captured by the
+    introspection, so only their count is recorded."""
+
+    model_validators: list[str] = Field(default_factory=list)
+    field_validator_count: int = 0
+
+
+class AdvancedSurface(BaseModel):
+    """The generated advanced surface, published for the interface to render.
+
+    The same document `temper_core.surface.surface_document()` produces (and
+    `just contracts` materialises as `advanced-surface.json`), typed at the
+    HTTP boundary so the generated client never falls back to `unknown`. The
+    metadata fields validate from the document's leading-underscore keys and
+    serialize under their plain names: the underscore is a "derived metadata"
+    marker internal to the generator, not a shape worth publishing."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    source_image: str = Field(validation_alias="_source_image")
+    axolotl_version: str = Field(validation_alias="_axolotl_version")
+    config_model: str = Field(validation_alias="_config_model")
+    known_keys: list[str]
+    platform_internal_keys: list[str]
+    overrideable_keys: list[str]
+    tiers: SurfaceTiers
+    counts: dict[str, int]
+    runtime_only_validators: RuntimeOnlyValidators
+
+
 class FeasibilityWarning(BaseModel):
     """The duration-feasibility estimate, published as the dict
     `temper_core.feasibility.warning()` produces. An estimate everywhere it
@@ -346,11 +412,17 @@ class QuoteRequest(BaseModel):
     (issue #79): the same inputs as `GET /v1/quotes`, plus the decisions to
     pin. The response is the recomputed quote, or a coded refusal with the
     arithmetic that refused it -- an override never mutates the plan it
-    landed on, it re-requests it."""
+    landed on, it re-requests it.
+
+    `hyperparameters` (issue #80) are the advanced-surface settings the user
+    has overridden; they ride on the same recompute so the plan re-prices
+    around them and refuses a configuration that no longer fits before it is
+    launched."""
 
     dataset_id: str
     base_model: str = catalog.DEFAULT_MODEL
     overrides: list[DecisionOverride] = Field(default_factory=list)
+    hyperparameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobSpecPreview(BaseModel):
