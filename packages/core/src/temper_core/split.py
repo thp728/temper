@@ -128,7 +128,9 @@ def split(
         return list(rows), []
 
     order = list(range(n))
-    random.Random(seed).shuffle(order)
+    # A seeded split is meant to be reproducible, not secret: cryptographic
+    # randomness would defeat the determinism this exists for.
+    random.Random(seed).shuffle(order)  # noqa: S311
     held_indices = set(order[:held_count])
     train = [rows[i] for i in range(n) if i not in held_indices]
     held = [rows[i] for i in range(n) if i in held_indices]

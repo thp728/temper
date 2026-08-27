@@ -459,7 +459,7 @@ DEMO_LINES = (
     "{'loss': 0.6931, 'step': 10, 'epoch': 0.5}",
     # The held-out measurement, as the trainer's eval pass prints it: the
     # control plane promotes eval_loss into a metric event carrying
-    # held_out_loss, so the journey's chart has a second series to draw.
+    # held_out_loss, so the loss chart has a second series to draw.
     "{'eval_loss': 0.52, 'eval_runtime': 2.0, 'epoch': 0.5}",
 )
 

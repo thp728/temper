@@ -75,7 +75,11 @@ def test_rows_with_distinct_conversations_are_all_kept():
 
 
 def test_a_row_without_messages_keeps_its_whole_json_identity():
-    ds = [{"text": "x"}, {"text": "x"}, {"messages": [{"role": "user", "content": "q"}]}]
+    ds = [
+        {"text": "x"},
+        {"text": "x"},
+        {"messages": [{"role": "user", "content": "q"}]},
+    ]
     unique, removed = deduplicate(ds)
     assert removed == 1
 
@@ -87,15 +91,21 @@ def test_split_is_deterministic_under_a_seed():
     ds = rows([(f"q{i}", f"a{i}") for i in range(50)])
     t1, h1 = split(ds, fraction=0.2, seed=7)
     t2, h2 = split(ds, fraction=0.2, seed=7)
-    assert [_conversation_of(r) for r in t1] == [_conversation_of(r) for r in t2]
-    assert [_conversation_of(r) for r in h1] == [_conversation_of(r) for r in h2]
+    assert [_conversation_of(r) for r in t1] == [
+        _conversation_of(r) for r in t2
+    ]
+    assert [_conversation_of(r) for r in h1] == [
+        _conversation_of(r) for r in h2
+    ]
 
 
 def test_a_different_seed_produces_a_different_held_out_set():
     ds = rows([(f"q{i}", f"a{i}") for i in range(200)])
     _, h1 = split(ds, fraction=0.1, seed=7)
     _, h2 = split(ds, fraction=0.1, seed=8)
-    assert [_conversation_of(r) for r in h1] != [_conversation_of(r) for r in h2]
+    assert [_conversation_of(r) for r in h1] != [
+        _conversation_of(r) for r in h2
+    ]
 
 
 def test_the_split_is_disjoint_and_proportional():
@@ -121,7 +131,9 @@ def test_held_out_never_drops_training_below_the_floor():
     for n in range(MIN_TRAIN_ROWS, MIN_TRAIN_ROWS + 20):
         ds = rows([(f"q{i}", f"a{i}") for i in range(n)])
         train, _ = split(ds, fraction=0.5, seed=1)
-        assert len(train) >= MIN_TRAIN_ROWS, f"n={n} dropped training below the floor"
+        assert len(train) >= MIN_TRAIN_ROWS, (
+            f"n={n} dropped training below the floor"
+        )
 
 
 def test_zero_fraction_holds_out_nothing():
@@ -166,9 +178,17 @@ def test_splitting_before_dedup_can_put_a_duplicate_on_both_sides():
         seed
         for seed in range(100)
         if (
-            overlaps({_conversation_of(r) for r in split(ds, fraction=0.5, seed=seed)[0]})
+            overlaps(
+                {
+                    _conversation_of(r)
+                    for r in split(ds, fraction=0.5, seed=seed)[0]
+                }
+            )
             and overlaps(
-                {_conversation_of(r) for r in split(ds, fraction=0.5, seed=seed)[1]}
+                {
+                    _conversation_of(r)
+                    for r in split(ds, fraction=0.5, seed=seed)[1]
+                }
             )
         )
     )
@@ -190,7 +210,10 @@ def test_splitting_before_dedup_can_put_a_duplicate_on_both_sides():
 
 
 def test_held_out_split_records_the_split_size_and_seed():
-    ds = rows([("q0", "a0"), ("q0", "a0")] + [(f"q{i}", f"a{i}") for i in range(1, 11)])
+    ds = rows(
+        [("q0", "a0"), ("q0", "a0")]
+        + [(f"q{i}", f"a{i}") for i in range(1, 11)]
+    )
     train, held, record = held_out_split(ds, fraction=0.2, seed=42)
     assert record.rows_in == 12
     assert record.rows_removed_duplicates == 1

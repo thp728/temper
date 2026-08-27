@@ -313,6 +313,54 @@ describe("JobRecordView", () => {
     expect(screen.getByRole("log")).toHaveTextContent("Selecting a GPU");
   });
 
+  it("charts training and held-out loss on the finished record", () => {
+    // Issue #53: the overfitting signal is read after the run too, so the
+    // chart lives on the finished record as well as the running view.
+    render(
+      <JobRecordView
+        job={job()}
+        events={[
+          event(),
+          event({
+            id: 2,
+            kind: "metric",
+            message: "{'loss': 0.6931, 'step': 10}",
+            data: { loss: 0.6931, step: 10 },
+          }),
+          event({
+            id: 3,
+            kind: "metric",
+            message: "{'eval_loss': 0.52, 'epoch': 0.5}",
+            data: { held_out_loss: 0.52, epoch: 0.5 },
+          }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByRole("img", { name: /training loss and held-out loss/i }),
+    ).toBeVisible();
+    expect(screen.getByText("Training loss")).toBeVisible();
+    expect(screen.getByText("Held-out loss")).toBeVisible();
+  });
+
+  it("surfaces a held-out loss that stopped improving, in plain language", () => {
+    const heldOut = (id: number, loss: number) =>
+      event({
+        id,
+        kind: "metric",
+        message: `{'eval_loss': ${loss}, 'epoch': 1.0}`,
+        data: { held_out_loss: loss, epoch: 1.0 },
+      });
+    render(
+      <JobRecordView
+        job={job()}
+        events={[heldOut(2, 0.7), heldOut(3, 0.7), heldOut(4, 0.7)]}
+      />,
+    );
+    const note = screen.getByText(/held-out loss has not improved/i);
+    expect(note).toHaveTextContent(/overfitting/i);
+  });
+
   it("renders without scripting once the job is terminal", () => {
     const { container } = render(<JobRecordView job={job()} events={[]} />);
     expect(container.querySelector("script")).toBeNull();

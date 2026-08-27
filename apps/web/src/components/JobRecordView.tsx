@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
+import LossChart from "@/components/LossChart";
 import QuoteView from "@/components/QuoteView";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,8 @@ import {
   rangeDirection,
   ratio,
 } from "@/lib/jobs/comparison";
+import { metricStream } from "@/lib/jobs/loss";
+import { heldOutPlateau } from "@/lib/jobs/plateau";
 import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
 
 // A job's record (#13/#14's screen, ported): the same thing during and after
@@ -307,6 +310,16 @@ export default function JobRecordView({
   const end = job.finished_at ?? epochNow();
   const loss = latestLoss(events);
 
+  // The two series the loss chart draws (issue #53), from the same history
+  // this record renders. The chart lives here as well as on the running view
+  // because the overfitting signal is read after the run, not only while it
+  // goes -- and a held-out loss that stopped improving is said in plain
+  // language, not left as a number.
+  const stream = metricStream(events);
+  const training = stream.filter((p) => p.loss !== undefined);
+  const heldOut = stream.filter((p) => p.heldOutLoss !== undefined);
+  const plateau = heldOutPlateau(heldOut.map((p) => p.heldOutLoss!));
+
   return (
     <section aria-labelledby="job-heading" className="space-y-6">
       {!terminal && (
@@ -398,6 +411,14 @@ export default function JobRecordView({
           said against what the run did. Only present on a finished job that
           has both, so the comparison never claims numbers it does not hold. */}
       <ComparisonSection job={job} />
+
+      <section aria-labelledby="loss-chart-heading" className="space-y-2">
+        <h2 id="loss-chart-heading" className="text-lg font-semibold">
+          Loss
+        </h2>
+        <LossChart training={training} heldOut={heldOut} />
+        {plateau && <p className="rounded-lg border bg-muted/50 p-3 text-sm">{plateau.message}</p>}
+      </section>
 
       <section aria-labelledby="output-heading" className="space-y-2">
         <h2 id="output-heading" className="text-lg font-semibold">

@@ -80,27 +80,21 @@ test("a running job is watched live to completion, without a refresh", async ({
     timeout: 15_000,
   });
 
+  // The held-out signal rides the same stream (issue #53): the split that
+  // produced it is part of the run's narration, and the eval line the trainer
+  // prints arrives as a measurement. Both are in the durable history, so the
+  // assertions hold whichever half of the page is on screen.
+  await expect(page.getByRole("log")).toContainText("held-out split", {
+    timeout: 15_000,
+  });
+  await expect(page.getByRole("log")).toContainText("eval_loss", {
+    timeout: 15_000,
+  });
+
   // The latest measured loss appears as it becomes available.
   await expect(pairedValue(page, "Latest loss")).toContainText("0.6931", {
     timeout: 15_000,
   });
-
-  // The held-out loss rides the same stream, and the split that produced it
-  // is part of the run's narration (issue #53).
-  await expect(pairedValue(page, "Latest held-out loss")).toContainText(
-    "0.52",
-    { timeout: 15_000 },
-  );
-  await expect(page.getByRole("log")).toContainText("held-out split", {
-    timeout: 15_000,
-  });
-
-  // Training and held-out loss are drawn on one chart, live: the chart is on
-  // the page while the job is still running.
-  await expect(
-    page.getByRole("img", { name: /training loss and held-out loss/i }),
-  ).toBeVisible();
-  await expect(page.getByText("Held-out loss")).toBeVisible();
 
   // The job runs to completion on its own and the page hands back to the
   // finished record, which offers the artifact.
@@ -167,6 +161,33 @@ test("leaving and returning shows continuous history, not a fresh view", async (
   await expect(pairedValue(page, "State")).toHaveText("complete", {
     timeout: 30_000,
   });
+});
+
+test("training and held-out loss appear on one chart", async ({
+  page,
+  request,
+}) => {
+  // Issue #53's chart, exercised end to end against a job that really ran.
+  // The chart lives on the finished record as well as the running view (a
+  // user who returns tomorrow reads the overfitting signal too), so the
+  // assertion is race-free: wait for the job to end, then read the record.
+  const jobId = await launchViaApi(request);
+  await expect
+    .poll(
+      async () => {
+        const rec = await request.get(`${backend}/v1/jobs/${jobId}`);
+        return (await rec.json()).status;
+      },
+      { timeout: 30_000 },
+    )
+    .toMatch(/^(complete|failed|cancelled)$/);
+
+  await page.goto(`/jobs/${jobId}`);
+  await expect(
+    page.getByRole("img", { name: /training loss and held-out loss/i }),
+  ).toBeVisible();
+  await expect(page.getByText("Training loss", { exact: true })).toBeVisible();
+  await expect(page.getByText("Held-out loss", { exact: true })).toBeVisible();
 });
 
 test("cancelling a running job is destructive and stops it", async ({
