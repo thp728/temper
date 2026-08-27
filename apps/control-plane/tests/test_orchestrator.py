@@ -281,6 +281,18 @@ def test_a_job_runs_to_completion_against_a_fake_provider(harness):
     )
     assert config_object == RESULT["adapter_config"]
 
+    # The artifact record (issue #32) is assembled at packaging time: it
+    # declares the kind -- derived from the job's method, qlora -> adapter --
+    # and the members it consists of, so the download path can serve any kind
+    # without special-casing.
+    record = harness.stored(job_id)["artifact_record"]
+    assert record["kind"] == "adapter"
+    assert [m["name"] for m in record["members"]] == [
+        "adapter_model.safetensors",
+        "adapter_config.json",
+    ]
+    assert record["bytes"] == len(ADAPTER_BYTES)
+
     assert provider.destroyed
     # An injected provider belongs to whoever injected it; the job does not
     # close a resource it did not open.
@@ -1492,6 +1504,53 @@ def test_cancelling_while_the_artifact_is_being_written_produces_none(
         )
 
 
+def test_teardown_deletes_the_recorded_members_whatever_kind(harness):
+    """`_delete_stored_artifact` reads the artifact record's members, not just
+    the adapter pair.
+
+    Regression for the classification seam: a full-model artifact's members
+    are recorded at packaging time, and cancellation/teardown must discard
+    exactly those objects -- an adapter-shaped delete against a full-model
+    record would delete keys nothing was written to and orphan the real
+    objects. The record-driven branch is what makes teardown true for any
+    kind, not only for the adapter pair the machine writes before the record
+    exists.
+    """
+    from temper_control_plane import db, orchestrator, storage
+
+    job_id = harness._create()
+    member_keys = {
+        name: storage.artifact_key(job_id, name)
+        for name in ("model.safetensors", "config.json")
+    }
+    for key in member_keys.values():
+        storage.STORE.put(key, b"x")
+    db.set_state(
+        job_id,
+        "complete",
+        "done",
+        method="full",
+        artifact_key=member_keys["model.safetensors"],
+        artifact_json={
+            "members": [
+                {
+                    "name": "model.safetensors",
+                    "key": member_keys["model.safetensors"],
+                },
+                {"name": "config.json", "key": member_keys["config.json"]},
+            ],
+            "bytes": 2,
+            "sha256": "x",
+        },
+    )
+
+    orchestrator._delete_stored_artifact(job_id)
+
+    for key in member_keys.values():
+        with pytest.raises(storage.ObjectNotFound):
+            storage.STORE.get(key)
+
+
 def test_a_cancelled_job_is_not_recorded_as_a_failure(harness):
     """The user's own decision is not a defect, and must not read as one."""
     provider = FakeProvider(
@@ -1524,12 +1583,13 @@ def test_the_teardown_confirmation_precedes_a_cancelled_job_ending(harness):
     assert destroyed < terminal_index(events)
 
 
-def test_cancelling_says_plainly_that_no_adapter_will_be_produced(harness):
+def test_cancelling_says_plainly_that_no_artifact_will_be_produced(harness):
     """The consequence is stated where it is chosen, not discovered later.
 
-    Cancellation is destructive by decision: a partially trained adapter handed
-    to someone who asked to stop invites them to mistake it for a finished
-    model. Saying so is what makes that defensible rather than surprising.
+    Cancellation is destructive by decision: a partially produced artifact
+    handed to someone who asked to stop invites them to mistake it for a
+    finished model. Saying so is what makes that defensible rather than
+    surprising.
     """
     provider = FakeProvider(
         lines=TRAINING_LINES, result=RESULT, pause_at_line=2
@@ -1538,7 +1598,7 @@ def test_cancelling_says_plainly_that_no_adapter_will_be_produced(harness):
     assert provider.wait_until_paused()
 
     body = cancel(harness, job_id).json()
-    assert "no adapter" in body["message"].lower()
+    assert "no artifact" in body["message"].lower()
     assert body["cancel_requested"] is True
     assert body["status"] in (
         "queued",
@@ -1776,9 +1836,9 @@ def test_verifying_a_large_artifact_stays_flat_in_memory(harness, peak_memory):
         storage.STORE.put(weights_key, payload)
 
         def verify(job_id=job_id, result=result):
-            return orchestrator._collect_artifact(job_id, result)
+            return orchestrator._collect_artifact(job_id, result, "qlora")
 
-        assert verify() == weights_key
+        assert verify()["weights_key"] == weights_key
         peaks.append(peak_memory(verify))
 
     assert max(peaks) - min(peaks) < FLAT_SPREAD, f"peaks grew: {peaks}"
@@ -1802,9 +1862,9 @@ def test_an_unverified_or_corrupt_collection_stores_nothing(harness):
     }
     storage.STORE.put(weights_key, b"weights")
     with pytest.raises(
-        OrchestratorError, match="no adapter checksum"
+        OrchestratorError, match="no artifact checksum"
     ) as first:
-        orchestrator._collect_artifact(job_id, unverified)
+        orchestrator._collect_artifact(job_id, unverified, "qlora")
     assert first.value.code == "artifact_unverified"
     with pytest.raises(storage.ObjectNotFound):
         storage.STORE.get(weights_key)
@@ -1815,13 +1875,13 @@ def test_an_unverified_or_corrupt_collection_stores_nothing(harness):
     }
     storage.STORE.put(weights_key, b"weights")
     with pytest.raises(OrchestratorError, match="SHA mismatch") as second:
-        orchestrator._collect_artifact(job_id, corrupt)
+        orchestrator._collect_artifact(job_id, corrupt, "qlora")
     assert second.value.code == "artifact_corrupt"
     with pytest.raises(storage.ObjectNotFound):
         storage.STORE.get(weights_key)
 
 
-def test_a_result_naming_an_adapter_with_nothing_landed_fails(harness):
+def test_a_result_naming_an_artifact_with_nothing_landed_fails(harness):
     """The machine reported a checksum but no object arrived at the key.
 
     With the machine writing directly, absence after a claimed upload is a
@@ -1832,7 +1892,7 @@ def test_a_result_naming_an_adapter_with_nothing_landed_fails(harness):
 
     job_id = harness._create()
     with pytest.raises(OrchestratorError, match="no object landed") as excinfo:
-        orchestrator._collect_artifact(job_id, RESULT)
+        orchestrator._collect_artifact(job_id, RESULT, "qlora")
     assert excinfo.value.code == "artifact_unverified"
 
     weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)

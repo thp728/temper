@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     default: "Temper",
     template: "%s · Temper",
   },
-  description: "Fine-tuning platform. Dataset in, adapter out.",
+  description: "Fine-tuning platform. Dataset in, artifact out.",
 };
 
 export default function RootLayout({

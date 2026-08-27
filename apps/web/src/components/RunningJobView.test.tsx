@@ -190,7 +190,7 @@ describe("RunningJobView", () => {
     const button = screen.getByRole("button", { name: "Cancel job" });
     expect(button).toBeEnabled();
     expect(
-      screen.getByText(/no adapter will be produced/i),
+      screen.getByText(/no artifact will be produced/i),
     ).toBeVisible();
     expect(screen.getByText(/cannot be undone/i)).toBeVisible();
   });

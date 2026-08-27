@@ -23,6 +23,7 @@ function job(overrides: Partial<JobRecord> = {}): JobRecord {
     currency: "INR",
     warnings: [],
     result: { ok: true },
+    artifact: null,
     ...overrides,
   };
 }
@@ -106,19 +107,57 @@ describe("JobRecordView", () => {
   });
 
   it("offers a completed job's artifact through the download route", () => {
-    render(<JobRecordView job={job()} events={[]} />);
-    const link = screen.getByRole("link", { name: /Download the adapter/ });
-    expect(link).toHaveAttribute("href", "/v1/jobs/job_abc123def456/adapter");
-    // The zip promises the file that makes it loadable.
+    render(
+      <JobRecordView
+        job={job({
+          artifact: {
+            kind: "adapter",
+            members: ["adapter_model.safetensors", "adapter_config.json"],
+            bytes: 132,
+            loading: "A PEFT adapter over the base model.",
+          },
+        })}
+        events={[]}
+      />,
+    );
+    const link = screen.getByRole("link", { name: /Download the artifact/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "/v1/jobs/job_abc123def456/artifact",
+    );
+    // The load path ships with the artifact (issue #32): the offer says how
+    // to use what it hands over.
+    expect(screen.getByText(/PEFT adapter over the base model/)).toBeVisible();
     expect(screen.getByText(/adapter_config\.json/)).toBeVisible();
   });
 
-  it("says when training finished but no adapter could be retrieved", () => {
+  it("names the artifact by its declared kind", () => {
     render(
-      <JobRecordView job={job({ result: null })} events={[]} />,
+      <JobRecordView
+        job={job({
+          artifact: {
+            kind: "full_model",
+            members: ["model.safetensors", "config.json"],
+            bytes: 2200,
+            loading: "A fully fine-tuned model: load it directly.",
+          },
+        })}
+        events={[]}
+      />,
     );
-    expect(screen.getByText(/no adapter could be retrieved/i)).toBeVisible();
-    expect(screen.queryByRole("link", { name: /Download the adapter/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /Download the artifact/ })).toBeVisible();
+    expect(screen.getByText(/fully fine-tuned model/)).toBeVisible();
+    expect(screen.getByText(/model\.safetensors/)).toBeVisible();
+  });
+
+  it("says when training finished but no artifact could be retrieved", () => {
+    render(
+      <JobRecordView job={job({ result: null, artifact: null })} events={[]} />,
+    );
+    expect(screen.getByText(/no artifact could be retrieved/i)).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: /Download the artifact/ }),
+    ).toBeNull();
   });
 
   it("shows a failure's stable code with its reason in plain language", () => {
@@ -146,7 +185,9 @@ describe("JobRecordView", () => {
     expect(screen.getByText(/machine destroyed/)).toBeVisible();
     // What the job was doing before it died stays readable.
     expect(screen.getByText("[00:00:00] building trainer image")).toBeVisible();
-    expect(screen.queryByRole("link", { name: /Download the adapter/ })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: /Download the artifact/ }),
+    ).toBeNull();
   });
 
   it("says an over-long job hit the ceiling, with its code and reason", () => {
@@ -295,7 +336,7 @@ describe("JobRecordView", () => {
     );
     // A working job offers no download yet.
     expect(
-      screen.queryByRole("link", { name: /Download the adapter/ }),
+      screen.queryByRole("link", { name: /Download the artifact/ }),
     ).toBeNull();
   });
 

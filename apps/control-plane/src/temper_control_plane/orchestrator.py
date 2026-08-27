@@ -51,6 +51,7 @@ from typing import BinaryIO, NamedTuple
 
 from temper_core import (
     actuals,
+    artifacts,
     catalog,
     disk,
     events,
@@ -120,10 +121,10 @@ DESTROY_RETRY_DELAY_S = 5
 # real. The confirmation is a separate event, and it arrives before the job
 # reports that it is over.
 CANCEL_ACK = (
-    "Cancellation requested. The machine is being destroyed and no adapter "
+    "Cancellation requested. The machine is being destroyed and no artifact "
     "will be produced."
 )
-CANCEL_MESSAGE = "Cancelled at your request. No adapter was produced."
+CANCEL_MESSAGE = "Cancelled at your request. No artifact was produced."
 
 
 class _TarMember(NamedTuple):
@@ -379,15 +380,28 @@ def _consume(job_id: str, lines) -> dict:
 def _delete_stored_artifact(job_id: str) -> None:
     """Remove the objects one job's artifact consists of, if any.
 
+    Which objects those are comes from the same resolution the download path
+    reads (`db.artifact_members`): the record's member keys, whatever kind
+    they are -- so cancellation discards a full-model artifact's objects
+    exactly as it discards an adapter's. When the row records nothing yet
+    (the machine writes through the grant before `artifact_key` is set, so a
+    cancellation mid-write or a verification refusal can land first), the
+    canonical adapter pair is still deleted: it is the only set a QLoRA
+    machine could have written, and deleting an absent key is a no-op.
     Deletion failures are suppressed deliberately: teardown must not mask the
     cancellation that caused them, and an orphaned object is cheaper than a
     half-reported state. (An object written by a machine whose run has since
     ended is an orphan in the same sense a stray machine is; ADR-0009 records
     that nothing reconciles them yet.)
     """
-    for name in storage.ARTIFACT_MEMBERS:
+    job = db.get_job(job_id) or {}
+    members = db.artifact_members(job) or [
+        (name, storage.artifact_key(job_id, name))
+        for name in artifacts.ADAPTER_MEMBER_NAMES
+    ]
+    for _, key in members:
         with suppress(Exception):
-            storage.STORE.delete(storage.artifact_key(job_id, name))
+            storage.STORE.delete(key)
 
 
 def _delete_stored_checkpoints(job_id: str) -> None:
@@ -404,15 +418,25 @@ def _delete_stored_checkpoints(job_id: str) -> None:
             storage.STORE.delete(key)
 
 
-def _collect_artifact(job_id: str, result: dict) -> str | None:
+def _collect_artifact(
+    job_id: str, result: dict, method: str | None
+) -> dict | None:
     """Verify the artifact the machine wrote, and publish its config.
 
-    Returns the artifact weights' key in storage, or None when the machine
-    produced nothing to store. The machine wrote the weights itself to the
-    scoped grant (ADR-0009); this side verifies what landed against the
-    checksum the machine reported, **before the job may report success**, and
-    never holds the payload: the stored object is streamed through the hash one
-    chunk at a time.
+    Returns the artifact record -- the kind it declares, the stored members
+    that make it up, and the verification's outcome -- or None when the
+    machine produced nothing to store. This is where the artifact record is
+    assembled (ADR-0035): the machine wrote the weights itself to the scoped
+    grant (ADR-0009); this side verifies what landed against the checksum the
+    machine reported, **before the job may report success**, and never holds
+    the payload: the stored object is streamed through the hash one chunk at a
+    time.
+
+    The kind is derived from the job's method (issue #32), never stored: a
+    QLoRA or LoRA run produces an adapter, a full fine-tune produces a fully
+    trained model, and the derivation reads existing rows correctly with no
+    migration. The members are recorded because they are what the download
+    path serves -- any kind, without special-casing.
 
     The config that makes the weights loadable still travels inside result.json
     -- it is small by construction -- and is stored here rather than written by
@@ -425,12 +449,12 @@ def _collect_artifact(job_id: str, result: dict) -> str | None:
     weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
     want = result.get("adapter_sha256")
     if not want:
-        # A result that names an adapter but carries no checksum cannot be
+        # A result that names an artifact but carries no checksum cannot be
         # verified at all -- refused rather than delivered uncheckable.
         _delete_stored_artifact(job_id)
         raise OrchestratorError(
             "artifact_unverified",
-            "The run result carried no adapter checksum, so the stored "
+            "The run result carried no artifact checksum, so the stored "
             "artifact cannot be verified; it was refused rather than "
             "delivered uncheckable.",
         )
@@ -454,7 +478,7 @@ def _collect_artifact(job_id: str, result: dict) -> str | None:
             cause = f" The machine recorded: {recorded['error']}"
         raise OrchestratorError(
             "artifact_unverified",
-            "The run result names an adapter, but no object landed at its "
+            "The run result names an artifact, but no object landed at its "
             "storage key. The machine's upload must have failed." + cause,
         ) from None
 
@@ -467,30 +491,43 @@ def _collect_artifact(job_id: str, result: dict) -> str | None:
         _delete_stored_artifact(job_id)
         raise OrchestratorError(
             "artifact_corrupt",
-            f"Adapter SHA mismatch: machine reported {want[:16]}…, stored "
+            f"Artifact SHA mismatch: machine reported {want[:16]}…, stored "
             f"object is {got[:16]}…",
         )
-    db.add_event(job_id, "log", f"Adapter verified, {received / 1e6:.1f} MB")
+    db.add_event(job_id, "log", f"Artifact verified, {received / 1e6:.1f} MB")
 
     # A bare .safetensors is not a loadable adapter: PEFT needs
     # adapter_config.json beside it to know the rank, alpha and target modules.
     # Shipping only the weights would have handed the user a file that looks
     # like the deliverable and cannot be used. The config is already inside
     # result.json, so this costs no extra transfer.
+    members: list[dict] = [
+        {"name": storage.ADAPTER_WEIGHTS_NAME, "key": weights_key}
+    ]
     adapter_config = result.get("adapter_config")
     if adapter_config:
+        config_key = storage.artifact_key(job_id, storage.ADAPTER_CONFIG_NAME)
         storage.STORE.put(
-            storage.artifact_key(job_id, storage.ADAPTER_CONFIG_NAME),
+            config_key,
             json.dumps(adapter_config, indent=2).encode("utf-8"),
+        )
+        members.append(
+            {"name": storage.ADAPTER_CONFIG_NAME, "key": config_key}
         )
     else:
         db.add_event(
             job_id,
             "error",
             "No adapter_config.json in the run result; the downloaded "
-            "adapter will not load without one.",
+            "artifact will not load without one.",
         )
-    return weights_key
+    return {
+        "kind": artifacts.kind_for(method),
+        "members": members,
+        "weights_key": weights_key,
+        "bytes": received,
+        "sha256": want,
+    }
 
 
 def _base_checkpoint_record(ckpt: dict) -> dict:
@@ -952,15 +989,21 @@ def _attempt(
     # so what already landed is discarded rather than kept.
     _discard_if_cancelled(job_id, cancelled)
     db.set_state(job_id, "packaging", "Verifying artifact")
-    artifact_key = _collect_artifact(job_id, result)
+    artifact = _collect_artifact(job_id, result, plan.method)
     checkpoints = _collect_checkpoints(job_id, result)
     db.set_checkpoints(job_id, checkpoints)
     _discard_if_cancelled(job_id, cancelled)
-    return (
-        "complete",
-        "Training complete",
-        {"result_json": result, "artifact_key": artifact_key},
-    )
+    fields: dict = {
+        "result_json": result,
+        "artifact_key": (
+            artifact["weights_key"] if artifact is not None else None
+        ),
+    }
+    if artifact is not None:
+        # Only a produced artifact records members; a run that produced none
+        # leaves the column NULL rather than a JSON "null".
+        fields["artifact_json"] = artifact
+    return ("complete", "Training complete", fields)
 
 
 def _record_actuals(

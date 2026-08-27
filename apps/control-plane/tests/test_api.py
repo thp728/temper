@@ -453,10 +453,10 @@ def test_job_list_response_is_exactly_the_published_model(client, tmp_path):
     assert all("adapter_path" not in j for j in body["jobs"])
 
 
-def test_queued_job_has_no_adapter_yet(client, tmp_path):
+def test_queued_job_has_no_artifact_yet(client, tmp_path):
     ds = valid_dataset(client, tmp_path)
     job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
-    r = client.get(f"/v1/jobs/{job['id']}/adapter")
+    r = client.get(f"/v1/jobs/{job['id']}/artifact")
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "no_artifact"
 
@@ -542,14 +542,18 @@ def test_cancelling_a_job_that_vanishes_mid_request_is_a_404(
     assert r.json()["detail"] == "No such job."
 
 
-def test_completed_job_downloads_a_loadable_adapter(client, tmp_path):
-    """The download is a zip, and the zip carries adapter_config.json.
+def test_a_completed_adapter_job_downloads_a_loadable_artifact(
+    client, tmp_path
+):
+    """The download is a zip carrying the adapter's config and a manifest.
 
     Regression test for shipping a bare .safetensors: PEFT cannot load weights
     without the config that records rank, alpha and target modules, so a
     download missing it looks like the deliverable and is not one. Both files
     are stored as objects behind the storage seam; the endpoint reads them by
-    key and must not know where they live.
+    key and must not know where they live. The manifest declares the artifact's
+    kind and its load path (issue #32) -- the artifact is the deliverable, and
+    the adapter is one kind of it.
     """
     import io
     import zipfile
@@ -565,19 +569,32 @@ def test_completed_job_downloads_a_loadable_adapter(client, tmp_path):
         storage.artifact_key(job["id"], storage.ADAPTER_CONFIG_NAME),
         b'{"r": 16, "lora_alpha": 32}',
     )
-    db.set_state(job["id"], "complete", "done", artifact_key=weights_key)
+    db.set_state(
+        job["id"],
+        "complete",
+        "done",
+        method="qlora",
+        artifact_key=weights_key,
+    )
 
-    r = client.get(f"/v1/jobs/{job['id']}/adapter")
+    r = client.get(f"/v1/jobs/{job['id']}/artifact")
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/zip"
     assert job["id"] in r.headers["content-disposition"]
+    assert "adapter.zip" not in r.headers["content-disposition"]
+    assert "artifact.zip" in r.headers["content-disposition"]
 
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         assert sorted(z.namelist()) == [
             "adapter_config.json",
             "adapter_model.safetensors",
+            "temper-artifact.json",
         ]
         assert z.read("adapter_model.safetensors") == b"weights"
+        manifest = json.loads(z.read("temper-artifact.json"))
+        assert manifest["kind"] == "adapter"
+        assert manifest["base_model"] == job["base_model"]
+        assert manifest["loading"]
 
 
 def test_a_job_whose_stored_weights_are_gone_refuses_loudly(client, tmp_path):
@@ -591,9 +608,136 @@ def test_a_job_whose_stored_weights_are_gone_refuses_loudly(client, tmp_path):
     key = storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
     db.set_state(job["id"], "complete", "done", artifact_key=key)
 
-    r = client.get(f"/v1/jobs/{job['id']}/adapter")
+    r = client.get(f"/v1/jobs/{job['id']}/artifact")
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "artifact_missing"
+
+
+def test_a_recorded_full_model_artifact_downloads_without_special_casing(
+    client, tmp_path
+):
+    """The download path serves any kind by streaming whatever the artifact
+    record names -- the endpoint carries no per-kind branch.
+
+    A full fine-tune produces a fully trained model, not an adapter; its
+    members are recorded at packaging time and served exactly like an
+    adapter's. The manifest says which kind it is, so what a user downloads
+    tells them how to load it. This is issue #32's "download path serves any
+    kind without special-casing" made testable before a full-model run exists.
+    """
+    import io
+    import zipfile
+
+    from temper_control_plane import db, storage
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+
+    keys = {
+        name: storage.artifact_key(job["id"], name)
+        for name in ("model.safetensors", "config.json")
+    }
+    storage.STORE.put(keys["model.safetensors"], b"full weights")
+    storage.STORE.put(keys["config.json"], b'{"architectures": ["Qwen3"]}')
+    db.set_state(
+        job["id"],
+        "complete",
+        "done",
+        method="full",
+        artifact_key=keys["model.safetensors"],
+        artifact_json={
+            "members": [
+                {
+                    "name": "model.safetensors",
+                    "key": keys["model.safetensors"],
+                },
+                {"name": "config.json", "key": keys["config.json"]},
+            ],
+            "bytes": len(b"full weights")
+            + len(b'{"architectures": ["Qwen3"]}'),
+            "sha256": "x",
+        },
+    )
+
+    r = client.get(f"/v1/jobs/{job['id']}/artifact")
+    assert r.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        assert sorted(z.namelist()) == [
+            "config.json",
+            "model.safetensors",
+            "temper-artifact.json",
+        ]
+        assert z.read("model.safetensors") == b"full weights"
+        manifest = json.loads(z.read("temper-artifact.json"))
+        assert manifest["kind"] == "full_model"
+        assert "PeftModel" not in manifest["loading"]
+
+
+def test_the_published_job_record_carries_the_artifact_and_its_kind(
+    client, tmp_path
+):
+    """`artifact` is part of the published record: the interface can name the
+    deliverable -- its kind and its load path -- without touching where it
+    lives (the storage keys stay server-side)."""
+    from temper_control_plane import db, storage
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    assert job["artifact"] is None
+
+    weights_key = storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
+    storage.STORE.put(weights_key, b"weights")
+    storage.STORE.put(
+        storage.artifact_key(job["id"], storage.ADAPTER_CONFIG_NAME),
+        b'{"r": 16}',
+    )
+    db.set_state(
+        job["id"],
+        "complete",
+        "done",
+        method="qlora",
+        artifact_key=weights_key,
+        artifact_json={
+            "members": [
+                {"name": "adapter_model.safetensors", "key": weights_key}
+            ],
+            "bytes": 7,
+            "sha256": "x",
+        },
+    )
+
+    body = client.get(f"/v1/jobs/{job['id']}").json()
+    artifact = body["artifact"]
+    assert artifact["kind"] == "adapter"
+    assert artifact["members"] == ["adapter_model.safetensors"]
+    assert artifact["bytes"] == 7
+    assert artifact["loading"]
+    # The storage address never reaches the client.
+    assert "artifact_key" not in body and "artifact_record" not in body
+
+
+def test_a_job_that_is_not_complete_publishes_no_artifact(client, tmp_path):
+    """An artifact is available exactly when the job is complete.
+
+    A cancelled or failed row can retain keys whose objects teardown already
+    deleted; publishing an artifact there would offer a download that cannot
+    succeed. The record is only published beside the `complete` state.
+    """
+    from temper_control_plane import db, storage
+
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    weights_key = storage.artifact_key(job["id"], storage.ADAPTER_WEIGHTS_NAME)
+    storage.STORE.put(weights_key, b"weights")
+    db.set_state(
+        job["id"],
+        "cancelled",
+        "Cancelled at your request. No artifact was produced.",
+        method="qlora",
+        artifact_key=weights_key,
+    )
+
+    assert client.get(f"/v1/jobs/{job['id']}").json()["artifact"] is None
 
 
 def test_the_download_zip_streams_without_holding_it_whole(
@@ -635,7 +779,7 @@ def test_the_download_zip_streams_without_holding_it_whole(
         # the way the server itself would.
         import asyncio
 
-        response = main.download_adapter(job["id"])
+        response = main.download_artifact(job["id"])
 
         async def total() -> int:
             seen = 0
@@ -659,7 +803,7 @@ def test_the_download_zip_streams_without_holding_it_whole(
 
     async def collect() -> bytes:
         parts = []
-        async for chunk in main.download_adapter(job["id"]).body_iterator:
+        async for chunk in main.download_artifact(job["id"]).body_iterator:
             parts.append(chunk)
         return b"".join(parts)
 
@@ -668,6 +812,7 @@ def test_the_download_zip_streams_without_holding_it_whole(
         assert sorted(z.namelist()) == [
             "adapter_config.json",
             "adapter_model.safetensors",
+            "temper-artifact.json",
         ]
         assert z.read("adapter_model.safetensors") == block * 3
 

@@ -65,6 +65,44 @@
         "title": "AdvancedSurface",
         "type": "object"
       },
+      "ArtifactRecord": {
+        "description": "The artifact a job produced, as the interface is allowed to see it.\n\nThe deliverable's declared kind and what it consists of (issue #32): the\nartifact is what a user downloads, and an adapter is one kind of it. The\nkind is **derived from the job's method**, never stored, so a row written\nbefore this model existed reads correctly with no migration. `members` are\nthe archive entry names (never the storage keys -- where an object lives\nis the storage seam's business, not the browser's), and `loading` is the\nper-kind load path, defined once in the domain so this shape, the download\nmanifest and the docs cannot drift.",
+        "properties": {
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "loading": {
+            "title": "Loading",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "members",
+          "loading"
+        ],
+        "title": "ArtifactRecord",
+        "type": "object"
+      },
       "Body_upload_dataset_v1_datasets_post": {
         "properties": {
           "file": {
@@ -822,12 +860,22 @@
         "type": "object"
       },
       "JobRecord": {
-        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead.",
+        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead, and `artifact` -- its\ndeclared kind and members -- is published so the interface can name the\ndeliverable without ever touching where it lives.",
         "properties": {
           "actuals": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/JobActuals"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRecord"
               },
               {
                 "type": "null"
@@ -2230,9 +2278,9 @@
         ]
       }
     },
-    "/v1/jobs/{job_id}/adapter": {
+    "/v1/jobs/{job_id}/artifact": {
       "get": {
-        "operationId": "download_adapter_v1_jobs__job_id__adapter_get",
+        "operationId": "download_artifact_v1_jobs__job_id__artifact_get",
         "parameters": [
           {
             "in": "path",
@@ -2264,7 +2312,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Download Adapter",
+        "summary": "Download Artifact",
         "tags": [
           "jobs"
         ]

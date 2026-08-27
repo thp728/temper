@@ -50,7 +50,7 @@ async function launchFromTheShell(page: Page): Promise<string> {
   return jobId;
 }
 
-test("a user comes back tomorrow, finds the job, and collects the adapter", async ({
+test("a user comes back tomorrow, finds the job, and collects the artifact", async ({
   page,
 }) => {
   const jobId = await launchFromTheShell(page);
@@ -71,16 +71,16 @@ test("a user comes back tomorrow, finds the job, and collects the adapter", asyn
   await expect(page).toHaveURL(new RegExp(`/jobs/${jobId}$`));
   await expect(pairedValue(page, "State")).toHaveText("complete");
   await expect(
-    page.getByRole("heading", { name: "Your adapter" }),
+    page.getByRole("heading", { name: "Your artifact" }),
   ).toBeVisible();
 
   // What it produced can be downloaded, and is an archive when it lands.
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("link", { name: /Download the adapter/ }).click();
+  await page.getByRole("link", { name: /Download the artifact/ }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe(`${jobId}-adapter.zip`);
+  expect(download.suggestedFilename()).toBe(`${jobId}-artifact.zip`);
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "temper-e2e-dl-"));
-  const target = path.join(dir, "adapter.zip");
+  const target = path.join(dir, "artifact.zip");
   await download.saveAs(target);
   const bytes = await fs.readFile(target);
   // A zip begins with "PK"; whatever else the artifact holds, it unzips.
@@ -185,13 +185,13 @@ test("a failed job says why in plain language, and keeps its stable code", async
   const alert = page.getByRole("main").getByRole("alert");
   await expect(alert).toContainText("gpu_stalled");
   await expect(alert).toContainText(/stopped by a safety limit/);
-  await expect(alert).toContainText(/no adapter was produced/i);
+  await expect(alert).toContainText(/no artifact was produced/i);
 
   // What the job was doing before it died stays readable in the history.
   await expect(page.getByRole("log")).toContainText("building trainer image");
 
   // And nothing offers a download that does not exist.
-  await expect(page.getByRole("link", { name: /Download the adapter/ })).toHaveCount(
+  await expect(page.getByRole("link", { name: /Download the artifact/ })).toHaveCount(
     0,
   );
 });

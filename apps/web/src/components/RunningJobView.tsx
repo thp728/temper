@@ -227,14 +227,14 @@ export default function RunningJobView({
         <h2 id="cancel-heading" className="text-lg font-semibold">
           Cancel this job?
         </h2>
-        {/* The consequence -- no adapter will be produced -- is stated beside
+        {/* The consequence -- no artifact will be produced -- is stated beside
             the control, before the request exists (the port of the old watch
             page's warning). The button is styled destructive, and the control
             disappears with the job: a terminal record offers nothing to
             cancel. */}
         <p>
           Cancelling destroys the machine and{" "}
-          <strong>no adapter will be produced</strong>. This cannot be undone.
+          <strong>no artifact will be produced</strong>. This cannot be undone.
         </p>
         <div className="flex items-center gap-3">
           <Button

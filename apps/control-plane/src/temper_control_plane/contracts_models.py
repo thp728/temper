@@ -477,13 +477,33 @@ class JobActuals(BaseModel):
     stages: list[StageActual] = Field(default_factory=list)
 
 
+class ArtifactRecord(BaseModel):
+    """The artifact a job produced, as the interface is allowed to see it.
+
+    The deliverable's declared kind and what it consists of (issue #32): the
+    artifact is what a user downloads, and an adapter is one kind of it. The
+    kind is **derived from the job's method**, never stored, so a row written
+    before this model existed reads correctly with no migration. `members` are
+    the archive entry names (never the storage keys -- where an object lives
+    is the storage seam's business, not the browser's), and `loading` is the
+    per-kind load path, defined once in the domain so this shape, the download
+    manifest and the docs cannot drift."""
+
+    kind: str
+    members: list[str]
+    bytes: int | None = None
+    loading: str
+
+
 class JobRecord(BaseModel):
     """A job and the record of what became of it, published typed.
 
     Like `DatasetRecord` for stored rows, this deliberately does not publish
     the artifact's storage address (`artifact_key`): where a stored object
     lives is the storage seam's business, not the browser's. The artifact
-    travels through the download endpoint instead."""
+    travels through the download endpoint instead, and `artifact` -- its
+    declared kind and members -- is published so the interface can name the
+    deliverable without ever touching where it lives."""
 
     id: str
     dataset_id: str
@@ -510,6 +530,7 @@ class JobRecord(BaseModel):
     overrides: list[DecisionOverride] = Field(default_factory=list)
     result: dict[str, Any] | None = None
     actuals: JobActuals | None = None
+    artifact: ArtifactRecord | None = None
 
 
 class JobList(BaseModel):

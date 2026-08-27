@@ -1,6 +1,6 @@
 """Temper control plane.
 
-One FastAPI process. Upload a dataset, launch a job, watch it, take the adapter.
+One FastAPI process. Upload a dataset, launch a job, watch it, take the artifact.
 
 Deliberately not here: auth, billing, a separate gateway process, a message
 broker. The brief sanctions cutting auth and billing; the rest are scaling
@@ -53,6 +53,7 @@ from temper_control_plane.contracts_models import (
 )
 from temper_control_plane.storage import ObjectNotFound
 from temper_core import (
+    artifacts,
     calibration,
     catalog,
     feasibility,
@@ -718,7 +719,7 @@ def _open_member(key: str) -> Iterator[bytes] | None:
 def _zip_chunks(members: list[tuple[str, Iterator[bytes]]]) -> Iterator[bytes]:
     """The zip of stored objects as bounded chunks.
 
-    Built per request rather than cached -- a stale zip beside fresh adapter
+    Built per request rather than cached -- a stale zip beside fresh artifact
     files is a worse failure than rebuilding it. Streamed rather than
     buffered: the artifact is the payload that grows without bound, and
     zipping into an in-memory buffer would hold every byte of a full
@@ -743,33 +744,44 @@ def _zip_chunks(members: list[tuple[str, Iterator[bytes]]]) -> Iterator[bytes]:
     return chunks.piped_chunks(pour)
 
 
-@app.get("/v1/jobs/{job_id}/adapter", tags=["jobs"])
-def download_adapter(job_id: str):
+@app.get("/v1/jobs/{job_id}/artifact", tags=["jobs"])
+def download_artifact(job_id: str):
     job = db.get_job(job_id)
     if not job:
         raise HTTPException(404, "No such job.")
-    artifact_key = job.get("artifact_key")
-    if not artifact_key:
+    members = db.artifact_members(job)
+    if not members:
         raise HTTPException(
             409,
             {
                 "code": "no_artifact",
-                "message": f"Job is '{job['status']}'; no adapter is available yet.",
+                "message": f"Job is '{job['status']}'; no artifact is available yet.",
             },
         )
-    # Zipped, because an artifact is a set of objects: the weights plus the
-    # adapter_config.json that makes them loadable.
-    #
-    # Both objects are read from the keys the job row records -- the address
+
+    # Zipped, because an artifact is a set of stored objects -- which objects,
+    # and how many, is the artifact record's business, not this endpoint's: the
+    # members were recorded at packaging time, and this path serves any kind
+    # (adapter, fully trained model, ...) by streaming whatever the record
+    # names, without special-casing. A row written before the record existed is
+    # described by the canonical adapter pair, so a legacy download behaves
+    # exactly as it always did. `artifact_members` is the one resolution both
+    # this path and teardown read.
+    kind = artifacts.kind_for(job.get("method"))
+    record = job.get("artifact_record")
+    declared_bytes = record.get("bytes") if record else None
+
+    # All members are read from the keys the job row records -- the address
     # written at packaging time is the one read at download time -- through
-    # streaming reads, so the payload is never held whole. A missing weights
-    # object refuses loudly rather than downloading an empty archive: a
-    # download that "succeeds" with nothing in it looks like the deliverable
-    # and is not one -- the same failure shape as shipping a bare .safetensors.
-    # A missing config alone still zips the weights, because a run that
-    # produced none already reported that as an error event when it ended.
-    weights = _open_member(artifact_key)
-    if weights is None:
+    # streaming reads, so the payload is never held whole. The first member is
+    # required: a missing weights object refuses loudly rather than
+    # downloading an empty archive, because a download that "succeeds" with
+    # nothing in it looks like the deliverable and is not one. A later member
+    # missing alone still serves the rest, because a run that produced none
+    # already reported that as an error event when it ended.
+    primary_name, primary_key = members[0]
+    primary = _open_member(primary_key)
+    if primary is None:
         raise HTTPException(
             409,
             {
@@ -780,18 +792,36 @@ def download_adapter(job_id: str):
             },
         )
 
-    members: list[tuple[str, Iterator[bytes]]] = [
-        (storage.ADAPTER_WEIGHTS_NAME, weights)
+    member_streams: list[tuple[str, Iterator[bytes]]] = [
+        (primary_name, primary)
     ]
-    config_stream = _open_member(storage.artifact_config_key(artifact_key))
-    if config_stream is not None:
-        members.append((storage.ADAPTER_CONFIG_NAME, config_stream))
+    for name, key in members[1:]:
+        stream = _open_member(key)
+        if stream is not None:
+            member_streams.append((name, stream))
+
+    # The manifest travels with the artifact and records which kind it is,
+    # with the load path that kind needs -- an adapter is applied to a base
+    # model, a fully trained model is loaded on its own (spec 006 / issue
+    # #32). Served as a real member so it survives the download.
+    manifest = {
+        "kind": kind,
+        "base_model": job.get("base_model"),
+        "base_revision": job.get("base_revision"),
+        "members": [name for name, _ in member_streams],
+        "bytes": declared_bytes,
+        "loading": artifacts.loading_instructions(kind),
+    }
+    manifest_bytes = json.dumps(manifest, indent=2).encode("utf-8")
+    member_streams.append((artifacts.MANIFEST_NAME, iter((manifest_bytes,))))
 
     return StreamingResponse(
-        _zip_chunks(members),
+        _zip_chunks(member_streams),
         media_type="application/zip",
         headers={
-            "Content-Disposition": f'attachment; filename="{job_id}-adapter.zip"'
+            "Content-Disposition": (
+                f'attachment; filename="{job_id}-artifact.zip"'
+            )
         },
     )
 
