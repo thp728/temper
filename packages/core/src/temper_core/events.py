@@ -12,8 +12,8 @@ second pass over the text, and text is the worst thing to build a chart on: it
 changes whenever the framework changes its mind about formatting, and by then
 the job is over and the line is gone.
 
-**Only the training log dict is promoted.** Once per logging step, transformers'
-progress callback writes the log dict as a Python repr —
+**Two kinds of log dict are promoted.** Once per logging step, transformers'
+progress callback writes the training log dict as a Python repr —
 ``{'loss': 1.9042, 'grad_norm': 3.99, 'learning_rate': 4.5e-05, 'epoch': 0.13}``.
 A payload counts as that line only if it carries a `'loss'` key, and the quotes
 are load-bearing: evaluation writes `'eval_loss'` and the end-of-training
@@ -21,6 +21,14 @@ summary writes `'train_loss'`, so neither is mistaken for a training step, and
 neither contributes the `'epoch'` sitting beside it. Requiring the braces is
 what keeps prose that merely mentions a loss out of the metrics, and a line cut
 in half by a chunked read has no closing brace and so matches nothing.
+
+The evaluation row is the held-out signal (issue #53): the trainer evaluates
+on the held-out split, so ``{'eval_loss': 1.2, 'eval_runtime': 4.0,
+'epoch': 1.0}`` is promoted as a metric carrying **`held_out_loss`** -- the
+second series a loss chart is built from. Its epoch is promoted with it,
+deliberately: this is a second series, not an intruder in the first, and the
+live view charts the two together. `'train_loss'` stays a log line: it is a
+summary of the run, not a point in either series.
 
 **Grad norm, learning rate and throughput are deliberately not promoted.** Each
 is diagnostic rather than progress — a user watching a job wants to know how far
@@ -55,9 +63,15 @@ from typing import Any
 METRIC = "metric"
 LOG = "log"
 
-# Promoted into structured fields. `step` and `global_step` are the same number
-# under the two names the framework has used for it; whichever appears wins.
-FLOAT_FIELDS = ("loss", "epoch")
+# Promoted into structured fields, as (source key on the line, field on the
+# event): `step` and `global_step` are the same number under the two names the
+# framework has used for it; whichever appears wins.
+FLOAT_FIELDS = (("loss", "loss"), ("epoch", "epoch"))
+# The evaluation row (issue #53): the framework writes `eval_loss`, and it is
+# exposed as `held_out_loss` -- the domain's word for the signal, the one the
+# checkpoint record already uses. Its epoch is promoted too: the held-out
+# series is the chart's second line, not an intruder in the first.
+EVAL_FLOAT_FIELDS = (("eval_loss", "held_out_loss"), ("epoch", "epoch"))
 STEP_FIELDS = ("step", "global_step")
 
 # A number as Python prints one: optional sign, optional decimals, optional
@@ -74,6 +88,9 @@ _PAYLOAD = re.compile(r"\{[^{}]*\}")
 # What marks a payload as a *training* step's log line rather than an
 # evaluation row or the end-of-training summary. See the module docstring.
 _IS_TRAINING_LOG = re.compile(r"['\"]loss['\"]\s*:")
+# What marks a payload as an evaluation row (issue #53): `eval_loss`, the
+# measurement taken on the held-out split. `'train_loss'` matches neither.
+_IS_EVAL_LOG = re.compile(r"['\"]eval_loss['\"]\s*:")
 
 
 @dataclass(frozen=True)
@@ -113,32 +130,52 @@ def _finite_number(payload: str, key: str) -> float | None:
     return value if math.isfinite(value) else None
 
 
-def _training_log_payload(line: str) -> str | None:
+def _training_log_payload(line: str, marker: re.Pattern[str]) -> str | None:
     for m in _PAYLOAD.finditer(line):
-        if _IS_TRAINING_LOG.search(m.group(0)):
+        if marker.search(m.group(0)):
             return m.group(0)
     return None
 
 
-def classify(line: str) -> Event:
-    """Map one output line to a `log` or `metric` event."""
-    payload = _training_log_payload(line)
-    if payload is None:
-        return Event(LOG, line)
+def _promote(
+    payload: str, fields: tuple[tuple[str, str], ...]
+) -> dict[str, Any]:
+    """Lift the numbers a payload carries into structured fields.
 
+    Each entry is (source key, field name): the framework writes `eval_loss`,
+    the event carries `held_out_loss` -- the same number under the domain's
+    name.
+    """
     data: dict[str, Any] = {}
-    for key in FLOAT_FIELDS:
-        value = _finite_number(payload, key)
+    for source, target in fields:
+        value = _finite_number(payload, source)
         if value is not None:
-            data[key] = value
+            data[target] = value
     for key in STEP_FIELDS:
         value = _finite_number(payload, key)
         if value is not None:
             data["step"] = int(value)
             break
+    return data
+
+
+def classify(line: str) -> Event:
+    """Map one output line to a `log` or `metric` event.
+
+    A training log line is a metric carrying `loss`; an evaluation row is a
+    metric carrying `held_out_loss` (issue #53). A payload that named a loss
+    and stated no usable number — a truncated line, or a job whose loss has
+    gone non-finite — stays a log line.
+    """
+    payload = _training_log_payload(line, _IS_TRAINING_LOG)
+    if payload is None:
+        payload = _training_log_payload(line, _IS_EVAL_LOG)
+        if payload is None:
+            return Event(LOG, line)
+        data = _promote(payload, EVAL_FLOAT_FIELDS)
+    else:
+        data = _promote(payload, FLOAT_FIELDS)
 
     if not data:
-        # A payload that named a loss and stated no usable number: a truncated
-        # line, or a job whose loss has gone non-finite. Neither is a metric.
         return Event(LOG, line)
     return Event(METRIC, line, data)
