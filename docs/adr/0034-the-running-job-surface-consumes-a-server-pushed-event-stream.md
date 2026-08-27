@@ -54,10 +54,18 @@ terminal state.**
   reports it. The refetch is driven by the stream, not a timer, so the two
   cannot drift about when to look.
 
-- **The stream's close is the hand-back.** When the job reaches a terminal
-  state, the server closes the stream and the page reloads into the
-  server-rendered finished record. The running view never re-implements the
-  finished view; it hands off to it.
+- **The terminal hand-back is a record refetch, not the connection closing.**
+  When the stream reports a terminal state transition, the view refetches the
+  record and reloads on a terminal status into the server-rendered finished
+  record. The refetch retries on every reconnect -- a dropped connection
+  re-delivers the terminal state event, so a transient refetch failure
+  self-heals. The server also emits an explicit `event: end` marker after the
+  terminal transition, and the page reloads on it where the transport
+  delivers it, but nothing relies on the connection closing as a signal: a
+  browser's EventSource reconnects on a server-initiated close instead of
+  reporting `CLOSED`, and a proxy in the path can fail to propagate the final
+  chunk or the close. The running view never re-implements the finished view;
+  it hands off to it.
 
 - **The journey fake is slowed by configuration, not by a new reserved
   hyperparameter.** `TEMPER_FAKE_LINE_DELAY_S` (default 0) spaces the simulated
@@ -78,6 +86,14 @@ something changed.
 Rejected: it couples the stream's wire format to the record's shape, and the
 record is already fetched on every page load and on every state transition.
 The stream should carry events; the record is a fetch.
+
+**React to the connection closing when the job reaches a terminal state.**
+Rejected once observed: a browser's EventSource reconnects on a
+server-initiated close instead of reporting `CLOSED`, so close alone could
+never hand the page back -- it would reconnect forever against a terminal
+job. The hand-back therefore rides on the terminal state event itself (a
+record refetch that reloads on a terminal status), with an explicit
+`event: end` marker as a supplementary signal rather than the sole one.
 
 **Re-implement the finished view inside the running view once the job ends.**
 Rejected: that duplicates the finished-job page, which a sibling owns (#77),

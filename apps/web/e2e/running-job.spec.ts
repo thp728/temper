@@ -111,6 +111,36 @@ test("a dropped connection reconnects on its own", async ({ page, request }) => 
   });
 });
 
+test("leaving and returning shows continuous history, not a fresh view", async ({
+  page,
+  request,
+}) => {
+  const jobId = await launchViaApi(request);
+  await page.goto(`/jobs/${jobId}`);
+  await expect(
+    page.getByRole("heading", { name: "Cancel this job?" }),
+  ).toBeVisible();
+
+  // Leave through the shell's own navigation while the job is still running.
+  await page.getByRole("link", { name: "All jobs" }).click();
+  await expect(page).toHaveURL(/\/jobs$/);
+
+  // Come back through the list. What happened while away is on the page from
+  // its first paint -- output recorded after the first visit -- rather than
+  // the page starting from the moment of return.
+  const row = page.getByRole("row", { name: new RegExp(jobId) });
+  await expect(row).toBeVisible();
+  await row.getByRole("link", { name: jobId }).click();
+  await expect(page).toHaveURL(new RegExp(`/jobs/${jobId}$`));
+
+  await expect(page.getByRole("log")).toContainText("running training", {
+    timeout: 15_000,
+  });
+  await expect(pairedValue(page, "State")).toHaveText("complete", {
+    timeout: 30_000,
+  });
+});
+
 test("cancelling a running job is destructive and stops it", async ({
   page,
   request,

@@ -17,6 +17,7 @@ import {
   getJobV1JobsJobIdGet,
 } from "@/lib/api/generated/client";
 import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
+import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
 // The live job view (issue #39): the running half of `/jobs/:id`. The page
 // renders this only while the job is non-terminal -- once it ends, the stream
@@ -71,6 +72,7 @@ export default function RunningJobView({
   const [cancelRequested, setCancelRequested] = useState(
     initialJob.cancel_requested ?? false,
   );
+  const [cancelError, setCancelError] = useState<ApiError | null>(null);
 
   // Elapsed keeps ticking without a reload: the record gives the origin, the
   // clock is the client's own, and the two never have to agree about how long
@@ -109,28 +111,31 @@ export default function RunningJobView({
             if (disposed) return;
             setJob(record);
             if (TERMINAL_STATUSES.includes(record.status)) {
+              // The hand-back, primary path: the terminal transition arrived,
+              // the record confirms it, and the page reloads into the
+              // server-rendered finished record. A transient refetch failure
+              // self-heals, because a dropped connection reconnects and the
+              // terminal state event is re-delivered, retrying this refetch.
               window.location.reload();
             }
           })
           .catch(() => {
-            // The next stream event or the stream closing will retry; a
-            // transient failure to refresh the record does not end the page.
+            // Transient; the stream's reconnect re-delivers the state event
+            // and retries this refetch.
           });
       }
     };
 
-    const onError = () => {
-      // The server closes the stream only when the job is terminal; EventSource
-      // reports that as a CLOSED state. A transient drop leaves it CONNECTING,
-      // and the browser is already reconnecting on its own -- nothing to do.
-      if (es.readyState === EventSource.CLOSED) {
-        es.close();
-        if (!disposed) window.location.reload();
-      }
+    // The hand-back, secondary path: the server also emits an explicit `end`
+    // marker after the terminal transition. It is not relied on as the sole
+    // signal -- a proxy in the path can fail to propagate the final chunk or
+    // the close -- but where it arrives it reloads exactly once.
+    const onEnd = () => {
+      if (!disposed) window.location.reload();
     };
 
     es.addEventListener("job", onEvent);
-    es.onerror = onError;
+    es.addEventListener("end", onEnd);
     return () => {
       disposed = true;
       es.close();
@@ -143,10 +148,13 @@ export default function RunningJobView({
     try {
       await cancelJobV1JobsJobIdCancelPost(initialJob.id);
       setCancelRequested(true);
-    } catch {
-      // A double-clicked button is not an error, and a job that ends between
-      // the click and the request is answered by the record the page then
-      // reloads into.
+    } catch (err) {
+      // A genuine refusal is shown with its stable code, never swallowed: a
+      // user who clicked cancel and got nothing back would not know the
+      // request failed. A job that ended between the click and the request
+      // answers itself, because the stream's end marker reloads the page into
+      // the finished record.
+      setCancelError(err instanceof ApiError ? err : NETWORK_ERROR);
     }
   };
 
@@ -228,13 +236,23 @@ export default function RunningJobView({
           Cancelling destroys the machine and{" "}
           <strong>no adapter will be produced</strong>. This cannot be undone.
         </p>
-        <Button
-          variant="destructive"
-          onClick={() => void cancel()}
-          disabled={cancelRequested}
-        >
-          {cancelRequested ? "Cancellation requested" : "Cancel job"}
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="destructive"
+            onClick={() => void cancel()}
+            disabled={cancelRequested}
+          >
+            {cancelRequested ? "Cancellation requested" : "Cancel job"}
+          </Button>
+          {cancelError && (
+            // The stable code survives every rendering decision, like every
+            // other refusal: it is what a bug report can be pinned to.
+            <p className="text-sm text-destructive">
+              <code className="rounded bg-muted px-1">{cancelError.code}</code>{" "}
+              — {cancelError.message}
+            </p>
+          )}
+        </div>
       </section>
 
       <div className="flex gap-3">

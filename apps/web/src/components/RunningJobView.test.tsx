@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RunningJobView from "@/components/RunningJobView";
 import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
+import { ApiError } from "@/lib/api/mutator";
 
 // The live view's wiring, pinned: what a user sees as a job runs, and what
 // the two server calls it makes are. The generated client is mocked (the
@@ -25,7 +26,6 @@ class FakeEventSource {
   url: string;
   readyState = 0;
   private listeners: Record<string, ((e: MessageEvent) => void)[]> = {};
-  onerror: ((e: Event) => void) | null = null;
 
   constructor(url: string) {
     this.url = url;
@@ -40,12 +40,6 @@ class FakeEventSource {
     for (const cb of this.listeners[type] ?? []) {
       cb(new MessageEvent(type, { data: JSON.stringify(data) }));
     }
-  }
-
-  // What the browser does when the server ends the stream.
-  closed() {
-    this.readyState = FakeEventSource.CLOSED;
-    if (this.onerror) this.onerror(new Event("error"));
   }
 
   close() {
@@ -214,14 +208,41 @@ describe("RunningJobView", () => {
     expect(cancelJobMock).toHaveBeenCalledWith("job_abc123def456");
   });
 
-  it("hands back to the record when the stream ends at a terminal state", () => {
+  it("shows a refused cancellation with its stable code", async () => {
+    cancelJobMock.mockRejectedValue(
+      new ApiError(409, "job_already_terminal", "Job is already 'complete'."),
+    );
+    renderView();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel job" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("job_already_terminal")).toBeVisible(),
+    );
+    expect(screen.getByText(/already 'complete'/)).toBeVisible();
+  });
+
+  it("hands back to the record when a state event confirms a terminal status", async () => {
+    const reload = vi.fn();
+    Object.defineProperty(window, "location", {
+      value: { reload },
+      configurable: true,
+    });
+    getJobMock.mockResolvedValue(
+      job({ status: "complete", finished_at: new Date().getTime() / 1000 }),
+    );
+    renderView();
+    stream().emit("job", event({ id: 2, kind: "state", message: "Training complete" }));
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+  });
+
+  it("hands back to the record when the stream delivers its end marker", () => {
     const reload = vi.fn();
     Object.defineProperty(window, "location", {
       value: { reload },
       configurable: true,
     });
     renderView();
-    stream().closed();
+    stream().emit("end", {});
     expect(reload).toHaveBeenCalledTimes(1);
   });
 });

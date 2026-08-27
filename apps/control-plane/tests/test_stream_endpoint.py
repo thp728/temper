@@ -130,8 +130,12 @@ def test_a_completed_job_streams_its_whole_history_then_ends(
     expected = page["events"]
     assert _ids(body) == [e["id"] for e in expected]
     assert _payloads(body) == expected
-    # The terminal transition itself is delivered before the stream ends.
+    # The terminal transition itself is delivered before the stream ends, and
+    # an explicit end marker follows it -- the interface's hand-back signal,
+    # which cannot rely on the connection closing (a browser's EventSource
+    # reconnects on a server-initiated close rather than reporting it).
     assert _payloads(body)[-1]["kind"] == "state"
+    assert "event: end" in body
 
 
 def test_after_resumes_without_redelivery(client, finished_job_id):

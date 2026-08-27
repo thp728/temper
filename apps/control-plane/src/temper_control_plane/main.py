@@ -610,6 +610,14 @@ async def _job_event_stream(
             cursor = e["id"]
             yield _sse_event(e)
         if job["status"] in db.TERMINAL_STATES:
+            # The explicit end marker is the hand-back the interface waits
+            # for. Relying on the connection merely closing would not be
+            # enough: a browser's EventSource does not report a server-initiated
+            # close as CLOSED -- it goes CONNECTING and reconnects, and a page
+            # that only reacted to CLOSED would loop forever against a terminal
+            # job. The marker arrives right after the terminal transition, and
+            # the client reloads into the finished record on it.
+            yield "event: end\n\n"
             return
         now = time.monotonic()
         if now - last_send >= STREAM_HEARTBEAT_S:
