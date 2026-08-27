@@ -383,6 +383,65 @@ def test_the_job_spec_carries_every_hyperparameter_resolved(harness):
     assert spec["hyperparameters"]["learning_rate"] == 2e-4
 
 
+def test_the_job_spec_carries_the_scoped_write_grant(harness):
+    """ADR-0009: the machine receives a write grant for exactly its own
+    weights key, and nothing else. The control plane never pulls the artifact
+    over its own connection any more -- the machine wrote directly, so `fetch`
+    is nowhere in what was asked of the provider.
+    """
+    from temper_control_plane import storage
+
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    job_id = harness.run(provider)
+
+    assert harness.job(job_id)["status"] == "complete"
+    script = provider.script.decode("utf-8")
+    m = re.search(r"<<'JOBSPEC'\n(.*?)\nJOBSPEC\n", script, re.S)
+    assert m, "no job spec heredoc found in the remote script"
+    spec = json.loads(m.group(1))
+
+    upload = spec["artifact_upload"]
+    assert upload["key"] == storage.artifact_key(
+        job_id, storage.ADAPTER_WEIGHTS_NAME
+    )
+    assert upload["url"].startswith("temper-local:")
+    assert upload["expires_at"] > time.time()
+    # The bytes that landed came from the machine's own write, not from a
+    # control-plane pull: the same bytes are behind the seam, and `fetch`
+    # was never asked for.
+    assert storage.STORE.get(upload["key"]) == ADAPTER_BYTES
+    assert "fetch" not in provider.calls, (
+        "the control plane pulled the artifact instead of letting the "
+        "machine write it"
+    )
+
+
+def test_the_write_grant_expires_within_the_job_duration_ceiling(
+    harness, monkeypatch
+):
+    """ADR-0009 point 3: the grant's lifetime is what remains of the job's
+    duration ceiling, counted from creation, so an abandoned URL expires no
+    later than the job could legitimately end -- it is not a standing grant
+    that outlives the job it was minted for."""
+    from temper_control_plane import config
+
+    monkeypatch.setattr(config, "MAX_JOB_DURATION_S", 1234.0)
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    harness.run(provider)
+
+    script = provider.script.decode("utf-8")
+    m = re.search(r"<<'JOBSPEC'\n(.*?)\nJOBSPEC\n", script, re.S)
+    spec = json.loads(m.group(1))
+    ttl = spec["artifact_upload"]["expires_at"] - time.time()
+    # The URL's lifetime is the remaining ceiling: within the ceiling, and
+    # (minted some moments after creation) at most the full ceiling.
+    assert 0 < ttl <= 1234.0, f"grant outlives the duration ceiling: {ttl}"
+
+
 # --- dataset transport: bytes, not hex ---------------------------------------
 
 
@@ -776,20 +835,22 @@ def test_an_unchecksummed_adapter_is_refused_rather_than_trusted(harness):
     assert job["error_code"] == "artifact_unverified"
 
 
-def test_an_unreadable_adapter_is_reported_without_failing_the_job(harness):
+def test_an_empty_artifact_upload_is_refused_as_corrupt(harness):
+    """The machine wrote nothing but reported a checksum for a real adapter.
+
+    With the machine writing directly (ADR-0009), an empty object at the
+    artifact's key is a truncated upload, not "no adapter today": the checksum
+    the machine reported is the evidence, and it does not match what landed, so
+    the job is not allowed to report success.
+    """
     provider = FakeProvider(
         lines=TRAINING_LINES, result=RESULT, adapter_bytes=b""
     )
     job_id = harness.run(provider)
 
     job = harness.job(job_id)
-    assert job["status"] == "complete"
-    assert harness.stored(job["id"])["artifact_key"] is None
-    assert any(
-        "fetch failed" in (e["message"] or "").lower()
-        for e in harness.events(job_id)
-        if e["kind"] == "error"
-    )
+    assert job["status"] == "failed"
+    assert job["error_code"] == "artifact_corrupt"
 
 
 # --- the default provider ---------------------------------------------------
@@ -1291,29 +1352,29 @@ def test_cancelling_during_training_destroys_the_machine(harness):
     assert TRAINING_LINES[-1] not in harness.messages(job["id"])
 
 
-def test_cancelling_while_the_adapter_is_being_retrieved_produces_none(
+def test_cancelling_while_the_artifact_is_being_written_produces_none(
     harness,
 ):
-    """The last window in which an adapter could still appear.
+    """The last window in which an artifact could still appear.
 
-    Training is over, and packaging is a download from a machine that is still
-    billing — so `packaging` is a state a cancellation genuinely arrives in. A
-    request answered with "no adapter will be produced" that then produced one
-    would be the worst thing this path could tell a user, so what was already
-    fetched is discarded rather than kept.
+    The machine writes its artifact directly to the scoped grant now
+    (ADR-0009), so by the time the control plane reads the result the object
+    may already be in storage. A request answered with "no adapter will be
+    produced" that then produced one would be the worst thing this path could
+    tell a user, so what already landed is discarded rather than kept.
     """
     provider = FakeProvider(
         lines=TRAINING_LINES,
         result=RESULT,
         adapter_bytes=ADAPTER_BYTES,
-        pause_at_stage="fetch",
+        pause_at_stage="artifact_upload",
     )
     job = cancelled_at(harness, provider)
 
     assert job["status"] == "cancelled"
     assert harness.stored(job["id"])["artifact_key"] is None
     assert provider.destroyed
-    # What was already fetched must not survive as a stored object. The
+    # What the machine already wrote must not survive as a stored object. The
     # weights key is deterministic from the job id, so absence is provable
     # through the seam itself rather than by scanning a directory.
     from temper_control_plane import storage
@@ -1574,25 +1635,16 @@ def test_a_vanishing_dataset_raises_rather_than_truncating(isolated):
         orchestrator._dataset_chunks(key)
 
 
-class ChunkedAdapter:
-    """A provider double that fetches like a big artifact arrives: pieces."""
+def test_verifying_a_large_artifact_stays_flat_in_memory(harness, peak_memory):
+    """The control plane's half of the machine-write path (ADR-0009): what
+    landed is verified by streaming the stored object through the hash one
+    chunk at a time.
 
-    def __init__(self, payload: bytes, piece: int = 256 * 1024):
-        self._payload, self._piece = payload, piece
-
-    def fetch_stream(self, machine, path):
-        for i in range(0, len(self._payload), self._piece):
-            yield self._payload[i : i + self._piece]
-
-
-def test_collecting_a_large_artifact_stays_flat_in_memory(
-    harness, peak_memory
-):
-    """Artifact collection streams machine-to-storage holding one chunk.
-
-    Drives `_fetch_adapter` over payloads of growing size against a chunked
-    double; what lands behind the seam must read back byte-identical and the
-    traced peak must not follow the payload up.
+    This is the guard that fails if a later pull request replaces the
+    streaming read with a whole-object `STORE.get(...)` -- the exact
+    regression that already flattened the download path once (PR #92 vs #95).
+    A large object sits behind the seam as the machine's upload; `_collect`
+    must verify it without the traced peak following the payload up.
     """
     from temper_control_plane import orchestrator, storage
 
@@ -1606,52 +1658,71 @@ def test_collecting_a_large_artifact_stays_flat_in_memory(
             "adapter_config": {"r": 16},
         }
         job_id = harness._create()
+        weights_key = storage.artifact_key(
+            job_id, storage.ADAPTER_WEIGHTS_NAME
+        )
+        storage.STORE.put(weights_key, payload)
 
-        def collect(job_id=job_id, result=result, payload=payload):
-            return orchestrator._fetch_adapter(
-                ChunkedAdapter(payload), None, job_id, result
-            )
+        def verify(job_id=job_id, result=result):
+            return orchestrator._collect_artifact(job_id, result)
 
-        weights_key = collect()
-        peaks.append(peak_memory(collect))
-        assert storage.STORE.get(weights_key) == payload
+        assert verify() == weights_key
+        peaks.append(peak_memory(verify))
 
     assert max(peaks) - min(peaks) < FLAT_SPREAD, f"peaks grew: {peaks}"
     assert peaks[-1] < ABS_CEIL, (
-        f"peak scaled with a {PAYLOAD_SIZES[-1] >> 20} MiB adapter: {peaks}"
+        f"peak scaled with a {PAYLOAD_SIZES[-1] >> 20} MiB artifact: {peaks}"
     )
 
 
 def test_an_unverified_or_corrupt_collection_stores_nothing(harness):
-    """The refusal deletes the staged object: nothing reachable by key is
+    """The refusal deletes the stored object: nothing reachable by key is
     left that looks like an artifact and is not one."""
     from temper_control_plane import orchestrator, storage
     from temper_core.errors import OrchestratorError
 
     job_id = harness._create()
+    weights_key = storage.artifact_key(job_id, "adapter_model.safetensors")
 
     unverified = {
         "adapter_path": "run/adapter_model.safetensors",
         "adapter_config": {"r": 16},
     }
+    storage.STORE.put(weights_key, b"weights")
     with pytest.raises(
         OrchestratorError, match="no adapter checksum"
     ) as first:
-        orchestrator._fetch_adapter(
-            ChunkedAdapter(b"weights"), None, job_id, unverified
-        )
+        orchestrator._collect_artifact(job_id, unverified)
     assert first.value.code == "artifact_unverified"
+    with pytest.raises(storage.ObjectNotFound):
+        storage.STORE.get(weights_key)
 
     corrupt = {
         "adapter_path": "run/adapter_model.safetensors",
         "adapter_sha256": hashlib.sha256(b"other").hexdigest(),
     }
+    storage.STORE.put(weights_key, b"weights")
     with pytest.raises(OrchestratorError, match="SHA mismatch") as second:
-        orchestrator._fetch_adapter(
-            ChunkedAdapter(b"weights"), None, job_id, corrupt
-        )
+        orchestrator._collect_artifact(job_id, corrupt)
     assert second.value.code == "artifact_corrupt"
+    with pytest.raises(storage.ObjectNotFound):
+        storage.STORE.get(weights_key)
 
-    weights_key = storage.artifact_key(job_id, "adapter_model.safetensors")
+
+def test_a_result_naming_an_adapter_with_nothing_landed_fails(harness):
+    """The machine reported a checksum but no object arrived at the key.
+
+    With the machine writing directly, absence after a claimed upload is a
+    failed upload, not a completed job without an artifact -- the job may not
+    report success (ADR-0009)."""
+    from temper_control_plane import orchestrator, storage
+    from temper_core.errors import OrchestratorError
+
+    job_id = harness._create()
+    with pytest.raises(OrchestratorError, match="no object landed") as excinfo:
+        orchestrator._collect_artifact(job_id, RESULT)
+    assert excinfo.value.code == "artifact_unverified"
+
+    weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
     with pytest.raises(storage.ObjectNotFound):
         storage.STORE.get(weights_key)

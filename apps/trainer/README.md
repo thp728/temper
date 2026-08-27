@@ -42,6 +42,25 @@ Changing either is a deliberate act that re-runs the GPU smoke test. Our layer a
 | `/out/result.json` | out | **always written, including on failure** — see the boundary below |
 | `/out/train.log` | out | full training output — also relayed to the container's stdout as it is produced |
 
+## The machine may write its own artifact (ADR-0009)
+
+When the job spec carries an `artifact_upload` block — a write URL minted by
+the control plane for exactly this job's artifact key, expiring with the job —
+the trainer **PUTs the adapter to that URL itself** after training, instead of
+the control plane pulling it over SSH. The machine holds no credential: the
+URL *is* the authorisation, and it grants one write to one key and nothing
+else. The outcome of the upload is recorded in `result.json` under
+`artifact_upload` — the trainer never takes the machine's word that the bytes
+arrived, but it also never lets a failed upload crash the job before it is
+reported. The control plane verifies what landed against the SHA-256 this
+trainer computes, and only then may the job report success.
+
+A standalone run (no grant in the spec) simply leaves the artifact on `/out`;
+`artifact_upload` records that nothing was uploaded, as a fact rather than a
+failure of training. The upload streams a file body with a declared
+Content-Length from the standard library only — nothing new is installed in
+the image, per the pin discipline above.
+
 ⚠️ **The boundary of "always written".** The guarantee comes from a `try/finally` inside `main()`, so it holds only from the moment `main()` is entered. **An import-time failure escapes it entirely** — the container exits with no `result.json`, and the orchestrator reports `training_failed: "Trainer produced no result.json"`, an error that points at training and says nothing about the image. That is exactly what a missing COPY produces. A guarantee whose boundary is undocumented is one you will over-trust.
 
 ```bash

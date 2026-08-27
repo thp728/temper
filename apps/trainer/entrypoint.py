@@ -136,6 +136,10 @@ ALLOWED_JOB_KEYS = {
     "max_steps",
     "save_steps",
     "resume_from_checkpoint",
+    # ADR-0009: the scoped write URL this machine may put its artifact to,
+    # minted by the control plane and expiring with the job. Optional -- a
+    # standalone run carries no grant and simply leaves the artifact on /out.
+    "artifact_upload",
 }
 
 
@@ -396,12 +400,17 @@ def collect_artifacts() -> dict:
             break
 
     if adapter:
-        raw = adapter.read_bytes()
+        # Hashed in bounded blocks, not read whole: a full fine-tune's artifact
+        # can be arbitrarily large, and nothing here needs to hold it.
+        digest = hashlib.sha256()
+        with adapter.open("rb") as f:
+            while chunk := f.read(1 << 20):
+                digest.update(chunk)
         info.update(
             {
                 "adapter_path": str(adapter.relative_to(OUT_DIR)),
-                "adapter_bytes": len(raw),
-                "adapter_sha256": hashlib.sha256(raw).hexdigest(),
+                "adapter_bytes": adapter.stat().st_size,
+                "adapter_sha256": digest.hexdigest(),
                 "adapter_format": adapter.suffix.lstrip("."),
                 "adapter_source": (
                     "final" if adapter.parent == run else adapter.parent.name
@@ -415,6 +424,47 @@ def collect_artifacts() -> dict:
         if cfg_path.is_file():
             info["adapter_config"] = json.loads(cfg_path.read_text())
     return info
+
+
+def upload_artifact(url: str, path: Path) -> dict:
+    """PUT the artifact to the scoped write URL (ADR-0009).
+
+    The URL is already an authorisation -- the machine holds no credential that
+    outlives the job -- so a plain HTTPS PUT is the whole protocol. The body is
+    a file object with a declared Content-Length: urllib streams a file-like
+    body in blocks, so an arbitrarily large artifact is never held whole here,
+    and the explicit length keeps the request a plain PUT rather than a chunked
+    one (a pre-signed S3 URL is not signed for aws-chunked). No timeout is set
+    on purpose: a very large artifact may take minutes, and a wedged upload is
+    already caught by the job's stall detector rather than by a guess here.
+
+    Returns {"ok": True, "bytes": n} or {"ok": False, "error": ...} so the
+    caller records the outcome in result.json without the upload crashing the
+    job before it is reported. The control plane verifies what landed against
+    the checksum this trainer reports (ADR-0009 point 5); it does not take the
+    machine's word that the bytes arrived.
+    """
+    import urllib.request
+
+    size = path.stat().st_size
+    try:
+        with path.open("rb") as body:
+            # The URL is minted by the control plane for exactly one object;
+            # this is the machine's only egress on this path (spike 2).
+            request = urllib.request.Request(  # noqa: S310
+                url,
+                data=body,
+                method="PUT",
+                headers={
+                    "Content-Type": "application/octet-stream",
+                    "Content-Length": str(size),
+                },
+            )
+            with urllib.request.urlopen(request):  # noqa: S310
+                pass
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    return {"ok": True, "bytes": size}
 
 
 def main() -> int:
@@ -507,6 +557,25 @@ def main() -> int:
             return code
 
         result.update(collect_artifacts())
+        if result.get("adapter_path"):
+            # ADR-0009: when the control plane supplied a scoped write URL, the
+            # machine puts its artifact to it directly. The outcome -- not a
+            # bare claim -- is recorded, and the control plane verifies what
+            # landed against the checksum above before the job may report
+            # success. A standalone run has no grant and simply leaves the
+            # artifact on /out; that is reported as a fact, not a failure of
+            # training.
+            grant_block = job.get("artifact_upload")
+            if isinstance(grant_block, dict) and grant_block.get("url"):
+                result["artifact_upload"] = upload_artifact(
+                    grant_block["url"], OUT_DIR / result["adapter_path"]
+                )
+            else:
+                result["artifact_upload"] = {
+                    "ok": False,
+                    "error": "no write grant in the job spec; the artifact "
+                    "was left on the machine",
+                }
         result["ok"] = True
         log(f"training complete in {result['train_seconds']}s")
         return 0

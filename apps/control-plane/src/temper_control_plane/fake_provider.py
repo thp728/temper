@@ -49,6 +49,9 @@ STAGES = (
     "await_ready",
     "push",
     "fetch",
+    # The machine's write of its own artifact to the scoped grant (ADR-0009):
+    # where the artifact path can fail or pause on the machine's side.
+    "artifact_upload",
     "stream",
 )
 
@@ -240,9 +243,52 @@ class FakeProvider:
             return
         if self._stop_after is not None or self._result is None:
             return
+        # ADR-0009: the machine writes its own artifact to the scoped grant
+        # before it reports the result, so what the control plane verifies
+        # exists by the time the result names it.
+        self._write_artifact(_job_spec_from_script(script))
         yield "---RESULT---"
         for line in json.dumps(self._result).splitlines():
             yield line
+
+    def _write_artifact(self, spec) -> None:
+        """The machine's half of ADR-0009, simulated: put the artifact to the
+        scoped grant before reporting the result.
+
+        On the filesystem backend -- the only one a test can use -- the machine
+        presents the signed token back to the process that minted it (`redeem`),
+        the honest local analogue of a machine PUTting to a pre-signed URL. On
+        the object-store backend the machine would PUT over HTTP, which the
+        storage tier proves separately; this double has no way to be that HTTP
+        client, so it refuses loudly rather than pretending.
+
+        The write lands **before** the stage's pause, so a cancellation that
+        arrives while the artifact is being handled is answered the way a real
+        one would be -- what already landed is discarded -- rather than racing
+        the delete against a write that has not happened yet.
+        """
+        upload = (spec or {}).get("artifact_upload")
+        if not upload:
+            return
+        if not (self._result or {}).get("adapter_path"):
+            # No artifact was produced; there is nothing to write.
+            return
+        from . import storage
+        from .storage import WriteGrant
+
+        grant = WriteGrant(
+            url=upload["url"],
+            key=upload["key"],
+            expires_at=upload["expires_at"],
+        )
+        if isinstance(storage.STORE, storage.FilesystemStorage):
+            storage.STORE.redeem(grant, self._adapter_bytes)
+        else:
+            raise AssertionError(
+                "the fake machine redeems filesystem grants only; tests run "
+                "against the filesystem backend"
+            )
+        self._enter("artifact_upload")
 
     def destroy(self, machine_id: int) -> None:
         self.calls.append("destroy")

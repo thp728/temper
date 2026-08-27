@@ -75,6 +75,7 @@ repository becomes public at submission.
 | [0032](0032-every-calculated-default-carries-its-reason.md) | Every calculated default carries its reason and the alternatives that lost | accepted | 2026-08-27 |
 | [0033](0033-any-plan-decision-can-be-overridden-and-the-rest-recomputes.md) | Any plan decision can be overridden, and the rest recomputes | accepted | 2026-08-27 |
 | [0034](0034-the-advanced-surface-is-generated-from-the-trainers-schema.md) | The advanced surface is generated from the trainer's own schema | accepted | 2026-08-27 |
+| [0034](0034-the-control-plane-verifies-a-machine-written-artifact-by-streaming-it-back.md) | The control plane verifies a machine-written artifact by streaming it back | accepted | 2026-08-27 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

@@ -60,7 +60,7 @@ from temper_core import (
 from temper_core.errors import Cancelled, OrchestratorError
 from temper_core.models import Models
 
-from . import db, storage
+from . import config, db, storage
 from .chunks import ChunkReader, piped_chunks
 from .limits import RunLimits, guard
 from .models import new_models
@@ -203,7 +203,10 @@ def _dataset_chunks(dataset_object_key: str) -> Iterator[bytes]:
 
 
 def _remote_script(
-    job: dict, model: catalog.BaseModel, enable_thinking: bool
+    job: dict,
+    model: catalog.BaseModel,
+    enable_thinking: bool,
+    artifact_grant: storage.WriteGrant | None = None,
 ) -> bytes:
     """The on-machine script: build the image, run the job, print the result.
 
@@ -211,6 +214,11 @@ def _remote_script(
     own archive on standard input, so the script stays a fixed few kilobytes
     however large the dataset is -- it is never doubled into hex text, held in
     memory several times over, or fed through a pipe sized for commands.
+
+    When `artifact_grant` is supplied, the scoped write URL (ADR-0009) rides
+    into the job spec: the machine writes its own artifact to it and holds no
+    credential that outlives the job. The URL is opaque to the machine -- it is
+    already an authorisation, scoped to one key, expiring with the job.
 
     Nothing here is redirected to a file. That was the outermost of three
     redirections between the training framework and the user, and while any one
@@ -238,6 +246,12 @@ def _remote_script(
         "base_revision": revision,
         "hyperparameters": hyperparams.effective(job["hyperparameters"] or {}),
     }
+    if artifact_grant is not None:
+        job_spec["artifact_upload"] = {
+            "url": artifact_grant.url,
+            "key": artifact_grant.key,
+            "expires_at": artifact_grant.expires_at,
+        }
     script = f"""
 set -u
 say() {{ echo "[$(date +%H:%M:%S)] $*" >&2; }}
@@ -345,78 +359,85 @@ def _consume(job_id: str, lines) -> dict:
         ) from e
 
 
-def _fetch_adapter(
-    provider: Provider, machine, job_id: str, result: dict
-) -> str | None:
-    """Pull the artifact off the machine and put it behind the storage seam.
+def _delete_stored_artifact(job_id: str) -> None:
+    """Remove the objects one job's artifact consists of, if any.
+
+    Deletion failures are suppressed deliberately: teardown must not mask the
+    cancellation that caused them, and an orphaned object is cheaper than a
+    half-reported state. (An object written by a machine whose run has since
+    ended is an orphan in the same sense a stray machine is; ADR-0009 records
+    that nothing reconciles them yet.)
+    """
+    for name in storage.ARTIFACT_MEMBERS:
+        with suppress(Exception):
+            storage.STORE.delete(storage.artifact_key(job_id, name))
+
+
+def _collect_artifact(job_id: str, result: dict) -> str | None:
+    """Verify the artifact the machine wrote, and publish its config.
 
     Returns the artifact weights' key in storage, or None when the machine
-    produced nothing to store. The key -- not a path -- is what the job row
-    records; only `storage` knows what it resolves to.
+    produced nothing to store. The machine wrote the weights itself to the
+    scoped grant (ADR-0009); this side verifies what landed against the
+    checksum the machine reported, **before the job may report success**, and
+    never holds the payload: the stored object is streamed through the hash one
+    chunk at a time.
 
-    Both halves stream: fetch_stream yields the machine's bytes in chunks,
-    and put_stream stores them one chunk at a time while this function
-    hashes the same chunks on the way past. Verification therefore completes
-    only once every chunk has been stored, so the order claimed elsewhere --
-    *verified before stored* -- holds here as *deleted unless verified*: a
-    mismatched, unverifiable or empty transfer has its object removed again
-    before this function returns. Nothing records the key against the job
-    until then, so no reader can reach even the transient object.
+    The config that makes the weights loadable still travels inside result.json
+    -- it is small by construction -- and is stored here rather than written by
+    the machine: the control plane owns the artifact's identity (ADR-0009 point
+    5), so it decides both the key and what sits beside it.
     """
-    rel = result.get("adapter_path")
-    if not rel:
+    if not result.get("adapter_path"):
         return None
 
     weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
-    digest = hashlib.sha256()
-    received = 0
-
-    def hashed(chunks: Iterator[bytes]) -> Iterator[bytes]:
-        # The same iteration feeds the store and the hash: the bytes are
-        # never held twice, because they are never held at all.
-        nonlocal received
-        for chunk in chunks:
-            digest.update(chunk)
-            received += len(chunk)
-            yield chunk
-
-    storage.STORE.put_stream(
-        weights_key,
-        hashed(provider.fetch_stream(machine, f"/tmp/out/{rel}")),
-    )
-
-    if received == 0:
-        # The mirror of an empty read: nothing came off the machine.
-        storage.STORE.delete(weights_key)
-        db.add_event(
-            job_id,
-            "error",
-            "Adapter fetch failed; artifact left on the machine",
-        )
-        return None
-
-    # Verify against the hash the container computed. A silently truncated
-    # transfer produces an object that looks fine and is not; hashing as
-    # chunks arrive catches it without ever holding the payload. The hash is
-    # mandatory: the trainer records it whenever it records a path, so a
-    # result without one cannot be verified at all -- refused rather than
-    # delivered uncheckable.
-    got = digest.hexdigest()
     want = result.get("adapter_sha256")
     if not want:
-        storage.STORE.delete(weights_key)
+        # A result that names an adapter but carries no checksum cannot be
+        # verified at all -- refused rather than delivered uncheckable.
+        _delete_stored_artifact(job_id)
         raise OrchestratorError(
             "artifact_unverified",
-            "The run result carried no adapter checksum, so the download "
-            "cannot be verified; it was refused rather than delivered "
-            "uncheckable.",
+            "The run result carried no adapter checksum, so the stored "
+            "artifact cannot be verified; it was refused rather than "
+            "delivered uncheckable.",
         )
+
+    # The machine's own half of verification is the URL; this half is the
+    # bytes that landed. Streamed so that verifying an artifact that grew
+    # without bound holds one chunk, not the object.
+    digest = hashlib.sha256()
+    received = 0
+    try:
+        for chunk in storage.STORE.get_stream(weights_key):
+            digest.update(chunk)
+            received += len(chunk)
+    except storage.ObjectNotFound:
+        # The machine claimed an artifact but nothing landed at the key. If it
+        # recorded its own upload failure, say so rather than guessing -- the
+        # specific cause is already in result.json.
+        recorded = result.get("artifact_upload")
+        cause = ""
+        if isinstance(recorded, dict) and recorded.get("error"):
+            cause = f" The machine recorded: {recorded['error']}"
+        raise OrchestratorError(
+            "artifact_unverified",
+            "The run result names an adapter, but no object landed at its "
+            "storage key. The machine's upload must have failed." + cause,
+        ) from None
+
+    got = digest.hexdigest()
     if got != want:
-        storage.STORE.delete(weights_key)
+        # A silently truncated or corrupted upload produces an object that
+        # looks fine and is not; the machine's own checksum is what catches
+        # it. The object is removed rather than left to read as the
+        # deliverable.
+        _delete_stored_artifact(job_id)
         raise OrchestratorError(
             "artifact_corrupt",
-            f"Adapter SHA mismatch: container reported {want[:16]}…, "
-            f"downloaded file is {got[:16]}…",
+            f"Adapter SHA mismatch: machine reported {want[:16]}…, stored "
+            f"object is {got[:16]}…",
         )
     db.add_event(job_id, "log", f"Adapter verified, {received / 1e6:.1f} MB")
 
@@ -449,16 +470,16 @@ def _discard_if_cancelled(job_id: str, check) -> None:
     the download took, which is the one thing about their own decision they
     cannot see. Cancellation is destructive by decision (ADR-0003), and a
     decision that holds only outside a race is not one.
+
+    The machine writes its artifact directly now, so by the time this runs the
+    object may already be in storage: the delete is what keeps a request
+    answered with "no adapter will be produced" true even though an upload
+    already landed.
     """
     try:
         check()
     except Cancelled:
-        for name in storage.ARTIFACT_MEMBERS:
-            # Deletion failures are suppressed deliberately: teardown must
-            # not mask the cancellation that caused it, and an orphaned
-            # object is cheaper than a half-reported state.
-            with suppress(Exception):
-                storage.STORE.delete(storage.artifact_key(job_id, name))
+        _delete_stored_artifact(job_id)
         raise
 
 
@@ -669,7 +690,19 @@ def _attempt(
     cancelled()
 
     db.set_state(job_id, "training", "Building image and training")
-    script = _remote_script(job, model, enable_thinking)
+    # The machine writes its own artifact to a scoped grant (ADR-0009), so the
+    # control plane hands it a URL rather than later pulling bytes through
+    # itself. The grant covers one key -- the weights this job will produce --
+    # and expires no later than the job can legitimately end: its lifetime is
+    # what remains of the duration ceiling, counted from the job's own
+    # creation timestamp (the ceiling counts from the same origin). An
+    # abandoned URL is not a standing grant.
+    weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
+    remaining = max(
+        1.0, config.MAX_JOB_DURATION_S - (time.time() - job["created_at"])
+    )
+    grant = storage.STORE.mint_write_grant(weights_key, remaining)
+    script = _remote_script(job, model, enable_thinking, artifact_grant=grant)
     # The guard sits between the transport and the reader, so both limits hold
     # for any provider rather than for the SSH one only.
     lines = guard(
@@ -689,13 +722,14 @@ def _attempt(
         )
 
     # Cancellation is honoured to the last moment an adapter could appear, not
-    # only while the stream is open. Packaging is not instantaneous -- it is a
-    # download from a machine that is still billing -- and a request answered
-    # with "no adapter will be produced" that then produced one would be the
-    # single worst thing this path could tell a user.
-    cancelled()
-    db.set_state(job_id, "packaging", "Retrieving adapter")
-    artifact_key = _fetch_adapter(provider, machine, job_id, result)
+    # only while the stream is open. The machine writes its artifact directly
+    # now, so by the time the result is parsed the object may already be in
+    # storage: a request answered with "no adapter will be produced" that then
+    # produced one would be the single worst thing this path could tell a user,
+    # so what already landed is discarded rather than kept.
+    _discard_if_cancelled(job_id, cancelled)
+    db.set_state(job_id, "packaging", "Verifying artifact")
+    artifact_key = _collect_artifact(job_id, result)
     _discard_if_cancelled(job_id, cancelled)
     return (
         "complete",
@@ -774,6 +808,11 @@ def run_job(
             # No error code and no error message: the user's own decision is
             # not a defect, and a `cancelled` job carrying an error code would
             # be read as one by every client that branches on codes.
+            #
+            # The machine writes its artifact directly, so an upload that
+            # landed before the cancellation was seen is discarded here rather
+            # than left readable as the deliverable.
+            _delete_stored_artifact(job_id)
             outcome = ("cancelled", str(e), {})
         except OrchestratorError as e:
             outcome = (

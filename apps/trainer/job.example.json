@@ -25,5 +25,8 @@
   "save_steps": null,
 
   "_comment_resume": "Set to a checkpoint path under /out/run to resume. The orchestrator sets this on retry after a preemption or crash.",
-  "resume_from_checkpoint": null
+  "resume_from_checkpoint": null,
+
+  "_comment_artifact_upload": "Optional (ADR-0009). When the control plane supplies a scoped write URL, the machine PUTs its artifact directly to it and records the outcome in result.json under artifact_upload. A standalone run carries no grant and simply leaves the artifact on /out. The URL is minted for exactly one key and expires with the job; the machine holds no credential that outlives it.",
+  "artifact_upload": null
 }
