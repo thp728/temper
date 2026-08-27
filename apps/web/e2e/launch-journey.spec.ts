@@ -87,6 +87,26 @@ test("a job is chosen, reviewed and launched from the shell", async ({
     await expect(page.getByText(phase, { exact: true })).toBeVisible();
   }
 
+  // ...and each decision the predictor made is shown with its reason visible
+  // by default, its alternatives one interaction away (issue #76). The fake
+  // provider only has an L4 free, so the device-count decision is the one
+  // with two alternatives.
+  await expect(
+    page.getByRole("heading", { name: "Why this configuration" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "method" }),
+  ).toBeVisible();
+  await expect(page.getByText("qlora", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/cheapest card currently available/i),
+  ).toBeVisible();
+  // The disclosure summaries are the one interaction away: several
+  // decisions carry two alternatives each, so the text is not unique.
+  await expect(
+    page.getByText("Alternatives considered (2)").first(),
+  ).toBeVisible();
+
   // ...and the screen offers exactly one obvious action.
   await expect(page.getByRole("button", { name: "Launch job" })).toHaveCount(1);
 
@@ -112,6 +132,17 @@ test("a job is chosen, reviewed and launched from the shell", async ({
   await expect(
     page.getByRole("link", { name: /Download the adapter/ }),
   ).toBeVisible();
+
+  // The same explanation survives the job: the quote frozen at launch still
+  // carries each decision and its reason after the run has finished (issue
+  // #76) -- a completed job explains itself like a planned one.
+  await expect(
+    page.getByRole("heading", { name: "Why this configuration" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "method" }),
+  ).toBeVisible();
+  await expect(page.getByText("qlora", { exact: true })).toBeVisible();
 });
 
 test("a feasibility warning arrives before the launch, while it can still be acted on", async ({
@@ -144,10 +175,16 @@ test("the launch screen is keyboard-operable end to end", async ({ page }) => {
   );
 
   // Reachable by keyboard alone: tab from the page's start until the action
-  // has focus. The cap is a failure guard, not an assertion about the page.
+  // has focus. The cap is a failure guard, not an assertion about the page --
+  // the decisions' disclosure widgets are legitimate tab stops, so the count
+  // is deliberately generous. The decisions load after the page draws (an
+  // estimate never blocks it), so wait for them before counting stops.
   await continueToLaunch(page);
   const launch = page.getByRole("button", { name: "Launch job" });
-  const maxTabStops = 6;
+  await expect(
+    page.getByRole("heading", { name: "Why this configuration" }),
+  ).toBeVisible();
+  const maxTabStops = 20;
   for (
     let i = 0;
     i < maxTabStops && !(await launch.evaluate((el) => el === document.activeElement));
@@ -157,16 +194,31 @@ test("the launch screen is keyboard-operable end to end", async ({ page }) => {
   }
   await expect(launch).toBeFocused();
 
-  // Shift+Tab back into the model group and choose with the arrow keys:
-  // a radio group moves selection without leaving the keyboard.
-  await page.keyboard.press("Shift+Tab");
+  // Shift+Tab back into the model group -- past the decisions' disclosures --
+  // and choose with the arrow keys. Only the checked radio is in the tab
+  // order (roving tabindex), so the first input reached going backwards is
+  // the checked model, and ArrowDown moves the choice on from there.
+  for (
+    let i = 0;
+    i < maxTabStops &&
+    !(await page.evaluate(() => document.activeElement?.tagName === "INPUT"));
+    i++
+  ) {
+    await page.keyboard.press("Shift+Tab");
+  }
   await page.keyboard.press("ArrowDown");
   await expect(
     page.getByRole("radio", { name: /Qwen\/Qwen3-8B/ }),
   ).toBeChecked();
 
-  // Launch from the keyboard alone.
-  await page.keyboard.press("Tab");
+  // Launch from the keyboard alone: back past the disclosures to the action.
+  for (
+    let i = 0;
+    i < maxTabStops && !(await launch.evaluate((el) => el === document.activeElement));
+    i++
+  ) {
+    await page.keyboard.press("Tab");
+  }
   await page.keyboard.press("Enter");
 
   await expect(page).toHaveURL(/\/jobs\/job_/);

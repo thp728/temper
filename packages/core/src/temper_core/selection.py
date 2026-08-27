@@ -66,8 +66,30 @@ class GpuAvailability:
 
 
 @dataclass(frozen=True)
+class HardwareAlternative:
+    """A configuration the search found that fits and did not choose.
+
+    Every alternative is real: it passed the same fit check the winner did,
+    and lost on the selection rule (higher price, or a tied price with more
+    devices). Returning them is what lets a quote say what the user gave up
+    to take the chosen card -- spec 005's "alternatives with what each would
+    have cost", discovered at the one place they are discovered.
+    """
+
+    gpu_type: str
+    device_count: int
+    price_per_hour: float  # total across every device, not per device
+    headroom_gb: float
+
+
+@dataclass(frozen=True)
 class HardwarePlan:
-    """The chosen configuration: method, card, count, and what it costs."""
+    """The chosen configuration: method, card, count, and what it costs.
+
+    `alternatives` are the fitting configurations the same search rejected,
+    so the selection's reasoning travels with its answer rather than being
+    re-derived by whatever shows the plan.
+    """
 
     method: str
     gpu_type: str
@@ -76,6 +98,7 @@ class HardwarePlan:
     currency: str
     peak: memory.PeakMemory
     headroom_gb: float
+    alternatives: tuple[HardwareAlternative, ...] = ()
 
 
 class NoFittingHardwareError(Exception):
@@ -125,6 +148,11 @@ def select_hardware(
     never discovered on a billing machine.
     """
     best: HardwarePlan | None = None
+    # Every configuration the search found that fits, whether it won or not.
+    # One per (method, gpu_type, device_count) at its cheapest price; the
+    # loser set is what a quote turns into "the alternatives with what each
+    # would have cost".
+    found: dict[tuple[str, str, int], HardwarePlan] = {}
     for row in availability:
         if row.num_free_devices <= 0:
             continue
@@ -136,11 +164,6 @@ def select_hardware(
             continue
         for device_count in range(1, row.num_free_devices + 1):
             price = row.price_per_hour * device_count
-            if best is not None and price > best.price_per_hour:
-                # Every larger device_count on this row only costs more; the
-                # cheapest fit already found at a lower or equal price on
-                # this row cannot be beaten by asking for more of it.
-                break
             for method in methods:
                 peak = memory.predict_peak(
                     facts,
@@ -165,11 +188,38 @@ def select_hardware(
                 best = _cheaper(best, candidate)
                 # The first fitting method, in best-to-worst order, is the
                 # best answer this price can buy -- a cheaper method at the
-                # same price is not a better one.
+                # same price is not a better one, so the rest of this row's
+                # price point is not worth a fit check.
+                existing = found.get((method, row.gpu_type, device_count))
+                if existing is None or price < existing.price_per_hour:
+                    found[(method, row.gpu_type, device_count)] = candidate
                 break
     if best is None:
         raise NoFittingHardwareError(
             "No available GPU predicts a fit for this job, at any method or "
             "device count the provider currently has free."
         )
-    return best
+    alternatives = tuple(
+        HardwareAlternative(
+            gpu_type=c.gpu_type,
+            device_count=c.device_count,
+            price_per_hour=c.price_per_hour,
+            headroom_gb=c.headroom_gb,
+        )
+        for c in found.values()
+        if not (
+            c.method == best.method
+            and c.gpu_type == best.gpu_type
+            and c.device_count == best.device_count
+        )
+    )
+    return HardwarePlan(
+        method=best.method,
+        gpu_type=best.gpu_type,
+        device_count=best.device_count,
+        price_per_hour=best.price_per_hour,
+        currency=best.currency,
+        peak=best.peak,
+        headroom_gb=best.headroom_gb,
+        alternatives=alternatives,
+    )

@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from temper_core import disk, feasibility
+from temper_core.decisions import Decision
 from temper_core.models import ModelFacts
 
 # --- the phases, in the order a job passes through them ----------------------
@@ -147,6 +148,7 @@ class Quote:
     storage_cost_usd_total_low_minor: int
     storage_cost_usd_total_high_minor: int
     is_estimate: bool = True
+    decisions: tuple[Decision, ...] = ()
 
 
 def minor_unit_for(currency: str) -> int:
@@ -212,6 +214,7 @@ def estimate(
     base_revision: str,
     expires_at: float,
     training_duration_s: float | None = None,
+    decisions: tuple[Decision, ...] = (),
 ) -> Quote:
     """The quote for one configuration, computed from its inputs alone.
 
@@ -222,6 +225,11 @@ def estimate(
     is derived here from `usable_rows` and the hyperparameters, and when the
     volume cannot bound the run (`max_steps` set) the training phase is
     reported as not estimable rather than guessed.
+
+    `decisions` are the structured reasons the configuration was chosen (issue
+    #76), supplied by the caller that has the hardware and disk plans --
+    `estimate` itself is pure arithmetic and computes no decisions, but it
+    carries them on the quote so the explanation persists with the prediction.
 
     Pure arithmetic, no I/O, no clock -- `expires_at` and `dataset_created_at`
     are supplied so the arithmetic can be tested without a wall clock.
@@ -302,4 +310,5 @@ def estimate(
         storage_cost_usd_per_hour=storage_cost_usd_per_hour,
         storage_cost_usd_total_low_minor=storage_low,
         storage_cost_usd_total_high_minor=storage_high,
+        decisions=tuple(decisions),
     )

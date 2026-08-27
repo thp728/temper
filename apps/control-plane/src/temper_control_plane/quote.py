@@ -26,6 +26,7 @@ from typing import Any
 
 from temper_core import (
     catalog,
+    decisions,
     disk,
     feasibility,
     hyperparams,
@@ -153,13 +154,14 @@ def build_quote(
         return None
 
     hp = hyperparams.effective(hyperparameters)
+    availability = provider.gpu_availability()
     try:
         plan = selection.select_hardware(
             facts,
             lora_r=hp["lora_r"],
             sequence_len=hp["sequence_len"],
             micro_batch_size=hp["micro_batch_size"],
-            availability=provider.gpu_availability(),
+            availability=availability,
             currency=provider.currency(),
         )
     except selection.NoFittingHardwareError:
@@ -187,6 +189,15 @@ def build_quote(
         dataset_created_at=dataset["created_at"],
         base_revision=model.revision,
         expires_at=now + ttl_s,
+        # The reasons ride with the prediction (issue #76): computed from the
+        # same seams the quote reads, frozen with it, never regenerated on
+        # read -- a finished job explains itself like a planned one.
+        decisions=decisions.decide(
+            facts,
+            hyperparameters=hp,
+            plan=plan,
+            disk_plan=disk_plan,
+        ),
     )
     return {
         "currency": q.currency,
@@ -214,4 +225,5 @@ def build_quote(
         "storage_cost_usd_total_low_minor": q.storage_cost_usd_total_low_minor,
         "storage_cost_usd_total_high_minor": q.storage_cost_usd_total_high_minor,
         "is_estimate": q.is_estimate,
+        "decisions": [decisions.to_dict(d) for d in q.decisions],
     }

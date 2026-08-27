@@ -277,3 +277,40 @@ def test_training_duration_can_be_supplied_by_the_caller():
     assert training.duration_low_s == pytest.approx(
         supplied * quote.TRAINING_DURATION_LOW_FACTOR
     )
+
+
+# --- the quote carries its reasons (issue #76) --------------------------------
+
+
+def test_the_quote_carries_the_decisions_it_was_built_with():
+    """The reasons travel with the prediction, so they persist with the quote
+    rather than being regenerated on read -- the frozen job spec keeps them."""
+    from temper_core import decisions, disk, hyperparams, selection
+
+    hp = hyperparams.effective({})
+    plan = selection.select_hardware(
+        QWEN3_4B,
+        lora_r=hp["lora_r"],
+        sequence_len=hp["sequence_len"],
+        micro_batch_size=hp["micro_batch_size"],
+        availability=[selection.GpuAvailability("L4", L4_INR_PER_HOUR, 8)],
+        currency="INR",
+    )
+    dp = disk.required_disk(
+        QWEN3_4B,
+        method=plan.method,
+        lora_r=hp["lora_r"],
+        retained_checkpoints=hp["save_total_limit"],
+    )
+    ds = decisions.decide(
+        QWEN3_4B, hyperparameters=hp, plan=plan, disk_plan=dp
+    )
+    q = estimate(decisions=ds)
+    assert len(q.decisions) == 6
+    assert q.decisions[1].decision == "hardware"
+    assert q.decisions[1].chosen == "L4"
+
+
+def test_a_quote_without_decisions_is_still_valid():
+    q = estimate()
+    assert q.decisions == ()
