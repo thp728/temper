@@ -293,6 +293,163 @@ def test_an_unreachable_provider_means_no_quote_not_a_broken_page(
     assert job["status"] == "queued"
 
 
+# --- the memory half blocks at job creation, even unpinned (issue #54) ---------
+# Memory is arithmetic and it blocks (spec 005): a configuration predicted not
+# to fit any available card is refused at creation with the arithmetic, whether
+# or not the user demanded it -- being wrong about memory means an
+# out-of-memory failure minutes into a machine the user is paying for. The
+# models seam supplies a model the catalog does not hold, exactly as spec 005's
+# testing decisions sanction, so a plain launch (no overrides, no advanced
+# hyperparameters) can still fail the fit check on default settings.
+
+
+def _big_model_facts():
+    """A dense ~70B-parameter model, from the same dimensions `ModelFacts`
+    derives a parameter count from. QLoRA of it predicts a peak well past the
+    L4's 24 GB (weights alone are ~35 GB) but comfortably inside an H200's
+    141 GB -- the two sides of the refusal boundary in one double."""
+    from temper_core.models import ModelFacts
+
+    return ModelFacts(
+        architecture="qwen3",
+        hidden_size=8192,
+        num_hidden_layers=80,
+        num_attention_heads=64,
+        num_key_value_heads=8,
+        head_dim=128,
+        intermediate_size=28672,
+        vocab_size=151936,
+        tie_word_embeddings=True,
+        is_moe=False,
+        has_chat_template=True,
+        pad_eos_distinct=True,
+        context_length=40960,
+        license="apache-2.0",
+    )
+
+
+def _big_model_quote_provider(monkeypatch):
+    """The quote seams pointed at a 70B model on a fake with one free L4 -- the
+    smallest machine-capable card, so no larger card is an escape hatch."""
+    from temper_control_plane import fake_models
+    from temper_control_plane import quote as quote_mod
+    from temper_core import catalog
+    from temper_core.selection import GpuAvailability
+
+    facts = _big_model_facts()
+    key = (catalog.get("qwen3-4b").repo, catalog.get("qwen3-4b").revision)
+    monkeypatch.setattr(
+        quote_mod,
+        "QUOTE_MODELS",
+        fake_models.FakeModels({key: facts}),
+    )
+    monkeypatch.setattr(
+        quote_mod,
+        "QUOTE_PROVIDER",
+        FakeProvider(
+            availability=[GpuAvailability("L4", 41.31, 1)], currency="INR"
+        ),
+    )
+
+
+def test_a_plain_job_that_fits_no_card_is_refused_at_creation(
+    client, tmp_path, monkeypatch
+):
+    """Issue #54: a job with no overrides that fits no available card is
+    refused at creation, not launched to discover the OOM on a paid machine.
+    The refusal carries the arithmetic -- what was needed, what was available,
+    where the shortfall sits -- and names what the user could change."""
+    _big_model_quote_provider(monkeypatch)
+    ds = valid_dataset(client, tmp_path)
+    r = client.post("/v1/jobs", json={"dataset_id": ds})
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert detail["code"] == "configuration_does_not_fit"
+    arith = detail["arithmetic"]
+    assert arith["gpu_type"] == "L4"
+    assert arith["capacity_gb"] == 24.0
+    assert arith["peak_gb"] > arith["capacity_gb"]
+    # Where the shortfall is, stated as its own number (the disk refusal
+    # already does the same): peak over capacity is not implied, it is shown.
+    assert arith["shortfall_gb"] == pytest.approx(
+        arith["peak_gb"] - arith["capacity_gb"]
+    )
+    assert arith["shortfall_gb"] > 0
+    # The refusal names what the user could change: a smaller model, a shorter
+    # sequence, or (this one was qlora) nothing further on method.
+    assert "smaller model" in detail["message"]
+    assert "shorter sequence" in detail["message"]
+    # Nothing was created: the refusal is before anything is spent.
+    assert client.get("/v1/jobs").json()["jobs"] == []
+
+
+def test_a_fitting_configuration_is_not_blocked_on_any_memory_ground(
+    client, tmp_path, monkeypatch
+):
+    """The negative of the refusal (issue #54's criterion): the same 70B
+    plain job that the L4 refused is launched the moment a card that fits is
+    available. A refusal that fires too eagerly blocks work that would have
+    run -- here it does not, because it fires on the arithmetic, not on the
+    model's existence."""
+    _big_model_quote_provider(monkeypatch)
+    from temper_control_plane import quote as quote_mod
+    from temper_core.selection import GpuAvailability
+
+    # The H200 is the same price logic as any other card; what matters is that
+    # it can hold the predicted peak, so the same job now fits.
+    monkeypatch.setattr(
+        quote_mod,
+        "QUOTE_PROVIDER",
+        FakeProvider(
+            availability=[
+                GpuAvailability("L4", 41.31, 1),
+                GpuAvailability("H200", 250.0, 1),
+            ],
+            currency="INR",
+        ),
+    )
+    ds = valid_dataset(client, tmp_path)
+    r = client.post("/v1/jobs", json={"dataset_id": ds})
+    assert r.status_code == 201
+    job = r.json()
+    assert job["status"] == "queued"
+    # The quote it was shown reflects the card that actually fits: the search
+    # skipped the cheaper L4 (it cannot hold the peak) and picked the H200.
+    assert job["quote"] is not None
+    hardware = next(
+        d for d in job["quote"]["decisions"] if d["decision"] == "hardware"
+    )
+    assert hardware["chosen"] == "H200"
+
+
+def test_availability_alone_is_not_a_refusal_at_creation(
+    client, tmp_path, monkeypatch
+):
+    """Issue #54's over-eager-refusal warning, on the discriminating case: the
+    configuration *would* fit a card, but none of that card is free right now.
+    That is a fact about the moment, not about the configuration -- refusing
+    it would block work that could run once hardware frees -- so the launch
+    proceeds and the quote is absent, exactly as the estimate half warns."""
+    from temper_control_plane import quote as quote_mod
+    from temper_core.selection import GpuAvailability
+
+    # One L4 that would hold the default 4B QLoRA job, with nothing free.
+    monkeypatch.setattr(
+        quote_mod,
+        "QUOTE_PROVIDER",
+        FakeProvider(
+            availability=[GpuAvailability("L4", 41.31, 0)], currency="INR"
+        ),
+    )
+    ds = valid_dataset(client, tmp_path)
+    r = client.post("/v1/jobs", json={"dataset_id": ds})
+    assert r.status_code == 201
+    job = r.json()
+    assert job["status"] == "queued"
+    # No quote: nothing free, so nothing to price -- never a refusal.
+    assert job["quote"] is None
+
+
 def upload(client, path):
     with open(path, "rb") as f:
         return client.post(

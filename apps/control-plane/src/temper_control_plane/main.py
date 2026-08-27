@@ -295,12 +295,16 @@ def create_job(req: JobRequest):
     frozen into the job spec so the run says what it actually used.
 
     The quote the launch was shown is computed here and frozen onto the job
-    with the rest of the spec. It never blocks: if the provider is unreachable
-    or nothing fits, the job still launches -- an estimate warns, it does not
-    refuse (spec 005). The only exceptions are refusals of the user's own
-    overrides, which are not absent estimates but demands that cannot be met.
-    The advanced-surface gate itself lives in `jobs.create`, the one shared
-    creation path, so every entry point refuses identically (issue #80).
+    with the rest of the spec. Time and cost never refuse: if the provider is
+    unreachable or nothing is free, the job still launches -- an estimate
+    warns, it does not refuse (spec 005). Memory is the exception that issue
+    #54 makes structural: a configuration predicted not to fit any available
+    card is refused at creation with `configuration_does_not_fit` and the
+    peak-vs-capacity arithmetic, even when nothing was overridden, because an
+    out-of-memory failure on a machine the user is paying for is not an
+    estimate. The advanced-surface gate itself lives in `jobs.create`, the
+    one shared creation path, so every entry point refuses identically (issue
+    #80).
     """
     override_list = _override_list(req.overrides)
     try:

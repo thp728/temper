@@ -320,6 +320,30 @@ def test_a_pinned_card_with_nothing_free_is_refused_with_availability():
     assert exc.value.peak_gb is not None
     assert exc.value.gpu_type == "H100"
     assert exc.value.peak_gb <= exc.value.capacity_gb
+    # A fit that merely lacks availability is not a memory shortfall: the
+    # peak sits inside capacity, so there is nothing to be short by.
+    assert exc.value.shortfall_gb is not None
+    assert exc.value.shortfall_gb <= 0
+
+
+def test_the_shortfall_is_peak_over_capacity_and_none_without_arithmetic():
+    """The refusal names where the shortfall is (issue #54): the peak over
+    the capacity, derived once on the error so the search and the refusal
+    surface cannot disagree. Without a single configuration to price (nothing
+    free at all) there is no shortfall to name."""
+    with pytest.raises(selection.NoFittingHardwareError) as exc:
+        plan(
+            [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=1)],
+            method="full",
+        )
+    assert exc.value.peak_gb > exc.value.capacity_gb
+    assert exc.value.shortfall_gb == pytest.approx(
+        exc.value.peak_gb - exc.value.capacity_gb
+    )
+    assert exc.value.shortfall_gb > 0
+    with pytest.raises(selection.NoFittingHardwareError) as bare:
+        plan([])
+    assert bare.value.shortfall_gb is None
 
 
 def test_pinning_more_devices_than_a_node_offers_is_refused():

@@ -7,7 +7,7 @@ export const DEFAULT_BACKEND = `http://127.0.0.1:${BACKEND_PORT}`;
 
 // The ports the e2e journeys boot their own servers on, distinct from the
 // developer-facing 8000/3000 so a journey never silently drives a dev server.
-// Derived from this issue's number (47xx) because the five parallel worktrees
+// Derived from an issue number because the parallel worktrees
 // share one machine: each wave's journeys must default to ports only its own
 // webServers use, or a sibling's run reuses this one's processes. One
 // definition, read by playwright.config.ts and by every spec that talks to

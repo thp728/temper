@@ -83,6 +83,7 @@ repository becomes public at submission.
 | [0040](0040-an-override-names-its-failure-mode-and-a-locked-setting-is-not-a-refused-input.md) | An override names its failure mode, is recorded in the job spec, and a locked setting is not a refused input | accepted | 2026-08-27 |
 | [0041](0041-checkpoints-are-written-off-the-machine-as-they-are-produced.md) | Checkpoints are written off the machine as they are produced, and verified before they are presented | accepted | 2026-08-27 |
 | [0042](0042-every-export-asserts-the-training-and-artifact-templates-tokenize-identically.md) | Every export asserts the training and artifact templates tokenize identically | accepted | 2026-08-27 |
+| [0043](0043-memory-blocks-at-creation-while-time-and-cost-warn.md) | Memory blocks at job creation while time and cost warn, and the two halves differ on the cost of being wrong | accepted | 2026-08-28 |
 | [0044](0044-the-server-rendered-pages-are-deleted-and-the-interfaces-never-coexist.md) | The server-rendered pages are deleted, and the two interfaces never coexist | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the

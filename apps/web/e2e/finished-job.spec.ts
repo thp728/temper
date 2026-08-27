@@ -162,6 +162,21 @@ test("a failed job says why in plain language, and keeps its stable code", async
   expect(launched.status()).toBe(201);
   const jobId = (await launched.json()).id;
 
+  // Wait for the ending before reading the record. Since #39 the job page
+  // opens on the live running view and hands back to the finished record only
+  // at a terminal state, so navigating straight after creating the job races
+  // whatever speed this runner gets it to one. It passed on one CI runner and
+  // failed on another from the same commit.
+  await expect
+    .poll(
+      async () => {
+        const rec = await request.get(`${backend}/v1/jobs/${jobId}`);
+        return (await rec.json()).status;
+      },
+      { timeout: 60_000 },
+    )
+    .toMatch(/^(complete|failed|cancelled)$/);
+
   // A user landing directly on a failed job's record:
   await page.goto(`/jobs/${jobId}`);
   await expect(pairedValue(page, "State")).toHaveText("failed");
