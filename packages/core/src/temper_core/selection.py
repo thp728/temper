@@ -105,12 +105,14 @@ class NoFittingHardwareError(Exception):
     """No (method, GPU type, device count) the provider has free right now
     is predicted to fit this job.
 
-    When the caller pinned a configuration (issue #79's overrides), the
-    error carries the arithmetic that refused it -- `peak_gb` against
-    `capacity_gb` on `gpu_type`, `method` and `device_count` -- so the
-    refuser can show the user the same numbers `memory.headroom_gb` used
-    rather than a bare "nothing fits". Unpinned refusals carry none of it:
-    there was no single configuration to price.
+    When the caller pinned a configuration (issue #79's overrides), or when a
+    card is free but nothing fits at any method or device count (the user's
+    hyperparameter overrides can make that the case, issue #80), the error
+    carries the arithmetic that refused it -- `peak_gb` against `capacity_gb`
+    on `gpu_type`, `method` and `device_count` -- so the refuser can show the
+    user the same numbers `memory.headroom_gb` used rather than a bare
+    "nothing fits". An unpinned refusal with no free machine-capable device
+    carries none of it: there was no single configuration to price.
     """
 
     def __init__(
@@ -164,21 +166,18 @@ def _no_fitting_error(
 ) -> NoFittingHardwareError:
     """The refusal for an empty search, with the arithmetic when it was pinned.
 
-    An unpinned search gets a bare "nothing fits": there was no single
-    configuration to price. A pinned one (issue #79's overrides) is the user
-    asking for something specific, so the refusal names what that something
-    needs against the card it was asked to fit -- the same
-    `memory.headroom_gb` numbers that did the refusing. The message keeps the
-    memory-versus-availability distinction visible, because refusing a
-    configuration that *would* fit if only the card were free is not the same
-    refusal as one that cannot fit at any price.
+    An unpinned search that still finds nothing gets a bare "nothing fits"
+    only when no machine-capable device is free at all -- there was no single
+    configuration to price. When a card *is* free but nothing fits, the
+    search's own arithmetic is named (the cheapest executable method at the
+    smallest device count against the largest free card): the configuration
+    was described by the caller (issue #80's hyperparameter overrides), and a
+    bare refusal would not say which peak lost against which capacity.
     """
     plain = NoFittingHardwareError(
         "No available GPU predicts a fit for this job, at any method or "
         "device count the provider currently has free."
     )
-    if method is None and gpu_type is None and device_count is None:
-        return plain
     eff_method = method or (methods[0] if methods else EXECUTABLE_METHODS[0])
     eff_count = device_count or 1
     peak = memory.predict_peak(
@@ -219,6 +218,11 @@ def _no_fitting_error(
         if r.num_free_devices > 0 and r.gpu_type in gpus.CAPACITY_GB
     ]
     if not free:
+        if method is None and gpu_type is None and device_count is None:
+            # Nothing free and nothing pinned: there was no single
+            # configuration to price, so none is named (the bare shape an
+            # unpinned plan expects).
+            return plain
         return NoFittingHardwareError(
             f"{eff_method} predicts {peak.total_gb:.1f} GB peak, but the "
             "provider reports no free machine-capable device at all",

@@ -36,6 +36,11 @@ __pycache__/
 coverage.xml
 htmlcov/
 
+# Scratch files a working agent keeps inside its worktree (issue-tracker rule:
+# never the system temp dir, which the parallel workers share). Everything here
+# is transient -- commit messages, notes -- and never ships.
+/.scratch/
+
 # Web application (apps/web). node_modules and the Next build are derived;
 # the generated API client is derived too, from packages/contracts/openapi.json
 # -- which is why that file is checked in and the client is not.

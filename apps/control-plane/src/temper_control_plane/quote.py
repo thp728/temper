@@ -175,6 +175,11 @@ def _no_fit_refusal(err: selection.NoFittingHardwareError) -> QuoteRefused:
     control). A configuration that would fit but is simply not free is the
     availability half, `provider_capacity_unavailable`, matching the code the
     orchestrator already uses for it at provisioning.
+
+    The arithmetic itself rides on `selection.NoFittingHardwareError` -- the
+    search owns its numbers, for a pinned configuration (#79) and for an
+    unpinned one with a card free that nothing fits (issue #80) -- so this
+    only renames it for the HTTP boundary.
     """
     arithmetic: dict[str, object] | None = None
     if err.peak_gb is not None:
@@ -237,6 +242,13 @@ def build_quote(
         overrides.resolve(base_hp, overrides_list) if overrides_list else None
     )
     hp = resolved.hyperparameters if resolved is not None else base_hp
+    # A configuration is a *demand* -- and an infeasible one is refused rather
+    # than silently unpriced -- when the caller pinned a plan decision (#79) or
+    # an advanced hyperparameter (issue #80). Taking control of the surface
+    # must not lose the safety property by falling back to a null estimate: the
+    # user asked for something specific, and a plan that cannot honour it says
+    # so with the arithmetic that refused it.
+    demanded = bool(overrides_list) or bool(hyperparameters)
 
     availability = provider.gpu_availability()
     try:
@@ -254,7 +266,7 @@ def build_quote(
             else None,
         )
     except selection.NoFittingHardwareError as e:
-        if resolved is not None:
+        if demanded:
             raise _no_fit_refusal(e) from e
         return None
     try:
@@ -280,7 +292,7 @@ def build_quote(
             minimum_gb=e.minimum_gb,
         ) from e
     except disk.DiskExceedsCeilingError as e:
-        if resolved is not None:
+        if demanded:
             raise QuoteRefused(
                 "disk_exceeds_ceiling",
                 str(e),

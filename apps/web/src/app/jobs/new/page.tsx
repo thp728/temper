@@ -5,6 +5,7 @@ import FocusHeading from "@/components/FocusHeading";
 import LaunchForm from "@/components/LaunchForm";
 import { Button } from "@/components/ui/button";
 import {
+  getAdvancedSurfaceV1SurfaceGet,
   getJobSpecPreviewV1JobsSpecGet,
   listModelsV1ModelsGet,
 } from "@/lib/api/generated/client";
@@ -52,11 +53,15 @@ export default async function NewJobPage({
     );
   }
 
-  const [{ data: catalog, error: catalogError }, { data: preview, error: previewError }] =
-    await Promise.all([
-      load(() => listModelsV1ModelsGet()),
-      load(() => getJobSpecPreviewV1JobsSpecGet({ dataset_id: datasetId })),
-    ]);
+  const [
+    { data: catalog, error: catalogError },
+    { data: preview, error: previewError },
+    { data: surface, error: surfaceError },
+  ] = await Promise.all([
+    load(() => listModelsV1ModelsGet()),
+    load(() => getJobSpecPreviewV1JobsSpecGet({ dataset_id: datasetId })),
+    load(() => getAdvancedSurfaceV1SurfaceGet()),
+  ]);
 
   if (previewError || !preview) {
     // A dataset that cannot start a job is refused before anything can be
@@ -117,7 +122,15 @@ export default async function NewJobPage({
         </div>
       )}
 
-      <LaunchForm catalog={catalog} preview={preview} />
+      <LaunchForm
+        catalog={catalog}
+        preview={preview}
+        // The advanced surface is generated from the trainer's own schema and
+        // published through the contract. A load failure does not block the
+        // launch -- the job is still offered with the defaults, which is what
+        // a first-time user gets anyway (issue #80).
+        surface={surfaceError || !surface ? null : surface}
+      />
 
       {/* The old screen's way back: the report this launch was reached from. */}
       <Button variant="outline" asChild>

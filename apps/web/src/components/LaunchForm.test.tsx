@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LaunchForm from "@/components/LaunchForm";
 import type {
+  AdvancedSurface as AdvancedSurfaceModel,
   CatalogEntry,
   JobSpecPreview,
   ModelCatalog,
@@ -198,6 +199,53 @@ function preview(overrides: Partial<JobSpecPreview> = {}): JobSpecPreview {
   };
 }
 
+// The generated advanced surface (issue #80), as `GET /v1/surface` publishes
+// it: a couple of exposed fields with their failure modes and a
+// known-but-unsupported setting.
+function surface(): AdvancedSurfaceModel {
+  return {
+    source_image: "axolotlai/axolotl:main@sha256:abc",
+    axolotl_version: "0.19.0.dev0",
+    config_model: "AxolotlInputConfig",
+    known_keys: ["learning_rate", "num_epochs", "lora_r", "wandb_project"],
+    platform_internal_keys: ["simulated_failure_code"],
+    overrideable_keys: ["learning_rate", "num_epochs"],
+    counts: {
+      calculated: 0,
+      exposed_with_named_failure_mode: 2,
+      known_but_unsupported: 1,
+    },
+    tiers: {
+      calculated: {},
+      exposed_with_named_failure_mode: {
+        learning_rate: {
+          tier: "exposed_with_named_failure_mode",
+          reason: "The peak learning rate for the cosine schedule.",
+          failure_mode:
+            "Too high and the loss diverges to NaN partway through a paid run.",
+          type: "float",
+        },
+        num_epochs: {
+          tier: "exposed_with_named_failure_mode",
+          reason: "How many passes over the training set.",
+          failure_mode: "Too few and the adapter underfits.",
+          type: "float",
+        },
+      },
+      known_but_unsupported: {
+        wandb_project: {
+          tier: "known_but_unsupported",
+          reason: "experiment-tracking integration is not offered.",
+        },
+      },
+    },
+    runtime_only_validators: {
+      model_validators: ["check_fsdp_deepspeed"],
+      field_validator_count: 27,
+    },
+  };
+}
+
 function specValue(name: string): string | null | undefined {
   return screen.getByText(name).closest("dt")?.nextElementSibling?.textContent;
 }
@@ -224,7 +272,7 @@ beforeEach(() => {
 
 describe("LaunchForm", () => {
   it("offers every catalog model as a named choice, with licence and pinned revision", () => {
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     for (const m of catalog.models) {
       const card = optionCard(m.repo);
       expect(screen.getByRole("radio", { name: new RegExp(m.repo) })).toBeVisible();
@@ -235,7 +283,7 @@ describe("LaunchForm", () => {
   });
 
   it("shows the predicted peak memory and headroom for every model, before launch", () => {
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     const card4b = optionCard("Qwen/Qwen3-4B");
     expect(card4b).toHaveTextContent("5.35");
     expect(card4b).toHaveTextContent("18.65");
@@ -246,7 +294,7 @@ describe("LaunchForm", () => {
   });
 
   it("preselects the catalog default", () => {
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     expect(
       screen.getByRole("radio", { name: /Qwen\/Qwen3-4B/ }),
     ).toBeChecked();
@@ -256,7 +304,7 @@ describe("LaunchForm", () => {
   });
 
   it("shows the specification the job will freeze, before launching", () => {
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     expect(specValue("lora_r")).toBe("16");
     expect(specValue("num_epochs")).toBe("3");
     // The commitment is stated where the numbers are read...
@@ -270,7 +318,7 @@ describe("LaunchForm", () => {
 
   it("launches with the chosen model and opens the job's own page", async () => {
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalledWith({
@@ -286,7 +334,7 @@ describe("LaunchForm", () => {
 
   it("launches with a model chosen after arrival", async () => {
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     await user.click(screen.getByRole("radio", { name: /Qwen\/Qwen3-8B/ }));
     createJobMock.mockResolvedValueOnce({ id: "job_def456" });
     await user.click(screen.getByRole("button", { name: "Launch job" }));
@@ -297,7 +345,7 @@ describe("LaunchForm", () => {
 
   it("keeps a refused launch's stable code on the page", async () => {
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     createJobMock.mockRejectedValueOnce(
       new ApiError(
         400,
@@ -318,7 +366,7 @@ describe("LaunchForm", () => {
 
   it("survives an unreachable server without losing the refusal", async () => {
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     createJobMock.mockRejectedValueOnce(new TypeError("fetch failed"));
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(screen.getByRole("alert")).toHaveTextContent("network_error");
@@ -326,7 +374,7 @@ describe("LaunchForm", () => {
 
   it("disables the action while the launch is in flight", async () => {
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     let resolve!: (v: unknown) => void;
     createJobMock.mockReturnValueOnce(
       new Promise((res) => {
@@ -342,7 +390,7 @@ describe("LaunchForm", () => {
 
   it("fetches and shows the selected model's quote: a duration range, not a point", async () => {
     getQuoteMock.mockResolvedValue(quote());
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     // The default model's quote is fetched after the page renders, with its
     // ranges.
     await waitFor(() =>
@@ -361,7 +409,7 @@ describe("LaunchForm", () => {
 
   it("shows the per-phase breakdown of cost and duration", async () => {
     getQuoteMock.mockResolvedValue(quote());
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Cost and time estimate" }),
@@ -376,7 +424,7 @@ describe("LaunchForm", () => {
   it("re-fetches the quote when the selected model changes", async () => {
     getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Cost and time estimate" }),
@@ -404,7 +452,7 @@ describe("LaunchForm", () => {
   it("still offers the launch when a quote is absent", async () => {
     getQuoteMock.mockResolvedValue(null);
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     // The estimate is shown as unavailable, and the launch is still offered:
     // an estimate warns, it never blocks (spec 005).
     await waitFor(() =>
@@ -420,7 +468,7 @@ describe("LaunchForm", () => {
   it("re-requests the plan from the server when a decision is overridden", async () => {
     getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Cost and time estimate" }),
@@ -450,6 +498,7 @@ describe("LaunchForm", () => {
         dataset_id: "ds_abc123",
         base_model: "qwen3-4b",
         overrides: [{ decision: "method", value: "lora" }],
+        hyperparameters: {},
       }),
     );
     // The recomputed plan is what is shown, and the override is marked.
@@ -459,7 +508,7 @@ describe("LaunchForm", () => {
   it("shows a refusal beside the plan when an override cannot be honoured", async () => {
     getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Cost and time estimate" }),
@@ -491,7 +540,7 @@ describe("LaunchForm", () => {
   it("launches with the pinned decisions frozen into the request", async () => {
     getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
-    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Cost and time estimate" }),
@@ -510,6 +559,133 @@ describe("LaunchForm", () => {
       base_model: "qwen3-4b",
       hyperparameters: {},
       overrides: [{ decision: "method", value: "lora" }],
+    });
+  });
+
+  // --- the advanced surface (issue #80) ------------------------------------
+
+  it("re-requests the plan when an advanced setting is changed", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    // Opening the disclosure is the explicit act; the change is then
+    // re-requested from the server with the hyperparameter, not applied
+    // locally.
+    const details = screen.getByRole("group", { name: "Advanced settings" });
+    await user.click(details.querySelector("summary") as HTMLElement);
+    recomputeQuoteMock.mockResolvedValue(quote());
+    const lr = screen.getByRole("spinbutton", { name: "learning_rate override" });
+    await user.clear(lr);
+    await user.type(lr, "0.0001");
+    await user.tab();
+    await waitFor(() =>
+      expect(recomputeQuoteMock).toHaveBeenCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-4b",
+        overrides: [],
+        hyperparameters: { learning_rate: "0.0001" },
+      }),
+    );
+    // The frozen-spec preview reflects the override, so what the page says a
+    // launch will freeze is what will actually freeze.
+    expect(screen.getByText("0.0001")).toBeVisible();
+  });
+
+  it("reverts an advanced override the server refuses, and shows the refusal", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    const details = screen.getByRole("group", { name: "Advanced settings" });
+    await user.click(details.querySelector("summary") as HTMLElement);
+    // A hyperparameter the surface refuses (here, one that makes the job
+    // infeasible) is refused with its stable code, and the control reverts to
+    // the default rather than leaving a lie in the form.
+    recomputeQuoteMock.mockRejectedValue(
+      new ApiError(
+        400,
+        "configuration_does_not_fit",
+        "qlora on a L4 predicts 66.9 GB peak, which the 24.0 GB L4 cannot hold.",
+      ),
+    );
+    const epochs = screen.getByRole("spinbutton", { name: "num_epochs override" });
+    await user.clear(epochs);
+    await user.type(epochs, "999");
+    await user.tab();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("configuration_does_not_fit");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("spinbutton", { name: "num_epochs override" }),
+      ).toHaveValue(3),
+    );
+  });
+
+  it("launches with the advanced overrides frozen into the request", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    const details = screen.getByRole("group", { name: "Advanced settings" });
+    await user.click(details.querySelector("summary") as HTMLElement);
+    recomputeQuoteMock.mockResolvedValue(quote());
+    const lr = screen.getByRole("spinbutton", { name: "learning_rate override" });
+    await user.clear(lr);
+    await user.type(lr, "0.0001");
+    await user.tab();
+    await waitFor(() => expect(recomputeQuoteMock).toHaveBeenCalled());
+    createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).toHaveBeenCalledWith({
+      dataset_id: "ds_abc123",
+      base_model: "qwen3-4b",
+      hyperparameters: { learning_rate: "0.0001" },
+      overrides: [],
+    });
+  });
+
+  it("offers the launch with the defaults when the surface cannot be loaded", async () => {
+    const user = userEvent.setup();
+    // A surface-load failure never blocks the launch: the job is still
+    // offered with the defaults, which is what a first-time user gets anyway.
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={null} />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    expect(
+      screen.queryByRole("group", { name: "Advanced settings" }),
+    ).toBeNull();
+    createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).toHaveBeenCalledWith({
+      dataset_id: "ds_abc123",
+      base_model: "qwen3-4b",
+      hyperparameters: {},
+      overrides: [],
     });
   });
 });

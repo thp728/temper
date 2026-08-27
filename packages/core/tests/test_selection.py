@@ -337,3 +337,23 @@ def test_an_unpinned_refusal_still_carries_no_arithmetic():
         plan([])
     assert exc.value.peak_gb is None
     assert exc.value.capacity_gb is None
+
+
+def test_an_unpinned_search_with_free_cards_names_the_arithmetic():
+    """An unpinned search that fails *despite* a card being free names the
+    arithmetic (issue #80): the configuration was described by the user's
+    hyperparameter overrides, and a bare 'nothing fits' would not say which
+    peak lost against which capacity. The cheapest executable configuration
+    (qlora on one device) is what the search tried first, so it is what is
+    named."""
+    with pytest.raises(selection.NoFittingHardwareError) as exc:
+        plan(
+            [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=1)],
+            micro_batch_size=64,
+        )
+    assert exc.value.peak_gb is not None
+    assert exc.value.gpu_type == "L4"
+    assert exc.value.capacity_gb == 24.0
+    assert exc.value.peak_gb > exc.value.capacity_gb
+    assert exc.value.method == "qlora"
+    assert exc.value.device_count == 1

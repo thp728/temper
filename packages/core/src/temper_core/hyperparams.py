@@ -75,7 +75,12 @@ def effective(overrides: dict[str, Any] | None) -> dict[str, Any]:
     applied = {
         k: v for k, v in (overrides or {}).items() if k in ALLOWED_OVERRIDES
     }
-    cfg.update(applied)
+    # Coerced to the schema's type (issue #80): an override arrives as a
+    # string from a browser form, and the schema knows `lora_r` is an int and
+    # `learning_rate` a float. The resolver is the single place a value is
+    # normalised, so the quote, the orchestrator and the trainer's spec all
+    # see the same typed value.
+    cfg.update({k: surface.coerce_value(k, v) for k, v in applied.items()})
 
     # α is mechanically tied to r: a new rank never pairs with a stale scale.
     if "lora_r" in applied and "lora_alpha" not in applied:

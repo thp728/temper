@@ -1,6 +1,70 @@
 {
   "components": {
     "schemas": {
+      "AdvancedSurface": {
+        "description": "The generated advanced surface, published for the interface to render.\n\nThe same document `temper_core.surface.surface_document()` produces (and\n`just contracts` materialises as `advanced-surface.json`), typed at the\nHTTP boundary so the generated client never falls back to `unknown`. The\nmetadata fields validate from the document's leading-underscore keys and\nserialize under their plain names: the underscore is a \"derived metadata\"\nmarker internal to the generator, not a shape worth publishing.",
+        "properties": {
+          "axolotl_version": {
+            "title": "Axolotl Version",
+            "type": "string"
+          },
+          "config_model": {
+            "title": "Config Model",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "known_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known Keys",
+            "type": "array"
+          },
+          "overrideable_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overrideable Keys",
+            "type": "array"
+          },
+          "platform_internal_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Platform Internal Keys",
+            "type": "array"
+          },
+          "runtime_only_validators": {
+            "$ref": "#/components/schemas/RuntimeOnlyValidators"
+          },
+          "source_image": {
+            "title": "Source Image",
+            "type": "string"
+          },
+          "tiers": {
+            "$ref": "#/components/schemas/SurfaceTiers"
+          }
+        },
+        "required": [
+          "source_image",
+          "axolotl_version",
+          "config_model",
+          "known_keys",
+          "platform_internal_keys",
+          "overrideable_keys",
+          "tiers",
+          "counts",
+          "runtime_only_validators"
+        ],
+        "title": "AdvancedSurface",
+        "type": "object"
+      },
       "Body_upload_dataset_v1_datasets_post": {
         "properties": {
           "file": {
@@ -1479,7 +1543,7 @@
         "type": "object"
       },
       "QuoteRequest": {
-        "description": "The recompute a plan screen asks for when a decision is overridden\n(issue #79): the same inputs as `GET /v1/quotes`, plus the decisions to\npin. The response is the recomputed quote, or a coded refusal with the\narithmetic that refused it -- an override never mutates the plan it\nlanded on, it re-requests it.",
+        "description": "The recompute a plan screen asks for when a decision is overridden\n(issue #79): the same inputs as `GET /v1/quotes`, plus the decisions to\npin. The response is the recomputed quote, or a coded refusal with the\narithmetic that refused it -- an override never mutates the plan it\nlanded on, it re-requests it.\n\n`hyperparameters` (issue #80) are the advanced-surface settings the user\nhas overridden; they ride on the same recompute so the plan re-prices\naround them and refuses a configuration that no longer fits before it is\nlaunched.",
         "properties": {
           "base_model": {
             "default": "qwen3-4b",
@@ -1489,6 +1553,11 @@
           "dataset_id": {
             "title": "Dataset Id",
             "type": "string"
+          },
+          "hyperparameters": {
+            "additionalProperties": true,
+            "title": "Hyperparameters",
+            "type": "object"
           },
           "overrides": {
             "items": {
@@ -1601,6 +1670,25 @@
         "title": "RunComparison",
         "type": "object"
       },
+      "RuntimeOnlyValidators": {
+        "description": "The combinations that cannot be known ahead of launch, named as such.\n\nAxolotl enforces these in arbitrary Python, so a generated form cannot\nknow what they will refuse until the job is running (Spec 009). The model\nvalidators are named; the field-validator names were not captured by the\nintrospection, so only their count is recorded.",
+        "properties": {
+          "field_validator_count": {
+            "default": 0,
+            "title": "Field Validator Count",
+            "type": "integer"
+          },
+          "model_validators": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Model Validators",
+            "type": "array"
+          }
+        },
+        "title": "RuntimeOnlyValidators",
+        "type": "object"
+      },
       "StageActual": {
         "description": "One measured stage of a run: its name and how long the machine spent\nin it, from the job's own state transitions (issue #77). A stage never\nreached -- a job cancelled in provisioning has no `preparing` to measure\n-- records None rather than a guessed number.",
         "properties": {
@@ -1624,6 +1712,75 @@
           "name"
         ],
         "title": "StageActual",
+        "type": "object"
+      },
+      "SurfaceField": {
+        "description": "One trainer field as the advanced surface classifies it (issue #33).\n\nEvery field carries its tier and the reason it landed there; an exposed\nfield additionally carries the specific thing that goes wrong if it is set\nbadly (`failure_mode`) and how its value is typed (`type`: the interface\ngenerates its input from this rather than hand-listing the vocabulary).",
+        "properties": {
+          "failure_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Mode"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "required": [
+          "tier",
+          "reason"
+        ],
+        "title": "SurfaceField",
+        "type": "object"
+      },
+      "SurfaceTiers": {
+        "description": "The three tiers of the generated surface, each a name-to-field map.\n\nOne per Spec 009's three tiers so the shape of the document says what the\ntiers are; a client reads `tiers[\"exposed_with_named_failure_mode\"]` to\nrender the overridable settings and `tiers[\"known_but_unsupported\"]` to\nshow the trainer's settings this product does not offer, with their\nreasons.",
+        "properties": {
+          "calculated": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceField"
+            },
+            "title": "Calculated",
+            "type": "object"
+          },
+          "exposed_with_named_failure_mode": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceField"
+            },
+            "title": "Exposed With Named Failure Mode",
+            "type": "object"
+          },
+          "known_but_unsupported": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceField"
+            },
+            "title": "Known But Unsupported",
+            "type": "object"
+          }
+        },
+        "title": "SurfaceTiers",
         "type": "object"
       },
       "TokenDistribution": {
@@ -1948,7 +2105,7 @@
         ]
       },
       "post": {
-        "description": "Launch a fine-tuning job.\n\nThe whole creation path lives in `api.jobs.create`, shared with the\nbrowser's launch form so the two surfaces cannot drift apart. The\nhyperparameters are frozen into the job row there: a run's spec is\nimmutable once launched, so a later change to a default cannot\nretroactively alter what a finished run claims.\n\n`req.overrides` (issue #79) are the decisions the user pinned instead of\nthe predictor's. The launch is refused -- with a stable code and, where\nthe refusal is on memory grounds, the same arithmetic the predictor used\n-- when an override cannot be honoured, and the overrides themselves are\nfrozen into the job spec so the run says what it actually used.\n\nThe quote the launch was shown is computed here and frozen onto the job\nwith the rest of the spec. It never blocks: if the provider is unreachable\nor nothing fits, the job still launches -- an estimate warns, it does not\nrefuse (spec 005). The only exceptions are refusals of the user's own\noverrides, which are not absent estimates but demands that cannot be met.",
+        "description": "Launch a fine-tuning job.\n\nThe whole creation path lives in `api.jobs.create`, shared with the\nbrowser's launch form so the two surfaces cannot drift apart. The\nhyperparameters are frozen into the job row there: a run's spec is\nimmutable once launched, so a later change to a default cannot\nretroactively alter what a finished run claims.\n\n`req.overrides` (issue #79) are the decisions the user pinned instead of\nthe predictor's. The launch is refused -- with a stable code and, where\nthe refusal is on memory grounds, the same arithmetic the predictor used\n-- when an override cannot be honoured, and the overrides themselves are\nfrozen into the job spec so the run says what it actually used.\n\nThe quote the launch was shown is computed here and frozen onto the job\nwith the rest of the spec. It never blocks: if the provider is unreachable\nor nothing fits, the job still launches -- an estimate warns, it does not\nrefuse (spec 005). The only exceptions are refusals of the user's own\noverrides, which are not absent estimates but demands that cannot be met.\nThe advanced-surface gate itself lives in `jobs.create`, the one shared\ncreation path, so every entry point refuses identically (issue #80).",
         "operationId": "create_job_v1_jobs_post",
         "requestBody": {
           "content": {
@@ -2290,7 +2447,7 @@
         ]
       },
       "post": {
-        "description": "The plan recomputed around the user's overrides, or null.\n\nIssue #79: changing one decision re-requests the plan rather than mutating\nit locally, so the recomputation rules live in one place -- this endpoint\nand the launch path both read `quote.build_quote`. An override that cannot\nbe honoured is refused with a stable code and, on memory grounds, the same\narithmetic the predictor used (`configuration_does_not_fit`): the\nplan-with-overrides is a demand, not an estimate, and a demand that cannot\nbe met must say so.\n\nReturns null (never a refusal) only when the estimate itself cannot be\npriced -- provider unreachable, model unresolvable -- because an estimate\nwarns, it does not block (spec 005).",
+        "description": "The plan recomputed around the user's overrides, or null.\n\nIssue #79: changing one decision re-requests the plan rather than mutating\nit locally, so the recomputation rules live in one place -- this endpoint\nand the launch path both read `quote.build_quote`. An override that cannot\nbe honoured is refused with a stable code and, on memory grounds, the same\narithmetic the predictor used (`configuration_does_not_fit`): the\nplan-with-overrides is a demand, not an estimate, and a demand that cannot\nbe met must say so.\n\n`req.hyperparameters` (issue #80) are the advanced-surface settings the\nuser has overridden. They are run through the same pre-launch gate as a\nlaunch (`temper_core.surface.validate_overrides`), so a key unknown to the\ntrainer is echoed back and a known-but-unsupported key refused with its\nreason here too, and they re-price the plan -- a `micro_batch_size` that\nno longer fits is refused before anything is provisioned.\n\nReturns null (never a refusal) only when the estimate itself cannot be\npriced -- provider unreachable, model unresolvable -- because an estimate\nwarns, it does not block (spec 005).",
         "operationId": "recompute_quote_v1_quotes_post",
         "requestBody": {
           "content": {
@@ -2335,6 +2492,28 @@
         "summary": "Recompute Quote",
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/v1/surface": {
+      "get": {
+        "description": "The generated advanced surface, published for the interface to render.\n\nIssue #80. The exposed set, each field's tier with its reason and failure\nmode, and the runtime-only validators are all derived from the pinned\ntrainer's schema and its tier data (issue #33) -- the interface generates\nits advanced panel from this rather than hand-listing the vocabulary, so\nthe panel cannot drift from what the pre-launch gate refuses. The document\nis a pure function of two checked-in data files, so it is deterministic\nfor a given pinned image.",
+        "operationId": "get_advanced_surface_v1_surface_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdvancedSurface"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Advanced Surface",
+        "tags": [
+          "surface"
         ]
       }
     }

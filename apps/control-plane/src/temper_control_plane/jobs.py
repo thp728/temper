@@ -107,7 +107,13 @@ def create(
         raise HTTPException(400, refusals[0])
 
     base_hp = hyperparams.effective(hyperparameters)
-    frozen_hp = dict(hyperparameters)
+    # The frozen record is the user's request, coerced to the schema's type
+    # (issue #80): a launch typed "16" into a number field, and the record says
+    # 16 -- the same typed value the resolver derives and the trainer reads.
+    frozen_hp = {
+        k: surface.coerce_value(k, v)
+        for k, v in (hyperparameters or {}).items()
+    }
     frozen_overrides: list[dict] = []
     if overrides_list:
         # The vocabulary and coupling are refused before anything is priced or
