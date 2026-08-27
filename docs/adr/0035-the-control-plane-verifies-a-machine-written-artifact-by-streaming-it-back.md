@@ -1,4 +1,4 @@
-# ADR-0034 — The control plane verifies a machine-written artifact by streaming it back
+# ADR-0035 — The control plane verifies a machine-written artifact by streaming it back
 
 - **Status:** accepted
 - **Date:** 2026-08-27
