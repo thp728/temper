@@ -20,10 +20,12 @@ vi.mock("next/navigation", () => ({
 // Playwright journeys.
 const createJobMock = vi.hoisted(() => vi.fn());
 const getQuoteMock = vi.hoisted(() => vi.fn());
+const recomputeQuoteMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/generated/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/generated/client")>()),
   createJobV1JobsPost: createJobMock,
   getQuoteV1QuotesGet: getQuoteMock,
+  recomputeQuoteV1QuotesPost: recomputeQuoteMock,
 }));
 
 import { ApiError } from "@/lib/api/mutator";
@@ -144,6 +146,35 @@ function quote(overrides: Partial<Quote> = {}): Quote {
     storage_cost_usd_total_low_minor: 1,
     storage_cost_usd_total_high_minor: 4,
     is_estimate: true,
+    decisions: [
+      {
+        decision: "hardware",
+        chosen: "L4",
+        constraint:
+          "predicted peak is 5.4 GB; the L4 (24.0 GB) is the cheapest card currently available that holds it with 18.6 GB to spare.",
+        alternatives: [],
+        overridden: false,
+      },
+      {
+        decision: "method",
+        chosen: "qlora",
+        constraint:
+          "the trainer can execute qlora today, and selection picks the cheapest executable method that fits.",
+        alternatives: [
+          {
+            value: "lora",
+            cost: "needs 11.4 GB peak",
+            constraint: "the trainer cannot execute LoRA yet.",
+          },
+        ],
+        overridden: false,
+      },
+    ],
+    override_options: {
+      method: ["qlora", "lora", "full"],
+      hardware: ["A100-80GB", "H100", "H200", "L4", "RTX-PRO6000"],
+      precision: ["nf4 (4-bit)", "bf16 (no quantisation)"],
+    },
     ...overrides,
   };
 }
@@ -186,6 +217,7 @@ function optionCard(repo: string): HTMLElement {
 beforeEach(() => {
   createJobMock.mockReset();
   getQuoteMock.mockReset();
+  recomputeQuoteMock.mockReset();
   getQuoteMock.mockResolvedValue(null);
   push.mockReset();
 });
@@ -245,6 +277,7 @@ describe("LaunchForm", () => {
       dataset_id: "ds_abc123",
       base_model: "qwen3-4b",
       hyperparameters: {},
+      overrides: [],
     });
     await vi.waitFor(() =>
       expect(push).toHaveBeenCalledWith("/jobs/job_abc123"),
@@ -380,5 +413,103 @@ describe("LaunchForm", () => {
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalled();
+  });
+
+  // --- the plan is editable (issue #79) -------------------------------------
+
+  it("re-requests the plan from the server when a decision is overridden", async () => {
+    getQuoteMock.mockResolvedValue(quote());
+    const user = userEvent.setup();
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    // The change is re-requested, not applied locally: the client sends the
+    // pinned decision and the server recomputes the rest.
+    recomputeQuoteMock.mockResolvedValue(
+      quote({
+        decisions: [
+          {
+            decision: "method",
+            chosen: "lora",
+            constraint: "you chose lora. The trainer executes only 'qlora' today.",
+            alternatives: [],
+            overridden: true,
+          },
+        ],
+      }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "method override" }),
+      "lora",
+    );
+    await waitFor(() =>
+      expect(recomputeQuoteMock).toHaveBeenCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-4b",
+        overrides: [{ decision: "method", value: "lora" }],
+      }),
+    );
+    // The recomputed plan is what is shown, and the override is marked.
+    expect(screen.getByText("you changed this")).toBeVisible();
+  });
+
+  it("shows a refusal beside the plan when an override cannot be honoured", async () => {
+    getQuoteMock.mockResolvedValue(quote());
+    const user = userEvent.setup();
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    recomputeQuoteMock.mockRejectedValue(
+      new ApiError(
+        400,
+        "configuration_does_not_fit",
+        "full on a L4 predicts 66.9 GB peak, which the 24.0 GB L4 cannot hold.",
+      ),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "method override" }),
+      "full",
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("configuration_does_not_fit");
+    expect(alert).toHaveTextContent("66.9 GB peak");
+    // The plan reverts to the last valid configuration: the method control is
+    // back on the predictor's choice, not the refused value.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "method override" }),
+      ).toHaveValue(""),
+    );
+  });
+
+  it("launches with the pinned decisions frozen into the request", async () => {
+    getQuoteMock.mockResolvedValue(quote());
+    const user = userEvent.setup();
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    recomputeQuoteMock.mockResolvedValue(quote());
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "method override" }),
+      "lora",
+    );
+    await waitFor(() => expect(recomputeQuoteMock).toHaveBeenCalled());
+    createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).toHaveBeenCalledWith({
+      dataset_id: "ds_abc123",
+      base_model: "qwen3-4b",
+      hyperparameters: {},
+      overrides: [{ decision: "method", value: "lora" }],
+    });
   });
 });

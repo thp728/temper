@@ -251,3 +251,89 @@ def test_nothing_fits_means_no_alternatives():
             [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=1)],
             methods=("full",),
         )
+
+
+# --- pinned decisions (issue #79) -------------------------------------------
+# An override pins one decision and recomputes the rest. A pinned decision is
+# a hard constraint, never a preference: the search considers only matching
+# configurations and refuses rather than falling back to the predictor's pick.
+
+
+def test_pinning_a_gpu_type_restricts_the_search_to_it():
+    with_h100 = [
+        GpuAvailability("L4", price_per_hour=41.31, num_free_devices=1),
+        GpuAvailability("H100", price_per_hour=250.0, num_free_devices=1),
+    ]
+    result = plan(with_h100, gpu_type="H100")
+    assert result.gpu_type == "H100"
+    assert result.price_per_hour == 250.0
+
+
+def test_pinning_a_method_searches_it_even_outside_the_executable_set():
+    """A pinned method is searched even when it is not executable -- the
+    caller that pinned it decides executability; selection prices the fit."""
+    result = plan(
+        [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=1)],
+        method="lora",  # not in EXECUTABLE_METHODS, but describable
+    )
+    assert result.method == "lora"
+    assert result.gpu_type == "L4"  # lora fits an L4
+
+
+def test_pinning_a_device_count_prices_that_count():
+    result = plan(
+        [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=4)],
+        device_count=2,
+    )
+    assert result.device_count == 2
+    assert result.price_per_hour == pytest.approx(82.62)
+
+
+def test_a_pinned_card_that_cannot_hold_the_job_is_refused_with_the_arithmetic():
+    """An override that makes the job infeasible on memory grounds is refused
+    with the same arithmetic that did the refusing -- the peak against the
+    card's capacity, never a bare 'nothing fits' (issue #79)."""
+    with pytest.raises(selection.NoFittingHardwareError) as exc:
+        plan(
+            [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=1)],
+            method="full",  # full 4B fine-tune does not fit a 24 GB L4
+        )
+    assert exc.value.peak_gb is not None
+    assert exc.value.gpu_type == "L4"
+    assert exc.value.capacity_gb == 24.0
+    assert exc.value.peak_gb > exc.value.capacity_gb
+
+
+def test_a_pinned_card_with_nothing_free_is_refused_with_availability():
+    """A card that *would* hold the job but has nothing free is a different
+    refusal from one that cannot hold it -- the arithmetic keeps the
+    distinction visible."""
+    with pytest.raises(selection.NoFittingHardwareError) as exc:
+        plan(
+            [
+                GpuAvailability(
+                    "H100", price_per_hour=250.0, num_free_devices=0
+                )
+            ],
+            gpu_type="H100",
+        )
+    assert exc.value.peak_gb is not None
+    assert exc.value.gpu_type == "H100"
+    assert exc.value.peak_gb <= exc.value.capacity_gb
+
+
+def test_pinning_more_devices_than_a_node_offers_is_refused():
+    with pytest.raises(selection.NoFittingHardwareError):
+        plan(
+            [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=2)],
+            device_count=4,
+        )
+
+
+def test_an_unpinned_refusal_still_carries_no_arithmetic():
+    """The unpinned 'nothing fits' keeps its bare shape: there was no single
+    configuration to price, so none is named."""
+    with pytest.raises(selection.NoFittingHardwareError) as exc:
+        plan([])
+    assert exc.value.peak_gb is None
+    assert exc.value.capacity_gb is None

@@ -103,7 +103,32 @@ class HardwarePlan:
 
 class NoFittingHardwareError(Exception):
     """No (method, GPU type, device count) the provider has free right now
-    is predicted to fit this job."""
+    is predicted to fit this job.
+
+    When the caller pinned a configuration (issue #79's overrides), the
+    error carries the arithmetic that refused it -- `peak_gb` against
+    `capacity_gb` on `gpu_type`, `method` and `device_count` -- so the
+    refuser can show the user the same numbers `memory.headroom_gb` used
+    rather than a bare "nothing fits". Unpinned refusals carry none of it:
+    there was no single configuration to price.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        method: str | None = None,
+        gpu_type: str | None = None,
+        device_count: int | None = None,
+        peak_gb: float | None = None,
+        capacity_gb: float | None = None,
+    ) -> None:
+        self.method = method
+        self.gpu_type = gpu_type
+        self.device_count = device_count
+        self.peak_gb = peak_gb
+        self.capacity_gb = capacity_gb
+        super().__init__(message)
 
 
 def _cheaper(
@@ -125,6 +150,116 @@ def _cheaper(
     return current
 
 
+def _no_fitting_error(
+    facts: ModelFacts,
+    *,
+    lora_r: int,
+    sequence_len: int,
+    micro_batch_size: int,
+    availability: Sequence[GpuAvailability],
+    methods: Sequence[str],
+    method: str | None,
+    gpu_type: str | None,
+    device_count: int | None,
+) -> NoFittingHardwareError:
+    """The refusal for an empty search, with the arithmetic when it was pinned.
+
+    An unpinned search gets a bare "nothing fits": there was no single
+    configuration to price. A pinned one (issue #79's overrides) is the user
+    asking for something specific, so the refusal names what that something
+    needs against the card it was asked to fit -- the same
+    `memory.headroom_gb` numbers that did the refusing. The message keeps the
+    memory-versus-availability distinction visible, because refusing a
+    configuration that *would* fit if only the card were free is not the same
+    refusal as one that cannot fit at any price.
+    """
+    plain = NoFittingHardwareError(
+        "No available GPU predicts a fit for this job, at any method or "
+        "device count the provider currently has free."
+    )
+    if method is None and gpu_type is None and device_count is None:
+        return plain
+    eff_method = method or (methods[0] if methods else EXECUTABLE_METHODS[0])
+    eff_count = device_count or 1
+    peak = memory.predict_peak(
+        facts,
+        method=eff_method,
+        lora_r=lora_r,
+        sequence_len=sequence_len,
+        micro_batch_size=micro_batch_size,
+        device_count=eff_count,
+    )
+    if gpu_type is not None:
+        capacity = gpus.CAPACITY_GB.get(gpu_type)
+        if capacity is None:
+            return plain
+        if peak.total_gb > capacity:
+            return NoFittingHardwareError(
+                f"{eff_method} on a {gpu_type} predicts {peak.total_gb:.1f} GB "
+                f"peak, which the {capacity:.0f} GB {gpu_type} cannot hold",
+                method=eff_method,
+                gpu_type=gpu_type,
+                device_count=eff_count,
+                peak_gb=peak.total_gb,
+                capacity_gb=capacity,
+            )
+        return NoFittingHardwareError(
+            f"{eff_method} on a {gpu_type} fits ({peak.total_gb:.1f} GB peak "
+            f"within its {capacity:.0f} GB), but no {gpu_type} is currently "
+            "free to provision",
+            method=eff_method,
+            gpu_type=gpu_type,
+            device_count=eff_count,
+            peak_gb=peak.total_gb,
+            capacity_gb=capacity,
+        )
+    free = [
+        r
+        for r in availability
+        if r.num_free_devices > 0 and r.gpu_type in gpus.CAPACITY_GB
+    ]
+    if not free:
+        return NoFittingHardwareError(
+            f"{eff_method} predicts {peak.total_gb:.1f} GB peak, but the "
+            "provider reports no free machine-capable device at all",
+            method=eff_method,
+            device_count=eff_count,
+            peak_gb=peak.total_gb,
+        )
+    biggest = max(free, key=lambda r: gpus.CAPACITY_GB[r.gpu_type])
+    capacity = gpus.CAPACITY_GB[biggest.gpu_type]
+    if eff_count > biggest.num_free_devices:
+        return NoFittingHardwareError(
+            f"{eff_method} needs {eff_count} devices, but the most any "
+            f"currently-free node offers is {biggest.num_free_devices}",
+            method=eff_method,
+            gpu_type=biggest.gpu_type,
+            device_count=eff_count,
+            peak_gb=peak.total_gb,
+            capacity_gb=capacity,
+        )
+    if peak.total_gb > capacity:
+        return NoFittingHardwareError(
+            f"{eff_method} predicts {peak.total_gb:.1f} GB peak, beyond the "
+            f"{capacity:.0f} GB of the largest card currently available "
+            f"({biggest.gpu_type})",
+            method=eff_method,
+            gpu_type=biggest.gpu_type,
+            device_count=eff_count,
+            peak_gb=peak.total_gb,
+            capacity_gb=capacity,
+        )
+    return NoFittingHardwareError(
+        f"{eff_method} predicts {peak.total_gb:.1f} GB peak, which fits a "
+        f"{biggest.gpu_type} ({capacity:.0f} GB), but none is currently free",
+        method=eff_method,
+        gpu_type=biggest.gpu_type,
+        device_count=eff_count,
+        peak_gb=peak.total_gb,
+        capacity_gb=capacity,
+    )
+
+
 def select_hardware(
     facts: ModelFacts,
     *,
@@ -134,6 +269,9 @@ def select_hardware(
     availability: Sequence[GpuAvailability],
     currency: str,
     methods: Sequence[str] = EXECUTABLE_METHODS,
+    method: str | None = None,
+    gpu_type: str | None = None,
+    device_count: int | None = None,
 ) -> HardwarePlan:
     """The cheapest (method, GPU, device count) predicted to fit `facts`.
 
@@ -143,10 +281,28 @@ def select_hardware(
     `currency` comes from the account, read live, and travels with the price
     rather than being assumed.
 
+    `method`/`gpu_type`/`device_count` pin one or more of the decision to a
+    caller-chosen value (issue #79's overrides). A pinned decision is a hard
+    constraint, never a preference: the search considers only configurations
+    matching it, and refuses rather than falling back to the predictor's own
+    pick, because a run that silently ignored an override would be lying
+    about what it did. A pinned method is searched even outside `methods` --
+    the caller that pinned it decides executability -- and when nothing fits
+    the refusal carries the arithmetic that refused it (see
+    `NoFittingHardwareError`).
+
     Raises `NoFittingHardwareError` when nothing available, at any method or
     device count, predicts a fit -- refused before anything is provisioned,
     never discovered on a billing machine.
     """
+    if device_count is not None and device_count < 1:
+        raise ValueError(f"device_count must be >= 1, got {device_count}")
+    if method is not None and method not in memory.WEIGHT_BYTES_PER_PARAM:
+        raise ValueError(
+            f"unknown method {method!r}; expected one of "
+            f"{sorted(memory.WEIGHT_BYTES_PER_PARAM)}"
+        )
+    search_methods = (method,) if method is not None else methods
     best: HardwarePlan | None = None
     # Every configuration the search found that fits, whether it won or not.
     # One per (method, gpu_type, device_count) at its cheapest price; the
@@ -154,6 +310,8 @@ def select_hardware(
     # would have cost".
     found: dict[tuple[str, str, int], HardwarePlan] = {}
     for row in availability:
+        if gpu_type is not None and row.gpu_type != gpu_type:
+            continue
         if row.num_free_devices <= 0:
             continue
         capacity = gpus.CAPACITY_GB.get(row.gpu_type)
@@ -162,24 +320,30 @@ def select_hardware(
             # cannot predict a fit for -- and an unpriced fit is not a fit,
             # it is a guess. Skipped, not defaulted.
             continue
-        for device_count in range(1, row.num_free_devices + 1):
-            price = row.price_per_hour * device_count
-            for method in methods:
+        if device_count is not None:
+            counts: range = range(device_count, device_count + 1)
+        else:
+            counts = range(1, row.num_free_devices + 1)
+        for count in counts:
+            if count > row.num_free_devices:
+                continue
+            price = row.price_per_hour * count
+            for search_method in search_methods:
                 peak = memory.predict_peak(
                     facts,
-                    method=method,
+                    method=search_method,
                     lora_r=lora_r,
                     sequence_len=sequence_len,
                     micro_batch_size=micro_batch_size,
-                    device_count=device_count,
+                    device_count=count,
                 )
                 headroom = memory.headroom_gb(peak, capacity)
                 if headroom < 0:
                     continue
                 candidate = HardwarePlan(
-                    method=method,
+                    method=search_method,
                     gpu_type=row.gpu_type,
-                    device_count=device_count,
+                    device_count=count,
                     price_per_hour=price,
                     currency=currency,
                     peak=peak,
@@ -190,14 +354,21 @@ def select_hardware(
                 # best answer this price can buy -- a cheaper method at the
                 # same price is not a better one, so the rest of this row's
                 # price point is not worth a fit check.
-                existing = found.get((method, row.gpu_type, device_count))
+                existing = found.get((search_method, row.gpu_type, count))
                 if existing is None or price < existing.price_per_hour:
-                    found[(method, row.gpu_type, device_count)] = candidate
+                    found[(search_method, row.gpu_type, count)] = candidate
                 break
     if best is None:
-        raise NoFittingHardwareError(
-            "No available GPU predicts a fit for this job, at any method or "
-            "device count the provider currently has free."
+        raise _no_fitting_error(
+            facts,
+            lora_r=lora_r,
+            sequence_len=sequence_len,
+            micro_batch_size=micro_batch_size,
+            availability=availability,
+            methods=search_methods,
+            method=method,
+            gpu_type=gpu_type,
+            device_count=device_count,
         )
     alternatives = tuple(
         HardwareAlternative(

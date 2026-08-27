@@ -97,7 +97,12 @@ test("a job is chosen, reviewed and launched from the shell", async ({
   await expect(
     page.getByRole("heading", { name: "method" }),
   ).toBeVisible();
-  await expect(page.getByText("qlora", { exact: true })).toBeVisible();
+  // The chosen value is the method decision's strong; the method override
+  // control also carries an identical option label (issue #79), so target
+  // the reason, not the whole page.
+  await expect(
+    page.locator("strong").filter({ hasText: /^qlora$/ }),
+  ).toBeVisible();
   await expect(
     page.getByText(/cheapest card currently available/i),
   ).toBeVisible();
@@ -143,6 +148,78 @@ test("a job is chosen, reviewed and launched from the shell", async ({
     page.getByRole("heading", { name: "method" }),
   ).toBeVisible();
   await expect(page.getByText("qlora", { exact: true })).toBeVisible();
+});
+
+// An override on the plan (issue #79): a decision the predictor made can be
+// changed from the same surface that explains it, and changing one re-requests
+// the plan -- the recomputation rules live on the server. An override that
+// the trainer cannot run yet is still describable on the plan, and the launch
+// is where that description stops being a quote.
+test("a plan decision can be overridden and the launch refuses what the trainer cannot run", async ({
+  page,
+}) => {
+  await uploadValidatedRows(
+    page,
+    Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
+  );
+  await continueToLaunch(page);
+  await expect(
+    page.getByRole("heading", { name: "Why this configuration" }),
+  ).toBeVisible();
+
+  // The control sits beside the explanation it edits: one surface, not a
+  // beginner mode and an expert mode.
+  const method = page.getByRole("combobox", { name: "method override" });
+  await expect(method).toBeVisible();
+
+  // Override method to lora: the plan recomputes from the server, marks the
+  // decision overridden, and shows lora as what a launch would freeze.
+  await method.selectOption("lora");
+  await expect(page.getByText("you changed this")).toBeVisible();
+  await expect(page.getByText(/you chose lora/i)).toBeVisible();
+
+  // The trainer executes only QLoRA today, so the launch refuses -- with the
+  // stable code, never by silently running something else.
+  await page.getByRole("button", { name: "Launch job" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "not_executable" }),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/\/jobs\/job_/);
+});
+
+// An override that the trainer can run is frozen into the job spec (issue
+// #79): the sequence-length decision is folded into the hyperparameters the
+// job trains with, and the frozen quote still marks the decision as
+// overridden after the run has finished -- a completed job explains what it
+// actually used.
+test("a runnable override is frozen into the job and still marked after the run", async ({
+  page,
+}) => {
+  await uploadValidatedRows(
+    page,
+    Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
+  );
+  await continueToLaunch(page);
+  await expect(
+    page.getByRole("heading", { name: "Why this configuration" }),
+  ).toBeVisible();
+
+  const sequence = page.getByRole("spinbutton", {
+    name: "sequence length override",
+  });
+  await sequence.fill("4096");
+  await sequence.blur();
+  await expect(page.getByText("you changed this")).toBeVisible();
+
+  await page.getByRole("button", { name: "Launch job" }).click();
+  await expect(page).toHaveURL(/\/jobs\/job_/);
+
+  // The frozen quote carries the override's mark and its value onto the
+  // finished record -- the explanation survives the job like the spec does.
+  await expect(page.getByText("you changed this")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "sequence length" }),
+  ).toBeVisible();
 });
 
 test("a feasibility warning arrives before the launch, while it can still be acted on", async ({
@@ -194,14 +271,19 @@ test("the launch screen is keyboard-operable end to end", async ({ page }) => {
   }
   await expect(launch).toBeFocused();
 
-  // Shift+Tab back into the model group -- past the decisions' disclosures --
-  // and choose with the arrow keys. Only the checked radio is in the tab
-  // order (roving tabindex), so the first input reached going backwards is
-  // the checked model, and ArrowDown moves the choice on from there.
+  // Shift+Tab back into the model group -- past the decisions' disclosures
+  // and their override controls -- and choose with the arrow keys. Only the
+  // checked radio is in the tab order (roving tabindex), so the first radio
+  // reached going backwards is the checked model, and ArrowDown moves the
+  // choice on from there. The loop targets a radio specifically: the
+  // decisions' free-form controls are number inputs (issue #79), which are
+  // also INPUTs.
   for (
     let i = 0;
     i < maxTabStops &&
-    !(await page.evaluate(() => document.activeElement?.tagName === "INPUT"));
+    !(await page.evaluate(
+      () => document.activeElement?.getAttribute("type") === "radio",
+    ));
     i++
   ) {
     await page.keyboard.press("Shift+Tab");

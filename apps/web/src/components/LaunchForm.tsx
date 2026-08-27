@@ -1,15 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import QuoteView from "@/components/QuoteView";
+import QuoteView, { type OverrideRefusal } from "@/components/QuoteView";
 import {
   createJobV1JobsPost,
   getQuoteV1QuotesGet,
+  recomputeQuoteV1QuotesPost,
+  type DecisionOverride,
   type JobSpecPreview,
   type ModelCatalog,
   type Quote,
@@ -26,13 +28,11 @@ import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 // The quote is fetched here, after the page has rendered, for whichever model
 // is selected: an estimate never blocks the surface it appears on (spec 005),
 // so the plan draws immediately and the numbers fill in when they arrive.
-
-function specEntries(preview: JobSpecPreview): [string, string][] {
-  return Object.entries(preview.hyperparameters ?? {}).map(([k, v]) => [
-    k,
-    String(v),
-  ]);
-}
+//
+// The plan is editable (issue #79): changing one decision re-requests the
+// plan from the server rather than mutating it locally, so the recomputation
+// rules live in one place. The overrides the user pins are passed to the
+// launch, which freezes them into the job spec.
 
 export default function LaunchForm({
   catalog,
@@ -47,27 +47,52 @@ export default function LaunchForm({
   const [status, setStatus] = useState("");
   const [refusal, setRefusal] = useState<ApiError | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [overrides, setOverrides] = useState<DecisionOverride[]>([]);
+  const [planRefusal, setPlanRefusal] = useState<OverrideRefusal | null>(null);
   // Starts loading: the effect fetches the default model's quote on mount.
   const [quoteLoading, setQuoteLoading] = useState(true);
+  // The last set of overrides the server accepted, so a refused change can be
+  // reverted and the plan always describes a configuration that can launch.
+  const lastGood = useRef<DecisionOverride[]>([]);
 
   // The quote depends on which model is selected (a bigger model downloads
-  // more and may need different hardware), so it is re-fetched on every
-  // change -- server-computed, never guessed at on the client. Only the fetch
-  // lives in the effect; the reset happens in the change handler, because a
-  // synchronous reset here would cascade renders for no user-visible reason.
+  // more and may need different hardware) and on the pinned decisions, so it
+  // is re-fetched on every change -- server-computed, never guessed at on the
+  // client. An override is re-requested, not applied locally (issue #79).
   useEffect(() => {
     let cancelled = false;
-    getQuoteV1QuotesGet({
-      dataset_id: preview.dataset.id,
-      base_model: selected,
-    })
+    const request =
+      overrides.length > 0
+        ? recomputeQuoteV1QuotesPost({
+            dataset_id: preview.dataset.id,
+            base_model: selected,
+            overrides,
+          })
+        : getQuoteV1QuotesGet({
+            dataset_id: preview.dataset.id,
+            base_model: selected,
+          });
+    request
       .then((q) => {
-        if (!cancelled) setQuote(q);
+        if (cancelled) return;
+        setQuote(q);
+        lastGood.current = overrides;
       })
-      .catch(() => {
-        // An estimate that cannot be fetched is shown as absent, never as an
-        // error that blocks the page.
-        if (!cancelled) setQuote(null);
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 400) {
+          // An override that cannot be honoured is refused with the same
+          // arithmetic the predictor used (issue #79): shown beside the plan,
+          // and the plan reverts to the last valid configuration. The refusal
+          // is only cleared by the user's next action, never by the refetch
+          // this revert triggers.
+          setOverrides(lastGood.current);
+          setPlanRefusal({ code: err.code, message: err.message });
+        } else {
+          // An estimate that cannot be fetched is shown as absent, never as an
+          // error that blocks the page.
+          setQuote(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setQuoteLoading(false);
@@ -75,12 +100,23 @@ export default function LaunchForm({
     return () => {
       cancelled = true;
     };
-  }, [selected, preview.dataset.id]);
+  }, [selected, preview.dataset.id, overrides]);
 
   function onModelChange(modelId: string) {
     setSelected(modelId);
     setQuote(null);
     setQuoteLoading(true);
+    // A pinned decision belongs to the configuration it was pinned against;
+    // switching models starts a fresh plan.
+    setOverrides([]);
+    setPlanRefusal(null);
+    lastGood.current = [];
+  }
+
+  function handleOverridesChange(next: DecisionOverride[]) {
+    setQuoteLoading(true);
+    setPlanRefusal(null);
+    setOverrides(next);
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -96,11 +132,11 @@ export default function LaunchForm({
     setRefusal(null);
     setStatus("Launching your job…");
     try {
-      // No overrides: this form launches exactly the specification shown.
       const job = await createJobV1JobsPost({
         dataset_id: preview.dataset.id,
         base_model: chosen,
         hyperparameters: {},
+        overrides,
       });
       setStatus("Job launched. Opening it…");
       router.push(`/jobs/${job.id}`);
@@ -208,9 +244,16 @@ export default function LaunchForm({
       {/* The quote for the selected model: a duration range and a per-phase
           cost breakdown, both labelled an estimate. It loads after the page
           renders and never blocks anything -- the estimate warns, it does
-          not refuse (spec 005). */}
+          not refuse (spec 005). On the plan every decision carries a control
+          (issue #79): change one and the rest recomputes from the server. */}
       {quote ? (
-        <QuoteView quote={quote} />
+        <QuoteView
+          quote={quote}
+          editable
+          overrides={overrides}
+          onOverridesChange={handleOverridesChange}
+          refusal={planRefusal}
+        />
       ) : (
         <p
           aria-live="polite"
@@ -246,3 +289,9 @@ export default function LaunchForm({
   );
 }
 
+function specEntries(preview: JobSpecPreview): [string, string][] {
+  return Object.entries(preview.hyperparameters ?? {}).map(([k, v]) => [
+    k,
+    String(v),
+  ]);
+}

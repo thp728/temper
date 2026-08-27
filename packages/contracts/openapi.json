@@ -279,6 +279,25 @@
         "title": "DatasetUploaded",
         "type": "object"
       },
+      "DecisionOverride": {
+        "description": "One decision the user pinned instead of the predictor's (issue #79):\nwhich decision, and the value to pin it to. The value is the decision\nrecord's own vocabulary -- the same string the plan shows as `chosen` --\nso the control sits beside the explanation it edits.",
+        "properties": {
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "value"
+        ],
+        "title": "DecisionOverride",
+        "type": "object"
+      },
       "EventPage": {
         "description": "A page of history with the last id served.\n\n`after` is what the client holds; `last_id` is where this page reaches,\nso a polling client resumes instead of re-reading or skipping.",
         "properties": {
@@ -569,6 +588,13 @@
             ],
             "title": "Method"
           },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionOverride"
+            },
+            "title": "Overrides",
+            "type": "array"
+          },
           "price_per_hour": {
             "anyOf": [
               {
@@ -661,6 +687,13 @@
             "additionalProperties": true,
             "title": "Hyperparameters",
             "type": "object"
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionOverride"
+            },
+            "title": "Overrides",
+            "type": "array"
           }
         },
         "required": [
@@ -837,7 +870,7 @@
         "type": "object"
       },
       "Quote": {
-        "description": "What a job is predicted to cost and how long it should take.\n\nAn estimate everywhere it appears (`is_estimate` and the interface both\nsay so), composed per phase rather than as one blended rate, with the cost\nin the account's own currency as an integer in its smallest unit\n(`cost_*_minor`) with the currency code alongside. It pins what it was\ncomputed against -- `dataset_id`/`dataset_created_at` and `base_revision`\n-- and `expires_at` says how long the prices and availability it reflects\nare honoured for.\n\n`storage_cost_usd_*` is the separate storage line, deliberately in USD\nrather than the account's currency: ADR-0030 established that no live\nper-account storage price exists to convert it against, and a labelled\nUSD figure is more honest than a silently assumed conversion.\n\n`decisions` are the structured reasons the configuration was chosen\n(issue #76), carried with the quote and frozen with it, so a completed\njob explains itself as completely as a planned one.",
+        "description": "What a job is predicted to cost and how long it should take.\n\nAn estimate everywhere it appears (`is_estimate` and the interface both\nsay so), composed per phase rather than as one blended rate, with the cost\nin the account's own currency as an integer in its smallest unit\n(`cost_*_minor`) with the currency code alongside. It pins what it was\ncomputed against -- `dataset_id`/`dataset_created_at` and `base_revision`\n-- and `expires_at` says how long the prices and availability it reflects\nare honoured for.\n\n`storage_cost_usd_*` is the separate storage line, deliberately in USD\nrather than the account's currency: ADR-0030 established that no live\nper-account storage price exists to convert it against, and a labelled\nUSD figure is more honest than a silently assumed conversion.\n\n`decisions` are the structured reasons the configuration was chosen\n(issue #76), carried with the quote and frozen with it, so a completed\njob explains itself as completely as a planned one. Each decision's\n`overridden` flag (issue #79) marks the ones the user pinned.\n`override_options` maps each select-style decision to the legal values\nits control can offer (issue #79) -- the interface generates its controls\nfrom this rather than hand-listing the vocabulary.",
         "properties": {
           "base_revision": {
             "title": "Base Revision",
@@ -891,6 +924,16 @@
             "title": "Minor Unit",
             "type": "integer"
           },
+          "override_options": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Override Options",
+            "type": "object"
+          },
           "phases": {
             "items": {
               "$ref": "#/components/schemas/QuotePhase"
@@ -942,7 +985,7 @@
         "type": "object"
       },
       "QuoteDecision": {
-        "description": "One decision the predictor made on the user's behalf (issue #76): the\ndecision, the value chosen, the constraint that forced it, and the\nalternatives with what each would have cost. The shape of an ADR turned\ninto a product surface; `alternatives` may be empty when nothing else\nfit, which is itself a reason.",
+        "description": "One decision the predictor made on the user's behalf (issue #76): the\ndecision, the value chosen, the constraint that forced it, and the\nalternatives with what each would have cost. The shape of an ADR turned\ninto a product surface; `alternatives` may be empty when nothing else\nfit, which is itself a reason. `overridden` (issue #79) marks a decision\nthe user pinned rather than the predictor made, so the plan can show the\ndifference.",
         "properties": {
           "alternatives": {
             "items": {
@@ -962,6 +1005,11 @@
           "decision": {
             "title": "Decision",
             "type": "string"
+          },
+          "overridden": {
+            "default": false,
+            "title": "Overridden",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1052,6 +1100,32 @@
           "name"
         ],
         "title": "QuotePhase",
+        "type": "object"
+      },
+      "QuoteRequest": {
+        "description": "The recompute a plan screen asks for when a decision is overridden\n(issue #79): the same inputs as `GET /v1/quotes`, plus the decisions to\npin. The response is the recomputed quote, or a coded refusal with the\narithmetic that refused it -- an override never mutates the plan it\nlanded on, it re-requests it.",
+        "properties": {
+          "base_model": {
+            "default": "qwen3-4b",
+            "title": "Base Model",
+            "type": "string"
+          },
+          "dataset_id": {
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionOverride"
+            },
+            "title": "Overrides",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dataset_id"
+        ],
+        "title": "QuoteRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -1276,7 +1350,7 @@
         ]
       },
       "post": {
-        "description": "Launch a fine-tuning job.\n\nThe whole creation path lives in `api.jobs.create`, shared with the\nbrowser's launch form so the two surfaces cannot drift apart. The\nhyperparameters are frozen into the job row there: a run's spec is\nimmutable once launched, so a later change to a default cannot\nretroactively alter what a finished run claims.\n\nThe quote the launch was shown is computed here and frozen onto the job\nwith the rest of the spec. It never blocks: if the provider is unreachable\nor nothing fits, the job still launches -- an estimate warns, it does not\nrefuse (spec 005).",
+        "description": "Launch a fine-tuning job.\n\nThe whole creation path lives in `api.jobs.create`, shared with the\nbrowser's launch form so the two surfaces cannot drift apart. The\nhyperparameters are frozen into the job row there: a run's spec is\nimmutable once launched, so a later change to a default cannot\nretroactively alter what a finished run claims.\n\n`req.overrides` (issue #79) are the decisions the user pinned instead of\nthe predictor's. The launch is refused -- with a stable code and, where\nthe refusal is on memory grounds, the same arithmetic the predictor used\n-- when an override cannot be honoured, and the overrides themselves are\nfrozen into the job spec so the run says what it actually used.\n\nThe quote the launch was shown is computed here and frozen onto the job\nwith the rest of the spec. It never blocks: if the provider is unreachable\nor nothing fits, the job still launches -- an estimate warns, it does not\nrefuse (spec 005). The only exceptions are refusals of the user's own\noverrides, which are not absent estimates but demands that cannot be met.",
         "operationId": "create_job_v1_jobs_post",
         "requestBody": {
           "content": {
@@ -1613,6 +1687,54 @@
           }
         },
         "summary": "Get Quote",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "description": "The plan recomputed around the user's overrides, or null.\n\nIssue #79: changing one decision re-requests the plan rather than mutating\nit locally, so the recomputation rules live in one place -- this endpoint\nand the launch path both read `quote.build_quote`. An override that cannot\nbe honoured is refused with a stable code and, on memory grounds, the same\narithmetic the predictor used (`configuration_does_not_fit`): the\nplan-with-overrides is a demand, not an estimate, and a demand that cannot\nbe met must say so.\n\nReturns null (never a refusal) only when the estimate itself cannot be\npriced -- provider unreachable, model unresolvable -- because an estimate\nwarns, it does not block (spec 005).",
+        "operationId": "recompute_quote_v1_quotes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Quote"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Recompute Quote V1 Quotes Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recompute Quote",
         "tags": [
           "jobs"
         ]

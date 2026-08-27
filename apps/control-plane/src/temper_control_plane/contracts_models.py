@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from temper_core import catalog
+
 
 class ValidationIssue(BaseModel):
     """One problem, named where it is: line number when one applies."""
@@ -203,12 +205,25 @@ class QuoteDecision(BaseModel):
     decision, the value chosen, the constraint that forced it, and the
     alternatives with what each would have cost. The shape of an ADR turned
     into a product surface; `alternatives` may be empty when nothing else
-    fit, which is itself a reason."""
+    fit, which is itself a reason. `overridden` (issue #79) marks a decision
+    the user pinned rather than the predictor made, so the plan can show the
+    difference."""
 
     decision: str
     chosen: str
     constraint: str
     alternatives: list[QuoteDecisionAlternative] = Field(default_factory=list)
+    overridden: bool = False
+
+
+class DecisionOverride(BaseModel):
+    """One decision the user pinned instead of the predictor's (issue #79):
+    which decision, and the value to pin it to. The value is the decision
+    record's own vocabulary -- the same string the plan shows as `chosen` --
+    so the control sits beside the explanation it edits."""
+
+    decision: str
+    value: str
 
 
 class Quote(BaseModel):
@@ -229,7 +244,11 @@ class Quote(BaseModel):
 
     `decisions` are the structured reasons the configuration was chosen
     (issue #76), carried with the quote and frozen with it, so a completed
-    job explains itself as completely as a planned one."""
+    job explains itself as completely as a planned one. Each decision's
+    `overridden` flag (issue #79) marks the ones the user pinned.
+    `override_options` maps each select-style decision to the legal values
+    its control can offer (issue #79) -- the interface generates its controls
+    from this rather than hand-listing the vocabulary."""
 
     currency: str
     minor_unit: int
@@ -248,6 +267,19 @@ class Quote(BaseModel):
     storage_cost_usd_total_high_minor: int
     is_estimate: bool = True
     decisions: list[QuoteDecision] = Field(default_factory=list)
+    override_options: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class QuoteRequest(BaseModel):
+    """The recompute a plan screen asks for when a decision is overridden
+    (issue #79): the same inputs as `GET /v1/quotes`, plus the decisions to
+    pin. The response is the recomputed quote, or a coded refusal with the
+    arithmetic that refused it -- an override never mutates the plan it
+    landed on, it re-requests it."""
+
+    dataset_id: str
+    base_model: str = catalog.DEFAULT_MODEL
+    overrides: list[DecisionOverride] = Field(default_factory=list)
 
 
 class JobSpecPreview(BaseModel):
@@ -298,6 +330,7 @@ class JobRecord(BaseModel):
     error_message: str | None = None
     warnings: list[FeasibilityWarning] = Field(default_factory=list)
     quote: Quote | None = None
+    overrides: list[DecisionOverride] = Field(default_factory=list)
     result: dict[str, Any] | None = None
 
 
