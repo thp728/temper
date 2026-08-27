@@ -15,18 +15,6 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       { source: "/v1/:path*", destination: `${backend}/v1/:path*` },
-      // Until a screen is ported, its existing server-rendered page is
-      // proxied through this origin: the journey stays in one place and no
-      // link crosses origins mid-flow. Each entry below is one unported
-      // screen (or its form post); a ported screen deletes its entry in the
-      // same change. `/jobs/new` (#38), the job list and `/jobs/:id` (#40)
-      // are ported and therefore absent -- the shell's own pages serve them.
-      // What remains is the old watch page's cancel form post, reachable
-      // only by typing its address until #39 ports live watching, and the
-      // stylesheet that page ships with -- an unstyled page is a broken
-      // page, whatever test asserts on headings.
-      { source: "/jobs/:id/cancel", destination: `${backend}/jobs/:id/cancel` },
-      { source: "/static/:path*", destination: `${backend}/static/:path*` },
     ];
   },
 };

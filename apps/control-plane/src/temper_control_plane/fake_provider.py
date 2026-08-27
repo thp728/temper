@@ -433,6 +433,11 @@ class SimulatedMachine(FakeProvider):
 
 def completed_run() -> FakeProvider:
     """The fake configured as a small successful job, end to end."""
+    from . import config
+
     return SimulatedMachine(
-        lines=DEMO_LINES, result=DEMO_RESULT, adapter_bytes=DEMO_ADAPTER_BYTES
+        lines=DEMO_LINES,
+        result=DEMO_RESULT,
+        adapter_bytes=DEMO_ADAPTER_BYTES,
+        line_delay=config.FAKE_LINE_DELAY_S,
     )

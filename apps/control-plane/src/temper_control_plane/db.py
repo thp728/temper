@@ -19,6 +19,7 @@ What is kept from the architecture, because these are the parts that matter:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 import uuid
@@ -32,7 +33,9 @@ from . import config, storage
 # Via config, not by counting directories up from this file. The counted form
 # meant the repo root at `api/db.py` and `apps/control-plane/src/` after the
 # move, which put the database outside the anchored `/data/` gitignore rule.
-DB_PATH = config.REPO_ROOT / "data" / "temper.db"
+# The e2e journeys point it at a database of their own (`TEMPER_DB_PATH`), so
+# a journey never writes to the developer's data/ nor inherits its orphans.
+DB_PATH = config.DB_PATH
 
 # The full lifecycle. `preparing` covers image build and model download --
 # separated from `training` because they fail for completely different reasons
@@ -182,6 +185,16 @@ ADDED_COLUMNS = (
 
 
 def init() -> None:
+    if config.DB_RESET:
+        # A clean slate, once, at startup: remove the database (and any WAL
+        # side files) so the process boots against a fresh schema. The e2e
+        # journeys ask for this so an interrupted run cannot leave an orphaned
+        # non-terminal job behind that crashes the next run's startup.
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.remove(str(DB_PATH) + suffix)
+            except FileNotFoundError:
+                pass
     with connect() as c:
         c.executescript(SCHEMA)
         for table, column, decl in ADDED_COLUMNS:

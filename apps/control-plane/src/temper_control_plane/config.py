@@ -210,6 +210,14 @@ MAX_DATASET_BYTES = int(
 # real: the same API, the same database, the same orchestrator transitions.
 FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))
 
+# How long the simulated machine waits between output lines. Zero (default)
+# completes a canned run in milliseconds, which is what the suite wants except
+# when a journey is *watching*: the live-job journeys (issue #39) need a run
+# that lasts long enough to see output arrive without a refresh and to cancel
+# mid-run, so the journeys' own control plane is booted with a positive value.
+# Fake-only -- the real provider's cadence is the trainer's, not this knob's.
+FAKE_LINE_DELAY_S = float(os.environ.get("TEMPER_FAKE_LINE_DELAY_S") or 0)
+
 
 # --- stored objects ----------------------------------------------------------
 # Spec 006 / issue #22: every stored object sits behind one storage seam, and
@@ -235,6 +243,22 @@ STORAGE_BACKEND = _text("TEMPER_STORAGE_BACKEND") or "filesystem"
 STORAGE_ROOT = Path(
     _text("TEMPER_STORAGE_ROOT") or REPO_ROOT / "data" / "objects"
 )
+
+# Where the SQLite database lives, under `/data/` with everything else
+# runtime-written (test_storage_paths pins that boundary). Overridable so the
+# e2e journeys can run their control plane against a database of their own
+# rather than the developer's -- the same ownership rule as the journeys'
+# ports: a journey must not inherit another surface's orphans, and an
+# interrupted journey run must not be able to poison the database the next
+# gate run boots against.
+DB_PATH = Path(_text("TEMPER_DB_PATH") or REPO_ROOT / "data" / "temper.db")
+
+# When set, `db.init()` recreates the database at startup rather than reusing
+# it. The e2e journeys set it so their control plane boots against a clean
+# database on every run -- a database is not a thing a journey should inherit,
+# and a run that was interrupted mid-job must not be able to poison the next
+# run's startup. The developer's own database never sets this.
+DB_RESET = bool(os.environ.get("TEMPER_DB_RESET"))
 
 S3_BUCKET = _text("TEMPER_S3_BUCKET")
 S3_ENDPOINT_URL = _text("TEMPER_S3_ENDPOINT_URL")

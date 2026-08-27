@@ -2364,6 +2364,57 @@
         ]
       }
     },
+    "/v1/jobs/{job_id}/stream": {
+      "get": {
+        "description": "Server-pushed events for a running job, replacing the watch page's poll.\n\nThe interface's live channel (Spec 007): one connection, events delivered\nas they are recorded, no page refresh. `after` is where the client's\nhistory already ends -- the page renders the durable log first and streams\nfrom its last id, so leaving and returning shows continuous history rather\nthan starting at the moment of return. A dropped connection reconnects on\nits own: EventSource replays `Last-Event-ID`, this endpoint honours it, and\nthe stream ends only when the job reaches a terminal state.\n\nThe interface consumes this with a browser `EventSource`; the generated\nfetch client cannot, which is why this endpoint (like the adapter\ndownload) is transport the contract documents rather than a function the\nclient calls.",
+        "operationId": "stream_job_v1_jobs__job_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
     "/v1/models": {
       "get": {
         "description": "The curated base-model catalog.\n\nAn allow-list, not a limitation: detection of an arbitrary architecture is\neasy, but *support* means testing its chat template, tokenizer quirks and\npacking compatibility. This list is a promise about what has been tested.\n\nEach entry's `peak_memory` is computed fresh through the `models` seam\n(spec 005) rather than read from a stored figure -- see\n`_catalog_entry`.",

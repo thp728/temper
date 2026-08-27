@@ -300,3 +300,24 @@ def test_token_count_failure_leaves_the_dataset_valid_and_launchable(
     assert record["status"] == "valid"
     assert record["report"]["token_count"] is None
     assert record["counting_progress"] is None
+
+
+def test_init_with_reset_recreates_a_dirty_database(tmp_path, monkeypatch):
+    """TEMPER_DB_RESET is the journeys' guarantee of a clean slate: a
+    database left with a stale non-terminal job (an interrupted run) must not
+    survive into the next run's startup, where it would crash the orphaned-job
+    scan."""
+    from temper_control_plane import config
+
+    monkeypatch.setattr(config, "DB_RESET", True)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init()
+    ds_id = db.create_dataset("d.jsonl", "datasets/ds_stale.jsonl", "ds_stale")
+    job_id = db.create_job(
+        ds_id, "qwen3-4b", {}
+    )  # stays `queued` (non-terminal)
+
+    # A second boot with the reset flag wipes the row and the tables are new.
+    db.init()
+    assert db.get_job(job_id) is None
+    assert db.get_dataset(ds_id) is None

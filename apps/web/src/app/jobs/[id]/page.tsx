@@ -2,20 +2,23 @@ import type { Metadata } from "next";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
 import JobRecordView from "@/components/JobRecordView";
+import RunningJobView from "@/components/RunningJobView";
 import {
   getDatasetV1DatasetsDatasetIdGet,
   getEventsV1JobsJobIdEventsGet,
   getJobV1JobsJobIdGet,
 } from "@/lib/api/generated/client";
 import { load } from "@/lib/api/load";
+import { TERMINAL_STATUSES, epochNow } from "@/lib/jobs/display";
 
 export const metadata: Metadata = {
   title: "Job",
 };
 
 // A job's state moves while no request is looking, so the record is read at
-// request time; the page re-renders itself while a job is still working
-// (see JobRecordView).
+// request time; a running job's page re-renders itself from a live stream
+// (see RunningJobView), and a finished one is the completed record (see
+// JobRecordView).
 export const dynamic = "force-dynamic";
 
 function NotFound({ id }: { id: string }) {
@@ -59,9 +62,6 @@ export default async function JobPage({
     );
   }
 
-  // The history is what makes the record complete -- how it ended sits
-  // beside what it was doing until then. A history that cannot be fetched
-  // does not take the record down with it.
   const [{ data: events }, { data: dataset }] = await Promise.all([
     load(() => getEventsV1JobsJobIdEventsGet(id)),
     // For the dataset's name; the row can be gone without the job being
@@ -69,6 +69,28 @@ export default async function JobPage({
     load(() => getDatasetV1DatasetsDatasetIdGet(job.dataset_id)),
   ]);
 
+  if (!TERMINAL_STATUSES.includes(job.status)) {
+    // The running half of this route: the history recorded so far is rendered
+    // server-side (so a returning visitor finds continuous history from the
+    // first paint), and the live view streams everything that follows. Once
+    // the job is terminal the stream closes and the page hands back to the
+    // finished record below.
+    const history = events?.events ?? [];
+    const start = job.started_at ?? job.created_at;
+    return (
+      <RunningJobView
+        job={job}
+        events={history}
+        datasetFilename={dataset?.filename}
+        streamAfter={events?.last_id ?? 0}
+        initialElapsedSeconds={Math.max(0, epochNow() - start)}
+      />
+    );
+  }
+
+  // The history is what makes the record complete -- how it ended sits
+  // beside what it was doing until then. A history that cannot be fetched
+  // does not take the record down with it.
   return (
     <JobRecordView
       job={job}

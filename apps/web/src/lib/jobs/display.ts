@@ -2,6 +2,8 @@
 // showed, defined once so the list and the record cannot drift apart. No
 // component knowledge, no React -- these are functions over the contract.
 
+import type { JobEvent } from "@/lib/api/generated/client";
+
 // An epoch stamp as local YYYY-MM-DD HH:mm:ss, which is what the old pages'
 // `datetimeformat` filter produced and what a record is read against.
 export function formatTimestamp(epochSeconds: number): string {
@@ -70,6 +72,23 @@ export function formatMinorCost(
 // from the browser, where no database import can reach. One copy, so a
 // status added server-side surfaces here as exactly one edit.
 export const TERMINAL_STATUSES = ["complete", "failed", "cancelled"];
+
+// The latest measured loss in a job's history: the newest metric event wins,
+// whatever order older events arrive in. One definition, so the live view and
+// the finished record agree about what "latest" means.
+export function latestLoss(
+  events: JobEvent[],
+): { loss: number; step?: number } | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (!e || e.kind !== "metric" || !e.data) continue;
+    const loss = e.data["loss"];
+    if (typeof loss !== "number") continue;
+    const step = e.data["step"];
+    return { loss, step: typeof step === "number" ? step : undefined };
+  }
+  return null;
+}
 
 // What the stable codes mean, where the API's message alone does not say it:
 // both safety limits read as defects unless someone explains that they are
