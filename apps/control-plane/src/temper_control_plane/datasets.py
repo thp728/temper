@@ -21,7 +21,9 @@ import threading
 from fastapi import HTTPException
 
 from temper_control_plane import config, db, storage
-from temper_core import validation
+from temper_core import counting, hyperparams, validation
+
+from . import tokenize
 
 
 def _fmt_size(n: int) -> str:
@@ -86,14 +88,7 @@ def _validate_in_background(ds_id: str, key: str, total_bytes: int) -> None:
         try:
 
             def on_progress(p) -> None:
-                db.set_dataset_progress(
-                    ds_id,
-                    {
-                        "bytes_read": p.bytes_read,
-                        "bytes_total": p.bytes_total,
-                        "rows": p.rows,
-                    },
-                )
+                db.set_dataset_progress(ds_id, p.to_dict())
 
             report = validation.validate_chunks(
                 storage.STORE.get_stream(key),
@@ -101,6 +96,12 @@ def _validate_in_background(ds_id: str, key: str, total_bytes: int) -> None:
                 on_progress=on_progress,
             ).to_dict()
             db.finish_dataset(ds_id, report)
+            if report.get("valid"):
+                # Only a usable dataset is counted: an invalid one cannot
+                # launch, and the counting pass is the expensive half of
+                # validation (issue #42), so spending it on a file nobody can
+                # quote is the one thing the phase exists to avoid.
+                _count_tokens_in_background(ds_id, key, total_bytes)
         except Exception:
             # A validation that dies must not strand the dataset at
             # "validating" -- a page that never resolves is worse than one
@@ -132,6 +133,51 @@ def _validate_in_background(ds_id: str, key: str, total_bytes: int) -> None:
             )
 
     threading.Thread(target=run, daemon=True, name=f"validate-{ds_id}").start()
+
+
+def _count_tokens_in_background(
+    ds_id: str, key: str, total_bytes: int
+) -> None:
+    """Count the dataset's tokens on its own thread, writing the counting
+    phase's state and progress to the dataset row.
+
+    Counting is the expensive half of validation -- re-measured at ~7x the
+    validate-only pass (issue #42) -- which is the measurement that put it in
+    its own phase with its own state rather than blocking the report. It runs
+    only for datasets that passed validation; see `_validate_in_background`.
+    """
+
+    def run() -> None:
+        try:
+            db.begin_token_count(ds_id)
+
+            def on_progress(p) -> None:
+                db.set_counting_progress(ds_id, p.to_dict())
+
+            counts = counting.count_tokens_chunks(
+                storage.STORE.get_stream(key),
+                tokenize.count_row_for(),
+                # The length truncation is measured against is the trainer's
+                # default, read once from the same table the resolver reads.
+                sequence_len=hyperparams.DEFAULTS["sequence_len"],
+                total_bytes=total_bytes,
+                on_progress=on_progress,
+            )
+            db.finish_token_count(ds_id, counts.to_dict())
+        except Exception:
+            # A count that cannot be produced is an absent estimate, not a
+            # broken dataset: the report stands, the launch proceeds, and the
+            # quote renders the count absent (ADR-0031). The phase records the
+            # failure so the page can say what happened rather than wonder --
+            # and that recording must not itself escape: the dataset row can
+            # be gone (deleted while the pass ran), and a thread that dies
+            # while reporting a failure is noise, not a signal.
+            try:
+                db.fail_token_count(ds_id)
+            except Exception:  # noqa: S110 - a vanished row is not a signal
+                pass
+
+    threading.Thread(target=run, daemon=True, name=f"count-{ds_id}").start()
 
 
 def ingest(

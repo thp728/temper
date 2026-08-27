@@ -78,6 +78,7 @@ repository becomes public at submission.
 | [0035](0035-the-control-plane-verifies-a-machine-written-artifact-by-streaming-it-back.md) | The control plane verifies a machine-written artifact by streaming it back | accepted | 2026-08-27 |
 | [0036](0036-the-dataset-size-limit-is-derived-from-measured-throughput.md) | The dataset size limit is a product limit derived from measured throughput, not from memory — supersedes 0005 | accepted | 2026-08-27 |
 | [0037](0037-every-run-records-what-was-predicted-against-what-happened.md) | Every run records what was predicted against what happened | accepted | 2026-08-27 |
+| [0038](0038-the-token-count-is-produced-by-a-phase-of-its-own-bounded-and-recorded-with-the-dataset-version.md) | The token count is produced by a phase of its own, bounded, and recorded with the dataset version | accepted | 2026-08-27 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import BackToUpload from "@/components/BackToUpload";
 import ReportView from "@/components/ReportView";
 import ValidationProgressView from "@/components/ValidationProgressView";
+import { DatasetRecordTokenCountStatus } from "@/lib/api/generated/client";
 import { getDatasetV1DatasetsDatasetIdGet } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
@@ -54,7 +55,18 @@ export default async function DatasetPage({
     return <ValidationProgressView record={record} />;
   }
   if (record) {
-    return <ReportView record={record} />;
+    // While the token count is being produced (issue #42) the report is
+    // already complete, so this renders it with a counting indicator and
+    // re-fetches on a meta refresh until the count lands.
+    return (
+      <>
+        {record.token_count_status ===
+          DatasetRecordTokenCountStatus.counting && (
+          <meta httpEquiv="refresh" content="2" />
+        )}
+        <ReportView record={record} />
+      </>
+    );
   }
   if (error?.status === 404) {
     return <NotFound id={id} />;

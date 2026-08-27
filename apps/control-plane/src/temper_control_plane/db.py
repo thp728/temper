@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS datasets (
     status        TEXT NOT NULL,  -- validating | valid | invalid
     report_json   TEXT,           -- the full validation report, errors included
     progress_json TEXT            -- validation progress while status is validating
+    -- The token count and its bounded distribution (issue #42), produced by
+    -- the counting phase that runs after validation and recorded with the
+    -- dataset version so the quote reads it without recomputation. The status
+    -- is the counting phase's own state: NULL (never started / not applicable),
+    -- 'counting', 'done' or 'failed'.
+    token_count_status TEXT,
+    token_count       INTEGER,
+    token_stats_json  TEXT,
+    counting_progress_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
@@ -165,6 +174,10 @@ ADDED_COLUMNS = (
     ("jobs", "overrides_json", "TEXT"),
     ("datasets", "progress_json", "TEXT"),
     ("jobs", "actuals_json", "TEXT"),
+    ("datasets", "token_count_status", "TEXT"),
+    ("datasets", "token_count", "INTEGER"),
+    ("datasets", "token_stats_json", "TEXT"),
+    ("datasets", "counting_progress_json", "TEXT"),
 )
 
 
@@ -290,10 +303,80 @@ def set_dataset_progress(ds_id: str, progress: dict) -> None:
         )
 
 
+# --------------------------------------------------------------------------
+# the counting phase (issue #42): its own state, recorded with the version
+# --------------------------------------------------------------------------
+# Counting runs as a separate phase after validation -- the measurement put the
+# ticket on that branch -- so the count has its own state on the row rather
+# than living inside the validation report. The report stands the moment
+# validation finishes; the count lands later and is merged into the report the
+# API publishes, which is the seam the quote already reads.
+
+
+# The counting phase's own states (issue #42). Defined once here and read
+# everywhere -- the phase's transitions write them, the tests assert against
+# them -- so the vocabulary cannot drift between the two halves.
+COUNT_PHASE_COUNTING = "counting"
+COUNT_PHASE_DONE = "done"
+COUNT_PHASE_FAILED = "failed"
+
+
+def begin_token_count(ds_id: str) -> None:
+    """Mark the counting phase as in progress, before it starts.
+
+    The dataset stays `valid` -- it is launchable the whole time, and the
+    quote renders the count as absent until it lands (ADR-0031's documented
+    posture for a count that does not exist yet)."""
+    with connect() as c:
+        c.execute(
+            "UPDATE datasets SET token_count_status=?, "
+            "token_count=NULL, token_stats_json=NULL, "
+            "counting_progress_json=NULL WHERE id=?",
+            (COUNT_PHASE_COUNTING, ds_id),
+        )
+
+
+def set_counting_progress(ds_id: str, progress: dict) -> None:
+    """Where the counting pass has got to, for the report page watching it."""
+    with connect() as c:
+        c.execute(
+            "UPDATE datasets SET counting_progress_json=? WHERE id=?",
+            (json.dumps(progress), ds_id),
+        )
+
+
+def finish_token_count(ds_id: str, counts: dict) -> None:
+    """Record the completed count with the dataset version: the total, and the
+    bounded distribution. A finished phase has no progress to show."""
+    with connect() as c:
+        c.execute(
+            "UPDATE datasets SET token_count_status=?, token_count=?, "
+            "token_stats_json=?, counting_progress_json=NULL WHERE id=?",
+            (
+                COUNT_PHASE_DONE,
+                counts.get("total_tokens"),
+                json.dumps(counts),
+                ds_id,
+            ),
+        )
+
+
+def fail_token_count(ds_id: str) -> None:
+    """The count could not be produced. The dataset stays valid and launchable
+    -- the quote renders the count absent -- and the phase's state records why
+    rather than leaving the report page to wonder."""
+    with connect() as c:
+        c.execute(
+            "UPDATE datasets SET token_count_status=?, "
+            "counting_progress_json=NULL WHERE id=?",
+            (COUNT_PHASE_FAILED, ds_id),
+        )
+
+
 def get_dataset(ds_id: str) -> dict | None:
     with connect() as c:
         r = c.execute("SELECT * FROM datasets WHERE id=?", (ds_id,)).fetchone()
-    return _row(r, {"report_json": "report", "progress_json": "progress"})
+    return _dataset_row(r)
 
 
 def require_dataset(ds_id: str) -> dict:
@@ -316,12 +399,7 @@ def list_datasets(limit: int = 50) -> list[dict]:
         rows = c.execute(
             "SELECT * FROM datasets ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
-    return [
-        _present(
-            _row(r, {"report_json": "report", "progress_json": "progress"})
-        )
-        for r in rows
-    ]
+    return [_present(_dataset_row(r)) for r in rows]
 
 
 # --------------------------------------------------------------------------
@@ -610,11 +688,39 @@ def _row(
     return d
 
 
+def _dataset_row(r) -> dict | None:
+    """A dataset row as the API publishes it.
+
+    The token fields (issue #42) are produced by the phase that runs after
+    validation, so they are stored separately and merged into the report here:
+    `report.token_count` is the seam the quote reads, and the distribution
+    travels beside it for the report page. The counting phase's own state and
+    progress ride on the record too.
+    """
+    ds = _row(
+        r,
+        {
+            "report_json": "report",
+            "progress_json": "progress",
+            "token_stats_json": "token_distribution",
+            "counting_progress_json": "counting_progress",
+        },
+    )
+    if ds is None:
+        return None
+    token_count = ds.pop("token_count", None)
+    token_distribution = ds.pop("token_distribution", None)
+    if ds.get("report") is not None:
+        ds["report"]["token_count"] = token_count
+        ds["report"]["token_distribution"] = token_distribution
+    return ds
+
+
 def _present(row: dict | None) -> dict:
     """Narrow a listed row that cannot actually be absent.
 
     `fetchall()` returns one row object per matched record, so the None
-    case of `_row` is unreachable in a list comprehension over its result
+    case of `_row` is unreachable in a list comprehension over its output
     -- but the Optional still fails the `list[dict]` return type, and
     filtering the Nones out would hide a defect rather than surface it.
     """

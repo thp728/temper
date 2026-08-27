@@ -104,6 +104,42 @@ def no_real_models(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_tokenizer(monkeypatch):
+    """No test downloads or loads a real tokenizer over the network.
+
+    The tokenizer seam (`tokenize.TOKENIZER`) is replaced with the deterministic
+    fake from `fake_tokenizer.py` -- one token per character -- so background
+    token counting in tests is exact, cheap and offline, mirroring how the
+    model-facts and quote seams are replaced.
+    """
+    from temper_control_plane import tokenize
+    from temper_control_plane.fake_tokenizer import fake_tokenizer
+
+    monkeypatch.setattr(tokenize, "TOKENIZER", fake_tokenizer())
+
+
+@pytest.fixture(autouse=True)
+def no_leaked_counting_threads():
+    """Join any in-flight counting thread before the test's database is torn
+    down.
+
+    Counting is a background phase (issue #42): a test that validates a
+    dataset but does not wait for the count leaves its counting thread running
+    into teardown. On Windows a still-alive thread that connects after the
+    next test points `db.DB_PATH` at its own fresh file collides with that
+    test's `PRAGMA journal_mode=WAL` and surfaces as a spurious "database is
+    locked" setup error. Joining here keeps the phase inside its own test,
+    which is also the honest version of what the test is asserting.
+    """
+    import threading
+
+    yield
+    for t in threading.enumerate():
+        if t.name.startswith("count-") and t is not threading.current_thread():
+            t.join(timeout=10)
+
+
+@pytest.fixture(autouse=True)
 def no_real_quote_provider(monkeypatch):
     """Quotes are priced against a fake provider and fake model facts, like
     everything else that could reach the account or the network.

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
+import TokenCountView from "@/components/TokenCountView";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -154,6 +155,12 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
       <p className="text-sm text-muted-foreground">
         {thinkingExplanation(report.enable_thinking)}
       </p>
+
+      {/* The token count (issue #42) is produced by the counting phase that
+          runs after validation: while it runs this shows progress, and when
+          it lands this shows the total, the distribution and the rows that
+          would be truncated. Nothing here holds the report up. */}
+      <TokenCountView record={record} />
 
       {report.errors.length > 0 && (
         <section aria-labelledby="problems-heading">

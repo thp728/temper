@@ -30,6 +30,12 @@ test("an accepted dataset reaches its report and offers to proceed", async ({
     page.getByText(/trained to answer directly/),
   ).toBeVisible();
 
+  // The token count is produced by the phase that runs after validation and
+  // lands on this same report (issue #42). It arrives asynchronously, so the
+  // expectation waits for it.
+  await expect(page.getByText("Token count", { exact: true })).toBeVisible();
+  await expect(statValue(page, "Would be truncated")).toHaveText("0");
+
   // The preview shows how the first rows were understood.
   await expect(page.getByText(/user:/).first()).toBeVisible();
   await expect(page.getByText("q0").first()).toBeVisible();

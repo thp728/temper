@@ -15,6 +15,11 @@ dependencies = [
     # The object-store backend of the storage seam speaks the S3 API, which is
     # also what MinIO -- the Phase B store -- serves.
     "boto3>=1.35",
+    # The tokenizer a dataset's token count is produced with (issue #42). The
+    # core counting pass takes a plain `dict -> int` seam, so the dependency
+    # lives here, beside the other things that touch Hugging Face, not in
+    # `temper_core`'s zero-dependency package.
+    "tokenizers>=0.21",
 ]
 
 [tool.uv.sources]
