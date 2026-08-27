@@ -37,16 +37,25 @@ from temper_control_plane.contracts_models import (
     DatasetList,
     DatasetRecord,
     DatasetUploaded,
+    DecisionOverride,
     EventPage,
     JobList,
     JobRecord,
     JobSpecPreview,
     ModelCatalog,
     Quote,
+    QuoteRequest,
 )
 from temper_control_plane.storage import ObjectNotFound
 from temper_control_plane.web import router as web_router
-from temper_core import catalog, feasibility, gpus, hyperparams, memory
+from temper_core import (
+    catalog,
+    feasibility,
+    gpus,
+    hyperparams,
+    memory,
+    overrides,
+)
 
 # The default resolver, built once at import: `HuggingFaceModels()` performs
 # no I/O until `.resolve()` is called, so this is as safe at import time as
@@ -58,12 +67,17 @@ MODELS: models.Models = models.new_models()
 
 
 def _quote_for(
-    ds: dict, m: catalog.BaseModel, hyperparameters: dict
+    ds: dict,
+    m: catalog.BaseModel,
+    hyperparameters: dict,
+    overrides_list: list[overrides.Override] | None = None,
 ) -> dict | None:
-    """The quote for one (dataset, model, hyperparameters) configuration, or
-    None when it cannot be priced. Never raises: the estimate warns, it does
-    not block (spec 005)."""
-    return quote.for_config(ds, m, hyperparameters)
+    """The quote for one (dataset, model, hyperparameters, overrides)
+    configuration, or None when it cannot be priced. Never raises for an
+    absent estimate: the estimate warns, it does not block (spec 005). An
+    override that cannot be honoured raises `QuoteRefused`/`OverrideError`
+    for the handler to turn into a coded refusal."""
+    return quote.for_config(ds, m, hyperparameters, overrides_list)
 
 
 def _catalog_entry(m: catalog.BaseModel) -> dict:
@@ -230,6 +244,23 @@ class JobRequest(BaseModel):
     dataset_id: str
     base_model: str = Field(default=catalog.DEFAULT_MODEL)
     hyperparameters: dict = Field(default_factory=dict)
+    overrides: list[DecisionOverride] = Field(default_factory=list)
+
+
+def _override_list(
+    req_overrides: list[DecisionOverride],
+) -> list[overrides.Override]:
+    """The API's `{decision, value}` pairs as the core override records."""
+    return [overrides.Override(o.decision, o.value) for o in req_overrides]
+
+
+def _refuse(e: quote.QuoteRefused | overrides.OverrideError) -> HTTPException:
+    """An override that cannot be honoured, as a coded 400. Both refusal
+    kinds carry the same stable-code payload shape."""
+    payload = (
+        e.to_payload() if isinstance(e, quote.QuoteRefused) else e.to_dict()
+    )
+    return HTTPException(400, payload)
 
 
 @app.post("/v1/jobs", tags=["jobs"], status_code=201, response_model=JobRecord)
@@ -242,19 +273,34 @@ def create_job(req: JobRequest):
     immutable once launched, so a later change to a default cannot
     retroactively alter what a finished run claims.
 
+    `req.overrides` (issue #79) are the decisions the user pinned instead of
+    the predictor's. The launch is refused -- with a stable code and, where
+    the refusal is on memory grounds, the same arithmetic the predictor used
+    -- when an override cannot be honoured, and the overrides themselves are
+    frozen into the job spec so the run says what it actually used.
+
     The quote the launch was shown is computed here and frozen onto the job
     with the rest of the spec. It never blocks: if the provider is unreachable
     or nothing fits, the job still launches -- an estimate warns, it does not
-    refuse (spec 005).
+    refuse (spec 005). The only exceptions are refusals of the user's own
+    overrides, which are not absent estimates but demands that cannot be met.
     """
-    job_id = jobs.create(
-        req.dataset_id,
-        req.base_model,
-        req.hyperparameters,
-        quote=quote.quote_for_launch(
-            req.dataset_id, req.base_model, req.hyperparameters
-        ),
-    )
+    override_list = _override_list(req.overrides)
+    try:
+        job_id = jobs.create(
+            req.dataset_id,
+            req.base_model,
+            req.hyperparameters,
+            quote=quote.quote_for_launch(
+                req.dataset_id,
+                req.base_model,
+                req.hyperparameters,
+                override_list,
+            ),
+            overrides_list=override_list,
+        )
+    except (quote.QuoteRefused, overrides.OverrideError) as e:
+        raise _refuse(e) from e
     return db.get_job(job_id)
 
 
@@ -317,6 +363,41 @@ def get_quote(dataset_id: str, base_model: str = catalog.DEFAULT_MODEL):
             },
         )
     return _quote_for(ds, m, {})
+
+
+@app.post("/v1/quotes", tags=["jobs"], response_model=Quote | None)
+def recompute_quote(req: QuoteRequest):
+    """The plan recomputed around the user's overrides, or null.
+
+    Issue #79: changing one decision re-requests the plan rather than mutating
+    it locally, so the recomputation rules live in one place -- this endpoint
+    and the launch path both read `quote.build_quote`. An override that cannot
+    be honoured is refused with a stable code and, on memory grounds, the same
+    arithmetic the predictor used (`configuration_does_not_fit`): the
+    plan-with-overrides is a demand, not an estimate, and a demand that cannot
+    be met must say so.
+
+    Returns null (never a refusal) only when the estimate itself cannot be
+    priced -- provider unreachable, model unresolvable -- because an estimate
+    warns, it does not block (spec 005).
+    """
+    ds = jobs.usable_dataset(req.dataset_id)
+    m = catalog.get(req.base_model)
+    if m is None:
+        raise HTTPException(
+            400,
+            {
+                "code": "unknown_model",
+                "message": f"'{req.base_model}' is not in the catalog.",
+                "available": [m["id"] for m in catalog.listing()],
+            },
+        )
+    try:
+        return _quote_for(
+            ds, m, {}, overrides_list=_override_list(req.overrides)
+        )
+    except (quote.QuoteRefused, overrides.OverrideError) as e:
+        raise _refuse(e) from e
 
 
 @app.get("/v1/jobs/{job_id}", tags=["jobs"], response_model=JobRecord)

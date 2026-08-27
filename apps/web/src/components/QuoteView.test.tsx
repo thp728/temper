@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import QuoteView from "@/components/QuoteView";
 import type { Quote } from "@/lib/api/generated/client";
 
@@ -8,7 +8,9 @@ import type { Quote } from "@/lib/api/generated/client";
 // user reads: a duration range (never a point), a per-phase cost breakdown in
 // the account's currency, the token count, and the estimate label. Since #76
 // each decision is also shown with its reason visible by default and its
-// alternatives one interaction away.
+// alternatives one interaction away. Since #79 the plan is editable: each
+// decision carries a control beside its explanation, and an overridden one is
+// marked.
 
 function quote(overrides: Partial<Quote> = {}): Quote {
   return {
@@ -56,6 +58,7 @@ function quote(overrides: Partial<Quote> = {}): Quote {
             constraint: "fits, but costs more than the L4.",
           },
         ],
+        overridden: false,
       },
       {
         decision: "method",
@@ -69,8 +72,27 @@ function quote(overrides: Partial<Quote> = {}): Quote {
             constraint: "the trainer cannot execute LoRA yet.",
           },
         ],
+        overridden: false,
+      },
+      {
+        decision: "sequence length",
+        chosen: "2048",
+        constraint: "the trainer default (2048, trainer-defaults.json).",
+        alternatives: [
+          {
+            value: "4096",
+            cost: "doubles activation memory",
+            constraint: "nothing in the dataset has asked for a longer window.",
+          },
+        ],
+        overridden: false,
       },
     ],
+    override_options: {
+      method: ["qlora", "lora", "full"],
+      hardware: ["A100-80GB", "H100", "H200", "L4", "RTX-PRO6000"],
+      precision: ["nf4 (4-bit)", "bf16 (no quantisation)"],
+    },
     ...overrides,
   };
 }
@@ -169,5 +191,151 @@ describe("QuoteView", () => {
     expect(
       screen.queryByRole("heading", { name: "Why this configuration" }),
     ).toBeNull();
+  });
+
+  // --- the plan is editable (issue #79) -------------------------------------
+
+  it("sits a control beside every explanation when editable", () => {
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={[]}
+        onOverridesChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "hardware override" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("combobox", { name: "method override" }),
+    ).toBeVisible();
+    // Free-form decisions get an input, not a fixed list.
+    expect(
+      screen.getByRole("spinbutton", { name: "sequence length override" }),
+    ).toBeVisible();
+  });
+
+  it("renders no controls on a finished job", () => {
+    render(<QuoteView quote={quote()} />);
+    expect(
+      screen.queryByRole("combobox", { name: "method override" }),
+    ).toBeNull();
+  });
+
+  it("marks a decision the user overrode", () => {
+    const q = quote();
+    const base = q.decisions ?? [];
+    q.decisions = [
+      { ...base[0]!, overridden: true },
+      base[1]!,
+      base[2]!,
+    ];
+    render(
+      <QuoteView
+        quote={q}
+        editable
+        overrides={[{ decision: "hardware", value: "H100" }]}
+        onOverridesChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("you changed this")).toBeVisible();
+  });
+
+  it("re-requests the plan when a control changes", async () => {
+    const user = userEvent.setup();
+    const onOverride = vi.fn();
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={[]}
+        onOverridesChange={onOverride}
+      />,
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "method override" }),
+      "lora",
+    );
+    expect(onOverride).toHaveBeenCalledWith([
+      { decision: "method", value: "lora" },
+    ]);
+  });
+
+  it("clears an override when the predictor's choice is reselected", async () => {
+    const user = userEvent.setup();
+    const onOverride = vi.fn();
+    const overrides = [{ decision: "method", value: "lora" }];
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={overrides}
+        onOverridesChange={onOverride}
+      />,
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "method override" }),
+      "",
+    );
+    expect(onOverride).toHaveBeenCalledWith([]);
+  });
+
+  it("commits a free-form decision from its input", async () => {
+    const user = userEvent.setup();
+    const onOverride = vi.fn();
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={[]}
+        onOverridesChange={onOverride}
+      />,
+    );
+    const input = screen.getByRole("spinbutton", {
+      name: "sequence length override",
+    });
+    await user.clear(input);
+    await user.type(input, "4096");
+    await user.tab();
+    expect(onOverride).toHaveBeenCalledWith([
+      { decision: "sequence length", value: "4096" },
+    ]);
+  });
+
+  it("offers the predictor's choice to undo a free-form override", async () => {
+    const user = userEvent.setup();
+    const onOverride = vi.fn();
+    const overrides = [{ decision: "sequence length", value: "4096" }];
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={overrides}
+        onOverridesChange={onOverride}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Use the predictor's choice/ }),
+    );
+    expect(onOverride).toHaveBeenCalledWith([]);
+  });
+
+  it("shows a refusal beside the decisions when one cannot be honoured", () => {
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={[]}
+        onOverridesChange={() => {}}
+        refusal={{
+          code: "configuration_does_not_fit",
+          message: "full on a L4 predicts 66.9 GB peak, which the 24.0 GB L4 cannot hold.",
+        }}
+      />,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("configuration_does_not_fit");
+    expect(alert).toHaveTextContent("66.9 GB peak");
   });
 });

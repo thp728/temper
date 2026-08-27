@@ -16,7 +16,7 @@ selection arithmetic.
 
 from __future__ import annotations
 
-from temper_core import decisions, disk, hyperparams, selection
+from temper_core import decisions, disk, hyperparams, overrides, selection
 from temper_core.models import ModelFacts
 from temper_core.selection import GpuAvailability
 
@@ -205,7 +205,151 @@ def test_sequence_length_uses_the_trainer_default_and_doubling_costs_activations
 def test_to_dict_serializes_a_decision_for_the_contract():
     s = decision("hardware")
     as_dict = decisions.to_dict(s)
-    assert set(as_dict) == {"decision", "chosen", "constraint", "alternatives"}
+    assert set(as_dict) == {
+        "decision",
+        "chosen",
+        "constraint",
+        "alternatives",
+        "overridden",
+    }
     assert as_dict["decision"] == "hardware"
+    assert as_dict["overridden"] is False
     for a in as_dict["alternatives"]:
         assert set(a) == {"value", "cost", "constraint"}
+
+
+# --- overrides (issue #79) -----------------------------------------------------
+# An overridden decision is marked, its chosen value reflects the override,
+# and the other decisions recompute around it -- the reason never drifts from
+# the configuration it explains.
+
+
+def overridden_records(availability, *override_list):
+    """The six records after applying decision overrides, resolved exactly as
+    the quote path resolves them: pins -> selection -> disk -> decide."""
+    hp = hyperparams.effective({})
+    r = overrides.resolve(hp, list(override_list))
+    p = selection.select_hardware(
+        QWEN3_4B,
+        lora_r=r.hyperparameters["lora_r"],
+        sequence_len=r.hyperparameters["sequence_len"],
+        micro_batch_size=r.hyperparameters["micro_batch_size"],
+        availability=availability,
+        currency="INR",
+        method=r.method,
+        gpu_type=r.gpu_type,
+        device_count=r.device_count,
+    )
+    dp = disk.required_disk(
+        QWEN3_4B,
+        method=p.method,
+        lora_r=r.hyperparameters["lora_r"],
+        retained_checkpoints=r.hyperparameters["save_total_limit"],
+        provisioned_gb=r.disk_gb,
+    )
+    return decisions.decide(
+        QWEN3_4B,
+        hyperparameters=r.hyperparameters,
+        plan=p,
+        disk_plan=dp,
+        overridden=r.overridden,
+    )
+
+
+def overridden_decision(named, *override_list, availability=L4_ONLY):
+    for d in overridden_records(availability, *override_list):
+        if d.decision == named:
+            return d
+    raise AssertionError(f"no decision named {named!r}")
+
+
+def test_with_no_overrides_nothing_is_marked_overridden():
+    for d in records(L4_ONLY):
+        assert d.overridden is False
+
+
+def test_an_overridden_decision_is_marked_and_the_rest_recompute():
+    """Overriding sequence length marks that decision, recomputes hardware
+    around the longer window, and leaves the untouched decisions unmarked."""
+    s = overridden_decision(
+        "sequence length", overrides.Override("sequence length", "4096")
+    )
+    assert s.overridden is True
+    assert s.chosen == "4096"
+    h = overridden_decision(
+        "hardware", overrides.Override("sequence length", "4096")
+    )
+    assert h.overridden is False  # the rest recompute, they are not overridden
+    assert "chose" in s.constraint  # the reason acknowledges the override
+
+
+def test_overriding_precision_to_bf16_moves_the_method_to_lora():
+    """Precision and method are one coupled decision: naming bf16 *means*
+    lora, so the method decision recomputes to it and the precision decision
+    shows bf16 as its own choice."""
+    r = overrides.resolve(
+        hyperparams.effective({}),
+        [overrides.Override("precision", overrides.PRECISION_BF16)],
+    )
+    assert r.method == "lora"
+    m = overridden_decision(
+        "method", overrides.Override("precision", overrides.PRECISION_BF16)
+    )
+    assert m.chosen == "lora"
+    p = overridden_decision(
+        "precision", overrides.Override("precision", overrides.PRECISION_BF16)
+    )
+    assert p.chosen == overrides.PRECISION_BF16
+    assert p.overridden is True
+
+
+def test_the_nf4_alternative_for_a_lora_plan_uses_nf4s_own_pool():
+    """The precision reason's numbers stay honest when method is overridden:
+    the NF4 alternative's pool is qlora's own 0.5 bytes/param arithmetic
+    (about 2.0 GB for the 4B model), never the bf16 pool dressed up as
+    NF4."""
+    p = overridden_decision("precision", overrides.Override("method", "lora"))
+    assert p.chosen == overrides.PRECISION_BF16
+    alt = p.alternatives[0]
+    assert alt.value == overrides.PRECISION_NF4
+    assert "0.5 bytes/param" in alt.cost
+    assert "shrinks to 2.0 GB" in alt.cost
+
+
+def test_overriding_hardware_picks_that_card_and_marks_it():
+    with_h100 = [
+        GpuAvailability("L4", L4_INR_PER_HOUR, 8),
+        GpuAvailability("H100", 250.0, 2),
+    ]
+    h = overridden_decision(
+        "hardware",
+        overrides.Override("hardware", "H100"),
+        availability=with_h100,
+    )
+    assert h.overridden is True
+    assert h.chosen == "H100"
+
+
+def test_overriding_the_disk_marks_it_and_prices_the_extra():
+    d = overridden_decision("disk", overrides.Override("disk", "500 GB"))
+    assert d.overridden is True
+    assert d.chosen == "500 GB"
+    assert "chose" in d.constraint
+
+
+def test_overriding_device_count_offers_the_single_card_as_an_alternative():
+    n = overridden_decision(
+        "device count", overrides.Override("device count", "2")
+    )
+    assert n.overridden is True
+    assert n.chosen == "2"
+    values = [a.value for a in n.alternatives]
+    assert "1 × L4" in values
+
+
+def test_an_overridden_method_names_what_the_trainer_cannot_run():
+    m = overridden_decision("method", overrides.Override("method", "lora"))
+    assert m.chosen == "lora"
+    assert m.overridden is True
+    assert "executes only" in m.constraint
+    assert "refused" in m.constraint

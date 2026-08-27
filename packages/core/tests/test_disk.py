@@ -196,8 +196,82 @@ def test_refusal_happens_before_the_floor_not_after():
             QWEN3_4B,
             method="full",
             lora_r=16,
-            retained_checkpoints=1000,
+            retained_checkpoints=1000,  # absurd on purpose: forces the ceiling
         )
+
+
+# --- an override (issue #79) --------------------------------------------------
+# A disk override requests an exact size instead of the predictor's floor. A
+# larger disk is honoured; a smaller one is refused with the need named --
+# taking control must not be able to create a machine that cannot hold its
+# own download.
+
+
+def test_a_larger_disk_override_is_honoured_exactly():
+    plan = disk.required_disk(
+        QWEN3_4B,
+        method="qlora",
+        lora_r=16,
+        retained_checkpoints=0,
+        provisioned_gb=500,
+    )
+    assert plan.provisioned_gb == 500
+    assert plan.required_gb < 500
+
+
+def test_a_disk_override_below_the_need_is_refused_with_the_arithmetic():
+    with pytest.raises(disk.DiskBelowNeedError) as exc:
+        disk.required_disk(
+            LARGE_70B_CLASS,
+            method="qlora",
+            lora_r=16,
+            retained_checkpoints=DEFAULT_CHECKPOINTS,
+            provisioned_gb=150,  # less than the ~140 GB raw need
+        )
+    assert exc.value.requested_gb == 150
+    assert exc.value.required_gb > 150
+    assert "cannot hold it" in str(exc.value)
+
+
+def test_a_disk_override_below_the_platform_minimum_is_refused():
+    with pytest.raises(disk.DiskBelowMinimumError) as exc:
+        disk.required_disk(
+            QWEN3_4B,
+            method="qlora",
+            lora_r=16,
+            retained_checkpoints=0,
+            provisioned_gb=50,
+        )
+    assert exc.value.minimum_gb == disk.PLATFORM_MIN_DISK_GB
+
+
+def test_a_disk_override_above_the_ceiling_is_refused():
+    with pytest.raises(disk.DiskExceedsCeilingError):
+        disk.required_disk(
+            QWEN3_4B,
+            method="qlora",
+            lora_r=16,
+            retained_checkpoints=0,
+            provisioned_gb=disk.PLATFORM_MAX_DISK_GB + 1,
+        )
+
+
+def test_a_bigger_disk_override_bills_more_storage():
+    """The USD storage line is priced off what is actually provisioned, so a
+    user who asks for more disk sees it in the quote rather than as an
+    invisible line."""
+    default = disk.required_disk(
+        QWEN3_4B, method="qlora", lora_r=16, retained_checkpoints=0
+    )
+    bigger = disk.required_disk(
+        QWEN3_4B,
+        method="qlora",
+        lora_r=16,
+        retained_checkpoints=0,
+        provisioned_gb=4000,
+    )
+    assert bigger.provisioned_gb == 4000
+    assert bigger.storage_cost_usd_per_hour > default.storage_cost_usd_per_hour
 
 
 # --- cost travels with the plan -------------------------------------------

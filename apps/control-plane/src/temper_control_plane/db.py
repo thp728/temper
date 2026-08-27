@@ -23,6 +23,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import contextmanager
+from typing import Any
 
 from temper_core.errors import OrchestratorError
 
@@ -95,6 +96,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- (issue #72): a completed job can say what it was predicted to cost and
     -- how long it was predicted to take, not only what actually happened.
     quote_json    TEXT,
+    -- The decision overrides the launch committed to (issue #79): the
+    -- {decision, value} pairs the user pinned, frozen beside the spec so a
+    -- run says what it actually used rather than what it would have
+    -- defaulted to -- and what the orchestrator re-provisions against.
+    overrides_json TEXT,
     result_json   TEXT,
     -- The storage seam's address for this job's artifact weights.
     artifact_key  TEXT
@@ -151,6 +157,7 @@ ADDED_COLUMNS = (
     ("jobs", "disk_gb", "INTEGER"),
     ("jobs", "storage_cost_usd_per_hour", "REAL"),
     ("jobs", "quote_json", "TEXT"),
+    ("jobs", "overrides_json", "TEXT"),
 )
 
 
@@ -296,13 +303,15 @@ def create_job(
     warnings: list | None = None,
     base_revision: str | None = None,
     quote: dict | None = None,
+    overrides: list | None = None,
 ) -> str:
     job_id = new_id("job")
     with connect() as c:
         c.execute(
             "INSERT INTO jobs (id, dataset_id, base_model, base_revision, "
-            "hyperparams_json, status, warnings_json, quote_json, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "hyperparams_json, status, warnings_json, quote_json, "
+            "overrides_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 job_id,
                 dataset_id,
@@ -312,6 +321,7 @@ def create_job(
                 "queued",
                 json.dumps(warnings) if warnings else None,
                 json.dumps(quote) if quote else None,
+                json.dumps(overrides) if overrides else None,
                 time.time(),
             ),
         )
@@ -432,7 +442,9 @@ def get_job(job_id: str) -> dict | None:
                 "result_json": "result",
                 "warnings_json": "warnings",
                 "quote_json": "quote",
+                "overrides_json": "overrides",
             },
+            defaults={"overrides": []},
         )
     )
 
@@ -465,7 +477,9 @@ def list_jobs(limit: int = 50) -> list[dict]:
                         "result_json": "result",
                         "warnings_json": "warnings",
                         "quote_json": "quote",
+                        "overrides_json": "overrides",
                     },
+                    defaults={"overrides": []},
                 )
             )
         )
@@ -505,7 +519,9 @@ def active_jobs() -> list[dict]:
                     {
                         "hyperparams_json": "hyperparameters",
                         "quote_json": "quote",
+                        "overrides_json": "overrides",
                     },
+                    defaults={"overrides": []},
                 )
             )
         )
@@ -513,13 +529,20 @@ def active_jobs() -> list[dict]:
     ]
 
 
-def _row(r, json_fields: dict[str, str]) -> dict | None:
+def _row(
+    r, json_fields: dict[str, str], defaults: dict[str, Any] | None = None
+) -> dict | None:
     if r is None:
         return None
     d = dict(r)
     for col, name in json_fields.items():
         raw = d.pop(col, None)
-        d[name] = json.loads(raw) if raw else None
+        if raw:
+            d[name] = json.loads(raw)
+        elif defaults and name in defaults:
+            d[name] = defaults[name]
+        else:
+            d[name] = None
     return d
 
 

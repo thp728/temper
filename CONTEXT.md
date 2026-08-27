@@ -121,3 +121,7 @@ _Avoid_: snapshot, revision (for datasets)
 **Decision**:
 One choice the predictor made on the user's behalf, returned as a record carrying the decision, the value chosen, the constraint that forced it, and the alternatives with what each would have cost. Method, hardware, device count, disk, precision and sequence length each carry one. The records ride on the quote and are frozen with it, so a completed job explains itself as completely as a planned one.
 _Avoid_: justification, explanation
+
+**Override**:
+A decision the user pinned instead of the predictor's, expressed in the decision's own vocabulary (the same string the plan shows as `chosen`). Changing one re-requests the plan — the rest recomputes in the one place the predictor recomputes — and an override that cannot be honoured is refused with the same arithmetic that did the refusing. Overrides are frozen into the job spec, and an overridden decision is marked on the plan.
+_Avoid_: preference, tweak, edit

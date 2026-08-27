@@ -49,7 +49,14 @@ from collections.abc import Iterator
 from contextlib import suppress
 from typing import BinaryIO, NamedTuple
 
-from temper_core import catalog, disk, events, hyperparams, selection
+from temper_core import (
+    catalog,
+    disk,
+    events,
+    hyperparams,
+    overrides,
+    selection,
+)
 from temper_core.errors import Cancelled, OrchestratorError
 from temper_core.models import Models
 
@@ -564,6 +571,18 @@ def _attempt(
     facts = models.resolve(model.repo, revision)
     hp = hyperparams.effective(job["hyperparameters"] or {})
 
+    # The decisions the launch committed to (issue #79), re-applied here so
+    # provisioning honours them rather than silently re-picking the
+    # predictor's cheapest configuration: a run that provisioned something
+    # other than what the plan froze would be lying about what it did. An
+    # override that is no longer available at provisioning fails here, by
+    # name, rather than being silently dropped.
+    frozen_overrides = job.get("overrides") or []
+    resolved_overrides = overrides.resolve(
+        hp,
+        [overrides.from_dict(d) for d in frozen_overrides],
+    )
+
     # Checked at every boundary between stages, for the same reason the
     # duration ceiling is: inside a provider call nothing is interruptible, so
     # the boundaries are where a request to stop can actually be honoured. The
@@ -577,10 +596,13 @@ def _attempt(
         plan = selection.select_hardware(
             facts,
             lora_r=hp["lora_r"],
-            sequence_len=hp["sequence_len"],
+            sequence_len=resolved_overrides.hyperparameters["sequence_len"],
             micro_batch_size=hp["micro_batch_size"],
             availability=provider.gpu_availability(),
             currency=provider.currency(),
+            method=resolved_overrides.method,
+            gpu_type=resolved_overrides.gpu_type,
+            device_count=resolved_overrides.device_count,
         )
     except selection.NoFittingHardwareError as e:
         raise OrchestratorError("provider_capacity_unavailable", str(e)) from e
@@ -590,9 +612,12 @@ def _attempt(
             method=plan.method,
             lora_r=hp["lora_r"],
             retained_checkpoints=hp["save_total_limit"],
+            provisioned_gb=resolved_overrides.disk_gb,
         )
     except disk.DiskExceedsCeilingError as e:
         raise OrchestratorError("disk_exceeds_ceiling", str(e)) from e
+    except (disk.DiskBelowNeedError, disk.DiskBelowMinimumError) as e:
+        raise OrchestratorError("disk_override_refused", str(e)) from e
     cancelled()
     db.set_state(
         job_id,

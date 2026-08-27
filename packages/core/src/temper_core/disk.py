@@ -112,7 +112,8 @@ class DiskExceedsCeilingError(Exception):
     """The disk this job needs is larger than the provider can create at any
     price -- refused before anything is provisioned, never discovered as a
     `create` call that fails after every other decision has already been
-    made."""
+    made.
+    """
 
     def __init__(self, required_gb: float, ceiling_gb: float):
         self.required_gb = required_gb
@@ -122,6 +123,35 @@ class DiskExceedsCeilingError(Exception):
             f"This job needs {required_gb:.0f} GB of disk, which is "
             f"{self.shortfall_gb:.0f} GB more than the {ceiling_gb:.0f} GB "
             "the provider can create at any price."
+        )
+
+
+class DiskBelowNeedError(Exception):
+    """An override asked for less disk than the job needs -- refused with the
+    need named, the same arithmetic the plan itself shows, because taking
+    control must not be able to create a machine that cannot hold the job it
+    will download (issue #79)."""
+
+    def __init__(self, required_gb: float, requested_gb: int):
+        self.required_gb = required_gb
+        self.requested_gb = requested_gb
+        super().__init__(
+            f"This job needs {required_gb:.0f} GB of disk; the {requested_gb} "
+            "GB you asked for cannot hold it."
+        )
+
+
+class DiskBelowMinimumError(Exception):
+    """An override asked for a disk smaller than the platform will create.
+    The provider's smallest disk is a measured fact (spike 5), not a floor to
+    guess around: the plan already names it, so the refusal names it too."""
+
+    def __init__(self, requested_gb: int, minimum_gb: int):
+        self.requested_gb = requested_gb
+        self.minimum_gb = minimum_gb
+        super().__init__(
+            f"The platform's smallest provisionable disk is {minimum_gb} GB; "
+            f"{requested_gb} GB cannot be created."
         )
 
 
@@ -149,8 +179,17 @@ def required_disk(
     method: str,
     lora_r: int,
     retained_checkpoints: int,
+    provisioned_gb: int | None = None,
 ) -> DiskPlan:
     """The disk `facts` needs to train with `method`, floored and capped.
+
+    `provisioned_gb` is an override (issue #79): when given, that exact disk
+    is requested instead of the predictor's floor -- a larger disk for a user
+    who wants to keep more, never a smaller one, because a machine that cannot
+    hold its own download is the failure this arithmetic exists to refuse. An
+    override below the job's raw need raises `DiskBelowNeedError`, below the
+    platform minimum `DiskBelowMinimumError`, and above the ceiling
+    `DiskExceedsCeilingError` -- each naming the number that refused it.
 
     Raises `DiskExceedsCeilingError` when the raw requirement is larger than
     the provider can create at any price -- checked before the floor is
@@ -191,9 +230,20 @@ def required_disk(
     if required_gb > PLATFORM_MAX_DISK_GB:
         raise DiskExceedsCeilingError(required_gb, PLATFORM_MAX_DISK_GB)
 
-    provisioned_gb = max(PLATFORM_MIN_DISK_GB, math.ceil(required_gb))
+    if provisioned_gb is not None:
+        if provisioned_gb > PLATFORM_MAX_DISK_GB:
+            raise DiskExceedsCeilingError(
+                float(provisioned_gb), PLATFORM_MAX_DISK_GB
+            )
+        if provisioned_gb < math.ceil(required_gb):
+            raise DiskBelowNeedError(required_gb, provisioned_gb)
+        if provisioned_gb < PLATFORM_MIN_DISK_GB:
+            raise DiskBelowMinimumError(provisioned_gb, PLATFORM_MIN_DISK_GB)
+        final_gb = provisioned_gb
+    else:
+        final_gb = max(PLATFORM_MIN_DISK_GB, math.ceil(required_gb))
     storage_cost_usd_per_hour = (
-        provisioned_gb * STORAGE_USD_PER_GB_MONTH / HOURS_PER_MONTH
+        final_gb * STORAGE_USD_PER_GB_MONTH / HOURS_PER_MONTH
     )
     return DiskPlan(
         weights_gb=weights_gb,
@@ -202,6 +252,6 @@ def required_disk(
         image_gb=IMAGE_GB,
         working_space_gb=WORKING_SPACE_GB,
         required_gb=required_gb,
-        provisioned_gb=provisioned_gb,
+        provisioned_gb=final_gb,
         storage_cost_usd_per_hour=storage_cost_usd_per_hour,
     )

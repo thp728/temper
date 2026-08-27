@@ -22,6 +22,7 @@ cost are the half of the predictor that warns (spec 005).
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from temper_core import (
@@ -30,6 +31,7 @@ from temper_core import (
     disk,
     feasibility,
     hyperparams,
+    overrides,
     quote,
     selection,
 )
@@ -49,6 +51,27 @@ QUOTE_PROVIDER: Provider | None = None
 # path never reaches the network, mirroring how `main.MODELS` is replaced for
 # the rest of the application.
 QUOTE_MODELS: Models | None = None
+
+
+class QuoteRefused(Exception):
+    """A configuration *with overrides* cannot be honoured -- a refusal, not
+    an absent estimate.
+
+    The distinction is load-bearing (issue #79): an estimate that cannot be
+    priced warns and never blocks (spec 005), but an override is the user
+    asking for something specific, and a plan that could not honour it must
+    say so with the arithmetic that refused it rather than silently showing
+    nothing. `to_payload` is the detail a 400 returns: a stable code, a
+    message, and the structured arithmetic where one applies."""
+
+    def __init__(self, code: str, message: str, **fields: object) -> None:
+        self.code = code
+        self.message = message
+        self.fields = fields
+        super().__init__(message)
+
+    def to_payload(self) -> dict[str, object]:
+        return {"code": self.code, "message": self.message, **self.fields}
 
 
 def provider_for_quote() -> Provider | None:
@@ -81,10 +104,18 @@ def for_config(
     ds: dict,
     model: catalog.BaseModel,
     hyperparameters: dict,
+    overrides_list: Sequence[overrides.Override] | None = None,
 ) -> dict[str, Any] | None:
-    """The quote for one (dataset, model, hyperparameters) configuration, or
-    None when it cannot be priced. Never raises: the estimate warns, it does
-    not block (spec 005)."""
+    """The quote for one (dataset, model, hyperparameters, overrides)
+    configuration, or None when it cannot be priced.
+
+    With no overrides this never raises: the estimate warns, it does not block
+    (spec 005). With overrides (issue #79) an override that cannot be
+    honoured -- unknown decision or value, a configuration that does not fit,
+    a disk below the need -- raises `QuoteRefused` (or the core
+    `overrides.OverrideError`), because a plan that cannot honour what the
+    user asked for must refuse rather than silently show nothing.
+    """
     p = provider_for_quote()
     if p is None:
         return None
@@ -97,13 +128,19 @@ def for_config(
             provider=p,
             now=time.time(),
             ttl_s=config.QUOTE_TTL_S,
+            overrides_list=overrides_list,
         )
+    except (QuoteRefused, overrides.OverrideError):
+        raise
     except Exception:  # noqa: BLE001 - no quote, never a broken page
         return None
 
 
 def quote_for_launch(
-    dataset_id: str, base_model: str, hyperparameters: dict
+    dataset_id: str,
+    base_model: str,
+    hyperparameters: dict,
+    overrides_list: Sequence[overrides.Override] | None = None,
 ) -> dict[str, Any] | None:
     """The quote for the configuration a launch commits to, or None.
 
@@ -113,7 +150,8 @@ def quote_for_launch(
     applies, then prices them. Refusals inside `jobs.usable_dataset` and
     `catalog.get` are the caller's; this helper only prices, and a
     configuration that cannot be priced produces no quote rather than a
-    broken launch.
+    broken launch. An override that cannot be honoured raises, for the caller
+    to refuse the launch.
     """
     from . import jobs
 
@@ -124,7 +162,37 @@ def quote_for_launch(
     m = catalog.get(base_model)
     if m is None:
         return None
-    return for_config(ds, m, hyperparameters)
+    return for_config(ds, m, hyperparameters, overrides_list)
+
+
+def _no_fit_refusal(err: selection.NoFittingHardwareError) -> QuoteRefused:
+    """The override refusal for hardware that cannot be honoured, with the
+    arithmetic that refused it where the refusal was on memory grounds.
+
+    `configuration_does_not_fit` is the memory half refusing with the same
+    `memory.headroom_gb` numbers that did the refusing (spec 005: memory
+    blocks, and an override must not lose that safety property by taking
+    control). A configuration that would fit but is simply not free is the
+    availability half, `provider_capacity_unavailable`, matching the code the
+    orchestrator already uses for it at provisioning.
+    """
+    arithmetic: dict[str, object] | None = None
+    if err.peak_gb is not None:
+        arithmetic = {
+            "method": err.method,
+            "gpu_type": err.gpu_type,
+            "device_count": err.device_count,
+            "peak_gb": err.peak_gb,
+            "capacity_gb": err.capacity_gb,
+        }
+        code = (
+            "configuration_does_not_fit"
+            if err.capacity_gb is not None and err.peak_gb > err.capacity_gb
+            else "provider_capacity_unavailable"
+        )
+    else:
+        code = "provider_capacity_unavailable"
+    return QuoteRefused(code, str(err), arithmetic=arithmetic)
 
 
 def build_quote(
@@ -136,14 +204,25 @@ def build_quote(
     provider: Provider,
     now: float,
     ttl_s: float,
+    overrides_list: Sequence[overrides.Override] | None = None,
 ) -> dict[str, Any] | None:
-    """The quote for one (dataset, model, hyperparameters) configuration.
+    """The quote for one (dataset, model, hyperparameters, overrides)
+    configuration.
 
     Returns a dict matching `temper_control_plane.contracts_models.Quote`, or
     None when the configuration cannot be priced -- nothing fits available
     hardware, the disk exceeds the ceiling, or the model cannot be resolved.
     None never blocks: the caller decides what a missing quote means for the
     surface it is rendering, and a launch is never refused for one.
+
+    `overrides` (issue #79) pin one or more of the predictor's decisions; the
+    rest recompute around them in this one function -- the same seams the
+    unpinned plan reads (`selection` for hardware, `disk` for disk, `memory`
+    for the fit) -- so a change to one decision can never leave a stale value
+    beside it. An override that cannot be honoured raises `QuoteRefused`
+    (hardware/disk arithmetic) or the core `overrides.OverrideError`
+    (vocabulary, the precision-method coupling): the launch is refused with
+    the same arithmetic, never silently fallen back to the predictor's pick.
     """
     try:
         facts = models.resolve(model.repo, model.revision)
@@ -153,7 +232,12 @@ def build_quote(
         # its own error handling; here the honest answer is no quote.
         return None
 
-    hp = hyperparams.effective(hyperparameters)
+    base_hp = hyperparams.effective(hyperparameters)
+    resolved = (
+        overrides.resolve(base_hp, overrides_list) if overrides_list else None
+    )
+    hp = resolved.hyperparameters if resolved is not None else base_hp
+
     availability = provider.gpu_availability()
     try:
         plan = selection.select_hardware(
@@ -163,8 +247,15 @@ def build_quote(
             micro_batch_size=hp["micro_batch_size"],
             availability=availability,
             currency=provider.currency(),
+            method=resolved.method if resolved is not None else None,
+            gpu_type=resolved.gpu_type if resolved is not None else None,
+            device_count=resolved.device_count
+            if resolved is not None
+            else None,
         )
-    except selection.NoFittingHardwareError:
+    except selection.NoFittingHardwareError as e:
+        if resolved is not None:
+            raise _no_fit_refusal(e) from e
         return None
     try:
         disk_plan = disk.required_disk(
@@ -172,8 +263,31 @@ def build_quote(
             method=plan.method,
             lora_r=hp["lora_r"],
             retained_checkpoints=hp["save_total_limit"],
+            provisioned_gb=resolved.disk_gb if resolved is not None else None,
         )
-    except disk.DiskExceedsCeilingError:
+    except disk.DiskBelowNeedError as e:
+        raise QuoteRefused(
+            "disk_below_need",
+            str(e),
+            required_gb=e.required_gb,
+            requested_gb=e.requested_gb,
+        ) from e
+    except disk.DiskBelowMinimumError as e:
+        raise QuoteRefused(
+            "disk_below_minimum",
+            str(e),
+            requested_gb=e.requested_gb,
+            minimum_gb=e.minimum_gb,
+        ) from e
+    except disk.DiskExceedsCeilingError as e:
+        if resolved is not None:
+            raise QuoteRefused(
+                "disk_exceeds_ceiling",
+                str(e),
+                required_gb=e.required_gb,
+                ceiling_gb=e.ceiling_gb,
+                shortfall_gb=e.shortfall_gb,
+            ) from e
         return None
 
     token_count = (dataset.get("report") or {}).get("token_count")
@@ -191,12 +305,16 @@ def build_quote(
         expires_at=now + ttl_s,
         # The reasons ride with the prediction (issue #76): computed from the
         # same seams the quote reads, frozen with it, never regenerated on
-        # read -- a finished job explains itself like a planned one.
+        # read -- a finished job explains itself like a planned one. The
+        # `overridden` marks (issue #79) travel on the same records.
         decisions=decisions.decide(
             facts,
             hyperparameters=hp,
             plan=plan,
             disk_plan=disk_plan,
+            overridden=(
+                resolved.overridden if resolved is not None else frozenset()
+            ),
         ),
     )
     return {
@@ -226,4 +344,13 @@ def build_quote(
         "storage_cost_usd_total_high_minor": q.storage_cost_usd_total_high_minor,
         "is_estimate": q.is_estimate,
         "decisions": [decisions.to_dict(d) for d in q.decisions],
+        # The legal values each decision's control can offer (issue #79): the
+        # interface generates its controls from this rather than hand-listing
+        # the vocabulary, so a value the server accepts is a value the plan
+        # offers and vice versa.
+        "override_options": {
+            d: options
+            for d in overrides.DECISIONS
+            if (options := overrides.options_for(d)) is not None
+        },
     }
