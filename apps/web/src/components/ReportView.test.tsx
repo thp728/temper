@@ -148,6 +148,30 @@ describe("ReportView", () => {
     ).toBeVisible();
   });
 
+  it("explains a mixed thinking-mode block on the report", () => {
+    const mixed = record({
+      status: "invalid",
+      report: {
+        ...record().report!,
+        valid: false,
+        errors: [
+          {
+            line: null,
+            code: "mixed_thinking",
+            message:
+              "Dataset mixes reasoning traces with plain responses: every row must be consistent.",
+          },
+        ],
+        warnings: [],
+        preview: [],
+      },
+    });
+    render(<ReportView record={mixed} />);
+    // The block is explained in plain language, with its stable code.
+    expect(screen.getByText("mixed_thinking")).toBeVisible();
+    expect(screen.getByText(/mixes reasoning traces/i)).toBeVisible();
+  });
+
   it("describes a thinking-mode dataset as detected", () => {
     const r = record({ report: { ...record().report!, enable_thinking: true } });
     render(<ReportView record={r} />);

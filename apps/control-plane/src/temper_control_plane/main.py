@@ -52,7 +52,6 @@ from temper_control_plane.contracts_models import (
     QuoteRequest,
 )
 from temper_control_plane.storage import ObjectNotFound
-from temper_control_plane.web import router as web_router
 from temper_core import (
     calibration,
     catalog,
@@ -158,7 +157,6 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
-app.include_router(web_router)
 
 
 # ---------------------------------------------------------------------------

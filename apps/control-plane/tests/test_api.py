@@ -94,21 +94,6 @@ def test_catalog_entries_carry_a_computed_peak_memory_not_a_stored_one(
     assert error <= memory.PEAK_TOLERANCE
 
 
-def test_catalog_revision_shown_alongside_licence_at_model_choice(
-    client, tmp_path
-):
-    """The revision is shown to the user at model choice, alongside the licence.
-
-    The create-job page renders the catalog entries with both fields, so a user
-    choosing a model sees what revision they are about to train against.
-    """
-    ds = valid_dataset(client, tmp_path)
-    html = client.get(f"/jobs/new?dataset_id={ds}").text
-    for m in client.get("/v1/models").json()["models"]:
-        assert m["revision"] in html
-        assert m["license"] in html
-
-
 # --- validation ------------------------------------------------------------
 
 
@@ -238,6 +223,11 @@ def test_dataset_list_response_is_exactly_the_published_model(
     assert set(body) == {"datasets"}
     # The list is a published shape like any other: no raw row leaks through.
     assert all("path" not in ds for ds in body["datasets"])
+
+
+def test_missing_dataset_is_404(client):
+    r = client.get("/v1/datasets/ds_nope")
+    assert r.status_code == 404
 
 
 def test_preview_turns_are_published_typed(client, tmp_path):

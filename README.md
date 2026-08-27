@@ -11,7 +11,16 @@ Built as a take-home for [JarvisLabs.ai](https://jarvislabs.ai), August 2026, an
 
 Fine-tunes open-weight LLMs on user-supplied instruction data, on real GPUs, end to end — dataset in, adapter out.
 
-**The whole journey runs from a browser**, on server-rendered pages: upload and validate a dataset, choose a base model, watch the run as it provisions and trains, and download the adapter — with the machine destroyed afterwards and confirmed gone. The same journey is available over the API. Cancellation and the runaway-job limits are in place, exercised suite-wide against a stubbed provider and on real runs during the build.
+**The whole journey runs from a browser**, in the application shell in
+[`apps/web`](apps/web/): upload and validate a dataset, choose a base model,
+review the plan, watch the run as it provisions and trains over a server-pushed
+event stream, and download the adapter — with the machine destroyed afterwards
+and confirmed gone. The shell's client is generated from the API's published
+contract, and it is the only interface: the earlier server-rendered pages were
+deleted when the last screen was ported (Spec 007). The same journey is
+available over the API. Cancellation and the runaway-job limits are in place,
+exercised suite-wide against a stubbed provider and on real runs during the
+build.
 
 **Deliberately absent** — stated here rather than left for a reader to notice:
 
@@ -20,7 +29,7 @@ Fine-tunes open-weight LLMs on user-supplied instruction data, on real GPUs, end
 - **An inference endpoint.** The delivered artifact is the adapter, not a served model.
 - **Imports from Hugging Face.** Models come from a curated, pinned catalog of two; datasets are uploaded files.
 - **Streaming validation.** Measured at flat +4 MB memory from 1 GB to 20 GB, but not built — so uploads stay capped (see below).
-- **The Phase B stack.** Postgres, Temporal, Redis, MinIO and a typed SPA are specified ([docs/specs/](docs/specs/)) and not built. What runs today is one FastAPI process, SQLite, and a thread per job — with the domain logic already extracted into `packages/core` so the migration is a seam-by-seam swap, not a rewrite.
+- **The Phase B stack.** Postgres, Temporal, Redis and MinIO are specified ([docs/specs/](docs/specs/)) and not built. What runs today is one FastAPI process, SQLite, and a thread per job — with the domain logic already extracted into `packages/core` so the migration is a seam-by-seam swap, not a rewrite. The application shell ([Spec 007](docs/specs/007-the-application-shell.md)) *is* built: a Next.js app whose client is generated from the API contract, replacing the Phase A server-rendered pages.
 
 - **Method:** supervised fine-tuning via QLoRA — NF4 double-quant base, bf16 compute, rank 16, α=32, **all linear layers**. Adapter weights save as **fp32**, which is what `prepare_model_for_kbit_training` does and is why the artifact is 132 MB rather than ~66 MB
 - **Models:** curated and pinned — `Qwen/Qwen3-4B`, `Qwen/Qwen3-8B`
@@ -35,10 +44,10 @@ Dataset through training to delivered artifact, as it actually runs today:
 
 ```mermaid
 flowchart LR
-    subgraph client["Browser or API"]
+    subgraph client["Browser (the shell — apps/web)"]
         U["Upload JSONL"]
         J["Create job<br/>(spec frozen, warning attached)"]
-        W["Watch page / event poller"]
+        W["Job view: durable history<br/>+ server-pushed event stream"]
         D["Download adapter zip"]
     end
 
@@ -58,7 +67,7 @@ flowchart LR
     O -->|"push dataset + trainer sources over SSH"| C
     C -->|"stdout event stream over SSH,<br/>guarded by stall + duration limits"| O
     O -->|"state transition + event appended<br/>in one transaction"| DB
-    W -->|"poll /v1/jobs/{id}/events"| DB
+    W -->|"poll /v1/jobs/{id}/events,<br/>stream /v1/jobs/{id}/stream"| DB
     C -->|"result.json — always written,<br/>pass or fail"| O
     O -->|"fetch adapter bytes,<br/>sha256-checked against result"| CP2["data/artifacts/&lt;job&gt;/"]
     O -->|"destroy, then confirm by<br/>listing machines"| machine
@@ -112,7 +121,9 @@ One rule: if it ships it is an app, if it is imported it is a package.
 
 ```
 apps/
-  control-plane/   upload, validate, catalog, launch, watch, download
+  control-plane/   the API: upload, validate, catalog, launch, watch, download
+  web/             the application shell (Spec 007): a Next.js client generated
+                   from the API contract. The only interface
   worker/          reserved for orchestration (#51). Empty on purpose
   trainer/         the pinned training container and its /job -> /out contract
 packages/
@@ -127,9 +138,9 @@ with the flat alternative and why it lost.
 
 ## Known gaps
 
-Named here rather than left for a reader to find. Current as of 2026-08-25.
+Named here rather than left for a reader to find. Current as of 2026-08-28.
 
-- **Loss reaches the page as a number, not a curve.** The watch page shows the latest loss and step; there is no chart. The values themselves come from a real run's training output, promoted by a classifier that was checked line by line against that output.
+- **Loss reaches the page as a number, not a curve.** The job view shows the latest loss and step; a chart is being added to it this wave. The values themselves come from a real run's training output, promoted by a classifier that was checked line by line against that output.
 - **A finished job's page truncates its log.** The event read caps at 500, and a real run writes more than that, so a finished job's page cuts off before its own final events. Live watching polls past the cap; the finished page does not.
 - **The job log is mostly build noise.** A real run writes several hundred events, the large majority of them container-build progress, which buries the trainer's own output.
 - **Costs are derived, never invoiced.** See the note above.
