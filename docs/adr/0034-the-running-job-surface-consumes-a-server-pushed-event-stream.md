@@ -93,10 +93,16 @@ advanced surface is generated from. Slowing the shared fake via environment
 achieves the same watchable run without touching #33's boundary.
 
 **Run a second, paused control plane for the cancel journey.**
-Rejected: two control-plane processes in one worktree share one SQLite file
-(`DB_PATH` is not configurable), and concurrent writers invite exactly the
-database-is-locked flake the journeys exist to catch. One slowed fake is
-simpler and no journey measures the difference.
+Rejected: it would have doubled the processes the journeys boot for one test,
+and two writers over one SQLite file invite exactly the database-isolated
+flake the journeys exist to catch. The single slowed fake needs no second
+server.
+
+**Delete the journey database from the Playwright config before each run.**
+Rejected once observed: a Playwright config is loaded more than once per run,
+and a wipe at load time deleted the backend's freshly-created database out
+from under it (surfaced as `no such table: datasets` on every request). The
+reset therefore lives in the backend's own `init()`, once per process start.
 
 ## Consequences
 
@@ -109,11 +115,22 @@ simpler and no journey measures the difference.
   stylesheet proxy are deleted, leaving `/v1/:path*` the only rewrite.
 - The fake provider is slowed by configuration for the journeys; unit tests
   inject their own fakes and are unaffected.
+- The journeys' control plane now owns its runtime state the way it owns its
+  ports: a database of its own (`TEMPER_DB_PATH`) that it resets at startup
+  (`TEMPER_DB_RESET`), and object storage of its own
+  (`TEMPER_STORAGE_ROOT`). A journey never writes to the developer's
+  `data/`, and a run killed mid-job cannot leave an orphaned non-terminal job
+  that trips the orphaned-job scan on the next run's startup. The journeys'
+  e2e ports were already derived from the issue number (3930/3931) with
+  `reuseExistingServer: false`, and the web server is pointed at the backend
+  it booted (`TEMPER_BACKEND_URL`) -- without that, the app proxied to the
+  developer-facing 8000 while the journey backend ran elsewhere.
 - A latent `active_jobs` startup path can raise when a stale non-terminal job
   exists in a development database (the row lacks a mapped `warnings` key).
   Pre-existing, unrelated to this issue; encountered while the journey's own
-  database still held a job from a killed process, and resolved by clearing
-  the disposable dev database rather than by changing the record mapper here.
+  database still held a job from a killed process. This issue does not fix it;
+  it makes the journeys immune to it, and a developer who hits it clears the
+  disposable dev database.
 
 ## Rollback
 

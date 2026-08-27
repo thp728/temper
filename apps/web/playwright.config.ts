@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
 import { E2E_BACKEND_PORT, E2E_WEB_PORT } from "./src/lib/backend";
 
 // The journeys run against both halves running for real: the Next shell and
@@ -17,12 +18,23 @@ import { E2E_BACKEND_PORT, E2E_WEB_PORT } from "./src/lib/backend";
 // confirms the process it booted via its own health URL, and the launch
 // journeys additionally refuse to run unless /health says the fake is in
 // force.
+//
+// The control plane the journeys boot also gets a database of its own
+// (TEMPER_DB_PATH, never the developer's data/temper.db), and resets it at
+// startup (TEMPER_DB_RESET): a journey writes only where it is pointed, and a
+// run that was killed mid-job cannot leave an orphaned row that poisons the
+// next gate run's startup. The reset lives in the backend's own init rather
+// than here because this config is loaded more than once per run, and a wipe
+// at load time would delete the backend's database out from under it.
 const webPort = Number(process.env.TEMPER_WEB_PORT ?? E2E_WEB_PORT);
 const backendPort = Number(
   process.env.TEMPER_BACKEND_PORT ?? E2E_BACKEND_PORT,
 );
 const backendUrl =
   process.env.TEMPER_BACKEND_URL ?? `http://127.0.0.1:${backendPort}`;
+const repoRoot = path.resolve(import.meta.dirname, "..", "..");
+const e2eDbPath = path.join(repoRoot, "data", "temper-e2e.db");
+const e2eObjectsPath = path.join(repoRoot, "data", "objects-e2e");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -72,6 +84,9 @@ export default defineConfig({
         ...process.env,
         TEMPER_FAKE_PROVIDER: "1",
         TEMPER_FAKE_LINE_DELAY_S: "0.6",
+        TEMPER_DB_PATH: e2eDbPath,
+        TEMPER_DB_RESET: "1",
+        TEMPER_STORAGE_ROOT: e2eObjectsPath,
       },
     },
   ],

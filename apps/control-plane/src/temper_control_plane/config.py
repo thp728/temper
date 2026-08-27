@@ -244,6 +244,22 @@ STORAGE_ROOT = Path(
     _text("TEMPER_STORAGE_ROOT") or REPO_ROOT / "data" / "objects"
 )
 
+# Where the SQLite database lives, under `/data/` with everything else
+# runtime-written (test_storage_paths pins that boundary). Overridable so the
+# e2e journeys can run their control plane against a database of their own
+# rather than the developer's -- the same ownership rule as the journeys'
+# ports: a journey must not inherit another surface's orphans, and an
+# interrupted journey run must not be able to poison the database the next
+# gate run boots against.
+DB_PATH = Path(_text("TEMPER_DB_PATH") or REPO_ROOT / "data" / "temper.db")
+
+# When set, `db.init()` recreates the database at startup rather than reusing
+# it. The e2e journeys set it so their control plane boots against a clean
+# database on every run -- a database is not a thing a journey should inherit,
+# and a run that was interrupted mid-job must not be able to poison the next
+# run's startup. The developer's own database never sets this.
+DB_RESET = bool(os.environ.get("TEMPER_DB_RESET"))
+
 S3_BUCKET = _text("TEMPER_S3_BUCKET")
 S3_ENDPOINT_URL = _text("TEMPER_S3_ENDPOINT_URL")
 S3_REGION = _text("TEMPER_S3_REGION")
