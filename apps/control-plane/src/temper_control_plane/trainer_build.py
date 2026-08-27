@@ -97,12 +97,19 @@ def published_reference() -> str | None:
 # that writes result.json. It stays beside the entrypoint rather than in the
 # domain because only the trainer runs it: the control plane never uploads
 # checkpoints, it mints the grants and verifies what landed.
+#
+# `split.py` (issue #53) is the held-out split: the entrypoint dedups and
+# splits at the start of every job, and the control plane validates the
+# dataset with the same module's normalisation rule, so it lives in the domain
+# and is flattened into the image beside the entrypoint, exactly like
+# `thinking.py` -- one file, two consumers.
 TRAINER_SOURCES = (
     TRAINER_DIR / "Dockerfile",
     TRAINER_DIR / "entrypoint.py",
     TRAINER_DIR / "template_probe.py",
     TRAINER_DIR / "checkpoints.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
+    REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "split.py",
     REPO_ROOT / "packages" / "contracts" / "trainer-defaults.json",
     REPO_ROOT / "packages" / "contracts" / "axolotl-schema.json",
 )
