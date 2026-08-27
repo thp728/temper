@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 
+from helpers import wait_validated
+
 from temper_control_plane.fake_provider import FakeProvider
 
 
@@ -40,8 +42,8 @@ def valid_dataset(client, tmp_path):
     p = jsonl(tmp_path, [chat(f"q{i}", f"a{i}") for i in range(12)])
     with open(p, "rb") as f:
         r = client.post("/v1/datasets", files={"file": (p.name, f)})
-    assert r.status_code == 201
-    return r.json()["id"]
+    assert r.status_code == 202
+    return wait_validated(client, r.json()["id"])["id"]
 
 
 def quote(client, ds, model_id):
@@ -180,6 +182,7 @@ def test_an_unknown_model_is_refused_for_a_quote(client, tmp_path):
 def test_a_quote_for_an_invalid_dataset_uses_the_launch_code(client, tmp_path):
     p = jsonl(tmp_path, [chat("q", "a")])  # too few rows: invalid
     ds = upload(client, p)["id"]
+    wait_validated(client, ds)  # the refusal needs the finished report
     r = client.get("/v1/quotes", params={"dataset_id": ds})
     assert r.status_code == 400
     assert r.json()["detail"]["code"] == "dataset_invalid"

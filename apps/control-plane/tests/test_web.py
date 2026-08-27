@@ -13,6 +13,8 @@ import json
 import time
 from dataclasses import replace
 
+from helpers import wait_validated
+
 from temper_control_plane.fake_provider import FakeProvider, simulated_limits
 from temper_control_plane.limits import RunLimits
 
@@ -39,6 +41,15 @@ def form_upload(client, path):
         )
 
 
+def report_page(client, r):
+    """Follow an upload's redirect and return the page once validation has
+    finished -- validation runs in the background, so the report page shows
+    progress and only renders the report when it lands."""
+    url = r.headers["location"]
+    wait_validated(client, url.rsplit("/", 1)[-1])
+    return client.get(url).text
+
+
 # --- the upload page --------------------------------------------------------
 
 
@@ -57,14 +68,15 @@ def test_form_upload_redirects_to_the_report(client, tmp_path):
     p = jsonl(tmp_path, [chat(f"q{i}", f"a{i}") for i in range(12)])
     r = form_upload(client, p)
     assert r.status_code == 303, "a form post must redirect, not return JSON"
+    ds_id = r.headers["location"].rsplit("/", 1)[-1]
+    wait_validated(client, ds_id)  # the report page needs the finished report
     report = client.get(r.headers["location"])
     assert report.status_code == 200
 
 
 def test_report_shows_counts_thinking_and_preview(client, tmp_path):
     rows = [chat(f"q{i}", f"a{i}") for i in range(12)]
-    r = form_upload(client, jsonl(tmp_path, rows))
-    body = client.get(r.headers["location"]).text
+    body = report_page(client, form_upload(client, jsonl(tmp_path, rows)))
     assert "12" in body  # rows found / usable
     assert "not detected" in body.lower()  # thinking mode, in plain language
     assert "q0" in body and "a0" in body  # preview of rows as understood
@@ -80,32 +92,46 @@ def test_report_names_lines_and_codes_for_a_rejected_dataset(client, tmp_path):
         + "\n",
         encoding="utf-8",
     )
-    r = form_upload(client, p)
-    body = client.get(r.headers["location"]).text
+    body = report_page(client, form_upload(client, p))
     assert "line 12" in body  # the offending line, named
     assert "invalid_json" in body  # its stable code
     assert "empty_target" in body
 
 
 def test_mixed_thinking_block_is_explained(client, tmp_path):
-    rows = [chat(f"q{i}", f"<think>r</think>a{i}") for i in range(6)]
+    marker = f"{chr(60)}think{chr(62)}r{chr(60)}/think{chr(62)}"
+    rows = [chat(f"q{i}", f"{marker}a{i}") for i in range(6)]
     rows += [chat(f"q{i}", f"a{i}") for i in range(6)]
-    r = form_upload(client, jsonl(tmp_path, rows))
-    body = client.get(r.headers["location"]).text
+    body = report_page(client, form_upload(client, jsonl(tmp_path, rows)))
     assert "mixed_thinking" in body
     assert "blocked" in body.lower()
 
 
 def test_usable_dataset_with_warnings_still_offers_proceed(client, tmp_path):
     rows = [chat(f"q{i}", f"a{i}") for i in range(12)]  # below 50: warned
-    r = form_upload(client, jsonl(tmp_path, rows))
-    body = client.get(r.headers["location"]).text
+    body = report_page(client, form_upload(client, jsonl(tmp_path, rows)))
     assert "few_rows" in body  # the warning, with its code
     assert "/jobs/new" in body  # ...and the journey continues
 
 
 def test_report_for_an_unknown_dataset_404s(client):
     assert client.get("/datasets/ds_nope").status_code == 404
+
+
+def test_validating_dataset_renders_progress_not_a_report(client):
+    """While validation runs the page shows a proportion complete and reloads
+    itself -- a large upload must not look like a frozen page."""
+    from temper_control_plane import db, storage
+
+    ds_id = "ds_progress"
+    db.create_dataset("big.jsonl", storage.dataset_key(ds_id), ds_id=ds_id)
+    db.set_dataset_progress(
+        ds_id, {"bytes_read": 50, "bytes_total": 100, "rows": 7}
+    )
+    body = client.get(f"/datasets/{ds_id}").text
+    assert "Validating" in body
+    assert "50" in body  # the percent
+    assert 'http-equiv="refresh"' in body  # re-renders itself until done
 
 
 def test_too_large_upload_renders_an_error_page_with_the_code(
@@ -163,7 +189,9 @@ def test_no_page_uses_scripting(client, tmp_path):
 def valid_dataset(client, tmp_path):
     rows = [chat(f"q{i}", f"a{i}") for i in range(12)]
     r = form_upload(client, jsonl(tmp_path, rows))
-    return r.headers["location"].rsplit("/", 1)[-1]
+    ds_id = r.headers["location"].rsplit("/", 1)[-1]
+    wait_validated(client, ds_id)
+    return ds_id
 
 
 def create_page(client, ds_id):

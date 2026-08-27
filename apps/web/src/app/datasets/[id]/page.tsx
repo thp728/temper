@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import BackToUpload from "@/components/BackToUpload";
 import ReportView from "@/components/ReportView";
+import ValidationProgressView from "@/components/ValidationProgressView";
 import { getDatasetV1DatasetsDatasetIdGet } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
@@ -47,6 +48,11 @@ export default async function DatasetPage({
   const { id } = await params;
   const { record, error } = await loadDataset(id);
 
+  if (record?.status === "validating") {
+    // Validation runs in the background; this view shows its progress and
+    // re-fetches on a meta refresh until the report lands.
+    return <ValidationProgressView record={record} />;
+  }
   if (record) {
     return <ReportView record={record} />;
   }

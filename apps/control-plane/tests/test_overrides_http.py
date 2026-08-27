@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 
+from helpers import wait_validated
+
 from temper_core.selection import GpuAvailability
 
 
@@ -45,8 +47,8 @@ def valid_dataset(client, tmp_path):
     p = jsonl(tmp_path, [chat(f"q{i}", f"a{i}") for i in range(12)])
     with open(p, "rb") as f:
         r = client.post("/v1/datasets", files={"file": (p.name, f)})
-    assert r.status_code == 201
-    return r.json()["id"]
+    assert r.status_code == 202
+    return wait_validated(client, r.json()["id"])["id"]
 
 
 def quote_post(client, ds, overrides, model="qwen3-4b"):

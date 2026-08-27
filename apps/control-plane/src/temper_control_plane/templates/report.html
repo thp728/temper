@@ -1,12 +1,25 @@
 {% extends "base.html" %}
-{% block title %}{{ ds.filename }} · validation report · Temper{% endblock %}
+{% block title %}{{ ds.filename }} - validation report - Temper{% endblock %}
+{% block head %}
+{% if validating %}<meta http-equiv="refresh" content="2">{% endif %}
+{% endblock %}
 {% block content %}
 <h1>Validation report</h1>
-{% if ds.status == "validating" %}
-<p><strong>{{ ds.filename }}</strong> is still being validated. Reload this page
-in a moment.</p>
+{% if validating %}
+<section aria-labelledby="validating-h">
+  <h2 id="validating-h">Validating</h2>
+  <p><strong>{{ ds.filename }}</strong> is being validated. This page reloads
+  itself while it runs, so you can leave it open.</p>
+  {% if progress.bytes_total %}
+  {% set percent = (progress.bytes_read / progress.bytes_total * 100)|round(1) %}
+  <p role="status" aria-live="polite">{{ percent }}% ({{ progress.rows }} rows read)</p>
+  <progress value="{{ percent }}" max="100"></progress>
+  {% else %}
+  <p role="status" aria-live="polite">Reading rows...</p>
+  {% endif %}
+</section>
 {% else %}
-<p><strong>{{ ds.filename }}</strong> —
+<p><strong>{{ ds.filename }}</strong> -
 {% if ds.status == "valid" %}accepted, ready to train on{% else %}rejected, changes needed{% endif %}</p>
 {% endif %}
 
@@ -49,6 +62,10 @@ in a moment.</p>
     </li>
     {% endfor %}
   </ol>
+  {% if report.errors_suppressed %}
+  <p>...and {{ report.errors_suppressed }} more problem(s), not shown here. The
+  total above is exact.</p>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -64,6 +81,10 @@ in a moment.</p>
     </li>
     {% endfor %}
   </ol>
+  {% if report.warnings_suppressed %}
+  <p>...and {{ report.warnings_suppressed }} more warning(s), not shown here. The
+  total above is exact.</p>
+  {% endif %}
 </section>
 {% endif %}
 

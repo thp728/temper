@@ -1,24 +1,27 @@
-"""Upload size limits and responsiveness — spec 002, issue #9.
+"""Upload size limits, responsiveness and progress — spec 002 + spec 006.
 
 Two defects, one root: nothing larger than 7.5 KB was ever uploaded, so size
-was never considered. These tests pin the fixes:
+was never considered. These tests pin the fixes, as they now stand:
 
 * a dataset over the configured limit is refused immediately, with a stable
   code and both the limit and the actual size named;
-* validation no longer runs on the event loop, so a large upload blocks only
-  its own request.
+* the limit is a product limit derived from the measured streaming throughput
+  (ADR-0034), no longer from the in-memory validator's memory multiplier;
+* validation runs in the background, so a large upload returns its id while
+  validation works and never freezes the page that asked for it; and
+* validation progress is observable on the record while it runs.
 
-Everything here exercises the HTTP seam, per the spec's testing decisions.
-Size fixtures are **generated**, never committed.
+Everything here exercises the HTTP seam. Size fixtures are **generated**,
+never committed.
 """
 
-import asyncio
 import json
+import threading
 import time
 
 import pytest
 from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
+from helpers import wait_validated
 
 from temper_control_plane import config
 
@@ -61,12 +64,15 @@ def upload(client, data, name="d.jsonl"):
 # --- the limit ---------------------------------------------------------------
 
 
-def test_default_limit_is_one_gigabyte(monkeypatch):
+def test_default_limit_is_derived_from_measured_throughput(monkeypatch):
+    """The ceiling is a product limit, not a memory multiplier: the measured
+    streaming validation rate (21.6 MB/s on a real 1 GB file, spike 9, a
+    floor) times a 60-second tolerable synchronous wait. 1.3 GB is 1331.2 MB.
+    """
     monkeypatch.delenv("TEMPER_MAX_DATASET_MB", raising=False)
-    assert (
-        config._megabytes("TEMPER_MAX_DATASET_MB", 1024) * 1024 * 1024
-        == 1024**3
-    )
+    limit = config._megabytes("TEMPER_MAX_DATASET_MB", 1331.2) * 1024 * 1024
+    assert limit == pytest.approx(1.3 * 1024**3, rel=1e-9)
+    assert limit > 1024**3, "streaming validation raises the ceiling past 1 GB"
 
 
 def test_limit_is_configurable_via_environment(monkeypatch):
@@ -81,7 +87,7 @@ def test_dataset_over_limit_refused_with_code_and_both_sizes(
     client, monkeypatch
 ):
     # A small limit keeps the fixture generated-and-cheap; the enforcement
-    # path cannot tell a configured 64 KB from the default 1 GB.
+    # path cannot tell a configured 64 KB from the derived 1.3 GB.
     monkeypatch.setattr(config, "MAX_DATASET_BYTES", 64 * 1024)
     data = jsonl_bytes(chat_rows(400, pad=300))  # ~350 KB
     assert len(data) > 64 * 1024
@@ -102,13 +108,15 @@ def test_dataset_over_limit_refused_with_code_and_both_sizes(
     assert f"{body['actual_bytes']:,}" in body["message"]
 
 
-def test_refusal_names_the_removal_path(client, monkeypatch):
-    """The limit is an implementation limit, and says what removes it."""
+def test_refusal_explains_the_limit_is_a_product_decision(client, monkeypatch):
+    """The limit is now a product limit derived from measured throughput, not
+    an implementation detail of an in-memory validator waiting to be removed."""
     monkeypatch.setattr(config, "MAX_DATASET_BYTES", 64 * 1024)
     body = upload(client, jsonl_bytes(chat_rows(400, pad=300))).json()[
         "detail"
     ]
-    assert "streaming" in body["message"].lower()
+    assert "derived from the measured validation throughput" in body["message"]
+    assert "in-memory" not in body["message"]
 
 
 def test_dataset_just_under_limit_is_accepted(client, monkeypatch):
@@ -118,78 +126,135 @@ def test_dataset_just_under_limit_is_accepted(client, monkeypatch):
 
     r = upload(client, data)
 
-    assert r.status_code == 201
-    assert r.json()["valid"] is True
+    assert r.status_code == 202
+    assert r.json()["status"] == "validating"
+    ds = r.json()["id"]
+    record = wait_validated(client, ds)
+    assert record["report"]["valid"] is True
+
+
+def test_mid_stream_refusal_catches_a_lying_content_length(
+    client, monkeypatch
+):
+    """The declared Content-Length is the first refusal; a header that is
+    absent or lies is caught once the true size is known, mid-stream, before
+    anything is published."""
+    import io
+
+    from fastapi import HTTPException
+
+    from temper_control_plane import datasets
+
+    monkeypatch.setattr(config, "MAX_DATASET_BYTES", 64 * 1024)
+    data = jsonl_bytes(chat_rows(400, pad=300))  # ~350 KB, no declared length
+    with pytest.raises(HTTPException) as exc_info:
+        datasets.ingest(None, "d.jsonl", io.BytesIO(data))
+    detail = exc_info.value.detail
+    assert exc_info.value.status_code == 413
+    assert detail["code"] == "dataset_too_large"
+    assert detail["actual_bytes"] > 64 * 1024
+    # The row that was created to be watched is cleaned up, and put_stream
+    # never published a partial object: nothing is left behind.
+    from temper_control_plane import db
+
+    assert db.list_datasets() == []
 
 
 # --- responsiveness ----------------------------------------------------------
 
 
-def test_large_upload_does_not_block_concurrent_requests(server, monkeypatch):
-    """A slow validation must hold up only its own request.
+def test_upload_returns_while_validation_runs_and_health_stays_up(
+    client, monkeypatch
+):
+    """A slow validation must not hold up the upload's own response, nor any
+    other request.
 
-    Validation is stubbed to block until released -- standing in for the
-    measured ~80 ms/MB of real CPU work. A watchdog releases it after 3s no
-    matter what, so both worlds terminate deterministically. The measure is
-    **wall-clock from the moment validation begins blocking to the moment
-    /health answers** -- not a latency measured from the test coroutine,
-    because when the loop is frozen the test coroutine is frozen with it and
-    a naive clock starts late enough to hide the defect entirely:
-
-    * validation off the loop (correct): /health answers within milliseconds
-      of the block starting;
-    * validation on the loop (the defect): the loop itself is frozen inside
-      the stub, so /health cannot answer until the watchdog fires -- ~3s.
+    Validation runs on its own thread (issue #31), so the upload answers with
+    the dataset's id while validation is still mid-block, and /health answers
+    throughout. The old defect -- validation running on the event loop --
+    froze every request for the duration; this asserts the fix structurally,
+    by holding validation in a block and checking that neither the upload nor
+    /health wait for it.
     """
-    import threading
-
     from temper_core import validation
 
-    # The upload path validates the bytes it already holds; the stub blocks
-    # on that entry point, which is the one whose off-loop-ness is pinned.
-    real_validate = validation.validate_bytes
-    block_started = threading.Event()
     release = threading.Event()
-    block_t0 = 0.0
+    block_started = threading.Event()
+    real_validate_chunks = validation.validate_chunks
 
-    def slow_validate(data, *a, **k):
-        nonlocal block_t0
-        block_t0 = time.monotonic()
+    def slow_validate_chunks(chunks, *a, **k):
         block_started.set()
         release.wait(timeout=15)
-        return real_validate(data, *a, **k)
+        return real_validate_chunks(chunks, *a, **k)
 
-    monkeypatch.setattr(validation, "validate_bytes", slow_validate)
+    monkeypatch.setattr(validation, "validate_chunks", slow_validate_chunks)
     watchdog = threading.Timer(3.0, release.set)
     watchdog.start()
 
     data = jsonl_bytes(chat_rows(2000, pad=300))  # ~1.7 MB
 
-    async def scenario():
-        transport = ASGITransport(app=server.app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as c:
-            upload_task = asyncio.create_task(
-                c.post("/v1/datasets", files={"file": ("big.jsonl", data)})
-            )
-            # Returns only once validation is verifiably mid-block.
-            await asyncio.to_thread(block_started.wait, 10)
-            r = await c.get("/health")
-            # Measured here, inside the scenario: after asyncio.run returns
-            # the clock includes teardown, which would mask a healthy result.
-            health_done_t = time.monotonic()
-            await upload_task
-            return r.status_code, health_done_t
-
     try:
-        health_status, health_done_t = asyncio.run(scenario())
+        r = upload(client, data)
+        assert block_started.wait(timeout=10), "validation never started"
+        # The upload already answered while validation is mid-block...
+        assert r.status_code == 202
+        # ...and /health answers too, though validation is still blocked.
+        assert client.get("/health").status_code == 200
     finally:
         watchdog.cancel()
+        release.set()
 
-    delay_to_health = health_done_t - block_t0
-    assert health_status == 200
-    assert delay_to_health < 1.0, (
-        f"/health could not answer for {delay_to_health:.2f}s while an "
-        f"upload was validating; validation is running on the event loop."
+    # Let the validation thread finish so it does not outlive the test's
+    # database.
+    wait_validated(client, r.json()["id"])
+
+
+# --- progress ----------------------------------------------------------------
+
+
+def test_validation_progress_is_observable_while_it_runs(client, monkeypatch):
+    """A large upload must not look frozen: while validation runs, the
+    dataset record carries how far it has got."""
+    import threading as _threading
+
+    from temper_control_plane import db
+
+    release = _threading.Event()
+
+    def blocking_validate(ds_id, key, total_bytes):
+        def run():
+            db.set_dataset_progress(
+                ds_id,
+                {
+                    "bytes_read": total_bytes // 2,
+                    "bytes_total": total_bytes,
+                    "rows": 1,
+                },
+            )
+            release.wait(timeout=15)
+
+        _threading.Thread(target=run, daemon=True).start()
+
+    monkeypatch.setattr(
+        "temper_control_plane.datasets._validate_in_background",
+        blocking_validate,
     )
+    data = jsonl_bytes(chat_rows(50, pad=300))
+
+    r = upload(client, data)
+    ds = r.json()["id"]
+
+    try:
+        deadline = time.time() + 5
+        record = None
+        while time.time() < deadline:
+            record = client.get(f"/v1/datasets/{ds}").json()
+            if record["progress"]:
+                break
+            time.sleep(0.02)
+        assert record is not None
+        assert record["status"] == "validating"
+        assert record["progress"]["bytes_read"] > 0
+        assert record["progress"]["bytes_total"] > 0
+    finally:
+        release.set()

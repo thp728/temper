@@ -76,7 +76,13 @@ class PreviewRow(BaseModel):
 
 class DatasetReport(BaseModel):
     """What validation says about a dataset. The same dict
-    `temper_core.validation.Report.to_dict()` produces, published typed."""
+    `temper_core.validation.Report.to_dict()` produces, published typed.
+
+    The `error_count`/`warning_count` totals are the truth about how broken a
+    file is; the `errors`/`warnings` lists are capped at a hundred because the
+    report is held in memory and a file broken on every line must not become a
+    report proportional to the file. `*_suppressed` reconciles the two, so a
+    capped report says what it is not showing."""
 
     valid: bool
     row_count: int
@@ -86,24 +92,47 @@ class DatasetReport(BaseModel):
     errors: list[ValidationIssue]
     warnings: list[ValidationIssue]
     preview: list[PreviewRow]
+    error_count: int = 0
+    warning_count: int = 0
+    errors_suppressed: int = 0
+    warnings_suppressed: int = 0
 
 
-class DatasetUploaded(DatasetReport):
-    """The response to a successful upload: the report plus its identity."""
+class DatasetAccepted(BaseModel):
+    """The response to a successful upload: where validation is happening, not
+    the report -- the report lands on the dataset's record
+    (`GET /v1/datasets/{id}`) when validation finishes, so a large upload can
+    be watched rather than waited on."""
 
     id: str
     filename: str
+    status: str
+
+
+class ValidationProgress(BaseModel):
+    """Where validation has got to while a dataset is `validating`.
+
+    `bytes_read`/`bytes_total` let a page draw a proportion complete; `rows`
+    is how many rows have been read. Published so a large upload does not look
+    like a frozen page."""
+
+    bytes_read: int = 0
+    bytes_total: int | None = None
+    rows: int = 0
 
 
 class DatasetRecord(BaseModel):
     """A stored dataset with its report attached -- including a dataset that
-    failed validation, whose report is the reason it was kept."""
+    failed validation, whose report is the reason it was kept. While it is
+    `validating`, `progress` says how far validation has got and `report` is
+    absent."""
 
     id: str
     filename: str
     created_at: float
     status: str
     report: DatasetReport | None = None
+    progress: ValidationProgress | None = None
 
 
 class DatasetList(BaseModel):

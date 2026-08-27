@@ -17,6 +17,7 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
+from helpers import wait_validated
 
 from temper_control_plane.fake_provider import (
     MACHINE_ID,
@@ -120,6 +121,7 @@ class Harness:
             ds = self._client.post(
                 "/v1/datasets", files={"file": (path.name, f)}
             ).json()["id"]
+        wait_validated(self._client, ds)  # a job needs the finished report
 
         r = self._client.post(
             "/v1/jobs",
@@ -448,9 +450,10 @@ def test_the_write_grant_expires_within_the_job_duration_ceiling(
 def upload_raw(harness, data: bytes, name="d.jsonl") -> str:
     """Upload arbitrary bytes and return the dataset id, asserting validity."""
     r = harness._client.post("/v1/datasets", files={"file": (name, data)})
-    assert r.status_code == 201, r.text
+    assert r.status_code == 202, r.text
     body = r.json()
-    assert body["valid"], body["errors"]
+    record = wait_validated(harness._client, body["id"])
+    assert record["report"]["valid"], record["report"]["errors"]
     return body["id"]
 
 
@@ -874,6 +877,7 @@ def test_missing_credentials_fail_the_job_before_anything_is_provisioned(
         ds = harness._client.post(
             "/v1/datasets", files={"file": (path.name, f)}
         ).json()["id"]
+    wait_validated(harness._client, ds)  # a job needs the finished report
     job_id = harness._client.post("/v1/jobs", json={"dataset_id": ds}).json()[
         "id"
     ]

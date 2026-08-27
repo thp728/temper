@@ -73,6 +73,30 @@
         "title": "CatalogEntry",
         "type": "object"
       },
+      "DatasetAccepted": {
+        "description": "The response to a successful upload: where validation is happening, not\nthe report -- the report lands on the dataset's record\n(`GET /v1/datasets/{id}`) when validation finishes, so a large upload can\nbe watched rather than waited on.",
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "status"
+        ],
+        "title": "DatasetAccepted",
+        "type": "object"
+      },
       "DatasetList": {
         "description": "The response to listing datasets.",
         "properties": {
@@ -91,7 +115,7 @@
         "type": "object"
       },
       "DatasetRecord": {
-        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept.",
+        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent.",
         "properties": {
           "created_at": {
             "title": "Created At",
@@ -104,6 +128,16 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValidationProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "report": {
             "anyOf": [
@@ -130,7 +164,7 @@
         "type": "object"
       },
       "DatasetReport": {
-        "description": "What validation says about a dataset. The same dict\n`temper_core.validation.Report.to_dict()` produces, published typed.",
+        "description": "What validation says about a dataset. The same dict\n`temper_core.validation.Report.to_dict()` produces, published typed.\n\nThe `error_count`/`warning_count` totals are the truth about how broken a\nfile is; the `errors`/`warnings` lists are capped at a hundred because the\nreport is held in memory and a file broken on every line must not become a\nreport proportional to the file. `*_suppressed` reconciles the two, so a\ncapped report says what it is not showing.",
         "properties": {
           "enable_thinking": {
             "anyOf": [
@@ -143,12 +177,22 @@
             ],
             "title": "Enable Thinking"
           },
+          "error_count": {
+            "default": 0,
+            "title": "Error Count",
+            "type": "integer"
+          },
           "errors": {
             "items": {
               "$ref": "#/components/schemas/ValidationIssue"
             },
             "title": "Errors",
             "type": "array"
+          },
+          "errors_suppressed": {
+            "default": 0,
+            "title": "Errors Suppressed",
+            "type": "integer"
           },
           "preview": {
             "items": {
@@ -180,12 +224,22 @@
             "title": "Valid",
             "type": "boolean"
           },
+          "warning_count": {
+            "default": 0,
+            "title": "Warning Count",
+            "type": "integer"
+          },
           "warnings": {
             "items": {
               "$ref": "#/components/schemas/ValidationIssue"
             },
             "title": "Warnings",
             "type": "array"
+          },
+          "warnings_suppressed": {
+            "default": 0,
+            "title": "Warnings Suppressed",
+            "type": "integer"
           }
         },
         "required": [
@@ -197,86 +251,6 @@
           "preview"
         ],
         "title": "DatasetReport",
-        "type": "object"
-      },
-      "DatasetUploaded": {
-        "description": "The response to a successful upload: the report plus its identity.",
-        "properties": {
-          "enable_thinking": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enable Thinking"
-          },
-          "errors": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationIssue"
-            },
-            "title": "Errors",
-            "type": "array"
-          },
-          "filename": {
-            "title": "Filename",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "preview": {
-            "items": {
-              "$ref": "#/components/schemas/PreviewRow"
-            },
-            "title": "Preview",
-            "type": "array"
-          },
-          "row_count": {
-            "title": "Row Count",
-            "type": "integer"
-          },
-          "schema_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Schema Type"
-          },
-          "usable_rows": {
-            "title": "Usable Rows",
-            "type": "integer"
-          },
-          "valid": {
-            "title": "Valid",
-            "type": "boolean"
-          },
-          "warnings": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationIssue"
-            },
-            "title": "Warnings",
-            "type": "array"
-          }
-        },
-        "required": [
-          "valid",
-          "row_count",
-          "usable_rows",
-          "errors",
-          "warnings",
-          "preview",
-          "id",
-          "filename"
-        ],
-        "title": "DatasetUploaded",
         "type": "object"
       },
       "DecisionOverride": {
@@ -1197,6 +1171,34 @@
         ],
         "title": "ValidationIssue",
         "type": "object"
+      },
+      "ValidationProgress": {
+        "description": "Where validation has got to while a dataset is `validating`.\n\n`bytes_read`/`bytes_total` let a page draw a proportion complete; `rows`\nis how many rows have been read. Published so a large upload does not look\nlike a frozen page.",
+        "properties": {
+          "bytes_read": {
+            "default": 0,
+            "title": "Bytes Read",
+            "type": "integer"
+          },
+          "bytes_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes Total"
+          },
+          "rows": {
+            "default": 0,
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "title": "ValidationProgress",
+        "type": "object"
       }
     }
   },
@@ -1247,7 +1249,7 @@
         ]
       },
       "post": {
-        "description": "Upload and validate a JSONL dataset.\n\n**Deliberately a sync handler.** It was `async def`, which ran the\nCPU-bound validation on the event loop and froze every other request for\nas long as it ran -- measured at roughly 80 ms per megabyte, so a 200 MB\nupload blocked the whole server for ~16 seconds. Declared `def` instead,\nFastAPI dispatches it to its worker pool and a long validation blocks only\nits own request. Regression-tested by\n`test_upload_limits.test_large_upload_does_not_block_concurrent_requests`.\n\nStorage and validation live in `datasets.store_and_validate`, shared with\nthe browser's upload form, so the two surfaces cannot drift apart.\n\nDatasets over `config.MAX_DATASET_BYTES` are refused before validation --\nan unbounded upload fails as an out-of-memory crash rather than a typed\nerror, which is worse for the user and for the process.",
+        "description": "Upload, store and validate a JSONL dataset.\n\n**Returns before validation finishes.** The request refuses an oversized\nbody on the declared Content-Length before reading anything, stores the\nbytes as they arrive (so the control plane never holds the file whole),\nand returns the dataset's id while validation runs in the background.\nProgress and the report land on `GET /v1/datasets/{id}` -- that is what\nlets a large upload show a proportion-complete bar instead of a frozen\npage, and it is why this handler is deliberately a `def` worker-pool\nhandler (ADR-0006: CPU-bound work stays off the event loop).\n\nStorage and validation live in `datasets.ingest`, shared with the browser's\nupload form, so the two surfaces cannot drift apart.",
         "operationId": "upload_dataset_v1_datasets_post",
         "requestBody": {
           "content": {
@@ -1260,11 +1262,11 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatasetUploaded"
+                  "$ref": "#/components/schemas/DatasetAccepted"
                 }
               }
             },

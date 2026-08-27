@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS datasets (
     schema_type   TEXT,
     enable_thinking INTEGER,      -- detected, not chosen; NULL until validated
     status        TEXT NOT NULL,  -- validating | valid | invalid
-    report_json   TEXT            -- the full validation report, errors included
+    report_json   TEXT,           -- the full validation report, errors included
+    progress_json TEXT            -- validation progress while status is validating
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
@@ -158,6 +159,7 @@ ADDED_COLUMNS = (
     ("jobs", "storage_cost_usd_per_hour", "REAL"),
     ("jobs", "quote_json", "TEXT"),
     ("jobs", "overrides_json", "TEXT"),
+    ("datasets", "progress_json", "TEXT"),
 )
 
 
@@ -244,11 +246,23 @@ def create_dataset(
     return ds_id
 
 
+def delete_dataset(ds_id: str) -> None:
+    """Remove a dataset row whose object never made it into storage.
+
+    Used only by the ingest path to clean up after a mid-stream refusal --
+    an upload refused once its true size is known has no object behind it, so
+    nothing but the row is left to remove. Deleting a dataset that reached a
+    report is not this function's contract.
+    """
+    with connect() as c:
+        c.execute("DELETE FROM datasets WHERE id=?", (ds_id,))
+
+
 def finish_dataset(ds_id: str, report: dict) -> None:
     with connect() as c:
         c.execute(
             "UPDATE datasets SET status=?, row_count=?, schema_type=?, "
-            "enable_thinking=?, report_json=? WHERE id=?",
+            "enable_thinking=?, report_json=?, progress_json=NULL WHERE id=?",
             (
                 "valid" if report.get("valid") else "invalid",
                 report.get("row_count"),
@@ -262,10 +276,19 @@ def finish_dataset(ds_id: str, report: dict) -> None:
         )
 
 
+def set_dataset_progress(ds_id: str, progress: dict) -> None:
+    """Record where validation has got to, for the page watching it run."""
+    with connect() as c:
+        c.execute(
+            "UPDATE datasets SET progress_json=? WHERE id=?",
+            (json.dumps(progress), ds_id),
+        )
+
+
 def get_dataset(ds_id: str) -> dict | None:
     with connect() as c:
         r = c.execute("SELECT * FROM datasets WHERE id=?", (ds_id,)).fetchone()
-    return _row(r, {"report_json": "report"})
+    return _row(r, {"report_json": "report", "progress_json": "progress"})
 
 
 def require_dataset(ds_id: str) -> dict:
@@ -288,7 +311,12 @@ def list_datasets(limit: int = 50) -> list[dict]:
         rows = c.execute(
             "SELECT * FROM datasets ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
-    return [_present(_row(r, {"report_json": "report"})) for r in rows]
+    return [
+        _present(
+            _row(r, {"report_json": "report", "progress_json": "progress"})
+        )
+        for r in rows
+    ]
 
 
 # --------------------------------------------------------------------------

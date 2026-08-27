@@ -31,7 +31,7 @@ export default function UploadForm() {
     }
     setBusy(true);
     setRefusal(null);
-    setStatus("Validating your dataset…");
+    setStatus("Uploading your dataset…");
     try {
       const uploaded = await uploadDatasetV1DatasetsPost({ file });
       setStatus("Dataset received. Opening the report…");

@@ -115,6 +115,10 @@ def test_launching_with_the_key_yields_a_failed_job_record(
     )
     ds_id = r.json()["id"]
 
+    from helpers import wait_validated
+
+    wait_validated(client, ds_id)  # the job needs the finished report
+
     def start(job_id):
         from temper_control_plane import fake_models
 

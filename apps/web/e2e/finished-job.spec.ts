@@ -108,8 +108,19 @@ test("a failed job says why in plain language, and keeps its stable code", async
       },
     },
   });
-  expect(uploaded.status()).toBe(201);
+  // Validation runs in the background; the upload answers with the dataset's
+  // id while it works. A job needs the finished report, so wait for it.
+  expect(uploaded.status()).toBe(202);
   const datasetId = (await uploaded.json()).id;
+  await expect
+    .poll(
+      async () => {
+        const rec = await request.get(`${backend}/v1/datasets/${datasetId}`);
+        return (await rec.json()).status;
+      },
+      { timeout: 30_000 },
+    )
+    .not.toBe("validating");
 
   const launched = await request.post(`${backend}/v1/jobs`, {
     data: {
