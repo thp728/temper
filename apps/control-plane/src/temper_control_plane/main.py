@@ -250,29 +250,11 @@ def create_job(req: JobRequest):
         req.dataset_id,
         req.base_model,
         req.hyperparameters,
-        quote=_quote_for_launch(req),
+        quote=quote.quote_for_launch(
+            req.dataset_id, req.base_model, req.hyperparameters
+        ),
     )
     return db.get_job(job_id)
-
-
-def _quote_for_launch(req: JobRequest) -> dict | None:
-    """The quote for the configuration a launch commits to, or None.
-
-    Computed against the dataset and model the request names -- the same
-    inputs the plan screen priced -- so the frozen quote is the one the user
-    saw, unless availability changed in between (which is what expiry is
-    for). Refusals inside `jobs.usable_dataset` and `catalog.get` are the
-    caller's; this helper only prices, and a configuration that cannot be
-    priced produces no quote rather than a broken launch.
-    """
-    try:
-        ds = jobs.usable_dataset(req.dataset_id)
-    except HTTPException:
-        return None
-    m = catalog.get(req.base_model)
-    if m is None:
-        return None
-    return _quote_for(ds, m, req.hyperparameters)
 
 
 @app.get("/v1/jobs", tags=["jobs"], response_model=JobList)

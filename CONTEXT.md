@@ -107,3 +107,13 @@ _Avoid_: storage (for this), volume, drive
 **Event**:
 An appended record of one thing that happened during a job — a state change, a measurement, a line of output, or an error. Every state change appends one, because a job whose state moved with no event recorded is a job that cannot be explained.
 _Avoid_: message, log entry, update
+
+## Planning
+
+**Quote**:
+What a job is predicted to cost and how long it should take, shown before launch and frozen into the job spec when the job is created. A range, never a point — duration and cost are estimates from one measured run, so the quote warns and never blocks. Composed per phase (provisioning, readiness, image pull, model download, training, teardown) rather than as one blended rate, in the account's own currency as an integer in its smallest unit.
+_Avoid_: estimate (as a noun), prediction, cost model
+
+**Dataset version**:
+The identity of the stored dataset a quote was computed against — its id and creation time, pinning the immutable stored object. A quote references the dataset version and model revision it was computed against, so it cannot outlive its inputs.
+_Avoid_: snapshot, revision (for datasets)

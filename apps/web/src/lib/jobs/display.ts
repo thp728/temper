@@ -43,8 +43,9 @@ export function formatDurationRange(
 
 // A cost in a currency's smallest unit (paisa for INR, cent for USD), shown
 // with the currency it is denominated in. The minor unit is a published
-// number (the quote's `minor_unit`), never a formatting assumption: dividing
-// by anything else would misreport the figure.
+// number (the quote's `minor_unit`), never a formatting assumption: the
+// decimal places derive from it (100 → 2 places, 1000 → 3), so a currency
+// whose smallest unit is not a hundredth still prints correctly.
 export function formatMinorCost(
   minor: number | null | undefined,
   currency: string,
@@ -54,9 +55,13 @@ export function formatMinorCost(
     return "—";
   }
   const amount = minor / minorUnit;
+  // 100 → 2, 1000 → 3; anything else falls back to a sensible two places.
+  const decimals = Number.isInteger(Math.log10(minorUnit))
+    ? Math.log10(minorUnit)
+    : 2;
   const formatted = new Intl.NumberFormat("en-IN", {
-    minimumFractionDigits: minorUnit === 100 ? 2 : 0,
-    maximumFractionDigits: minorUnit === 100 ? 2 : 0,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(amount);
   return `${currency} ${formatted}`;
 }

@@ -71,6 +71,14 @@ describe("QuoteView", () => {
     }
   });
 
+  it("shows storage on its own line, not folded into the account currency", () => {
+    render(<QuoteView quote={quote()} />);
+    // ADR-0030: storage bills separately and is labelled USD, never silently
+    // converted into the account's currency.
+    expect(screen.getByText(/storage \(USD, separate line\)/)).toBeVisible();
+    expect(screen.getByText(/USD 0\.01 – USD 0\.04/)).toBeVisible();
+  });
+
   it("pins what it was computed against and when it expires", () => {
     render(<QuoteView quote={quote()} />);
     expect(screen.getByText(/Estimated against dataset/i)).toBeVisible();

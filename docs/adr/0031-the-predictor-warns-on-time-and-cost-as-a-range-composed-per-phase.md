@@ -59,7 +59,11 @@ readiness, image pull, model download, training and teardown have different
 durations, and the first four are largely independent of the dataset. The
 download phase uses the measured rate, so a large model's cold start is visible
 as a phase of its own rather than buried -- the difference between a rounding
-error and half the bill that a single blended rate exists to hide.
+error and half the bill that a single blended rate exists to hide. Spec 005's
+list also names evaluation; the product does not run it yet (that is spec 011's
+territory), and issue #72's own acceptance criteria enumerate the six phases
+that exist, so the quote prices those six. A phase the product cannot execute
+is not one it should pretend to price.
 
 **Currency travels with the amount, in the smallest unit.** The account bills
 in INR, read live from the provider on every quote (spike 5); costs are
@@ -69,7 +73,8 @@ An unknown currency is refused, not assumed, because misreporting every figure
 by a made-up factor is worse than asking. Storage remains a separate USD line,
 unconverted, per ADR-0030: no live per-account storage price exists to convert
 it against, and a labelled USD figure is more honest than a silently assumed
-conversion.
+conversion. It is rendered as its own row in the quote, because an invisible
+storage line is exactly the hidden cost the upfront quote exists to remove.
 
 **The quote is persisted, immutable, and expires.** It pins the dataset version
 (the immutable stored object, by `dataset_id` and `dataset_created_at`) and the

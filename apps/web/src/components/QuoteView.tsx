@@ -83,6 +83,27 @@ export default function QuoteView({ quote }: { quote: Quote }) {
           {quote.phases.map((phase) => (
             <PhaseRow key={phase.name} phase={phase} quote={quote} />
           ))}
+          {/* Storage bills on its own line, in USD, never folded into the
+              account-currency phases (ADR-0030): an invisible line is exactly
+              the hidden cost the quote exists to remove. */}
+          <div className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5 py-1 sm:grid-cols-[1fr_auto_auto]">
+            <dt className="text-sm text-muted-foreground">
+              storage (USD, separate line)
+            </dt>
+            <dd className="text-sm text-right text-muted-foreground sm:col-start-3 sm:min-w-28">
+              {formatMinorCost(
+                quote.storage_cost_usd_total_low_minor,
+                "USD",
+                100,
+              )}
+              {" – "}
+              {formatMinorCost(
+                quote.storage_cost_usd_total_high_minor,
+                "USD",
+                100,
+              )}
+            </dd>
+          </div>
         </dl>
         <p className="mt-2 text-xs text-muted-foreground">
           Estimated against dataset{" "}

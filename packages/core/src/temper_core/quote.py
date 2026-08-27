@@ -246,21 +246,25 @@ def estimate(
     else:
         training_low = training_high = None
 
-    phase_durations: list[tuple[str, float | None, float | None]] = [
-        ("provisioning", provisioning_low, provisioning_high),
-        ("readiness", readiness_low, readiness_high),
-        ("image_pull", image_pull_low, image_pull_high),
-        ("model_download", download_low, download_high),
-        ("training", training_low, training_high),
-        ("teardown", teardown_low, teardown_high),
-    ]
+    # Keyed by the same names `PHASES` orders, so a phase's duration is
+    # defined once (here) and its position once (in `PHASES`) -- never a
+    # second copy of either list to keep in step.
+    durations: dict[str, tuple[float | None, float | None]] = {
+        "provisioning": (provisioning_low, provisioning_high),
+        "readiness": (readiness_low, readiness_high),
+        "image_pull": (image_pull_low, image_pull_high),
+        "model_download": (download_low, download_high),
+        "training": (training_low, training_high),
+        "teardown": (teardown_low, teardown_high),
+    }
 
     phases: list[PhaseEstimate] = []
     total_low = 0.0
     total_high = 0.0
     cost_low = 0
     cost_high = 0
-    for name, low, high in phase_durations:
+    for name in PHASES:
+        low, high = durations[name]
         if low is None or high is None:
             phases.append(PhaseEstimate(name, None, None, None, None))
             continue

@@ -101,6 +101,31 @@ def for_config(
         return None
 
 
+def quote_for_launch(
+    dataset_id: str, base_model: str, hyperparameters: dict
+) -> dict[str, Any] | None:
+    """The quote for the configuration a launch commits to, or None.
+
+    Shared by the JSON API and the browser's launch form so the two creation
+    surfaces freeze the same thing (the repo's one-creation-path rule). It
+    resolves the dataset and model through the same seams the launch itself
+    applies, then prices them. Refusals inside `jobs.usable_dataset` and
+    `catalog.get` are the caller's; this helper only prices, and a
+    configuration that cannot be priced produces no quote rather than a
+    broken launch.
+    """
+    from . import jobs
+
+    try:
+        ds = jobs.usable_dataset(dataset_id)
+    except Exception:  # noqa: BLE001 - no quote, never a broken launch
+        return None
+    m = catalog.get(base_model)
+    if m is None:
+        return None
+    return for_config(ds, m, hyperparameters)
+
+
 def build_quote(
     dataset: dict,
     model: catalog.BaseModel,

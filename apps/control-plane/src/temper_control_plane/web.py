@@ -169,31 +169,13 @@ def create_job_form(
             dataset_id,
             base_model,
             {},
-            quote=_quote_for_form(dataset_id, base_model),
+            quote=quote.quote_for_launch(dataset_id, base_model, {}),
         )
     except HTTPException as exc:
         return _error_from_exception(
             request, exc, "The job could not be launched"
         )
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
-
-
-def _quote_for_form(dataset_id: str, base_model: str) -> dict | None:
-    """The quote the form freezes, or None when it cannot be priced.
-
-    The same helper the JSON API uses, so the two creation surfaces freeze the
-    same thing; like the API path, an unpricable configuration carries no
-    quote rather than refusing the launch (spec 005: the estimate never
-    blocks).
-    """
-    try:
-        ds = jobs.usable_dataset(dataset_id)
-    except HTTPException:
-        return None
-    m = catalog.get(base_model)
-    if m is None:
-        return None
-    return quote.for_config(ds, m, {})
 
 
 @router.get("/jobs", name="jobs_list_page")
