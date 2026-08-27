@@ -78,10 +78,20 @@ def _download() -> Path:
 
 def tokenizer() -> Any:
     """The active tokenizer: the seam's fake when one is set, else the real
-    one, loaded once and cached for the process."""
+    one, loaded once and cached for the process.
+
+    Honours `TEMPER_FAKE_PROVIDER` like the model-facts seam does
+    (`models.new_models`): the browser journeys boot the process with that
+    switch and must never reach Hugging Face, so counting defaults to the
+    deterministic fake there.
+    """
     global _loaded
     if TOKENIZER is not None:
         return TOKENIZER
+    if config.FAKE_PROVIDER:
+        from .fake_tokenizer import fake_tokenizer
+
+        return fake_tokenizer()
     if _loaded is None:
         from tokenizers import Tokenizer
 

@@ -44,6 +44,27 @@
   {% endif %}
 </section>
 
+<section aria-labelledby="tokens-h">
+  <h2 id="tokens-h">Tokens</h2>
+  {% if report.token_count is defined and report.token_count is not none %}
+  <dl>
+    <dt>Total tokens</dt><dd>{{ "{:,}".format(report.token_count) }}</dd>
+  </dl>
+  {% if report.token_distribution %}
+  <p>{{ report.token_distribution.truncated_rows }} row(s) longer than the
+  {{ report.token_distribution.sequence_len }}-token sequence length would be
+  truncated during training.</p>
+  {% endif %}
+  {% elif ds.token_count_status == "counting" %}
+  <p role="status">Counting tokens... this page will refresh with the count.</p>
+  <meta http-equiv="refresh" content="2">
+  {% elif ds.token_count_status == "failed" %}
+  <p>The token count could not be produced this time. You can still proceed.</p>
+  {% else %}
+  <p>Not counted.</p>
+  {% endif %}
+</section>
+
 {% if report.errors %}
 <section aria-labelledby="errors-h">
   <h2 id="errors-h">Errors ({{ report.errors|length }})</h2>

@@ -112,9 +112,8 @@ def no_real_tokenizer(monkeypatch):
     token counting in tests is exact, cheap and offline, mirroring how the
     model-facts and quote seams are replaced.
     """
-    from fake_tokenizer import fake_tokenizer
-
     from temper_control_plane import tokenize
+    from temper_control_plane.fake_tokenizer import fake_tokenizer
 
     monkeypatch.setattr(tokenize, "TOKENIZER", fake_tokenizer())
 
