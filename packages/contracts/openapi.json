@@ -580,6 +580,16 @@
             ],
             "title": "Price Per Hour"
           },
+          "quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quote"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "result": {
             "anyOf": [
               {
@@ -660,7 +670,7 @@
         "type": "object"
       },
       "JobSpecPreview": {
-        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.",
+        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\nDeliberately quote-free: the plan page renders immediately and fetches the\nquote for the selected model afterwards, because an estimate never blocks\nthe surface it appears on (spec 005).",
         "properties": {
           "dataset": {
             "$ref": "#/components/schemas/DatasetRecord"
@@ -824,6 +834,162 @@
           }
         },
         "title": "PreviewTurn",
+        "type": "object"
+      },
+      "Quote": {
+        "description": "What a job is predicted to cost and how long it should take.\n\nAn estimate everywhere it appears (`is_estimate` and the interface both\nsay so), composed per phase rather than as one blended rate, with the cost\nin the account's own currency as an integer in its smallest unit\n(`cost_*_minor`) with the currency code alongside. It pins what it was\ncomputed against -- `dataset_id`/`dataset_created_at` and `base_revision`\n-- and `expires_at` says how long the prices and availability it reflects\nare honoured for.\n\n`storage_cost_usd_*` is the separate storage line, deliberately in USD\nrather than the account's currency: ADR-0030 established that no live\nper-account storage price exists to convert it against, and a labelled\nUSD figure is more honest than a silently assumed conversion.",
+        "properties": {
+          "base_revision": {
+            "title": "Base Revision",
+            "type": "string"
+          },
+          "cost_high_minor": {
+            "title": "Cost High Minor",
+            "type": "integer"
+          },
+          "cost_low_minor": {
+            "title": "Cost Low Minor",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "dataset_created_at": {
+            "title": "Dataset Created At",
+            "type": "number"
+          },
+          "dataset_id": {
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "duration_high_s": {
+            "title": "Duration High S",
+            "type": "number"
+          },
+          "duration_low_s": {
+            "title": "Duration Low S",
+            "type": "number"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          },
+          "is_estimate": {
+            "default": true,
+            "title": "Is Estimate",
+            "type": "boolean"
+          },
+          "minor_unit": {
+            "title": "Minor Unit",
+            "type": "integer"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/QuotePhase"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "storage_cost_usd_per_hour": {
+            "title": "Storage Cost Usd Per Hour",
+            "type": "number"
+          },
+          "storage_cost_usd_total_high_minor": {
+            "title": "Storage Cost Usd Total High Minor",
+            "type": "integer"
+          },
+          "storage_cost_usd_total_low_minor": {
+            "title": "Storage Cost Usd Total Low Minor",
+            "type": "integer"
+          },
+          "token_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Count"
+          }
+        },
+        "required": [
+          "currency",
+          "minor_unit",
+          "dataset_id",
+          "dataset_created_at",
+          "base_revision",
+          "expires_at",
+          "phases",
+          "duration_low_s",
+          "duration_high_s",
+          "cost_low_minor",
+          "cost_high_minor",
+          "storage_cost_usd_per_hour",
+          "storage_cost_usd_total_low_minor",
+          "storage_cost_usd_total_high_minor"
+        ],
+        "title": "Quote",
+        "type": "object"
+      },
+      "QuotePhase": {
+        "description": "One phase's predicted duration and GPU cost, both ranges.\n\n`duration_low_s`/`duration_high_s` are never equal: a quote shows a range,\nnever a point, because the throughput figures behind it are the softest\nnumbers in the model. A phase that cannot be estimated (training under a\n`max_steps` cap, where run length is bounded by steps rather than data)\nreports None rather than a guessed number.",
+        "properties": {
+          "cost_high_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost High Minor"
+          },
+          "cost_low_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Low Minor"
+          },
+          "duration_high_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration High S"
+          },
+          "duration_low_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Low S"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "QuotePhase",
         "type": "object"
       },
       "ValidationError": {
@@ -1048,7 +1214,7 @@
         ]
       },
       "post": {
-        "description": "Launch a fine-tuning job.\n\nThe whole creation path lives in `api.jobs.create`, shared with the\nbrowser's launch form so the two surfaces cannot drift apart. The\nhyperparameters are frozen into the job row there: a run's spec is\nimmutable once launched, so a later change to a default cannot\nretroactively alter what a finished run claims.",
+        "description": "Launch a fine-tuning job.\n\nThe whole creation path lives in `api.jobs.create`, shared with the\nbrowser's launch form so the two surfaces cannot drift apart. The\nhyperparameters are frozen into the job row there: a run's spec is\nimmutable once launched, so a later change to a default cannot\nretroactively alter what a finished run claims.\n\nThe quote the launch was shown is computed here and frozen onto the job\nwith the rest of the spec. It never blocks: if the provider is unreachable\nor nothing fits, the job still launches -- an estimate warns, it does not\nrefuse (spec 005).",
         "operationId": "create_job_v1_jobs_post",
         "requestBody": {
           "content": {
@@ -1090,7 +1256,7 @@
     },
     "/v1/jobs/spec": {
       "get": {
-        "description": "What a launch would train with, before anything is launched.\n\nConsumed by the shell's model-choice screen (#38), which must show the\ndataset, the effective specification and any feasibility warning while\nthe user can still act on them. Declared **before** `/v1/jobs/{job_id}`:\nroutes match in declaration order, and \"spec\" would otherwise be\ncaptured as a job id.\n\nRefusals come through `jobs.usable_dataset`, the same path the launch\nitself applies -- a dataset that cannot start a job is refused here with\nits stable code rather than at the moment of commitment.",
+        "description": "What a launch would train with, before anything is launched.\n\nConsumed by the shell's model-choice screen (#38), which must show the\ndataset, the effective specification and any feasibility warning while\nthe user can still act on them. Declared **before** `/v1/jobs/{job_id}`:\nroutes match in declaration order, and \"spec\" would otherwise be\ncaptured as a job id.\n\nDeliberately quote-free: the quote is fetched separately\n(`GET /v1/quotes`) once a model is selected, so this page -- which\nrenders before anything is chosen -- never waits on live provider data.\nAn estimate never blocks the surface it appears on (spec 005).\n\nRefusals come through `jobs.usable_dataset`, the same path the launch\nitself applies -- a dataset that cannot start a job is refused here with\nits stable code rather than at the moment of commitment.",
         "operationId": "get_job_spec_preview_v1_jobs_spec_get",
         "parameters": [
           {
@@ -1326,6 +1492,67 @@
         "summary": "List Models",
         "tags": [
           "catalog"
+        ]
+      }
+    },
+    "/v1/quotes": {
+      "get": {
+        "description": "The quote for one (dataset, model) configuration, or null.\n\nFetched by the plan screen once a model is selected, so the page renders\nbefore the estimate does and the estimate never blocks it. A\nconfiguration that cannot be priced (provider unreachable, nothing fits)\nis null rather than an error -- the estimate warns, it does not refuse\n(spec 005).",
+        "operationId": "get_quote_v1_quotes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "base_model",
+            "required": false,
+            "schema": {
+              "default": "qwen3-4b",
+              "title": "Base Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Quote"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Quote V1 Quotes Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Quote",
+        "tags": [
+          "jobs"
         ]
       }
     }

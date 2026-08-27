@@ -22,7 +22,14 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from temper_control_plane import config, datasets, db, jobs, orchestrator
+from temper_control_plane import (
+    config,
+    datasets,
+    db,
+    jobs,
+    orchestrator,
+    quote,
+)
 from temper_core import catalog, feasibility, hyperparams
 
 router = APIRouter(include_in_schema=False)
@@ -158,7 +165,12 @@ def create_job_form(
     where the run is watched and, later, collected.
     """
     try:
-        job_id = jobs.create(dataset_id, base_model, {})
+        job_id = jobs.create(
+            dataset_id,
+            base_model,
+            {},
+            quote=quote.quote_for_launch(dataset_id, base_model, {}),
+        )
     except HTTPException as exc:
         return _error_from_exception(
             request, exc, "The job could not be launched"

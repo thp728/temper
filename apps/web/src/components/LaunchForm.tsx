@@ -1,24 +1,31 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import QuoteView from "@/components/QuoteView";
 import {
   createJobV1JobsPost,
+  getQuoteV1QuotesGet,
   type JobSpecPreview,
   type ModelCatalog,
+  type Quote,
 } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
 // The launch step of the journey, and the point of commitment: choose a base
 // model from the catalog, read everything the job will train with -- the
-// effective specification and any feasibility warning arrive beside it --
-// and start it with one action. The specification shown here is what
-// POST /v1/jobs freezes; the screen launches with no overrides of its own,
-// so the preview and the job cannot disagree.
+// effective specification, any feasibility warning and the duration/cost
+// quote -- and start it with one action. The specification shown here is what
+// POST /v1/jobs freezes; the screen launches with no overrides of its own, so
+// the preview and the job cannot disagree.
+//
+// The quote is fetched here, after the page has rendered, for whichever model
+// is selected: an estimate never blocks the surface it appears on (spec 005),
+// so the plan draws immediately and the numbers fill in when they arrive.
 
 function specEntries(preview: JobSpecPreview): [string, string][] {
   return Object.entries(preview.hyperparameters ?? {}).map(([k, v]) => [
@@ -35,9 +42,46 @@ export default function LaunchForm({
   preview: JobSpecPreview;
 }) {
   const router = useRouter();
+  const [selected, setSelected] = useState(catalog.default);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [refusal, setRefusal] = useState<ApiError | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  // Starts loading: the effect fetches the default model's quote on mount.
+  const [quoteLoading, setQuoteLoading] = useState(true);
+
+  // The quote depends on which model is selected (a bigger model downloads
+  // more and may need different hardware), so it is re-fetched on every
+  // change -- server-computed, never guessed at on the client. Only the fetch
+  // lives in the effect; the reset happens in the change handler, because a
+  // synchronous reset here would cascade renders for no user-visible reason.
+  useEffect(() => {
+    let cancelled = false;
+    getQuoteV1QuotesGet({
+      dataset_id: preview.dataset.id,
+      base_model: selected,
+    })
+      .then((q) => {
+        if (!cancelled) setQuote(q);
+      })
+      .catch(() => {
+        // An estimate that cannot be fetched is shown as absent, never as an
+        // error that blocks the page.
+        if (!cancelled) setQuote(null);
+      })
+      .finally(() => {
+        if (!cancelled) setQuoteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, preview.dataset.id]);
+
+  function onModelChange(modelId: string) {
+    setSelected(modelId);
+    setQuote(null);
+    setQuoteLoading(true);
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -90,6 +134,7 @@ export default function LaunchForm({
                 name="base_model"
                 value={m.id}
                 defaultChecked={m.id === catalog.default}
+                onChange={() => onModelChange(m.id)}
                 className="mt-1 size-4"
               />
               {/* Label/value pairs stay a real description list: that
@@ -160,6 +205,23 @@ export default function LaunchForm({
         </dl>
       </section>
 
+      {/* The quote for the selected model: a duration range and a per-phase
+          cost breakdown, both labelled an estimate. It loads after the page
+          renders and never blocks anything -- the estimate warns, it does
+          not refuse (spec 005). */}
+      {quote ? (
+        <QuoteView quote={quote} />
+      ) : (
+        <p
+          aria-live="polite"
+          className="text-sm text-muted-foreground"
+        >
+          {quoteLoading
+            ? "Loading the cost and time estimate…"
+            : "A cost and time estimate could not be computed for this model right now. Launching will still work; you just will not see the numbers first."}
+        </p>
+      )}
+
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={busy} size="lg">
           {busy ? "Launching…" : "Launch job"}
@@ -183,3 +245,4 @@ export default function LaunchForm({
     </form>
   );
 }
+

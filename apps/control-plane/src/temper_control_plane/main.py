@@ -30,6 +30,7 @@ from temper_control_plane import (
     jobs,
     models,
     orchestrator,
+    quote,
     storage,
 )
 from temper_control_plane.contracts_models import (
@@ -41,6 +42,7 @@ from temper_control_plane.contracts_models import (
     JobRecord,
     JobSpecPreview,
     ModelCatalog,
+    Quote,
 )
 from temper_control_plane.storage import ObjectNotFound
 from temper_control_plane.web import router as web_router
@@ -53,6 +55,15 @@ from temper_core import catalog, feasibility, gpus, hyperparams, memory
 # of `conftest.no_real_provider` -- so the suite never depends on network
 # reachability.
 MODELS: models.Models = models.new_models()
+
+
+def _quote_for(
+    ds: dict, m: catalog.BaseModel, hyperparameters: dict
+) -> dict | None:
+    """The quote for one (dataset, model, hyperparameters) configuration, or
+    None when it cannot be priced. Never raises: the estimate warns, it does
+    not block (spec 005)."""
+    return quote.for_config(ds, m, hyperparameters)
 
 
 def _catalog_entry(m: catalog.BaseModel) -> dict:
@@ -230,8 +241,20 @@ def create_job(req: JobRequest):
     hyperparameters are frozen into the job row there: a run's spec is
     immutable once launched, so a later change to a default cannot
     retroactively alter what a finished run claims.
+
+    The quote the launch was shown is computed here and frozen onto the job
+    with the rest of the spec. It never blocks: if the provider is unreachable
+    or nothing fits, the job still launches -- an estimate warns, it does not
+    refuse (spec 005).
     """
-    job_id = jobs.create(req.dataset_id, req.base_model, req.hyperparameters)
+    job_id = jobs.create(
+        req.dataset_id,
+        req.base_model,
+        req.hyperparameters,
+        quote=quote.quote_for_launch(
+            req.dataset_id, req.base_model, req.hyperparameters
+        ),
+    )
     return db.get_job(job_id)
 
 
@@ -250,6 +273,11 @@ def get_job_spec_preview(dataset_id: str):
     routes match in declaration order, and "spec" would otherwise be
     captured as a job id.
 
+    Deliberately quote-free: the quote is fetched separately
+    (`GET /v1/quotes`) once a model is selected, so this page -- which
+    renders before anything is chosen -- never waits on live provider data.
+    An estimate never blocks the surface it appears on (spec 005).
+
     Refusals come through `jobs.usable_dataset`, the same path the launch
     itself applies -- a dataset that cannot start a job is refused here with
     its stable code rather than at the moment of commitment.
@@ -265,6 +293,30 @@ def get_job_spec_preview(dataset_id: str):
         "hyperparameters": hyperparams.effective({}),
         "warning": warn,
     }
+
+
+@app.get("/v1/quotes", tags=["jobs"], response_model=Quote | None)
+def get_quote(dataset_id: str, base_model: str = catalog.DEFAULT_MODEL):
+    """The quote for one (dataset, model) configuration, or null.
+
+    Fetched by the plan screen once a model is selected, so the page renders
+    before the estimate does and the estimate never blocks it. A
+    configuration that cannot be priced (provider unreachable, nothing fits)
+    is null rather than an error -- the estimate warns, it does not refuse
+    (spec 005).
+    """
+    ds = jobs.usable_dataset(dataset_id)
+    m = catalog.get(base_model)
+    if m is None:
+        raise HTTPException(
+            400,
+            {
+                "code": "unknown_model",
+                "message": f"'{base_model}' is not in the catalog.",
+                "available": [m["id"] for m in catalog.listing()],
+            },
+        )
+    return _quote_for(ds, m, {})
 
 
 @app.get("/v1/jobs/{job_id}", tags=["jobs"], response_model=JobRecord)

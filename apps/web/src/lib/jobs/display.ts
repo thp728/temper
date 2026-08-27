@@ -28,6 +28,44 @@ export function shortRevision(revision: string | null | undefined): string {
   return (revision ?? "").slice(0, 12);
 }
 
+// A duration range as "low–high": never a point, because the throughput the
+// quote rests on is the softest number in the model. Both ends use the same
+// `formatDuration` so a reader sees comparable units.
+export function formatDurationRange(
+  low: number | null | undefined,
+  high: number | null | undefined,
+): string {
+  if (low == null || high == null) {
+    return "not estimable";
+  }
+  return `${formatDuration(low)}–${formatDuration(high)}`;
+}
+
+// A cost in a currency's smallest unit (paisa for INR, cent for USD), shown
+// with the currency it is denominated in. The minor unit is a published
+// number (the quote's `minor_unit`), never a formatting assumption: the
+// decimal places derive from it (100 → 2 places, 1000 → 3), so a currency
+// whose smallest unit is not a hundredth still prints correctly.
+export function formatMinorCost(
+  minor: number | null | undefined,
+  currency: string,
+  minorUnit: number,
+): string {
+  if (minor == null) {
+    return "—";
+  }
+  const amount = minor / minorUnit;
+  // 100 → 2, 1000 → 3; anything else falls back to a sensible two places.
+  const decimals = Number.isInteger(Math.log10(minorUnit))
+    ? Math.log10(minorUnit)
+    : 2;
+  const formatted = new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(amount);
+  return `${currency} ${formatted}`;
+}
+
 // The statuses at which a record stops changing -- `db.TERMINAL_STATES` seen
 // from the browser, where no database import can reach. One copy, so a
 // status added server-side surfaces here as exactly one edit.

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LaunchForm from "@/components/LaunchForm";
@@ -6,6 +6,7 @@ import type {
   CatalogEntry,
   JobSpecPreview,
   ModelCatalog,
+  Quote,
 } from "@/lib/api/generated/client";
 
 const push = vi.hoisted(() => vi.fn());
@@ -18,9 +19,11 @@ vi.mock("next/navigation", () => ({
 // sees, with the transport mocked out. The real client is exercised by the
 // Playwright journeys.
 const createJobMock = vi.hoisted(() => vi.fn());
+const getQuoteMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/generated/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/generated/client")>()),
   createJobV1JobsPost: createJobMock,
+  getQuoteV1QuotesGet: getQuoteMock,
 }));
 
 import { ApiError } from "@/lib/api/mutator";
@@ -80,6 +83,71 @@ const catalog: ModelCatalog = {
   default: "qwen3-4b",
 };
 
+function quote(overrides: Partial<Quote> = {}): Quote {
+  return {
+    currency: "INR",
+    minor_unit: 100,
+    dataset_id: "ds_abc123",
+    dataset_created_at: 1756160400,
+    base_revision: "1cfa9a7208912126459214e8b04321603b3df60c",
+    token_count: 12345,
+    expires_at: 1756160400 + 86400,
+    phases: [
+      {
+        name: "provisioning",
+        duration_low_s: 13,
+        duration_high_s: 17,
+        cost_low_minor: 15,
+        cost_high_minor: 20,
+      },
+      {
+        name: "readiness",
+        duration_low_s: 40,
+        duration_high_s: 68,
+        cost_low_minor: 46,
+        cost_high_minor: 78,
+      },
+      {
+        name: "image_pull",
+        duration_low_s: 87,
+        duration_high_s: 183,
+        cost_low_minor: 100,
+        cost_high_minor: 210,
+      },
+      {
+        name: "model_download",
+        duration_low_s: 13,
+        duration_high_s: 51,
+        cost_low_minor: 15,
+        cost_high_minor: 59,
+      },
+      {
+        name: "training",
+        duration_low_s: 80,
+        duration_high_s: 800,
+        cost_low_minor: 92,
+        cost_high_minor: 918,
+      },
+      {
+        name: "teardown",
+        duration_low_s: 5,
+        duration_high_s: 20,
+        cost_low_minor: 6,
+        cost_high_minor: 23,
+      },
+    ],
+    duration_low_s: 238,
+    duration_high_s: 1139,
+    cost_low_minor: 274,
+    cost_high_minor: 1308,
+    storage_cost_usd_per_hour: 0.0137,
+    storage_cost_usd_total_low_minor: 1,
+    storage_cost_usd_total_high_minor: 4,
+    is_estimate: true,
+    ...overrides,
+  };
+}
+
 function preview(overrides: Partial<JobSpecPreview> = {}): JobSpecPreview {
   return {
     dataset: {
@@ -117,6 +185,8 @@ function optionCard(repo: string): HTMLElement {
 
 beforeEach(() => {
   createJobMock.mockReset();
+  getQuoteMock.mockReset();
+  getQuoteMock.mockResolvedValue(null);
   push.mockReset();
 });
 
@@ -235,5 +305,80 @@ describe("LaunchForm", () => {
       screen.getByRole("button", { name: /launching/i }),
     ).toBeDisabled();
     resolve({});
+  });
+
+  it("fetches and shows the selected model's quote: a duration range, not a point", async () => {
+    getQuoteMock.mockResolvedValue(quote());
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    // The default model's quote is fetched after the page renders, with its
+    // ranges.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    expect(getQuoteMock).toHaveBeenCalledWith({
+      dataset_id: "ds_abc123",
+      base_model: "qwen3-4b",
+    });
+    expect(screen.getByText(/never blocks a launch/i)).toBeVisible();
+    expect(screen.getByText(/3m 58s–18m 59s/)).toBeVisible();
+    expect(screen.getByText(/INR 2\.74 – INR 13\.08/)).toBeVisible();
+  });
+
+  it("shows the per-phase breakdown of cost and duration", async () => {
+    getQuoteMock.mockResolvedValue(quote());
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    for (const phase of ["provisioning", "readiness", "image_pull", "model_download", "training", "teardown"]) {
+      expect(screen.getByText(phase)).toBeVisible();
+    }
+    expect(screen.getByText(/1m 27s–3m 03s/)).toBeVisible(); // image pull
+  });
+
+  it("re-fetches the quote when the selected model changes", async () => {
+    getQuoteMock.mockResolvedValue(quote());
+    const user = userEvent.setup();
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    getQuoteMock.mockResolvedValue(
+      quote({
+        duration_low_s: 400,
+        duration_high_s: 2000,
+        cost_low_minor: 460,
+        cost_high_minor: 2300,
+      }),
+    );
+    await user.click(screen.getByRole("radio", { name: /Qwen\/Qwen3-8B/ }));
+    await waitFor(() =>
+      expect(getQuoteMock).toHaveBeenLastCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-8b",
+      }),
+    );
+    expect(screen.getByText(/6m 40s–33m 20s/)).toBeVisible();
+    expect(screen.getByText(/INR 4\.60 – INR 23\.00/)).toBeVisible();
+  });
+
+  it("still offers the launch when a quote is absent", async () => {
+    getQuoteMock.mockResolvedValue(null);
+    const user = userEvent.setup();
+    render(<LaunchForm catalog={catalog} preview={preview()} />);
+    // The estimate is shown as unavailable, and the launch is still offered:
+    // an estimate warns, it never blocks (spec 005).
+    await waitFor(() =>
+      expect(screen.getByText(/could not be computed/i)).toBeVisible(),
+    );
+    createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).toHaveBeenCalled();
   });
 });

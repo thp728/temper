@@ -101,3 +101,31 @@ def no_real_models(monkeypatch):
     from temper_control_plane import fake_models, main
 
     monkeypatch.setattr(main, "MODELS", fake_models.catalog_models())
+
+
+@pytest.fixture(autouse=True)
+def no_real_quote_provider(monkeypatch):
+    """Quotes are priced against a fake provider and fake model facts, like
+    everything else that could reach the account or the network.
+
+    The plan screen computes a quote per catalog model on every load, so any
+    test that renders it would construct a provider; the suite-wide refusal in
+    `no_real_provider` is exactly what should catch a real one. Pointing the
+    quote seams at the fakes keeps every quote deterministic (L4 at 41.31 INR,
+    the spike-5 figures, and the catalog's real facts) without touching the
+    account or Hugging Face.
+    """
+    from temper_control_plane import (
+        fake_models,
+        fake_provider,
+    )
+    from temper_control_plane import (
+        quote as quote_mod,
+    )
+
+    monkeypatch.setattr(
+        quote_mod, "QUOTE_PROVIDER", fake_provider.FakeProvider()
+    )
+    monkeypatch.setattr(
+        quote_mod, "QUOTE_MODELS", fake_models.catalog_models()
+    )

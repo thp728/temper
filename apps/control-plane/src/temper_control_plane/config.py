@@ -130,6 +130,14 @@ STALL_TIMEOUT_S = _seconds("TEMPER_STALL_TIMEOUT_S", 15 * 60)
 # catalog grows is this one, and it is configuration for that reason.
 MAX_JOB_DURATION_S = _seconds("TEMPER_MAX_JOB_DURATION_S", 24 * 60 * 60)
 
+# How long a quote's prices and availability are honoured for. A quote is an
+# estimate against hardware that changes; "a price I was shown yesterday is not
+# silently honoured against hardware that has changed" (spec 005) is the reason
+# it expires at all, and 24h is the boundary the sentence implies. Configurable
+# because the right value depends on how often this provider's availability and
+# pricing move, which is not something this repo has measured.
+QUOTE_TTL_S = _seconds("TEMPER_QUOTE_TTL_S", 24 * 60 * 60)
+
 
 def _megabytes(name: str, default: float) -> float:
     """A size in megabytes from the environment, or its default.

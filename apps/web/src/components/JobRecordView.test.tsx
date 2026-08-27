@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import JobRecordView from "@/components/JobRecordView";
-import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
+import type { JobEvent, JobRecord, Quote } from "@/lib/api/generated/client";
 
 // The assertions are what a user reads on a job's record: how it ended, what
 // it produced, why it failed, and that a cancellation is a decision rather
@@ -36,6 +36,35 @@ function event(overrides: Partial<JobEvent> = {}): JobEvent {
     message: "queued",
     data: null,
     ...overrides,
+  };
+}
+
+function quote(): Quote {
+  return {
+    currency: "INR",
+    minor_unit: 100,
+    dataset_id: "ds_xyz789",
+    dataset_created_at: new Date(2025, 7, 26, 1, 0, 0).getTime() / 1000,
+    base_revision: "a".repeat(40),
+    token_count: null,
+    expires_at: new Date(2025, 7, 27, 1, 0, 0).getTime() / 1000,
+    phases: [
+      {
+        name: "training",
+        duration_low_s: 80,
+        duration_high_s: 800,
+        cost_low_minor: 92,
+        cost_high_minor: 918,
+      },
+    ],
+    duration_low_s: 238,
+    duration_high_s: 1139,
+    cost_low_minor: 274,
+    cost_high_minor: 1308,
+    storage_cost_usd_per_hour: 0.0137,
+    storage_cost_usd_total_low_minor: 1,
+    storage_cost_usd_total_high_minor: 4,
+    is_estimate: true,
   };
 }
 
@@ -138,6 +167,17 @@ describe("JobRecordView", () => {
     expect(screen.queryByText(/^failed/i)).toBeNull();
     expect(screen.queryByText("gpu_stalled")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the quote the job launched under, still on the finished record", () => {
+    // The quote is frozen into the job spec at launch and never updated; a
+    // finished job still says what it was predicted to cost (issue #72).
+    render(<JobRecordView job={job({ quote: quote() })} events={[]} />);
+    expect(
+      screen.getByRole("heading", { name: "Cost and time estimate" }),
+    ).toBeVisible();
+    expect(screen.getByText(/3m 58s–18m 59s/)).toBeVisible();
+    expect(screen.getByText(/INR 2\.74 – INR 13\.08/)).toBeVisible();
   });
 
   it("keeps the full history of a finished job readable", () => {

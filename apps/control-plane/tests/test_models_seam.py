@@ -18,6 +18,17 @@ from temper_control_plane import models
 from temper_control_plane.fake_models import CATALOG_MODELS, FakeModels
 from temper_core.models import ModelFacts
 
+
+@pytest.fixture(autouse=True)
+def clear_facts_cache():
+    """The resolver caches facts per (repo, revision); these tests resolve the
+    same reference against different mocked responses, so the cache must not
+    leak between them."""
+    models._resolve_facts.cache_clear()
+    yield
+    models._resolve_facts.cache_clear()
+
+
 # --- FakeModels ---------------------------------------------------------------
 
 
