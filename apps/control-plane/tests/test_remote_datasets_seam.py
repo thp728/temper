@@ -11,6 +11,7 @@ proving the resolution and the paginated stream are correct.
 from __future__ import annotations
 
 import json
+import urllib.error
 from unittest.mock import Mock
 
 import pytest
@@ -40,7 +41,7 @@ def test_fake_refuses_an_unknown_reference_with_the_code_and_reason():
     fake = FakeRemoteDatasets({})
     with pytest.raises(RemoteDatasetError) as exc:
         fake.resolve("org/ghost")
-    assert exc.value.code == "dataset_not_found"
+    assert exc.value.code == "repo_not_found"
     assert "org/ghost" in exc.value.message
 
 
@@ -135,7 +136,7 @@ def test_resolve_refuses_a_repository_that_cannot_be_fetched(monkeypatch):
 
     with pytest.raises(RemoteDatasetError) as exc:
         remote_datasets.HuggingFaceDatasets().resolve("org/ghost")
-    assert exc.value.code == "dataset_not_found"
+    assert exc.value.code == "repo_not_found"
     assert "does not exist" in exc.value.message
 
 
@@ -270,3 +271,45 @@ def test_stream_surfaces_a_mid_stream_fetch_failure(monkeypatch):
         list(it)  # ...and the failure on the next page is a coded reason
     assert exc.value.code == "fetch_failed"
     assert "rate limited" in exc.value.message
+
+
+def test_an_unparseable_fetch_failure_is_a_coded_reason(monkeypatch):
+    """A fetch can fail at any point -- a dropped connection, a body that is
+    not JSON -- and the seam's contract is that every failure is a coded
+    reason, never an unhandled exception mid-import."""
+
+    def opener(url, timeout=10):
+        raise urllib.error.URLError("connection reset by peer")
+
+    monkeypatch.setattr(remote_datasets.urllib.request, "urlopen", opener)
+
+    with pytest.raises(RemoteDatasetError) as exc:
+        remote_datasets.HuggingFaceDatasets().resolve("org/repo")
+    assert exc.value.code == "fetch_failed"
+    assert "connection reset" in exc.value.message
+
+
+def test_a_stream_that_resolves_to_no_rows_is_refused_with_that_reason(
+    monkeypatch,
+):
+    """The `/size` refusal in resolve is the fast path; this is the ground
+    truth. When the size endpoint reported nothing and the stream carries no
+    rows, the source still refuses with the same `split_empty` reason."""
+
+    def opener(url, timeout=10):
+        body = {"rows": []}
+        resp = Mock()
+        resp.read.return_value = json.dumps(body).encode()
+        resp.__enter__ = Mock(return_value=resp)
+        resp.__exit__ = Mock(return_value=False)
+        return resp
+
+    monkeypatch.setattr(remote_datasets.urllib.request, "urlopen", opener)
+
+    source = remote_datasets._HuggingFaceSource(
+        "org/repo", "default", "train", None, None
+    )
+    with pytest.raises(RemoteDatasetError) as exc:
+        list(source.stream())
+    assert exc.value.code == "split_empty"
+    assert "no rows" in exc.value.message

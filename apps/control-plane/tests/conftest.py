@@ -118,7 +118,7 @@ def no_real_remote_datasets(monkeypatch):
     Like `no_real_models`, fetching a public dataset costs nothing and risks
     no billing account, so this replaces only the one seam application code
     calls through -- `remote_datasets.RESOLVER` -- with an empty fake that
-    refuses every reference as `dataset_not_found`. A test that wants to
+    refuses every reference as `repo_not_found`. A test that wants to
     import something seeds the fake with its own references; a test that
     forgets fails loudly instead of silently reaching the network.
     """

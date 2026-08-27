@@ -49,16 +49,18 @@ Concretely:
    (the control-plane equivalent of `storage.STORE`) takes `(repo, config,
    split)` and either returns a fetchable source or raises `RemoteDatasetError`
    with a stable code and a reason. A repository that cannot be fetched is
-   `dataset_not_found`; a repository with several configurations whose user
+   `repo_not_found`; a repository with several configurations whose user
    named none is `config_required` (guessing which subset a user meant is the
    shortcut this feature exists to avoid); a named configuration or split that
    does not exist is `config_not_found` / `split_not_found`; and a split that
    resolves to no rows is `split_empty` — **a split resolving to nothing is
-   refused with that reason, before anything is stored.** The import endpoint
-   turns these into coded 400s. The one way a fetch can still die is
-   part-way through streaming (a rate limit, a vanished server), and that
-   surfaces as a coded `fetch_failed` 400 with the half-written import cleaned
-   up — never a job that fails with nobody told why.
+   refused with that reason, before anything is stored.** The `/size` refusal
+   is the fast path; the source also refuses `split_empty` if a stream turns
+   out to carry no rows, so the criterion holds even when the server reports
+   no size. The import endpoint turns these into coded 400s. Every other way a
+   fetch can die — a rate limit, a vanished server, a dropped connection, a
+   body that is not JSON — is a coded `fetch_failed` 400 with the half-written
+   import cleaned up, never an unhandled error mid-import.
 2. **Rows are streamed, never materialised.** The Hugging Face datasets-server
    `/rows` endpoint serves one bounded page (100 rows, the server's own cap)
    at a time; the source serialises each page through `jsonl_chunks` into
@@ -149,10 +151,13 @@ handling and file-type dispatch for no benefit, and Parquet is not JSONL.
   size ceiling, and one report shape.** The only difference is where the
   bytes came from; the tests pin this by importing a dataset and uploading the
   same JSONL and asserting the two reports are equal.
-- **Refusals are stable-code refusals.** `dataset_not_found`,
+- **Refusals are stable-code refusals.** `repo_not_found`,
   `config_required`, `config_not_found`, `split_not_found`, `split_empty`,
   `fetch_failed` and the shared `dataset_too_large` are the import surface's
   machine-readable vocabulary, same contract as every other API refusal.
+  `repo_not_found` is deliberately distinct from the orchestration path's
+  `dataset_not_found` ("no dataset with this id"): one identifier, one
+  meaning, or a client cannot tell them apart.
 - **A reference's provenance is part of the record.** The imported dataset's
   filename is the reference including the configuration and split that were
   actually fetched (a bare repo shows the defaulted config and split), so the

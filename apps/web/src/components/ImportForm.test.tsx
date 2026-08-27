@@ -79,14 +79,14 @@ describe("ImportForm", () => {
     importMock.mockRejectedValueOnce(
       new ApiError(
         400,
-        "dataset_not_found",
+        "repo_not_found",
         "the repository 'nope/nowhere' does not exist or is not public",
       ),
     );
     await user.click(screen.getByRole("button", { name: "Import and validate" }));
 
     const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent("dataset_not_found");
+    expect(alert).toHaveTextContent("repo_not_found");
     expect(alert).toHaveTextContent("nope/nowhere");
     expect(push).not.toHaveBeenCalled();
   });

@@ -50,6 +50,14 @@ _ROW_PAGE = 100
 # point, the point is that nothing scales with the dataset.
 _CHUNK_BYTES = 64 * 1024
 
+# The conventions a bare reference falls back to -- one configuration defaults
+# to 'default', a bare split to 'default' then 'train'. Defined once here and
+# read by the fake resolver too, so the real resolver and its double agree on
+# what an unnamed reference resolves to ("a value two components must agree on
+# is defined once and read, never retyped").
+DEFAULT_CONFIG = "default"
+DEFAULT_SPLITS = ("default", "train")
+
 
 class RemoteDatasetError(Exception):
     """A remote reference that cannot be honoured, with the reason.
@@ -160,6 +168,11 @@ def _api(path: str) -> dict[str, Any] | None:
     field, raises a coded `RemoteDatasetError` naming the reason, because
     absence and failure are different answers to a user and the two must not
     be conflated (the same distinction the model-facts resolver draws).
+
+    The `except Exception` is deliberately broad: a fetch can fail at any
+    point -- DNS, a dropped connection mid-read, a body that is not JSON --
+    and the seam's contract is that *every* fetch failure is a coded reason,
+    never an unhandled exception that becomes a 500 mid-import.
     """
     url = _DS_API + path
     try:
@@ -176,9 +189,9 @@ def _api(path: str) -> dict[str, Any] | None:
         except Exception:  # noqa: S110 - an unparseable error body keeps its default
             pass
         raise RemoteDatasetError("fetch_failed", reason) from None
-    except (TimeoutError, urllib.error.URLError) as e:
+    except Exception as e:  # noqa: BLE001 - every fetch failure is a coded reason
         raise RemoteDatasetError(
-            "fetch_failed", f"could not reach the dataset server: {e}"
+            "fetch_failed", f"could not fetch from the dataset server: {e}"
         ) from None
     if isinstance(body, dict) and body.get("error"):
         raise RemoteDatasetError("fetch_failed", str(body["error"]))
@@ -226,7 +239,7 @@ class HuggingFaceDatasets:
             reason = validity.get("reason") or (
                 f"the repository '{repo}' does not exist or is not public"
             )
-            raise RemoteDatasetError("dataset_not_found", str(reason))
+            raise RemoteDatasetError("repo_not_found", str(reason))
 
         # 2. Which configuration? A bare repo with several is refused with
         #    the list, because guessing which subset a user meant is exactly
@@ -235,7 +248,7 @@ class HuggingFaceDatasets:
         configs = _configs_of(catalogue)
         if not configs:
             raise RemoteDatasetError(
-                "dataset_not_found",
+                "repo_not_found",
                 f"'{repo}' exposes no configurations to import.",
             )
         if config is None:
@@ -253,12 +266,12 @@ class HuggingFaceDatasets:
                 f"available: {', '.join(configs)}.",
             )
 
-        # 3. Which split? A bare split defaults to 'default' then 'train',
-        #    the conventions every dataset uses; anything else must be named.
+        # 3. Which split? A bare split defaults to the conventions every
+        #    dataset uses (DEFAULT_SPLITS); anything else must be named.
         splits = _splits_of(catalogue, config)
         if split is None:
             split = next(
-                (s for s in ("default", "train") if s in splits),
+                (s for s in DEFAULT_SPLITS if s in splits),
                 splits[0] if splits else None,
             )
         if not splits:
@@ -274,7 +287,9 @@ class HuggingFaceDatasets:
             )
 
         # 4. Does the split resolve to anything? An empty split is refused
-        #    here with that reason rather than importing nothing.
+        #    here with that reason when the server reports it; the source also
+        #    refuses if a stream turns out to carry no rows, so the criterion
+        #    holds even when `/size` reports nothing.
         size_body = _api(
             f"/size?dataset={q(repo)}&config={q(config)}&split={q(split)}"
         )
@@ -325,6 +340,7 @@ class _HuggingFaceSource(_ResolvedSource):
                 "fetch_failed", "reference was not fully resolved"
             )
         offset = 0
+        yielded = False
         while True:
             body = _api(
                 f"/rows?dataset={q(self.repo)}&config={q(self.config)}"
@@ -338,11 +354,21 @@ class _HuggingFaceSource(_ResolvedSource):
                 if isinstance(row, dict):
                     rows.append(row)
             if not rows:
-                return
+                break
+            yielded = True
             yield from jsonl_chunks(rows)
             offset += len(rows)
             if len(rows) < _ROW_PAGE:
-                return
+                break
+        if not yielded:
+            # The `/size` refusal in resolve is the fast path; this is the
+            # ground truth. A split that streams no rows is refused with the
+            # same reason even when the size endpoint reported nothing.
+            raise RemoteDatasetError(
+                "split_empty",
+                f"Split '{self.split}' of '{self.repo}' resolves to no rows; "
+                f"there is nothing to import.",
+            )
 
 
 def new_remote_datasets() -> RemoteDatasets:

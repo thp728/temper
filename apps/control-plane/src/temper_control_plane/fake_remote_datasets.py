@@ -4,11 +4,11 @@ Kept in the package rather than in a test file, matching `fake_provider.py`
 and `fake_models.py`: every ticket that touches the import path tests against
 the same double instead of growing its own. Constructed with the references a
 case needs -- there is no canned single scenario here because the refusals
-(dataset missing, split empty) matter as much as the happy path.
+(repository missing, split empty) matter as much as the happy path.
 
 `resolve` mirrors the real resolver's refusals so a test asserts on behaviour,
 not on which implementation produced it: a reference that was not seeded is
-`dataset_not_found`, a seeded reference with no rows is `split_empty`. Rows
+`repo_not_found`, a seeded reference with no rows is `split_empty`. Rows
 stream through the same `jsonl_chunks` serialisation the real source uses, so
 an import reads the same bytes whether it was fetched or faked.
 """
@@ -18,6 +18,8 @@ from __future__ import annotations
 from typing import Any
 
 from .remote_datasets import (
+    DEFAULT_CONFIG,
+    DEFAULT_SPLITS,
     RemoteDatasetError,
     RemoteDatasetSource,
     _ResolvedSource,
@@ -30,7 +32,7 @@ class FakeRemoteDatasets:
 
     A seeded reference streams its rows; a reference whose rows are empty is
     refused as `split_empty`; a reference that was never seeded is refused as
-    `dataset_not_found` naming what it does know, rather than guessing or
+    `repo_not_found` naming what it does know, rather than guessing or
     reaching for a network no test should depend on.
     """
 
@@ -52,7 +54,7 @@ class FakeRemoteDatasets:
         rows = self._sources.get(key)
         if rows is None:
             raise RemoteDatasetError(
-                "dataset_not_found",
+                "repo_not_found",
                 f"FakeRemoteDatasets has no source for {key!r}. "
                 f"Known: {sorted(self._sources)}",
             )
@@ -64,8 +66,8 @@ class FakeRemoteDatasets:
             )
         # Default the unnamed halves the way the real resolver does, so the
         # imported dataset is named identically whichever resolver produced it.
-        resolved_config = config if config is not None else "default"
-        resolved_split = split if split is not None else "train"
+        resolved_config = config if config is not None else DEFAULT_CONFIG
+        resolved_split = split if split is not None else DEFAULT_SPLITS[0]
         return _FakeSource(repo, resolved_config, resolved_split, rows)
 
 

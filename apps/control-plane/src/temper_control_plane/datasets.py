@@ -42,7 +42,7 @@ def too_large(actual: int, limit: int) -> HTTPException:
             "code": "dataset_too_large",
             "message": (
                 f"This dataset is {_fmt_size(actual)} ({actual:,} bytes); "
-                f"the current upload limit is {_fmt_size(limit)} "
+                f"the current dataset size limit is {_fmt_size(limit)} "
                 f"({limit:,} bytes). The limit is a product decision derived "
                 f"from the measured validation throughput, so that validation "
                 f"completes within a tolerable wait -- see the decision record "
@@ -181,6 +181,36 @@ def _count_tokens_in_background(
     threading.Thread(target=run, daemon=True, name=f"count-{ds_id}").start()
 
 
+def _store_counted(ds_id: str, key: str, chunks) -> int:
+    """Store `chunks` with the size ceiling enforced as the true size becomes
+    known, returning how many bytes were stored.
+
+    The one place either ingest path turns a chunk source into a stored
+    object, so the ceiling and the clean-up are identical for a file upload
+    and a remote import. `put_stream` publishes whole and cleans up its own
+    partial write on failure; the row created to be watched is deleted here.
+    Refusing once the true size is known is the only enforcement a remote
+    reference earns -- it has no declared size to refuse on ahead of time --
+    and it is the same refusal a lying Content-Length earns on an upload.
+    """
+    total = 0
+
+    def counted_chunks():
+        nonlocal total
+        for chunk in chunks:
+            total += len(chunk)
+            if total > cfg.MAX_DATASET_BYTES:
+                raise too_large(total, cfg.MAX_DATASET_BYTES)
+            yield chunk
+
+    try:
+        storage.STORE.put_stream(key, counted_chunks())
+    except Exception:
+        db.delete_dataset(ds_id)
+        raise
+    return total
+
+
 def ingest(
     declared_length: str | None, filename: str, fileobj
 ) -> tuple[str, str]:
@@ -208,25 +238,7 @@ def ingest(
     key = storage.dataset_key(ds_id)
     db.create_dataset(filename, key, ds_id=ds_id)
 
-    total = 0
-
-    def counted_chunks():
-        nonlocal total
-        for chunk in _chunks_of(fileobj):
-            total += len(chunk)
-            if total > cfg.MAX_DATASET_BYTES:
-                # A lying or absent Content-Length must not defeat the
-                # ceiling: refuse once the true size is known. put_stream
-                # cleans up its own partial write; the row we created to be
-                # watched is deleted here.
-                raise too_large(total, cfg.MAX_DATASET_BYTES)
-            yield chunk
-
-    try:
-        storage.STORE.put_stream(key, counted_chunks())
-    except Exception:
-        db.delete_dataset(ds_id)
-        raise
+    total = _store_counted(ds_id, key, _chunks_of(fileobj))
 
     _validate_in_background(ds_id, key, total)
     return ds_id, "validating"
@@ -261,25 +273,7 @@ def import_dataset(
     key = storage.dataset_key(ds_id)
     db.create_dataset(filename, key, ds_id=ds_id)
 
-    total = 0
-
-    def counted_chunks():
-        nonlocal total
-        for chunk in source.stream():
-            total += len(chunk)
-            if total > cfg.MAX_DATASET_BYTES:
-                # No declared size exists for a remote reference, so the
-                # ceiling can only be enforced as the true size becomes
-                # known -- the same mid-stream refusal a lying Content-Length
-                # earns on an upload.
-                raise too_large(total, cfg.MAX_DATASET_BYTES)
-            yield chunk
-
-    try:
-        storage.STORE.put_stream(key, counted_chunks())
-    except Exception:
-        db.delete_dataset(ds_id)
-        raise
+    total = _store_counted(ds_id, key, source.stream())
 
     _validate_in_background(ds_id, key, total)
     return ds_id, filename, "validating"

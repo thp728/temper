@@ -68,7 +68,7 @@ def test_a_dataset_imports_by_reference(client, monkeypatch):
     assert r.status_code == 202
     body = r.json()
     assert body["status"] == "validating"
-    assert body["filename"] == "acme/demo-chat/default/train.jsonl"
+    assert body["filename"] == "acme/demo-chat/default/default.jsonl"
     record = wait_validated(client, body["id"])
     assert record["status"] == "valid"
     assert record["report"]["valid"] is True
@@ -170,6 +170,15 @@ def test_import_and_upload_of_the_same_rows_report_identically(
     )["report"]
     uploaded = report_from_upload(client, rows)
 
+    # The claim is the *validation* path is identical, so compare the fields
+    # validation produced. The token-count fields (issue #42) are produced by
+    # a separate phase that lands asynchronously after the report, so reading
+    # the two records at slightly different moments could race on them; the
+    # count itself is pinned by its own suite.
+    for report in (imported, uploaded):
+        report.pop("token_count", None)
+        report.pop("token_distribution", None)
+
     assert imported == uploaded
 
 
@@ -231,7 +240,7 @@ def test_an_unfetchable_repository_is_refused_with_the_reason(
 
     assert r.status_code == 400
     detail = r.json()["detail"]
-    assert detail["code"] == "dataset_not_found"
+    assert detail["code"] == "repo_not_found"
     assert "nope/nowhere" in detail["message"]
     # Refused before anything was stored: no row, no object.
     assert db.list_datasets() == []
