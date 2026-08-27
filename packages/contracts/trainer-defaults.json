@@ -10,7 +10,8 @@
     "sequence_len": 2048,
     "warmup_ratio": 0.1,
     "lr_scheduler": "cosine",
-    "val_set_size": 0.05
+    "val_set_size": 0.05,
+    "save_total_limit": 3
   },
   "allowed_overrides": [
     "lora_r",

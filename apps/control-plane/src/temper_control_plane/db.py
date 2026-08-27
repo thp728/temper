@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     method        TEXT,          -- qlora | lora | full; issue #55's decision
     price_per_hour REAL,
     currency      TEXT,
+    disk_gb       INTEGER,        -- computed, not the old platform-minimum constant; issue #64
+    storage_cost_usd_per_hour REAL,
     error_code    TEXT,
     error_message TEXT,
     -- Warnings attached at creation, frozen like the hyperparameters: what
@@ -142,6 +144,8 @@ ADDED_COLUMNS = (
     ("jobs", "base_revision", "TEXT"),
     ("jobs", "device_count", "INTEGER"),
     ("jobs", "method", "TEXT"),
+    ("jobs", "disk_gb", "INTEGER"),
+    ("jobs", "storage_cost_usd_per_hour", "REAL"),
 )
 
 

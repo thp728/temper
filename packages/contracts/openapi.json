@@ -476,6 +476,17 @@
             ],
             "title": "Device Count"
           },
+          "disk_gb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Gb"
+          },
           "error_code": {
             "anyOf": [
               {
@@ -595,6 +606,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "storage_cost_usd_per_hour": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Cost Usd Per Hour"
           },
           "warnings": {
             "items": {

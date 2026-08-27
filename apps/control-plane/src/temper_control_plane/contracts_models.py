@@ -209,6 +209,8 @@ class JobRecord(BaseModel):
     method: str | None = None
     price_per_hour: float | None = None
     currency: str | None = None
+    disk_gb: int | None = None
+    storage_cost_usd_per_hour: float | None = None
     error_code: str | None = None
     error_message: str | None = None
     warnings: list[FeasibilityWarning] = Field(default_factory=list)

@@ -49,7 +49,7 @@ from collections.abc import Iterator
 from contextlib import suppress
 from typing import BinaryIO, NamedTuple
 
-from temper_core import catalog, events, hyperparams, selection
+from temper_core import catalog, disk, events, hyperparams, selection
 from temper_core.errors import Cancelled, OrchestratorError
 from temper_core.models import Models
 
@@ -59,8 +59,6 @@ from .limits import RunLimits, guard
 from .models import new_models
 from .provider import Provider, new_provider
 from .trainer_build import TRAINER_SOURCES, normalised
-
-STORAGE_GB = 100  # platform minimum for VM instances
 
 TRAINER_TARBALL = "/tmp/trainer.tar.gz"
 DATASET_TARBALL = "/tmp/dataset.tar.gz"
@@ -586,21 +584,36 @@ def _attempt(
         )
     except selection.NoFittingHardwareError as e:
         raise OrchestratorError("provider_capacity_unavailable", str(e)) from e
+    try:
+        disk_plan = disk.required_disk(
+            facts,
+            method=plan.method,
+            lora_r=hp["lora_r"],
+            retained_checkpoints=hp["save_total_limit"],
+        )
+    except disk.DiskExceedsCeilingError as e:
+        raise OrchestratorError("disk_exceeds_ceiling", str(e)) from e
     cancelled()
     db.set_state(
         job_id,
         "provisioning",
         f"Provisioning {plan.device_count}x {plan.gpu_type} ({plan.method}) "
-        f"at {plan.price_per_hour}{plan.currency}/hr",
+        f"at {plan.price_per_hour}{plan.currency}/hr, "
+        f"{disk_plan.provisioned_gb} GB disk",
         gpu_type=plan.gpu_type,
         price_per_hour=plan.price_per_hour,
         currency=plan.currency,
         device_count=plan.device_count,
         method=plan.method,
+        disk_gb=disk_plan.provisioned_gb,
+        storage_cost_usd_per_hour=disk_plan.storage_cost_usd_per_hour,
     )
 
     machine = provider.create(
-        plan.gpu_type, plan.device_count, STORAGE_GB, f"temper-{job_id[:12]}"
+        plan.gpu_type,
+        plan.device_count,
+        disk_plan.provisioned_gb,
+        f"temper-{job_id[:12]}",
     )
     machines.append(machine)
     db.set_state(

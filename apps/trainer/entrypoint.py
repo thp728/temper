@@ -305,7 +305,10 @@ def build_config(
             "sample_packing": False,
             "logging_steps": 1,
             "save_safetensors": True,  # never torch .bin ΓÇö see spike 3 / C14
-            "save_total_limit": 3,
+            # save_total_limit is no longer set here: it now arrives resolved
+            # in `hp`, from the same contract `temper_core.disk` reads to
+            # size the machine's disk (issue #64) -- a value both must agree
+            # on is defined once, in packages/contracts/trainer-defaults.json.
         }
     )
 
