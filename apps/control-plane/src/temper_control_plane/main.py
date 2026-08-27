@@ -298,15 +298,9 @@ def create_job(req: JobRequest):
     or nothing fits, the job still launches -- an estimate warns, it does not
     refuse (spec 005). The only exceptions are refusals of the user's own
     overrides, which are not absent estimates but demands that cannot be met.
+    The advanced-surface gate itself lives in `jobs.create`, the one shared
+    creation path, so every entry point refuses identically (issue #80).
     """
-    # The advanced-surface gate runs before anything is priced, the same
-    # refusal vocabulary the plan screen offers (issue #80): a key unknown to
-    # the trainer is echoed back, a known-but-unsupported key refused with its
-    # reason, a value outside the schema's expressed constraints refused --
-    # never silently dropped by the resolver.
-    refusals = surface.validate_overrides(req.hyperparameters)
-    if refusals:
-        raise HTTPException(400, refusals[0])
     override_list = _override_list(req.overrides)
     try:
         job_id = jobs.create(

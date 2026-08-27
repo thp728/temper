@@ -64,8 +64,10 @@ the dataset-level refusals are structurally not overridable:
 
 - A **locked setting** has a correct value the product chose — e.g. `seed`
   is pinned so runs reproduce, `train_on_inputs` is off so loss masks to the
-  assistant turn. The product's choice is a starting point, and an informed
-  user may choose otherwise through the exposed tier.
+  assistant turn. The product's choice is a starting point; for the settings
+  Temper exposes, an informed user may choose otherwise, and each exposed
+  setting says what goes wrong if it is set badly. A locked setting Temper
+  does not expose is refused with its reason, never silently dropped.
 - A **refused input** has no correct interpretation at all. The two named
   examples, both from dataset validation:
   - **A mixed thinking-mode dataset** — assistant turns mixing reasoning

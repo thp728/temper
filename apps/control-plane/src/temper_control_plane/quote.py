@@ -30,9 +30,7 @@ from temper_core import (
     decisions,
     disk,
     feasibility,
-    gpus,
     hyperparams,
-    memory,
     overrides,
     quote,
     selection,
@@ -167,15 +165,7 @@ def quote_for_launch(
     return for_config(ds, m, hyperparameters, overrides_list)
 
 
-def _no_fit_refusal(
-    err: selection.NoFittingHardwareError,
-    *,
-    facts: Any | None = None,
-    lora_r: int | None = None,
-    sequence_len: int | None = None,
-    micro_batch_size: int | None = None,
-    availability: Sequence[Any] | None = None,
-) -> QuoteRefused:
+def _no_fit_refusal(err: selection.NoFittingHardwareError) -> QuoteRefused:
     """The override refusal for hardware that cannot be honoured, with the
     arithmetic that refused it where the refusal was on memory grounds.
 
@@ -186,13 +176,10 @@ def _no_fit_refusal(
     availability half, `provider_capacity_unavailable`, matching the code the
     orchestrator already uses for it at provisioning.
 
-    A demanded configuration whose *search* was unpinned (a hyperparameter
-    override with no plan decision, issue #80) reaches selection's plain
-    error, which deliberately carries no arithmetic -- but the search found
-    nothing, so the cheapest executable configuration cannot fit the largest
-    card that is free: that arithmetic is recomputed here through the same
-    `memory.predict_peak` the search refused with, so the refusal still names
-    the peak against the capacity.
+    The arithmetic itself rides on `selection.NoFittingHardwareError` -- the
+    search owns its numbers, for a pinned configuration (#79) and for an
+    unpinned one with a card free that nothing fits (issue #80) -- so this
+    only renames it for the HTTP boundary.
     """
     arithmetic: dict[str, object] | None = None
     if err.peak_gb is not None:
@@ -208,38 +195,6 @@ def _no_fit_refusal(
             if err.capacity_gb is not None and err.peak_gb > err.capacity_gb
             else "provider_capacity_unavailable"
         )
-    elif facts is not None and availability is not None:
-        free = [
-            r
-            for r in availability
-            if r.num_free_devices > 0 and r.gpu_type in gpus.CAPACITY_GB
-        ]
-        if free:
-            biggest = max(free, key=lambda r: gpus.CAPACITY_GB[r.gpu_type])
-            capacity = gpus.CAPACITY_GB[biggest.gpu_type]
-            method = selection.EXECUTABLE_METHODS[0]
-            peak = memory.predict_peak(
-                facts,
-                method=method,
-                lora_r=lora_r or 0,
-                sequence_len=sequence_len or 0,
-                micro_batch_size=micro_batch_size or 0,
-                device_count=1,
-            )
-            arithmetic = {
-                "method": method,
-                "gpu_type": biggest.gpu_type,
-                "device_count": 1,
-                "peak_gb": peak.total_gb,
-                "capacity_gb": capacity,
-            }
-            code = (
-                "configuration_does_not_fit"
-                if peak.total_gb > capacity
-                else "provider_capacity_unavailable"
-            )
-        else:
-            code = "provider_capacity_unavailable"
     else:
         code = "provider_capacity_unavailable"
     return QuoteRefused(code, str(err), arithmetic=arithmetic)
@@ -312,14 +267,7 @@ def build_quote(
         )
     except selection.NoFittingHardwareError as e:
         if demanded:
-            raise _no_fit_refusal(
-                e,
-                facts=facts,
-                lora_r=hp["lora_r"],
-                sequence_len=hp["sequence_len"],
-                micro_batch_size=hp["micro_batch_size"],
-                availability=availability,
-            ) from e
+            raise _no_fit_refusal(e) from e
         return None
     try:
         disk_plan = disk.required_disk(

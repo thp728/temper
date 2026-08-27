@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Input } from "@/components/ui/input";
 import type {
   AdvancedSurface,
   SurfaceField,
@@ -131,13 +132,13 @@ export default function AdvancedSurface({
             Each is visible with the reason it is not offered, rather than
             absent. Passing one to a launch is refused with that reason.
           </p>
-          <input
+          <Input
             type="search"
             aria-label="Search the trainer's settings Temper does not offer"
             placeholder="Search by name or reason"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="h-9 w-full rounded-md border bg-transparent px-2 text-sm"
+            className="h-9"
           />
           <ul className="max-h-64 space-y-2 overflow-y-auto rounded-lg border p-3 text-sm">
             {matches.length === 0 ? (
@@ -208,7 +209,7 @@ function ExposedField({
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{field.reason}</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <input
+        <Input
           key={key}
           type={numeric ? "number" : "text"}
           step={field.type === "int" ? "1" : "any"}
@@ -219,7 +220,7 @@ function ExposedField({
           onKeyDown={(e) => {
             if (e.key === "Enter") commit();
           }}
-          className="h-9 w-40 rounded-md border bg-transparent px-2 text-sm"
+          className="h-9 w-40"
         />
         {value !== undefined && (
           <button
