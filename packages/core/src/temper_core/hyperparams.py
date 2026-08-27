@@ -7,12 +7,16 @@ it is given without resolving anything -- there is one resolver, this one, and
 its answer is visible in the job's record. Alpha recomputes from rank when rank
 moves alone, and rsLoRA is inferred at rank >= 32, both before launch.
 
-The defaults and the overridable-key list are **not declared here**. They are
-data in `packages/contracts/trainer-defaults.json` -- the one definition
-(#82), read through this module and shipped into the trainer image at build
-time because the image never installs this package (ADR-0010). This module
-owns only the resolution rules around the data, so an edit to the JSON reaches
-the page and the run together or not at all.
+The defaults are **not declared here**. They are data in
+`packages/contracts/trainer-defaults.json` -- the one definition (#82), read
+through this module and shipped into the trainer image at build time because
+the image never installs this package (ADR-0010). The *reachable* set -- which
+keys a user may override -- is no longer declared here either: since #33 it is
+the exposed tier of the generated advanced surface
+(`temper_core.surface.overrideable_keys`), so the refusal vocabulary and the
+surface cannot drift apart. This module owns only the resolution rules around
+the data, so an edit to either data file reaches the page and the run together
+or not at all.
 
 **Labelled assumption:** the read happens once at import and a missing file
 stops the process -- the config.py rule that a value which cannot be honoured
@@ -26,6 +30,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+
+from . import surface
 
 
 def _contract_path() -> Path:
@@ -51,7 +57,11 @@ CONTRACT_PATH = _contract_path()
 _loaded = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
 DEFAULTS: dict[str, Any] = _loaded["defaults"]
-ALLOWED_OVERRIDES: set[str] = set(_loaded["allowed_overrides"])
+# The reachable set comes from the generated surface (issue #33): the exposed
+# tier plus the platform's own internal keys (e.g. simulated_failure_code).
+# `validate_overrides` in `temper_core.surface` is the gate; this set is what
+# `effective` applies, so a key the gate rejects never reaches the spec.
+ALLOWED_OVERRIDES: set[str] = set(surface.overrideable_keys())
 
 
 def effective(overrides: dict[str, Any] | None) -> dict[str, Any]:

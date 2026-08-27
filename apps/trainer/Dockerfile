@@ -54,7 +54,12 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # one context before building. `just image` does the same thing locally, and
 # TRAINER_SOURCES in the orchestrator is the list both use. A source added here
 # and not there fails test_trainer_context.py.
-COPY entrypoint.py thinking.py trainer-defaults.json /opt/trainer/
+#
+# `axolotl-schema.json` (issue #33) is the pinned image's own configuration
+# schema: the entrypoint reads it so that a key unknown to the trainer is
+# refused loudly and echoed back, with 'unknown' meaning unknown to the trainer
+# rather than absent from a hand-written list.
+COPY entrypoint.py thinking.py trainer-defaults.json axolotl-schema.json /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.

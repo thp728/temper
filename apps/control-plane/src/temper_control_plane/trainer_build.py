@@ -37,15 +37,21 @@ TRAINER_DIR = REPO_ROOT / "apps" / "trainer"
 # definition ADR-0010 forbids.
 #
 # `trainer-defaults.json` is the single definition of the trainer's defaults
-# and overridable keys (#82). The control plane reads it through
-# `temper_core.hyperparams` to resolve the spec before launch (#83); the
-# trainer validates that spec, and the image ships the same file so data and
-# code bake at one digest once the pipeline builds it.
+# (#82). The control plane reads it through `temper_core.hyperparams` to
+# resolve the spec before launch (#83); the trainer validates that spec, and
+# the image ships the same file so data and code bake at one digest once the
+# pipeline builds it.
+#
+# `axolotl-schema.json` (issue #33) is the pinned image's own configuration
+# schema. The trainer's known-key set is derived from it -- a key unknown to
+# the trainer is refused loudly and echoed back -- and it ships in the image so
+# the trainer's guard and the generated surface read the same universe.
 TRAINER_SOURCES = (
     TRAINER_DIR / "Dockerfile",
     TRAINER_DIR / "entrypoint.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
     REPO_ROOT / "packages" / "contracts" / "trainer-defaults.json",
+    REPO_ROOT / "packages" / "contracts" / "axolotl-schema.json",
 )
 
 

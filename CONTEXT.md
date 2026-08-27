@@ -125,3 +125,17 @@ _Avoid_: justification, explanation
 **Override**:
 A decision the user pinned instead of the predictor's, expressed in the decision's own vocabulary (the same string the plan shows as `chosen`). Changing one re-requests the plan — the rest recomputes in the one place the predictor recomputes — and an override that cannot be honoured is refused with the same arithmetic that did the refusing. Overrides are frozen into the job spec, and an overridden decision is marked on the plan.
 _Avoid_: preference, tweak, edit
+
+## Configuration surface
+
+**Advanced surface**:
+The generated set of every control the pinned trainer's configuration schema offers, classified and presented to an experienced user. Generated from the trainer's own schema rather than hand-listed, so it is exactly as wide as the trainer and no wider, and cannot drift when the pinned image moves.
+_Avoid_: settings panel, options page, hyperparameter list
+
+**Tier**:
+One of three classifications every trainer field lands in. *Calculated* — the platform sets it, the common path never sees it. *Exposed with a named failure mode* — reachable, with the specific thing that goes wrong written beside it. *Known but unsupported here* — present in the trainer, not offered, with the reason stated. The classification is data (the tier file), not code, so a change to a judgement is a reviewable diff.
+_Avoid_: level, category, bucket
+
+**Schema snapshot**:
+The checked-in configuration schema of the pinned trainer image, introspected from inside it. The universe the advanced surface is generated from: a key not in it is unknown to the trainer, and is refused loudly and echoed back at every level.
+_Avoid_: schema dump, config model, field list

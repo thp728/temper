@@ -1,0 +1,2104 @@
+{
+  "_axolotl_version": "0.19.0.dev0",
+  "_config_model": "axolotl.utils.schemas.config.AxolotlInputConfig",
+  "_source_image": "axolotlai/axolotl:main-20260817-py3.12-cu130-2.12.0@sha256:29327e75d7ae0348e001809df5c11151887fdeec63fe4bc5c4330917777c701e",
+  "counts": {
+    "calculated": 29,
+    "exposed_with_named_failure_mode": 10,
+    "known_but_unsupported": 349
+  },
+  "known_keys": [
+    "accelerator_config",
+    "activation_offloading",
+    "adam_beta1",
+    "adam_beta2",
+    "adam_beta3",
+    "adam_epsilon",
+    "adam_epsilon2",
+    "adapter",
+    "added_tokens_overrides",
+    "attn_implementation",
+    "auto_find_batch_size",
+    "auto_resume_from_checkpoints",
+    "axolotl_config_path",
+    "base_model",
+    "base_model_config",
+    "batch_flattening",
+    "batch_size",
+    "bench_dataset",
+    "bench_split",
+    "bf16",
+    "bfloat16",
+    "bnb_config_kwargs",
+    "center_rewards_coefficient",
+    "chat_template",
+    "chat_template_jinja",
+    "chat_template_kwargs",
+    "chunked_cross_entropy",
+    "chunked_cross_entropy_num_chunks",
+    "cls_model_config",
+    "comet_api_key",
+    "comet_experiment_config",
+    "comet_experiment_key",
+    "comet_mode",
+    "comet_online",
+    "comet_project_name",
+    "comet_workspace",
+    "context_parallel_size",
+    "cosine_constant_lr_ratio",
+    "cosine_min_lr_ratio",
+    "cpo_alpha",
+    "curriculum_sampling",
+    "dataloader_drop_last",
+    "dataloader_num_workers",
+    "dataloader_pin_memory",
+    "dataloader_prefetch_factor",
+    "dataset_exact_deduplication",
+    "dataset_keep_in_memory",
+    "dataset_num_proc",
+    "dataset_prepared_path",
+    "dataset_processes",
+    "dataset_shard_idx",
+    "dataset_shard_num",
+    "datasets",
+    "ddp",
+    "ddp_broadcast_buffers",
+    "ddp_bucket_cap_mb",
+    "ddp_find_unused_parameters",
+    "ddp_timeout",
+    "deepcompile",
+    "deepspeed",
+    "default_system_message",
+    "device",
+    "device_map",
+    "dion_lr",
+    "dion_momentum",
+    "dion_rank_fraction",
+    "dion_rank_multiple_of",
+    "do_bench_eval",
+    "do_causal_lm_eval",
+    "dp_replicate_size",
+    "dp_shard_size",
+    "dpo_beta",
+    "dpo_generate_during_eval",
+    "dpo_label_smoothing",
+    "dpo_loss_type",
+    "dpo_loss_weights",
+    "dpo_norm_loss",
+    "dpo_padding_free",
+    "dpo_use_liger_kernel",
+    "dpo_use_logits_to_keep",
+    "dpo_use_weighting",
+    "dynamic_checkpoint",
+    "eaft_alpha",
+    "eaft_k",
+    "eager_attention",
+    "early_stopping_patience",
+    "ebft",
+    "embedding_lr",
+    "embedding_lr_scale",
+    "embeddings_skip_upcast",
+    "eot_tokens",
+    "eval_batch_size",
+    "eval_causal_lm_metrics",
+    "eval_max_new_tokens",
+    "eval_sample_packing",
+    "eval_sequence_len",
+    "eval_steps",
+    "eval_strategy",
+    "eval_table_size",
+    "evals_per_epoch",
+    "evaluation_strategy",
+    "excess_length_strategy",
+    "experimental_skip_move_to_device",
+    "experts_implementation",
+    "fix_untrained_tokens",
+    "flash_attention",
+    "flash_attn_cross_entropy",
+    "flash_attn_d512",
+    "flash_attn_fuse_mlp",
+    "flash_attn_rms_norm",
+    "flash_optimum",
+    "flex_attention",
+    "flex_attn_compile_kwargs",
+    "float16",
+    "float32",
+    "fp16",
+    "fp32_norm_classes",
+    "fp32_norms",
+    "fp8",
+    "fp8_enable_fsdp_float8_all_gather",
+    "freeze_mm_modules",
+    "fsdp",
+    "fsdp_config",
+    "fsdp_final_state_dict_type",
+    "fsdp_version",
+    "fused_attn_kernel",
+    "gc_collect_steps",
+    "gc_steps",
+    "gemma4_hybrid_attn_impl",
+    "generate_samples",
+    "generation_do_sample",
+    "generation_max_new_tokens",
+    "generation_prompt_ratio",
+    "generation_temperature",
+    "generation_top_k",
+    "generation_top_p",
+    "gptq",
+    "gpu_memory_limit",
+    "gradient_accumulation_steps",
+    "gradient_checkpointing",
+    "gradient_checkpointing_kwargs",
+    "gradio_max_new_tokens",
+    "gradio_server_name",
+    "gradio_server_port",
+    "gradio_share",
+    "gradio_temperature",
+    "gradio_title",
+    "greater_is_better",
+    "group_by_length",
+    "heads_k_stride",
+    "hf_mlflow_log_artifacts",
+    "hf_use_auth_token",
+    "hub_model_id",
+    "hub_revision",
+    "hub_strategy",
+    "image_resize_algorithm",
+    "image_size",
+    "include_tkps",
+    "include_tokens_per_second",
+    "is_falcon_derived_model",
+    "is_llama_derived_model",
+    "is_mistral_derived_model",
+    "is_preprocess",
+    "is_qwen_derived_model",
+    "jagged_restart_anneal_steps",
+    "jagged_restart_steps",
+    "jagged_restart_warmup_steps",
+    "kto_desirable_weight",
+    "kto_undesirable_weight",
+    "large_head_attention",
+    "layer_offloading",
+    "learning_rate",
+    "lisa_layers_attribute",
+    "lisa_n_layers",
+    "lisa_step_interval",
+    "llama4_linearized_experts",
+    "load_best_model_at_end",
+    "load_in_4bit",
+    "load_in_8bit",
+    "local_rank",
+    "logging_steps",
+    "lora_alpha",
+    "lora_alpha_pattern",
+    "lora_dropout",
+    "lora_embedding_kernel",
+    "lora_fan_in_fan_out",
+    "lora_mlp_kernel",
+    "lora_model_dir",
+    "lora_modules_to_save",
+    "lora_o_kernel",
+    "lora_on_cpu",
+    "lora_qkv_kernel",
+    "lora_r",
+    "lora_rank_pattern",
+    "lora_target_linear",
+    "lora_target_modules",
+    "lora_target_parameters",
+    "loraplus_lr_embedding",
+    "loraplus_lr_ratio",
+    "loss_watchdog_patience",
+    "loss_watchdog_threshold",
+    "low_cpu_mem_usage",
+    "lr_div_factor",
+    "lr_groups",
+    "lr_quadratic_warmup",
+    "lr_scheduler",
+    "lr_scheduler_kwargs",
+    "max_grad_norm",
+    "max_memory",
+    "max_packed_sequence_len",
+    "max_prompt_len",
+    "max_steps",
+    "mean_resizing_embeddings",
+    "merge_lora",
+    "merge_method",
+    "metric_for_best_model",
+    "micro_batch_size",
+    "min_sample_len",
+    "mlflow_experiment_name",
+    "mlflow_run_name",
+    "mlflow_tracking_uri",
+    "model_quantization_config",
+    "model_quantization_config_kwargs",
+    "multipack_real_batches",
+    "neftune_noise_alpha",
+    "noisy_embedding_alpha",
+    "num_dataset_shards_to_save",
+    "num_epochs",
+    "num_generation_samples",
+    "num_labels",
+    "optim_args",
+    "optim_target_modules",
+    "optimizer",
+    "orpo_alpha",
+    "otel_metrics_host",
+    "otel_metrics_port",
+    "output_dir",
+    "overrides_of_model_config",
+    "overrides_of_model_kwargs",
+    "pad_to_multiple_of",
+    "pad_to_sequence_len",
+    "peft",
+    "peft_autocast_adapter_dtype",
+    "peft_ensure_weight_tying",
+    "peft_init_lora_weights",
+    "peft_layer_replication",
+    "peft_layers_pattern",
+    "peft_layers_to_transform",
+    "peft_trainable_token_indices",
+    "peft_use_dora",
+    "peft_use_rslora",
+    "plugins",
+    "pose_max_context_len",
+    "pose_num_chunks",
+    "pose_split_on_token_ids",
+    "precompute_ref_log_probs",
+    "preprocess_iterable",
+    "pretrain_multipack_attn",
+    "pretrain_multipack_buffer_size",
+    "pretraining_dataset",
+    "pretraining_sample_concatenation",
+    "process_reward_model",
+    "processor_kwargs",
+    "processor_type",
+    "profiler_steps",
+    "profiler_steps_start",
+    "push_dataset_to_hub",
+    "qat",
+    "qgalore_cos_threshold",
+    "qgalore_gamma_proj",
+    "qgalore_proj_bits",
+    "qgalore_proj_group_size",
+    "qgalore_proj_quant",
+    "qgalore_proj_type",
+    "qgalore_queue_size",
+    "qgalore_rank",
+    "qgalore_scale",
+    "qgalore_update_proj_gap",
+    "qlora_sharded_model_loading",
+    "quantization",
+    "quantize_moe_experts",
+    "ray_num_workers",
+    "ray_run_name",
+    "reinit_weights",
+    "relora",
+    "relora_cpu_offload",
+    "relora_prune_method",
+    "relora_prune_ratio",
+    "remove_unused_columns",
+    "resize_token_embeddings_to_32x",
+    "resources_per_worker",
+    "resume_from_checkpoint",
+    "revision_of_model",
+    "reward_model",
+    "ring_attn_func",
+    "rl",
+    "rl_beta",
+    "role_boundaries",
+    "rope_scaling",
+    "rpo_alpha",
+    "s2_attention",
+    "sage_attention",
+    "sample_packing",
+    "sample_packing_bin_size",
+    "sample_packing_eff_est",
+    "sample_packing_group_size",
+    "sample_packing_mp_start_method",
+    "sample_packing_sequentially",
+    "save_first_step",
+    "save_only_model",
+    "save_safetensors",
+    "save_steps",
+    "save_strategy",
+    "save_total_limit",
+    "saves_per_epoch",
+    "scaling_softmax",
+    "scaling_softmax_bias",
+    "scaling_softmax_factor",
+    "sdp_attention",
+    "sdpa_varlen",
+    "seed",
+    "selective_checkpointing",
+    "sequence_len",
+    "sequence_parallel_degree",
+    "shrink_embeddings",
+    "shuffle_before_merging_datasets",
+    "shuffle_merged_datasets",
+    "simpo_gamma",
+    "skip_prepare_dataset",
+    "special_tokens",
+    "streaming",
+    "streaming_multipack_buffer_size",
+    "strict",
+    "tensor_parallel_size",
+    "test_datasets",
+    "tf32",
+    "tiled_mlp",
+    "tiled_mlp_num_shards",
+    "tiled_mlp_use_original_mlp",
+    "tokenizer_config",
+    "tokenizer_legacy",
+    "tokenizer_save_jinja_files",
+    "tokenizer_type",
+    "tokenizer_use_fast",
+    "tokenizer_use_mistral_common",
+    "tokens",
+    "torch_compile",
+    "torch_compile_backend",
+    "torch_compile_mode",
+    "torch_compile_options",
+    "torch_empty_cache_steps",
+    "torchdistx_path",
+    "total_num_tokens",
+    "total_supervised_tokens",
+    "trackio_project_name",
+    "trackio_run_name",
+    "trackio_space_id",
+    "train_on_inputs",
+    "trainer_cls",
+    "trl",
+    "trust_remote_code",
+    "type_of_model",
+    "unfrozen_parameters",
+    "use_comet",
+    "use_eaft",
+    "use_kernels",
+    "use_mlflow",
+    "use_onebitllms",
+    "use_otel_metrics",
+    "use_pose",
+    "use_ray",
+    "use_tensorboard",
+    "use_trackio",
+    "use_wandb",
+    "val_set_size",
+    "vllm",
+    "wandb_entity",
+    "wandb_log_model",
+    "wandb_mode",
+    "wandb_name",
+    "wandb_project",
+    "wandb_run_id",
+    "wandb_watch",
+    "warmup_ratio",
+    "warmup_steps",
+    "weight_decay",
+    "world_size",
+    "xformers_attention"
+  ],
+  "overrideable_keys": [
+    "gradient_accumulation_steps",
+    "learning_rate",
+    "lora_alpha",
+    "lora_r",
+    "max_steps",
+    "micro_batch_size",
+    "num_epochs",
+    "save_steps",
+    "sequence_len",
+    "simulated_failure_code",
+    "val_set_size"
+  ],
+  "platform_internal_keys": [
+    "simulated_failure_code"
+  ],
+  "runtime_only_validators": {
+    "field_validator_count": 27,
+    "model_validators": [
+      "check_vllm_mode_set",
+      "check_ebft_config_required",
+      "check_ebft_torch_compile",
+      "check_ebft_gradient_checkpointing_reentrant",
+      "check_ebft_activation_offloading",
+      "check_ebft_strided_sequence_len",
+      "check_ebft_strided_dataset_split",
+      "check_rl_beta",
+      "check_simpo_warmup",
+      "check_relora",
+      "check_early_stopping",
+      "check_tensor_parallel_size",
+      "check_context_parallel_size",
+      "validate_ring_attn_func",
+      "check_falcon_fsdp",
+      "check_mpt_checkpointing",
+      "check_nemotron_h_gradient_checkpointing",
+      "check_gradient_checkpointing_w_offload",
+      "check_activation_offloading_wo_gc",
+      "check_selective_checkpointing",
+      "check_hidden_states_offloading",
+      "check_better_transformers",
+      "check_gptq_w_revision",
+      "check_gpt_oss_fsdp_loading",
+      "check_pretraining_w_max_steps",
+      "check_pretraining_w_group_by_length",
+      "check_pretraining_split_batches_accelerate",
+      "check_pretraining_w_val_set_size",
+      "check_streaming_w_val_set_size",
+      "check_streaming_w_max_steps",
+      "check_streaming_w_multiple_datasets",
+      "check_chat_template_config",
+      "check_mem_mismatch",
+      "check_fsdp_deepspeed",
+      "check_model_quantization_config_vs_bnb",
+      "check_npu_config",
+      "check_adamw_optimizer_params",
+      "check_muon_deepspeed_fsdp",
+      "check_qgalore",
+      "check_flashoptim_deepspeed_fsdp",
+      "check_batch_flattening_fa",
+      "check_cross_entropy_conflicts",
+      "check_fsdp_version",
+      "check_fsdp2_cpu_offload_pin_memory",
+      "check_fsdp2_base_model_quant_rl",
+      "check_fsdp_config_kwargs_prefix",
+      "check_fsdp_version_in_fsdp_config",
+      "check_fsdp_offload_w_8bit_optimizer",
+      "check_fsdp2_w_8bit_optimizer",
+      "check_tensor_parallel_size_update_ds_json",
+      "check_deepcompile",
+      "check_sample_packing_w_rl",
+      "check_kto_config",
+      "check_grpo_liger_sequence_parallel",
+      "check_rl_config_gradient_checkpointing",
+      "check_gdpo",
+      "check_dpo",
+      "check_grpo_batch_size_divisibility",
+      "check_lr_groups",
+      "check_frozen",
+      "check_peft_layers_pattern",
+      "check_fused_lora",
+      "check_onebitllms_lora",
+      "warn_qlora_zero3_w_use_reentrant",
+      "check_lora_kernels_8bit",
+      "check_lora_kernels_dora",
+      "check_lora_kernels_trust_remote_code",
+      "check_batch_size_fields",
+      "hint_sample_packing_padding",
+      "hint_reward_model_pad",
+      "set_reward_model_defaults",
+      "check_gas_bsz",
+      "hint_eval_train_mbsz",
+      "check_warmup",
+      "check_saves",
+      "check_push_save",
+      "check_evals",
+      "check_neftune",
+      "check_multipack_buffer_size",
+      "check_fft_possible_bad_config",
+      "check_fp8_config",
+      "check_use_reentrant_mismatch",
+      "check_eval_strategy",
+      "check_causal_lm_evals",
+      "check_tokenizer_use_mistral_common",
+      "check_mistral_common_incompatible_options",
+      "pretrain_with_tps",
+      "check_sample_packing_without_attention",
+      "check_scaling_softmax_requires_flex",
+      "check_deprecated_unsloth_fields",
+      "check_dataset_or_pretraining_dataset",
+      "check_pretraining_streaming_deprecation",
+      "check_push_ds_auth",
+      "check_val_w_test_datasets",
+      "check_test_datasets_bench",
+      "check_eval_packing",
+      "check_mm_prepare",
+      "check_wandb_run",
+      "validate_adapter",
+      "validate_qlora",
+      "validate_lora_dropout",
+      "validate_lora_target_parameters_dropout",
+      "warn_peft_trainable_token_to_fix_untrained",
+      "normalize_attn_implementation",
+      "check_torch_compile_options_requires_compile",
+      "check_cudagraphs_wo_static_shapes",
+      "check_fp32_norms",
+      "check_sdpa_varlen",
+      "check_sageattn_wo_sample_packing",
+      "check_sageattn_fft",
+      "check_flash_attention_torch_preflight",
+      "check_save_strategy_best_requires_metric",
+      "check_lora_target_modules_regex"
+    ]
+  },
+  "tiers": {
+    "calculated": {
+      "adapter": {
+        "reason": "The training method, chosen by the predictor (QLoRA today) and frozen into the job spec; the common path never sees it.",
+        "tier": "calculated"
+      },
+      "base_model": {
+        "reason": "Set by the platform from the model the user picked on the create path; the run records it, the user does not type it.",
+        "tier": "calculated"
+      },
+      "base_model_config": {
+        "reason": "Resolved by the platform from the model facts seam; derived, not a user choice.",
+        "tier": "calculated"
+      },
+      "bf16": {
+        "reason": "The precision decision is the platform's (bf16 for QLoRA compute); an override would contradict the chosen method.",
+        "tier": "calculated"
+      },
+      "chat_template": {
+        "reason": "Set by the platform to the model's own template; template resolution is the platform's correctness decision and the export-time template probe (Spec 009) guards it.",
+        "tier": "calculated"
+      },
+      "chat_template_kwargs": {
+        "reason": "Set by the platform from the thinking-mode detection on the dataset; exposing it would let a user contradict a detected fact.",
+        "tier": "calculated"
+      },
+      "datasets": {
+        "reason": "Built by the platform from the uploaded, validated dataset; exposing it would let a user route around validation.",
+        "tier": "calculated"
+      },
+      "flash_attention": {
+        "reason": "Set by the platform (on): an attention-kernel choice derived from the measured hardware.",
+        "tier": "calculated"
+      },
+      "float16": {
+        "reason": "Precision is a platform decision derived from the method, not a user control.",
+        "tier": "calculated"
+      },
+      "float32": {
+        "reason": "Precision is a platform decision derived from the method, not a user control.",
+        "tier": "calculated"
+      },
+      "fp16": {
+        "reason": "The precision decision is the platform's; fp16 and bf16 are mutually exclusive and the platform has measured bf16.",
+        "tier": "calculated"
+      },
+      "fp8": {
+        "reason": "Precision is a platform decision derived from the method, not a user control.",
+        "tier": "calculated"
+      },
+      "gradient_checkpointing": {
+        "reason": "Set by the platform (on): a memory-for-throughput trade the predictor's memory model already assumes.",
+        "tier": "calculated"
+      },
+      "load_in_4bit": {
+        "reason": "Set by the platform as part of its method decision (NF4 quantisation); an override would contradict the chosen method.",
+        "tier": "calculated"
+      },
+      "logging_steps": {
+        "reason": "Set by the platform (1); how often metrics are streamed is the platform's event-channel decision.",
+        "tier": "calculated"
+      },
+      "lora_dropout": {
+        "reason": "A platform-chosen default (0.0) resolved into the frozen spec; not currently offered as a control.",
+        "tier": "calculated"
+      },
+      "lora_target_linear": {
+        "reason": "Target-module selection is the platform's (all linear, because the MLP is ~78% of a transformer block's parameters).",
+        "tier": "calculated"
+      },
+      "lr_scheduler": {
+        "reason": "A platform-chosen default (cosine) resolved into the frozen spec; not currently offered as a control.",
+        "tier": "calculated"
+      },
+      "output_dir": {
+        "reason": "The platform's output plumbing; the user downloads the result, they do not choose where it is written.",
+        "tier": "calculated"
+      },
+      "peft_use_rslora": {
+        "reason": "Inferred by the resolver from the rank (on at r >= 32); it is derived, not chosen, so it is never offered as a control.",
+        "tier": "calculated"
+      },
+      "resume_from_checkpoint": {
+        "reason": "Written by the orchestrator when a job resumes; resume is the platform's recovery path, not a user control.",
+        "tier": "calculated"
+      },
+      "revision_of_model": {
+        "reason": "Set by the platform from the pinned revision; the reproducibility claim depends on it being frozen, not editable.",
+        "tier": "calculated"
+      },
+      "sample_packing": {
+        "reason": "Set by the platform (False): packing is a throughput win but needs varlen attention, and stays off until measured per model.",
+        "tier": "calculated"
+      },
+      "save_safetensors": {
+        "reason": "Set by the platform (True): the artifact must be safetensors, never torch .bin (ADR-0008 / spike 3).",
+        "tier": "calculated"
+      },
+      "save_total_limit": {
+        "reason": "Set by the platform (3): it is also what the disk computation sizes the machine from (ADR-0030), so it cannot be a user choice.",
+        "tier": "calculated"
+      },
+      "seed": {
+        "reason": "Set by the platform (42) so runs are reproducible; an override would quietly change what a re-run reproduces.",
+        "tier": "calculated"
+      },
+      "tf32": {
+        "reason": "Precision is a platform decision derived from the method, not a user control.",
+        "tier": "calculated"
+      },
+      "train_on_inputs": {
+        "reason": "Set by the platform (False): training on the assistant turn only is the loss-masking correctness decision.",
+        "tier": "calculated"
+      },
+      "warmup_ratio": {
+        "reason": "A platform-chosen default (0.1) resolved into the frozen spec; not currently offered as a control.",
+        "tier": "calculated"
+      }
+    },
+    "exposed_with_named_failure_mode": {
+      "gradient_accumulation_steps": {
+        "failure_mode": "It only exists as the product with micro_batch_size, so moving one without the other changes the effective batch and therefore the effective learning rate: the same LR on a different effective batch is a different run that looks identical on the page.",
+        "reason": "How many micro-batches accumulate before one optimiser step; the effective batch is micro_batch_size times this.",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "learning_rate": {
+        "failure_mode": "Too high and the loss diverges to NaN partway through a paid run; too low and the run underfits, completing with a loss curve that never descends. Either way the machine was already provisioned.",
+        "reason": "The peak learning rate for the cosine schedule the platform defaults to.",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "lora_alpha": {
+        "failure_mode": "Set far above 2r and the adapter dominates the frozen base, which can destabilise training into a diverging loss. Set far below 2r and the adapter barely changes the output: the run completes and looks fine while having almost no effect.",
+        "reason": "The scale of the adapter. It tracks rank automatically (2r) when rank moves alone, so an explicit alpha is a deliberate departure from the tracking rule.",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "lora_r": {
+        "failure_mode": "Set very low and the adapter has too few parameters to learn anything, and training 'succeeds' with a model that barely moved. Set at or above 32 and rsLoRA is inferred, changing how the adapter scales in a way the frozen spec records but a user may not have asked for. Very high ranks with alpha left at 2r can overfit a small dataset or exceed VRAM.",
+        "reason": "The rank of the low-rank adapter. The platform's default is 16 with alpha tracking rank (2r).",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "max_steps": {
+        "failure_mode": "Set below what the data actually needs and training stops looking finished: the run reports success and a clean log, and the adapter is quietly undertrained. This is the silent shape of a capped run.",
+        "reason": "A hard cap on training steps. The platform uses it to keep smoke-test runs short; as a user override it is an early stop.",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "micro_batch_size": {
+        "failure_mode": "Raised without room in VRAM and the run OOMs minutes in, after the machine is paid for. Lowered and the run is slower than the predictor priced, because the effective batch shrank.",
+        "reason": "Rows per device per optimisation step, before gradient accumulation.",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "num_epochs": {
+        "failure_mode": "Too few and the adapter underfits; too many on a small dataset and it overfits to the training rows, which a held-out eval catches only if there is one. Each epoch also bills against the run's duration ceiling.",
+        "reason": "How many passes over the training set.",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "save_steps": {
+        "failure_mode": "Set too frequently and checkpoint writes blow through the disk the platform sized from save_total_limit; set too rarely and resume has no recent checkpoint to continue from.",
+        "reason": "How often a checkpoint is written (also the platform's smoke-test hook).",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "sequence_len": {
+        "failure_mode": "Longer than the model's trained context and the job fails at data preparation, before the GPU does anything useful. Much shorter than the data and long conversations are truncated, silently losing the context a correct answer depends on.",
+        "reason": "The sequence length rows are tokenised and packed to.",
+        "tier": "exposed_with_named_failure_mode"
+      },
+      "val_set_size": {
+        "failure_mode": "Set to zero and there is no eval loss to watch and no checkpoint selection signal. Raised on a small dataset and too little data remains to train on, quietly shrinking what the run learns.",
+        "reason": "The fraction of rows held out for evaluation during training.",
+        "tier": "exposed_with_named_failure_mode"
+      }
+    },
+    "known_but_unsupported": {
+      "accelerator_config": {
+        "reason": "accelerator_config: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "activation_offloading": {
+        "reason": "activation_offloading: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "adam_beta1": {
+        "reason": "adam_beta1: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "adam_beta2": {
+        "reason": "adam_beta2: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "adam_beta3": {
+        "reason": "adam_beta3: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "adam_epsilon": {
+        "reason": "adam_epsilon: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "adam_epsilon2": {
+        "reason": "adam_epsilon2: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "added_tokens_overrides": {
+        "reason": "added_tokens_overrides: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "attn_implementation": {
+        "reason": "attn_implementation: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "auto_find_batch_size": {
+        "reason": "auto_find_batch_size: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "auto_resume_from_checkpoints": {
+        "reason": "auto_resume_from_checkpoints: checkpoint/save policy, which is the platform's: resume is a promise, and a setting that quietly takes it away is the shape of failure this platform refuses to make cheap.",
+        "tier": "known_but_unsupported"
+      },
+      "axolotl_config_path": {
+        "reason": "axolotl_config_path: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "batch_flattening": {
+        "reason": "batch_flattening: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "batch_size": {
+        "reason": "batch_size: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "bench_dataset": {
+        "reason": "bench_dataset: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "bench_split": {
+        "reason": "bench_split: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "bfloat16": {
+        "reason": "bfloat16: a bf16 alias; precision is a platform method decision and bf16 is the measured compute dtype.",
+        "tier": "known_but_unsupported"
+      },
+      "bnb_config_kwargs": {
+        "reason": "bnb_config_kwargs: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "center_rewards_coefficient": {
+        "reason": "center_rewards_coefficient: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "chat_template_jinja": {
+        "reason": "chat_template_jinja: template resolution is the platform's correctness decision. A hand-written Jinja template is exactly the silent train/infer mismatch the export-time template probe exists to catch; the common path uses the model's own template.",
+        "tier": "known_but_unsupported"
+      },
+      "chunked_cross_entropy": {
+        "reason": "chunked_cross_entropy: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "chunked_cross_entropy_num_chunks": {
+        "reason": "chunked_cross_entropy_num_chunks: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "cls_model_config": {
+        "reason": "cls_model_config: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "comet_api_key": {
+        "reason": "comet_api_key: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "comet_experiment_config": {
+        "reason": "comet_experiment_config: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "comet_experiment_key": {
+        "reason": "comet_experiment_key: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "comet_mode": {
+        "reason": "comet_mode: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "comet_online": {
+        "reason": "comet_online: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "comet_project_name": {
+        "reason": "comet_project_name: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "comet_workspace": {
+        "reason": "comet_workspace: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "context_parallel_size": {
+        "reason": "context_parallel_size: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "cosine_constant_lr_ratio": {
+        "reason": "cosine_constant_lr_ratio: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "cosine_min_lr_ratio": {
+        "reason": "cosine_min_lr_ratio: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "cpo_alpha": {
+        "reason": "cpo_alpha: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "curriculum_sampling": {
+        "reason": "curriculum_sampling: continued pretraining on raw text, which Spec 009 names out of scope; Temper fine-tunes chat data only, and this knob configures a data contract the platform does not accept.",
+        "tier": "known_but_unsupported"
+      },
+      "dataloader_drop_last": {
+        "reason": "dataloader_drop_last: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "dataloader_num_workers": {
+        "reason": "dataloader_num_workers: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "dataloader_pin_memory": {
+        "reason": "dataloader_pin_memory: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "dataloader_prefetch_factor": {
+        "reason": "dataloader_prefetch_factor: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "dataset_exact_deduplication": {
+        "reason": "dataset_exact_deduplication: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "dataset_keep_in_memory": {
+        "reason": "dataset_keep_in_memory: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "dataset_num_proc": {
+        "reason": "dataset_num_proc: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "dataset_prepared_path": {
+        "reason": "dataset_prepared_path: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "dataset_processes": {
+        "reason": "dataset_processes: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "dataset_shard_idx": {
+        "reason": "dataset_shard_idx: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "dataset_shard_num": {
+        "reason": "dataset_shard_num: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "ddp": {
+        "reason": "ddp: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "ddp_broadcast_buffers": {
+        "reason": "ddp_broadcast_buffers: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "ddp_bucket_cap_mb": {
+        "reason": "ddp_bucket_cap_mb: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "ddp_find_unused_parameters": {
+        "reason": "ddp_find_unused_parameters: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "ddp_timeout": {
+        "reason": "ddp_timeout: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "deepcompile": {
+        "reason": "deepcompile: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "deepspeed": {
+        "reason": "deepspeed: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "default_system_message": {
+        "reason": "default_system_message: message formatting is derived from the dataset by the platform; a fixed system message would alter every row's formatting.",
+        "tier": "known_but_unsupported"
+      },
+      "device": {
+        "reason": "device: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "device_map": {
+        "reason": "device_map: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "dion_lr": {
+        "reason": "dion_lr: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dion_momentum": {
+        "reason": "dion_momentum: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dion_rank_fraction": {
+        "reason": "dion_rank_fraction: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dion_rank_multiple_of": {
+        "reason": "dion_rank_multiple_of: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "do_bench_eval": {
+        "reason": "do_bench_eval: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "do_causal_lm_eval": {
+        "reason": "do_causal_lm_eval: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "dp_replicate_size": {
+        "reason": "dp_replicate_size: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "dp_shard_size": {
+        "reason": "dp_shard_size: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_beta": {
+        "reason": "dpo_beta: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_generate_during_eval": {
+        "reason": "dpo_generate_during_eval: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_label_smoothing": {
+        "reason": "dpo_label_smoothing: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_loss_type": {
+        "reason": "dpo_loss_type: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_loss_weights": {
+        "reason": "dpo_loss_weights: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_norm_loss": {
+        "reason": "dpo_norm_loss: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_padding_free": {
+        "reason": "dpo_padding_free: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_use_liger_kernel": {
+        "reason": "dpo_use_liger_kernel: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_use_logits_to_keep": {
+        "reason": "dpo_use_logits_to_keep: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dpo_use_weighting": {
+        "reason": "dpo_use_weighting: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "dynamic_checkpoint": {
+        "reason": "dynamic_checkpoint: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "eaft_alpha": {
+        "reason": "eaft_alpha: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "eaft_k": {
+        "reason": "eaft_k: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "eager_attention": {
+        "reason": "eager_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "early_stopping_patience": {
+        "reason": "early_stopping_patience: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "ebft": {
+        "reason": "ebft: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "embedding_lr": {
+        "reason": "embedding_lr: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "embedding_lr_scale": {
+        "reason": "embedding_lr_scale: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "embeddings_skip_upcast": {
+        "reason": "embeddings_skip_upcast: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "eot_tokens": {
+        "reason": "eot_tokens: end-of-sequence / token handling, the default-locked correctness surface AGENTS.md names. Exposing it safely is preconditioned on the export-time template probe (Spec 009); until then it is a real lever with a catastrophic silent failure and no guard, so it is not offered.",
+        "tier": "known_but_unsupported"
+      },
+      "eval_batch_size": {
+        "reason": "eval_batch_size: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "eval_causal_lm_metrics": {
+        "reason": "eval_causal_lm_metrics: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "eval_max_new_tokens": {
+        "reason": "eval_max_new_tokens: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "eval_sample_packing": {
+        "reason": "eval_sample_packing: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "eval_sequence_len": {
+        "reason": "eval_sequence_len: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "eval_steps": {
+        "reason": "eval_steps: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "eval_strategy": {
+        "reason": "eval_strategy: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "eval_table_size": {
+        "reason": "eval_table_size: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "evals_per_epoch": {
+        "reason": "evals_per_epoch: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "evaluation_strategy": {
+        "reason": "evaluation_strategy: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "excess_length_strategy": {
+        "reason": "excess_length_strategy: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "experimental_skip_move_to_device": {
+        "reason": "experimental_skip_move_to_device: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "experts_implementation": {
+        "reason": "experts_implementation: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "fix_untrained_tokens": {
+        "reason": "fix_untrained_tokens: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "flash_attn_cross_entropy": {
+        "reason": "flash_attn_cross_entropy: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "flash_attn_d512": {
+        "reason": "flash_attn_d512: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "flash_attn_fuse_mlp": {
+        "reason": "flash_attn_fuse_mlp: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "flash_attn_rms_norm": {
+        "reason": "flash_attn_rms_norm: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "flash_optimum": {
+        "reason": "flash_optimum: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "flex_attention": {
+        "reason": "flex_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "flex_attn_compile_kwargs": {
+        "reason": "flex_attn_compile_kwargs: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "fp32_norm_classes": {
+        "reason": "fp32_norm_classes: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "fp32_norms": {
+        "reason": "fp32_norms: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "fp8_enable_fsdp_float8_all_gather": {
+        "reason": "fp8_enable_fsdp_float8_all_gather: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "freeze_mm_modules": {
+        "reason": "freeze_mm_modules: vision-language / multimodal input, which Spec 009 names out of scope; it is a different data pipeline end to end with no shared surface here.",
+        "tier": "known_but_unsupported"
+      },
+      "fsdp": {
+        "reason": "fsdp: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "fsdp_config": {
+        "reason": "fsdp_config: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "fsdp_final_state_dict_type": {
+        "reason": "fsdp_final_state_dict_type: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "fsdp_version": {
+        "reason": "fsdp_version: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "fused_attn_kernel": {
+        "reason": "fused_attn_kernel: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "gc_collect_steps": {
+        "reason": "gc_collect_steps: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "gc_steps": {
+        "reason": "gc_steps: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "gemma4_hybrid_attn_impl": {
+        "reason": "gemma4_hybrid_attn_impl: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "generate_samples": {
+        "reason": "generate_samples: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "generation_do_sample": {
+        "reason": "generation_do_sample: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "generation_max_new_tokens": {
+        "reason": "generation_max_new_tokens: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "generation_prompt_ratio": {
+        "reason": "generation_prompt_ratio: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "generation_temperature": {
+        "reason": "generation_temperature: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "generation_top_k": {
+        "reason": "generation_top_k: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "generation_top_p": {
+        "reason": "generation_top_p: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "gptq": {
+        "reason": "gptq: a quantisation scheme outside the platform's method decision (NF4 QLoRA). Quantisation is chosen by the predictor, not by the user, and these configure schemes the platform does not run.",
+        "tier": "known_but_unsupported"
+      },
+      "gpu_memory_limit": {
+        "reason": "gpu_memory_limit: device memory budgeting is the platform's: the predictor's whole output depends on the card's budget, and a limit set below what the configuration needs OOMs the paid run while one set above does nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "gradient_checkpointing_kwargs": {
+        "reason": "gradient_checkpointing_kwargs: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "gradio_max_new_tokens": {
+        "reason": "gradio_max_new_tokens: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "tier": "known_but_unsupported"
+      },
+      "gradio_server_name": {
+        "reason": "gradio_server_name: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "tier": "known_but_unsupported"
+      },
+      "gradio_server_port": {
+        "reason": "gradio_server_port: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "tier": "known_but_unsupported"
+      },
+      "gradio_share": {
+        "reason": "gradio_share: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "tier": "known_but_unsupported"
+      },
+      "gradio_temperature": {
+        "reason": "gradio_temperature: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "tier": "known_but_unsupported"
+      },
+      "gradio_title": {
+        "reason": "gradio_title: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "tier": "known_but_unsupported"
+      },
+      "greater_is_better": {
+        "reason": "greater_is_better: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "group_by_length": {
+        "reason": "group_by_length: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "heads_k_stride": {
+        "reason": "heads_k_stride: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "hf_mlflow_log_artifacts": {
+        "reason": "hf_mlflow_log_artifacts: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "hf_use_auth_token": {
+        "reason": "hf_use_auth_token: artifact delivery is the platform's own storage, not HF Hub; exposing it would configure a push the platform does not make.",
+        "tier": "known_but_unsupported"
+      },
+      "hub_model_id": {
+        "reason": "hub_model_id: artifact delivery is the platform's own storage, not HF Hub; exposing it would configure a push the platform does not make.",
+        "tier": "known_but_unsupported"
+      },
+      "hub_revision": {
+        "reason": "hub_revision: artifact delivery is the platform's own storage, not HF Hub; exposing it would configure a push the platform does not make.",
+        "tier": "known_but_unsupported"
+      },
+      "hub_strategy": {
+        "reason": "hub_strategy: artifact delivery is the platform's own storage, not HF Hub; exposing it would configure a push the platform does not make.",
+        "tier": "known_but_unsupported"
+      },
+      "image_resize_algorithm": {
+        "reason": "image_resize_algorithm: vision-language / multimodal input, which Spec 009 names out of scope; it is a different data pipeline end to end with no shared surface here.",
+        "tier": "known_but_unsupported"
+      },
+      "image_size": {
+        "reason": "image_size: vision-language / multimodal input, which Spec 009 names out of scope; it is a different data pipeline end to end with no shared surface here.",
+        "tier": "known_but_unsupported"
+      },
+      "include_tkps": {
+        "reason": "include_tkps: a logging detail; metrics are the platform's event channel.",
+        "tier": "known_but_unsupported"
+      },
+      "include_tokens_per_second": {
+        "reason": "include_tokens_per_second: a logging detail; metrics are the platform's event channel.",
+        "tier": "known_but_unsupported"
+      },
+      "is_falcon_derived_model": {
+        "reason": "is_falcon_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice - and offering it would invite a user to contradict the model they picked.",
+        "tier": "known_but_unsupported"
+      },
+      "is_llama_derived_model": {
+        "reason": "is_llama_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice - and offering it would invite a user to contradict the model they picked.",
+        "tier": "known_but_unsupported"
+      },
+      "is_mistral_derived_model": {
+        "reason": "is_mistral_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice - and offering it would invite a user to contradict the model they picked.",
+        "tier": "known_but_unsupported"
+      },
+      "is_preprocess": {
+        "reason": "is_preprocess: launcher plumbing, set by the framework the platform invokes; a user value would be overwritten or corrupt the launch.",
+        "tier": "known_but_unsupported"
+      },
+      "is_qwen_derived_model": {
+        "reason": "is_qwen_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice - and offering it would invite a user to contradict the model they picked.",
+        "tier": "known_but_unsupported"
+      },
+      "jagged_restart_anneal_steps": {
+        "reason": "jagged_restart_anneal_steps: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "jagged_restart_steps": {
+        "reason": "jagged_restart_steps: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "jagged_restart_warmup_steps": {
+        "reason": "jagged_restart_warmup_steps: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "kto_desirable_weight": {
+        "reason": "kto_desirable_weight: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "kto_undesirable_weight": {
+        "reason": "kto_undesirable_weight: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "large_head_attention": {
+        "reason": "large_head_attention: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "layer_offloading": {
+        "reason": "layer_offloading: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "lisa_layers_attribute": {
+        "reason": "lisa_layers_attribute: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "lisa_n_layers": {
+        "reason": "lisa_n_layers: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "lisa_step_interval": {
+        "reason": "lisa_step_interval: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "llama4_linearized_experts": {
+        "reason": "llama4_linearized_experts: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "load_best_model_at_end": {
+        "reason": "load_best_model_at_end: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "load_in_8bit": {
+        "reason": "load_in_8bit: a quantisation scheme outside the platform's method decision (NF4 QLoRA). Quantisation is chosen by the predictor, not by the user, and these configure schemes the platform does not run.",
+        "tier": "known_but_unsupported"
+      },
+      "local_rank": {
+        "reason": "local_rank: launcher plumbing, set by the framework the platform invokes; a user value would be overwritten or corrupt the launch.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_alpha_pattern": {
+        "reason": "lora_alpha_pattern: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_embedding_kernel": {
+        "reason": "lora_embedding_kernel: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_fan_in_fan_out": {
+        "reason": "lora_fan_in_fan_out: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_mlp_kernel": {
+        "reason": "lora_mlp_kernel: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_model_dir": {
+        "reason": "lora_model_dir: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_modules_to_save": {
+        "reason": "lora_modules_to_save: target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_o_kernel": {
+        "reason": "lora_o_kernel: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_on_cpu": {
+        "reason": "lora_on_cpu: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_qkv_kernel": {
+        "reason": "lora_qkv_kernel: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_rank_pattern": {
+        "reason": "lora_rank_pattern: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_target_modules": {
+        "reason": "lora_target_modules: target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "lora_target_parameters": {
+        "reason": "lora_target_parameters: target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "loraplus_lr_embedding": {
+        "reason": "loraplus_lr_embedding: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "loraplus_lr_ratio": {
+        "reason": "loraplus_lr_ratio: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "loss_watchdog_patience": {
+        "reason": "loss_watchdog_patience: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "loss_watchdog_threshold": {
+        "reason": "loss_watchdog_threshold: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "low_cpu_mem_usage": {
+        "reason": "low_cpu_mem_usage: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "lr_div_factor": {
+        "reason": "lr_div_factor: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "lr_groups": {
+        "reason": "lr_groups: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "lr_quadratic_warmup": {
+        "reason": "lr_quadratic_warmup: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "lr_scheduler_kwargs": {
+        "reason": "lr_scheduler_kwargs: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "max_grad_norm": {
+        "reason": "max_grad_norm: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "max_memory": {
+        "reason": "max_memory: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "max_packed_sequence_len": {
+        "reason": "max_packed_sequence_len: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "max_prompt_len": {
+        "reason": "max_prompt_len: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "mean_resizing_embeddings": {
+        "reason": "mean_resizing_embeddings: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "merge_lora": {
+        "reason": "merge_lora: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today. Merging is an artifact-time step the platform does not offer.",
+        "tier": "known_but_unsupported"
+      },
+      "merge_method": {
+        "reason": "merge_method: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today. Merging is an artifact-time step the platform does not offer.",
+        "tier": "known_but_unsupported"
+      },
+      "metric_for_best_model": {
+        "reason": "metric_for_best_model: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "min_sample_len": {
+        "reason": "min_sample_len: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "mlflow_experiment_name": {
+        "reason": "mlflow_experiment_name: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "mlflow_run_name": {
+        "reason": "mlflow_run_name: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "mlflow_tracking_uri": {
+        "reason": "mlflow_tracking_uri: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "model_quantization_config": {
+        "reason": "model_quantization_config: a quantisation scheme outside the platform's method decision (NF4 QLoRA). Quantisation is chosen by the predictor, not by the user, and these configure schemes the platform does not run.",
+        "tier": "known_but_unsupported"
+      },
+      "model_quantization_config_kwargs": {
+        "reason": "model_quantization_config_kwargs: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "multipack_real_batches": {
+        "reason": "multipack_real_batches: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "neftune_noise_alpha": {
+        "reason": "neftune_noise_alpha: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "noisy_embedding_alpha": {
+        "reason": "noisy_embedding_alpha: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "num_dataset_shards_to_save": {
+        "reason": "num_dataset_shards_to_save: checkpoint/save policy, which is the platform's: resume is a promise, and a setting that quietly takes it away is the shape of failure this platform refuses to make cheap.",
+        "tier": "known_but_unsupported"
+      },
+      "num_generation_samples": {
+        "reason": "num_generation_samples: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "num_labels": {
+        "reason": "num_labels: a classification-head detail for non-chat objectives; chat fine-tuning does not use it.",
+        "tier": "known_but_unsupported"
+      },
+      "optim_args": {
+        "reason": "optim_args: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "optim_target_modules": {
+        "reason": "optim_target_modules: target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "optimizer": {
+        "reason": "optimizer: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "orpo_alpha": {
+        "reason": "orpo_alpha: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "otel_metrics_host": {
+        "reason": "otel_metrics_host: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "otel_metrics_port": {
+        "reason": "otel_metrics_port: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "overrides_of_model_config": {
+        "reason": "overrides_of_model_config: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "overrides_of_model_kwargs": {
+        "reason": "overrides_of_model_kwargs: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "pad_to_multiple_of": {
+        "reason": "pad_to_multiple_of: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "pad_to_sequence_len": {
+        "reason": "pad_to_sequence_len: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "peft": {
+        "reason": "peft: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "peft_autocast_adapter_dtype": {
+        "reason": "peft_autocast_adapter_dtype: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "peft_ensure_weight_tying": {
+        "reason": "peft_ensure_weight_tying: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "peft_init_lora_weights": {
+        "reason": "peft_init_lora_weights: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "peft_layer_replication": {
+        "reason": "peft_layer_replication: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "peft_layers_pattern": {
+        "reason": "peft_layers_pattern: target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "peft_layers_to_transform": {
+        "reason": "peft_layers_to_transform: target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "peft_trainable_token_indices": {
+        "reason": "peft_trainable_token_indices: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "peft_use_dora": {
+        "reason": "peft_use_dora: target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes. DoRA is a LoRA variant the platform does not offer.",
+        "tier": "known_but_unsupported"
+      },
+      "plugins": {
+        "reason": "plugins: an internal extension point; exposing it would let a user swap the training loop the platform owns.",
+        "tier": "known_but_unsupported"
+      },
+      "pose_max_context_len": {
+        "reason": "pose_max_context_len: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "pose_num_chunks": {
+        "reason": "pose_num_chunks: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "pose_split_on_token_ids": {
+        "reason": "pose_split_on_token_ids: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "precompute_ref_log_probs": {
+        "reason": "precompute_ref_log_probs: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "preprocess_iterable": {
+        "reason": "preprocess_iterable: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "pretrain_multipack_attn": {
+        "reason": "pretrain_multipack_attn: continued pretraining on raw text, which Spec 009 names out of scope; Temper fine-tunes chat data only, and this knob configures a data contract the platform does not accept.",
+        "tier": "known_but_unsupported"
+      },
+      "pretrain_multipack_buffer_size": {
+        "reason": "pretrain_multipack_buffer_size: continued pretraining on raw text, which Spec 009 names out of scope; Temper fine-tunes chat data only, and this knob configures a data contract the platform does not accept.",
+        "tier": "known_but_unsupported"
+      },
+      "pretraining_dataset": {
+        "reason": "pretraining_dataset: continued pretraining on raw text, which Spec 009 names out of scope; Temper fine-tunes chat data only, and this knob configures a data contract the platform does not accept.",
+        "tier": "known_but_unsupported"
+      },
+      "pretraining_sample_concatenation": {
+        "reason": "pretraining_sample_concatenation: continued pretraining on raw text, which Spec 009 names out of scope; Temper fine-tunes chat data only, and this knob configures a data contract the platform does not accept.",
+        "tier": "known_but_unsupported"
+      },
+      "process_reward_model": {
+        "reason": "process_reward_model: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "processor_kwargs": {
+        "reason": "processor_kwargs: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "processor_type": {
+        "reason": "processor_type: vision-language / multimodal input, which Spec 009 names out of scope; it is a different data pipeline end to end with no shared surface here.",
+        "tier": "known_but_unsupported"
+      },
+      "profiler_steps": {
+        "reason": "profiler_steps: a profiler knob the platform does not run; performance tooling is the platform's.",
+        "tier": "known_but_unsupported"
+      },
+      "profiler_steps_start": {
+        "reason": "profiler_steps_start: a profiler knob the platform does not run; performance tooling is the platform's.",
+        "tier": "known_but_unsupported"
+      },
+      "push_dataset_to_hub": {
+        "reason": "push_dataset_to_hub: artifact delivery is the platform's own storage, not HF Hub; exposing it would configure a push the platform does not make.",
+        "tier": "known_but_unsupported"
+      },
+      "qat": {
+        "reason": "qat: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_cos_threshold": {
+        "reason": "qgalore_cos_threshold: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_gamma_proj": {
+        "reason": "qgalore_gamma_proj: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_proj_bits": {
+        "reason": "qgalore_proj_bits: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_proj_group_size": {
+        "reason": "qgalore_proj_group_size: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_proj_quant": {
+        "reason": "qgalore_proj_quant: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_proj_type": {
+        "reason": "qgalore_proj_type: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_queue_size": {
+        "reason": "qgalore_queue_size: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_rank": {
+        "reason": "qgalore_rank: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_scale": {
+        "reason": "qgalore_scale: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qgalore_update_proj_gap": {
+        "reason": "qgalore_update_proj_gap: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "qlora_sharded_model_loading": {
+        "reason": "qlora_sharded_model_loading: a quantisation scheme outside the platform's method decision (NF4 QLoRA). Quantisation is chosen by the predictor, not by the user, and these configure schemes the platform does not run.",
+        "tier": "known_but_unsupported"
+      },
+      "quantization": {
+        "reason": "quantization: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "quantize_moe_experts": {
+        "reason": "quantize_moe_experts: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "ray_num_workers": {
+        "reason": "ray_num_workers: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing. A Ray cluster is an execution backend the platform does not provision; jobs run in one container.",
+        "tier": "known_but_unsupported"
+      },
+      "ray_run_name": {
+        "reason": "ray_run_name: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing. A Ray cluster is an execution backend the platform does not provision; jobs run in one container.",
+        "tier": "known_but_unsupported"
+      },
+      "reinit_weights": {
+        "reason": "reinit_weights: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "relora": {
+        "reason": "relora: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "relora_cpu_offload": {
+        "reason": "relora_cpu_offload: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "relora_prune_method": {
+        "reason": "relora_prune_method: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "relora_prune_ratio": {
+        "reason": "relora_prune_ratio: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "remove_unused_columns": {
+        "reason": "remove_unused_columns: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "resize_token_embeddings_to_32x": {
+        "reason": "resize_token_embeddings_to_32x: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "resources_per_worker": {
+        "reason": "resources_per_worker: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "reward_model": {
+        "reason": "reward_model: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "ring_attn_func": {
+        "reason": "ring_attn_func: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "rl": {
+        "reason": "rl: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "rl_beta": {
+        "reason": "rl_beta: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "role_boundaries": {
+        "reason": "role_boundaries: vision-language / multimodal input, which Spec 009 names out of scope; it is a different data pipeline end to end with no shared surface here.",
+        "tier": "known_but_unsupported"
+      },
+      "rope_scaling": {
+        "reason": "rope_scaling: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "rpo_alpha": {
+        "reason": "rpo_alpha: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "s2_attention": {
+        "reason": "s2_attention: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "sage_attention": {
+        "reason": "sage_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "sample_packing_bin_size": {
+        "reason": "sample_packing_bin_size: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "sample_packing_eff_est": {
+        "reason": "sample_packing_eff_est: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "sample_packing_group_size": {
+        "reason": "sample_packing_group_size: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "sample_packing_mp_start_method": {
+        "reason": "sample_packing_mp_start_method: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "sample_packing_sequentially": {
+        "reason": "sample_packing_sequentially: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "save_first_step": {
+        "reason": "save_first_step: checkpoint/save policy, which is the platform's: resume is a promise, and a setting that quietly takes it away is the shape of failure this platform refuses to make cheap.",
+        "tier": "known_but_unsupported"
+      },
+      "save_only_model": {
+        "reason": "save_only_model: checkpoint/save policy, which is the platform's: resume is a promise, and a setting that quietly takes it away is the shape of failure this platform refuses to make cheap.",
+        "tier": "known_but_unsupported"
+      },
+      "save_strategy": {
+        "reason": "save_strategy: checkpoint/save policy, which is the platform's: resume is a promise, and a setting that quietly takes it away is the shape of failure this platform refuses to make cheap.",
+        "tier": "known_but_unsupported"
+      },
+      "saves_per_epoch": {
+        "reason": "saves_per_epoch: checkpoint/save policy, which is the platform's: resume is a promise, and a setting that quietly takes it away is the shape of failure this platform refuses to make cheap.",
+        "tier": "known_but_unsupported"
+      },
+      "scaling_softmax": {
+        "reason": "scaling_softmax: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "scaling_softmax_bias": {
+        "reason": "scaling_softmax_bias: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "scaling_softmax_factor": {
+        "reason": "scaling_softmax_factor: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "sdp_attention": {
+        "reason": "sdp_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "sdpa_varlen": {
+        "reason": "sdpa_varlen: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      },
+      "selective_checkpointing": {
+        "reason": "selective_checkpointing: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "sequence_parallel_degree": {
+        "reason": "sequence_parallel_degree: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "shrink_embeddings": {
+        "reason": "shrink_embeddings: a real memory lever on large-vocabulary models and a genuine candidate for exposure, but it changes the embedding matrix so the resulting adapter no longer matches the base model at serving time - a job that succeeds and produces an unusable artifact. Not offered until that failure is guarded.",
+        "tier": "known_but_unsupported"
+      },
+      "shuffle_before_merging_datasets": {
+        "reason": "shuffle_before_merging_datasets: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "shuffle_merged_datasets": {
+        "reason": "shuffle_merged_datasets: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "simpo_gamma": {
+        "reason": "simpo_gamma: preference/RL tuning, which Temper does not do: this product does supervised fine-tuning on chat data (Spec 009), and a dial for a method that cannot run here is a dial connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "skip_prepare_dataset": {
+        "reason": "skip_prepare_dataset: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "special_tokens": {
+        "reason": "special_tokens: end-of-sequence / token handling, the default-locked correctness surface AGENTS.md names. Exposing it safely is preconditioned on the export-time template probe (Spec 009); until then it is a real lever with a catastrophic silent failure and no guard, so it is not offered.",
+        "tier": "known_but_unsupported"
+      },
+      "streaming": {
+        "reason": "streaming: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "streaming_multipack_buffer_size": {
+        "reason": "streaming_multipack_buffer_size: dataset preparation, which is the platform's, not the user's. Temper validates, normalises and uploads the dataset itself; letting a user change how the trainer iterates it would let them route around validation.",
+        "tier": "known_but_unsupported"
+      },
+      "strict": {
+        "reason": "strict: the trainer's own config-validation strictness; the platform's refusal story depends on it staying strict.",
+        "tier": "known_but_unsupported"
+      },
+      "tensor_parallel_size": {
+        "reason": "tensor_parallel_size: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing.",
+        "tier": "known_but_unsupported"
+      },
+      "test_datasets": {
+        "reason": "test_datasets: evaluation plumbing. Evaluation is the platform's (held-out loss, Spec 005); a sample-generation or benchmark harness is not offered today.",
+        "tier": "known_but_unsupported"
+      },
+      "tiled_mlp": {
+        "reason": "tiled_mlp: vision-language / multimodal input, which Spec 009 names out of scope; it is a different data pipeline end to end with no shared surface here.",
+        "tier": "known_but_unsupported"
+      },
+      "tiled_mlp_num_shards": {
+        "reason": "tiled_mlp_num_shards: vision-language / multimodal input, which Spec 009 names out of scope; it is a different data pipeline end to end with no shared surface here.",
+        "tier": "known_but_unsupported"
+      },
+      "tiled_mlp_use_original_mlp": {
+        "reason": "tiled_mlp_use_original_mlp: vision-language / multimodal input, which Spec 009 names out of scope; it is a different data pipeline end to end with no shared surface here.",
+        "tier": "known_but_unsupported"
+      },
+      "tokenizer_config": {
+        "reason": "tokenizer_config: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "tokenizer_legacy": {
+        "reason": "tokenizer_legacy: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "tokenizer_save_jinja_files": {
+        "reason": "tokenizer_save_jinja_files: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "tokenizer_type": {
+        "reason": "tokenizer_type: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "tokenizer_use_fast": {
+        "reason": "tokenizer_use_fast: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "tokenizer_use_mistral_common": {
+        "reason": "tokenizer_use_mistral_common: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "tokens": {
+        "reason": "tokens: end-of-sequence / token handling, the default-locked correctness surface AGENTS.md names. Exposing it safely is preconditioned on the export-time template probe (Spec 009); until then it is a real lever with a catastrophic silent failure and no guard, so it is not offered.",
+        "tier": "known_but_unsupported"
+      },
+      "torch_compile": {
+        "reason": "torch_compile: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "torch_compile_backend": {
+        "reason": "torch_compile_backend: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "torch_compile_mode": {
+        "reason": "torch_compile_mode: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "torch_compile_options": {
+        "reason": "torch_compile_options: a free-form bag of keys the schema says almost nothing about; a generated form has nothing to render but a text box, and a value that is right can still be rejected by a runtime validator the schema does not express.",
+        "tier": "known_but_unsupported"
+      },
+      "torch_empty_cache_steps": {
+        "reason": "torch_empty_cache_steps: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "torchdistx_path": {
+        "reason": "torchdistx_path: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "total_num_tokens": {
+        "reason": "total_num_tokens: continued pretraining on raw text, which Spec 009 names out of scope; Temper fine-tunes chat data only, and this knob configures a data contract the platform does not accept.",
+        "tier": "known_but_unsupported"
+      },
+      "total_supervised_tokens": {
+        "reason": "total_supervised_tokens: continued pretraining on raw text, which Spec 009 names out of scope; Temper fine-tunes chat data only, and this knob configures a data contract the platform does not accept.",
+        "tier": "known_but_unsupported"
+      },
+      "trackio_project_name": {
+        "reason": "trackio_project_name: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "trackio_run_name": {
+        "reason": "trackio_run_name: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "trackio_space_id": {
+        "reason": "trackio_space_id: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "trainer_cls": {
+        "reason": "trainer_cls: an internal extension point; exposing it would let a user swap the training loop the platform owns.",
+        "tier": "known_but_unsupported"
+      },
+      "trl": {
+        "reason": "trl: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "trust_remote_code": {
+        "reason": "trust_remote_code: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "type_of_model": {
+        "reason": "type_of_model: model/tokenizer loading, which is the platform's: it probes and pins the revision before launch (Spec 009). Exposing these would let a user contradict the model they picked, or grant code execution the platform did not choose.",
+        "tier": "known_but_unsupported"
+      },
+      "unfrozen_parameters": {
+        "reason": "unfrozen_parameters: a LoRA/peft detail beyond the reachable rank and scale. target-module selection, which is the platform's (all linear, the measured default). Exposing it would let a user contradict a choice the predictor's memory model assumes.",
+        "tier": "known_but_unsupported"
+      },
+      "use_comet": {
+        "reason": "use_comet: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "use_eaft": {
+        "reason": "use_eaft: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "use_kernels": {
+        "reason": "use_kernels: a throughput knob the platform tunes from measured hardware. The wrong value trades correctness for speed, and most of these are numbers the schema says almost nothing about.",
+        "tier": "known_but_unsupported"
+      },
+      "use_mlflow": {
+        "reason": "use_mlflow: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "use_onebitllms": {
+        "reason": "use_onebitllms: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "use_otel_metrics": {
+        "reason": "use_otel_metrics: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "use_pose": {
+        "reason": "use_pose: an alternative optimiser or training method outside the supported set. Exposing its knobs without supporting the method would offer dials connected to nothing.",
+        "tier": "known_but_unsupported"
+      },
+      "use_ray": {
+        "reason": "use_ray: a sharding/parallelism control. Multi-device execution is a provisioning choice the platform makes (Spec 009); exposing these would let a user wire the platform's own plumbing. A Ray cluster is an execution backend the platform does not provision; jobs run in one container.",
+        "tier": "known_but_unsupported"
+      },
+      "use_tensorboard": {
+        "reason": "use_tensorboard: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "use_trackio": {
+        "reason": "use_trackio: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "use_wandb": {
+        "reason": "use_wandb: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "vllm": {
+        "reason": "vllm: a nested config object, not a scalar. The generated surface is flat by design; nested submodels are a second form-generation problem and are out of scope for this issue.",
+        "tier": "known_but_unsupported"
+      },
+      "wandb_entity": {
+        "reason": "wandb_entity: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "wandb_log_model": {
+        "reason": "wandb_log_model: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "wandb_mode": {
+        "reason": "wandb_mode: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "wandb_name": {
+        "reason": "wandb_name: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "wandb_project": {
+        "reason": "wandb_project: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "wandb_run_id": {
+        "reason": "wandb_run_id: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "wandb_watch": {
+        "reason": "wandb_watch: experiment-tracking integration. The platform runs no such integration; exposing it would configure a sink that does not exist, and telemetry is the platform's business.",
+        "tier": "known_but_unsupported"
+      },
+      "warmup_steps": {
+        "reason": "warmup_steps: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "weight_decay": {
+        "reason": "weight_decay: an optimiser or schedule detail the platform's defaults already cover; the common path never needs it, and a wrong value silently changes convergence.",
+        "tier": "known_but_unsupported"
+      },
+      "world_size": {
+        "reason": "world_size: launcher plumbing, set by the framework the platform invokes; a user value would be overwritten or corrupt the launch.",
+        "tier": "known_but_unsupported"
+      },
+      "xformers_attention": {
+        "reason": "xformers_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "tier": "known_but_unsupported"
+      }
+    }
+  }
+}

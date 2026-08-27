@@ -334,6 +334,51 @@ def test_unknown_hyperparameter_is_refused_at_creation(client, tmp_path):
     assert client.get("/v1/jobs").json()["jobs"] == []
 
 
+def test_a_known_but_unsupported_key_is_refused_with_its_reason(
+    client, tmp_path
+):
+    """Issue #33: a key the trainer knows but the platform does not expose is
+    refused with the reason rather than 'unknown key' -- the refusal says why,
+    and nothing is launched."""
+    ds = valid_dataset(client, tmp_path)
+    r = client.post(
+        "/v1/jobs",
+        json={
+            "dataset_id": ds,
+            "hyperparameters": {"wandb_project": "my-project"},
+        },
+    )
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert detail["code"] == "unsupported_hyperparameter"
+    assert detail["name"] == "wandb_project"
+    assert "reason" in detail
+    assert client.get("/v1/jobs").json()["jobs"] == []
+
+
+def test_a_calculated_correctness_setting_is_refused_at_creation(
+    client, tmp_path
+):
+    """Issue #33: a field the platform sets (a correctness setting) is refused
+    as an override with its reason before launch."""
+    from temper_core import surface
+
+    ds = valid_dataset(client, tmp_path)
+    r = client.post(
+        "/v1/jobs",
+        json={
+            "dataset_id": ds,
+            "hyperparameters": {"train_on_inputs": True},
+        },
+    )
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert detail["code"] == "unsupported_hyperparameter"
+    assert detail["name"] == "train_on_inputs"
+    assert detail["reason"] == surface.calculated_fields()["train_on_inputs"]
+    assert client.get("/v1/jobs").json()["jobs"] == []
+
+
 def test_job_records_exact_revision_it_trained_against(client, tmp_path):
     """A job records the exact revision it trained against, frozen at creation."""
     from temper_core import catalog
