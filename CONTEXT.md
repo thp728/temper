@@ -117,3 +117,7 @@ _Avoid_: estimate (as a noun), prediction, cost model
 **Dataset version**:
 The identity of the stored dataset a quote was computed against — its id and creation time, pinning the immutable stored object. A quote references the dataset version and model revision it was computed against, so it cannot outlive its inputs.
 _Avoid_: snapshot, revision (for datasets)
+
+**Decision**:
+One choice the predictor made on the user's behalf, returned as a record carrying the decision, the value chosen, the constraint that forced it, and the alternatives with what each would have cost. Method, hardware, device count, disk, precision and sequence length each carry one. The records ride on the quote and are frozen with it, so a completed job explains itself as completely as a planned one.
+_Avoid_: justification, explanation

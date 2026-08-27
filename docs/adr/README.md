@@ -72,6 +72,7 @@ repository becomes public at submission.
 | [0029](0029-hardware-is-selected-cheapest-fit-first-not-preferred-in-order.md) | Hardware is selected cheapest-fit-first, not preferred in order | accepted | 2026-08-27 |
 | [0030](0030-disk-is-computed-not-a-platform-minimum-constant.md) | Disk is computed, not a platform-minimum constant | accepted | 2026-08-27 |
 | [0031](0031-the-predictor-warns-on-time-and-cost-as-a-range-composed-per-phase.md) | The predictor warns on time and cost, as a range, composed per phase | accepted | 2026-08-27 |
+| [0032](0032-every-calculated-default-carries-its-reason.md) | Every calculated default carries its reason and the alternatives that lost | accepted | 2026-08-27 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

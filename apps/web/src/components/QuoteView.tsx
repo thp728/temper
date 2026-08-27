@@ -5,13 +5,49 @@ import {
   formatMinorCost,
   shortRevision,
 } from "@/lib/jobs/display";
-import type { Quote } from "@/lib/api/generated/client";
+import type { Quote, QuoteDecision } from "@/lib/api/generated/client";
 
 // The plan's duration-and-cost prediction, shown before anything is spent
 // (issue #72). Everything here is an estimate and says so; the quote is what
 // a launch freezes into the job spec, so this is the last moment the numbers
 // shown can be acted on. Label/value pairs stay real dt/dd pairs -- that
 // adjacency is what a screen reader announces.
+//
+// Below the numbers, each decision the predictor made for the user is shown
+// with its reason visible by default and its alternatives one interaction
+// away (issue #76): the reason is the product, and the same records ride on
+// the frozen quote, so a finished job explains itself as completely as a
+// planned one.
+
+function DecisionCard({ d }: { d: QuoteDecision }) {
+  const alternatives = d.alternatives ?? [];
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <h3 className="font-medium">{d.decision}</h3>
+      <p className="mt-1 text-sm">
+        <strong>{d.chosen}</strong>
+        <span className="text-muted-foreground"> — {d.constraint}</span>
+      </p>
+      {alternatives.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+            Alternatives considered ({alternatives.length})
+          </summary>
+          <ul className="mt-2 space-y-2 text-sm">
+            {alternatives.map((a, i) => (
+              <li key={i}>
+                <p>
+                  <strong>{a.value}</strong> — {a.cost}
+                </p>
+                <p className="text-muted-foreground">{a.constraint}</p>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
 
 function PhaseRow({ phase, quote }: { phase: Quote["phases"][number]; quote: Quote }) {
   return (
@@ -39,15 +75,16 @@ function PhaseRow({ phase, quote }: { phase: Quote["phases"][number]; quote: Quo
 
 export default function QuoteView({ quote }: { quote: Quote }) {
   return (
-    <section aria-labelledby="quote-heading" className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="quote-heading" className="text-lg font-semibold">
-          Cost and time estimate
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          An estimate, not a guarantee — it never blocks a launch.
-        </p>
-      </div>
+    <>
+      <section aria-labelledby="quote-heading" className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="quote-heading" className="text-lg font-semibold">
+            Cost and time estimate
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            An estimate, not a guarantee — it never blocks a launch.
+          </p>
+        </div>
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg border bg-card p-4 sm:grid-cols-4">
         <div>
@@ -114,6 +151,29 @@ export default function QuoteView({ quote }: { quote: Quote }) {
           {new Date(quote.expires_at * 1000).toLocaleString("sv-SE")}.
         </p>
       </div>
-    </section>
+      </section>
+
+      {/* The reasons are the product (issue #76): each decision the predictor
+          made is shown with its reason visible by default and its
+          alternatives one interaction away -- never hidden, never always
+          shown. The records are the same ones frozen into the job spec, so
+          a finished job explains itself as completely as a planned one. */}
+      {quote.decisions && quote.decisions.length > 0 && (
+        <section aria-labelledby="decisions-heading" className="space-y-3">
+          <h2 id="decisions-heading" className="text-lg font-semibold">
+            Why this configuration
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            These are the decisions Temper made for you, and the alternatives
+            that lost — the configuration a launch would freeze.
+          </p>
+          <div className="space-y-3">
+            {quote.decisions.map((d) => (
+              <DecisionCard key={d.decision} d={d} />
+            ))}
+          </div>
+        </section>
+      )}
+    </>
   );
 }

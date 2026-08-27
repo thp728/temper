@@ -187,6 +187,30 @@ class QuotePhase(BaseModel):
     cost_high_minor: int | None = None
 
 
+class QuoteDecisionAlternative(BaseModel):
+    """One configuration the predictor considered and did not choose, with
+    what it would have cost (in memory, or in the account's currency per
+    hour) and why it lost. Structured so the API, the interface and the
+    artifact manifest read the same record."""
+
+    value: str
+    cost: str
+    constraint: str
+
+
+class QuoteDecision(BaseModel):
+    """One decision the predictor made on the user's behalf (issue #76): the
+    decision, the value chosen, the constraint that forced it, and the
+    alternatives with what each would have cost. The shape of an ADR turned
+    into a product surface; `alternatives` may be empty when nothing else
+    fit, which is itself a reason."""
+
+    decision: str
+    chosen: str
+    constraint: str
+    alternatives: list[QuoteDecisionAlternative] = Field(default_factory=list)
+
+
 class Quote(BaseModel):
     """What a job is predicted to cost and how long it should take.
 
@@ -201,7 +225,11 @@ class Quote(BaseModel):
     `storage_cost_usd_*` is the separate storage line, deliberately in USD
     rather than the account's currency: ADR-0030 established that no live
     per-account storage price exists to convert it against, and a labelled
-    USD figure is more honest than a silently assumed conversion."""
+    USD figure is more honest than a silently assumed conversion.
+
+    `decisions` are the structured reasons the configuration was chosen
+    (issue #76), carried with the quote and frozen with it, so a completed
+    job explains itself as completely as a planned one."""
 
     currency: str
     minor_unit: int
@@ -219,6 +247,7 @@ class Quote(BaseModel):
     storage_cost_usd_total_low_minor: int
     storage_cost_usd_total_high_minor: int
     is_estimate: bool = True
+    decisions: list[QuoteDecision] = Field(default_factory=list)
 
 
 class JobSpecPreview(BaseModel):

@@ -837,7 +837,7 @@
         "type": "object"
       },
       "Quote": {
-        "description": "What a job is predicted to cost and how long it should take.\n\nAn estimate everywhere it appears (`is_estimate` and the interface both\nsay so), composed per phase rather than as one blended rate, with the cost\nin the account's own currency as an integer in its smallest unit\n(`cost_*_minor`) with the currency code alongside. It pins what it was\ncomputed against -- `dataset_id`/`dataset_created_at` and `base_revision`\n-- and `expires_at` says how long the prices and availability it reflects\nare honoured for.\n\n`storage_cost_usd_*` is the separate storage line, deliberately in USD\nrather than the account's currency: ADR-0030 established that no live\nper-account storage price exists to convert it against, and a labelled\nUSD figure is more honest than a silently assumed conversion.",
+        "description": "What a job is predicted to cost and how long it should take.\n\nAn estimate everywhere it appears (`is_estimate` and the interface both\nsay so), composed per phase rather than as one blended rate, with the cost\nin the account's own currency as an integer in its smallest unit\n(`cost_*_minor`) with the currency code alongside. It pins what it was\ncomputed against -- `dataset_id`/`dataset_created_at` and `base_revision`\n-- and `expires_at` says how long the prices and availability it reflects\nare honoured for.\n\n`storage_cost_usd_*` is the separate storage line, deliberately in USD\nrather than the account's currency: ADR-0030 established that no live\nper-account storage price exists to convert it against, and a labelled\nUSD figure is more honest than a silently assumed conversion.\n\n`decisions` are the structured reasons the configuration was chosen\n(issue #76), carried with the quote and frozen with it, so a completed\njob explains itself as completely as a planned one.",
         "properties": {
           "base_revision": {
             "title": "Base Revision",
@@ -862,6 +862,13 @@
           "dataset_id": {
             "title": "Dataset Id",
             "type": "string"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteDecision"
+            },
+            "title": "Decisions",
+            "type": "array"
           },
           "duration_high_s": {
             "title": "Duration High S",
@@ -932,6 +939,61 @@
           "storage_cost_usd_total_high_minor"
         ],
         "title": "Quote",
+        "type": "object"
+      },
+      "QuoteDecision": {
+        "description": "One decision the predictor made on the user's behalf (issue #76): the\ndecision, the value chosen, the constraint that forced it, and the\nalternatives with what each would have cost. The shape of an ADR turned\ninto a product surface; `alternatives` may be empty when nothing else\nfit, which is itself a reason.",
+        "properties": {
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteDecisionAlternative"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "chosen": {
+            "title": "Chosen",
+            "type": "string"
+          },
+          "constraint": {
+            "title": "Constraint",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "chosen",
+          "constraint"
+        ],
+        "title": "QuoteDecision",
+        "type": "object"
+      },
+      "QuoteDecisionAlternative": {
+        "description": "One configuration the predictor considered and did not choose, with\nwhat it would have cost (in memory, or in the account's currency per\nhour) and why it lost. Structured so the API, the interface and the\nartifact manifest read the same record.",
+        "properties": {
+          "constraint": {
+            "title": "Constraint",
+            "type": "string"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "cost",
+          "constraint"
+        ],
+        "title": "QuoteDecisionAlternative",
         "type": "object"
       },
       "QuotePhase": {

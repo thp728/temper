@@ -123,6 +123,51 @@ def test_the_quote_response_is_exactly_the_published_model(client, tmp_path):
     assert parsed.is_estimate is True
 
 
+def test_the_quote_carries_each_decision_with_its_reason(client, tmp_path):
+    """Issue #76: method, hardware, device count, disk, precision and
+    sequence length each come back as a record carrying the value chosen, the
+    constraint that forced it, and the alternatives with what each would have
+    cost."""
+    ds = valid_dataset(client, tmp_path)
+    q = quote(client, ds, "qwen3-4b")
+    assert [d["decision"] for d in q["decisions"]] == [
+        "method",
+        "hardware",
+        "device count",
+        "disk",
+        "precision",
+        "sequence length",
+    ]
+    for d in q["decisions"]:
+        assert d["chosen"]
+        assert d["constraint"]
+        for a in d["alternatives"]:
+            assert a["value"]
+            assert a["cost"]
+            assert a["constraint"]
+    # The chosen values are the ones the launch actually freezes.
+    assert q["decisions"][0]["chosen"] == "qlora"
+    assert q["decisions"][1]["chosen"] == "L4"
+    assert q["decisions"][2]["chosen"] == "1"
+
+
+def test_launching_freezes_the_decisions_with_the_quote(client, tmp_path):
+    """The same explanation is available after the job has finished: the
+    reasons are frozen into the job spec beside the quote, not regenerated on
+    read."""
+    ds = valid_dataset(client, tmp_path)
+    job = client.post("/v1/jobs", json={"dataset_id": ds}).json()
+    frozen = job_quote(client, job["id"])
+    assert [d["decision"] for d in frozen["decisions"]] == [
+        "method",
+        "hardware",
+        "device count",
+        "disk",
+        "precision",
+        "sequence length",
+    ]
+
+
 def test_an_unknown_model_is_refused_for_a_quote(client, tmp_path):
     ds = valid_dataset(client, tmp_path)
     r = client.get(

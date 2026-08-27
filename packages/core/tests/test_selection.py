@@ -195,3 +195,59 @@ def test_nothing_big_enough_is_refused_rather_than_guessed():
             methods=("full",),
             micro_batch_size=64,
         )
+
+
+# --- the alternatives it considered and rejected ---------------------------
+# A quote must say what the user gave up to take the chosen card (issue #76),
+# so the search returns the fitting configurations that lost -- never a
+# re-derived guess, the same fit checks the winner passed.
+
+
+def test_the_fitting_configurations_it_rejected_are_returned():
+    result = plan(
+        [
+            GpuAvailability("L4", price_per_hour=41.31, num_free_devices=2),
+            GpuAvailability("H100", price_per_hour=250.0, num_free_devices=1),
+        ]
+    )
+    assert result.gpu_type == "L4"
+    types = {a.gpu_type for a in result.alternatives}
+    assert "H100" in types  # the pricier card that also fits
+    counts = {
+        a.device_count for a in result.alternatives if a.gpu_type == "L4"
+    }
+    assert 2 in counts  # a second L4 also fits, and costs twice as much
+
+
+def test_the_chosen_configuration_is_not_in_the_alternatives():
+    result = plan(
+        [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=2)]
+    )
+    assert all(
+        not (
+            a.gpu_type == result.gpu_type
+            and a.device_count == result.device_count
+        )
+        for a in result.alternatives
+    )
+
+
+def test_alternatives_are_never_cheaper_than_the_chosen_configuration():
+    result = plan(
+        [
+            GpuAvailability("L4", price_per_hour=41.31, num_free_devices=2),
+            GpuAvailability("H100", price_per_hour=250.0, num_free_devices=1),
+        ]
+    )
+    for a in result.alternatives:
+        assert a.price_per_hour >= result.price_per_hour
+
+
+def test_nothing_fits_means_no_alternatives():
+    """With only an L4 available and a full fine-tune requested, nothing
+    fits -- the refusal carries no alternatives, because there were none."""
+    with pytest.raises(selection.NoFittingHardwareError):
+        plan(
+            [GpuAvailability("L4", price_per_hour=41.31, num_free_devices=1)],
+            methods=("full",),
+        )
