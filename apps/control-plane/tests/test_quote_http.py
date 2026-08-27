@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from helpers import wait_validated
 
 from temper_control_plane.fake_provider import FakeProvider
@@ -82,6 +83,22 @@ def test_the_quote_shows_a_duration_range_never_a_point(client, tmp_path):
 
     assert q["dataset_id"] == ds
     assert q["base_revision"] == catalog.get("qwen3-4b").revision
+
+
+def test_the_quote_carries_the_predicted_peak_memory(client, tmp_path):
+    """Issue #77 records the predicted peak against the measured figure; the
+    prediction rides on the quote (a point -- memory blocks, so it is
+    arithmetic rather than a range), frozen with it at launch. Cross-checked
+    against the catalog's own computed peak for the default configuration:
+    two seams answering the same question must agree."""
+    ds = valid_dataset(client, tmp_path)
+    q = quote(client, ds, "qwen3-4b")
+    assert q["peak_memory_gb"] is not None
+    assert q["peak_memory_gb"] > 0
+    catalog_peak = client.get("/v1/models").json()["models"][0]["peak_memory"]
+    assert q["peak_memory_gb"] == pytest.approx(
+        catalog_peak["total_gb"], abs=1e-9
+    )
 
 
 def test_the_quote_breaks_cost_down_by_phase_in_minor_units(client, tmp_path):

@@ -314,3 +314,15 @@ def test_the_quote_carries_the_decisions_it_was_built_with():
 def test_a_quote_without_decisions_is_still_valid():
     q = estimate()
     assert q.decisions == ()
+
+
+# --- the quote carries the predicted peak memory (issue #77) -------------------
+
+
+def test_the_quote_carries_the_predicted_peak_memory():
+    """The memory half of the predictor blocks rather than warns, so peak is
+    carried as a point (not a range) for issue #77 to record against the
+    measured figure; a quote priced with no configuration carries none."""
+    q = estimate(peak_memory_gb=5.4)
+    assert q.peak_memory_gb == 5.4
+    assert estimate().peak_memory_gb is None

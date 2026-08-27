@@ -343,6 +343,10 @@ def build_quote(
         "storage_cost_usd_total_low_minor": q.storage_cost_usd_total_low_minor,
         "storage_cost_usd_total_high_minor": q.storage_cost_usd_total_high_minor,
         "is_estimate": q.is_estimate,
+        # The predicted peak VRAM, from the same selection that chose the
+        # card (issue #77 records it against the measured figure). A point,
+        # not a range: memory is the half of the predictor that blocks.
+        "peak_memory_gb": plan.peak.total_gb,
         "decisions": [decisions.to_dict(d) for d in q.decisions],
         # The legal values each decision's control can offer (issue #79): the
         # interface generates its controls from this rather than hand-listing

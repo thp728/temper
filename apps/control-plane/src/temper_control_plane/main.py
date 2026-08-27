@@ -34,6 +34,7 @@ from temper_control_plane import (
     storage,
 )
 from temper_control_plane.contracts_models import (
+    Calibration,
     DatasetAccepted,
     DatasetList,
     DatasetRecord,
@@ -49,6 +50,7 @@ from temper_control_plane.contracts_models import (
 from temper_control_plane.storage import ObjectNotFound
 from temper_control_plane.web import router as web_router
 from temper_core import (
+    calibration,
     catalog,
     feasibility,
     gpus,
@@ -393,6 +395,37 @@ def recompute_quote(req: QuoteRequest):
         )
     except (quote.QuoteRefused, overrides.OverrideError) as e:
         raise _refuse(e) from e
+
+
+@app.get("/v1/calibration", tags=["jobs"], response_model=Calibration)
+def calibration_summary():
+    """Predictions against measurements across terminal jobs (issue #77).
+
+    The aggregate the calibration view renders: per-metric and per-phase
+    rolls of what was predicted against what happened, so a systematically
+    wrong estimate is visible rather than absorbed into a better-looking
+    average. Only jobs that reached a terminal state and carry both a frozen
+    quote and frozen actuals contribute -- an estimate with no run to measure
+    it against is not calibration, it is a guess. The runs themselves ride
+    along so an outlier can be named rather than pointed at.
+    """
+    runs = []
+    for job in db.list_jobs(limit=None):
+        if job.get("status") not in db.TERMINAL_STATES:
+            continue
+        if not job.get("quote") or not job.get("actuals"):
+            continue
+        runs.append(
+            calibration.Run(
+                job_id=job["id"],
+                base_model=job["base_model"],
+                status=job["status"],
+                created_at=job["created_at"],
+                quote=job["quote"],
+                actuals=job["actuals"],
+            )
+        )
+    return calibration.aggregate(runs)
 
 
 @app.get("/v1/jobs/{job_id}", tags=["jobs"], response_model=JobRecord)

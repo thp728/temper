@@ -48,9 +48,17 @@ export default function JobsView({
 
   return (
     <section aria-labelledby="jobs-heading" className="space-y-4">
-      <h1 id="jobs-heading" className="text-2xl font-semibold">
-        Jobs
-      </h1>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h1 id="jobs-heading" className="text-2xl font-semibold">
+          Jobs
+        </h1>
+        <Link
+          href="/calibration"
+          className="text-sm text-muted-foreground underline hover:no-underline"
+        >
+          Predictions vs actuals across runs
+        </Link>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <caption className="pb-2 text-left text-muted-foreground">

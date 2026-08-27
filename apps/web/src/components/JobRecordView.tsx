@@ -9,9 +9,18 @@ import {
   epochNow,
   failureExplanation,
   formatDuration,
+  formatMinorCost,
   formatTimestamp,
   shortRevision,
 } from "@/lib/jobs/display";
+import {
+  directionLabel,
+  formatGigabytes,
+  formatRatio,
+  midpoint,
+  rangeDirection,
+  ratio,
+} from "@/lib/jobs/comparison";
 import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
 
 // A job's record (#13/#14's screen, ported): the same thing during and after
@@ -116,6 +125,162 @@ function CancelledSection() {
   );
 }
 
+function ComparisonRow({
+  label,
+  predicted,
+  predictedNote,
+  actual,
+  actualNote,
+  sentence,
+}: {
+  label: string;
+  predicted: string;
+  predictedNote: string;
+  actual: string;
+  actualNote: string;
+  sentence: string;
+}) {
+  // Label/value pairs stay real dt/dd pairs, and each figure states whether
+  // it was measured or derived (issue #77): a number without its basis is a
+  // number a reader cannot judge.
+  return (
+    <div className="space-y-2 rounded-lg border bg-card p-4">
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+        <div>
+          <dt className="text-sm text-muted-foreground">{label}</dt>
+          <dd className="font-medium">{predicted}</dd>
+          <dd className="text-xs text-muted-foreground">{predictedNote}</dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted-foreground">Actual</dt>
+          <dd className="font-medium">{actual}</dd>
+          <dd className="text-xs text-muted-foreground">{actualNote}</dd>
+        </div>
+      </dl>
+      <p className="text-sm text-muted-foreground">{sentence}</p>
+    </div>
+  );
+}
+
+function ComparisonSection({ job }: { job: JobRecord }) {
+  // Shown only once a job is terminal and carries both halves of issue #77's
+  // comparison: the quote frozen at launch (predicted) and the actuals frozen
+  // at the end (measured). A job without a quote has nothing to compare
+  // against; a job still working has no actuals yet.
+  const quote = job.quote;
+  const actuals = job.actuals;
+  if (!quote || !actuals) return null;
+
+  const durationMid = midpoint(quote.duration_low_s, quote.duration_high_s);
+  const durationRatio = ratio(actuals.duration_s, durationMid);
+  const durationDir = rangeDirection(
+    actuals.duration_s,
+    quote.duration_low_s,
+    quote.duration_high_s,
+  );
+  const peakRatio = ratio(actuals.peak_memory_gb, quote.peak_memory_gb);
+  const costMid = midpoint(quote.cost_low_minor, quote.cost_high_minor);
+  const costRatio = ratio(actuals.cost_minor, costMid);
+  const costDir = rangeDirection(
+    actuals.cost_minor,
+    quote.cost_low_minor,
+    quote.cost_high_minor,
+  );
+
+  return (
+    <section aria-labelledby="comparison-heading" className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="comparison-heading" className="text-lg font-semibold">
+          Prediction vs what happened
+        </h2>
+        <Link
+          href="/calibration"
+          className="text-sm text-muted-foreground underline hover:no-underline"
+        >
+          Predictions vs actuals across runs
+        </Link>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        What this job was predicted to take, against what it actually took.
+        The predicted figures are estimates; the duration and peak memory are
+        measured, and the cost is derived from the measured duration at the
+        rate the job froze.
+      </p>
+      <div className="space-y-2">
+        <ComparisonRow
+          label="Duration"
+          predicted={formatDuration(quote.duration_low_s)}
+          predictedNote={`predicted ${formatDuration(quote.duration_high_s)} high (estimate)`}
+          actual={
+            actuals.duration_s != null
+              ? formatDuration(actuals.duration_s)
+              : "—"
+          }
+          actualNote="measured"
+          sentence={
+            durationRatio != null
+              ? `Took ${formatRatio(durationRatio)} the midpoint of its predicted range — ${directionLabel(durationDir)}.`
+              : "The run measured no duration to compare."
+          }
+        />
+        <ComparisonRow
+          label="Peak memory"
+          predicted={formatGigabytes(quote.peak_memory_gb)}
+          predictedNote="predicted (arithmetic)"
+          actual={formatGigabytes(actuals.peak_memory_gb)}
+          actualNote="measured on the machine"
+          sentence={
+            peakRatio != null
+              ? `Measured peak was ${formatRatio(peakRatio)} the prediction.`
+              : "No peak memory was measured on this run."
+          }
+        />
+        <ComparisonRow
+          label="Cost"
+          predicted={`${formatMinorCost(quote.cost_low_minor, quote.currency, quote.minor_unit)} – ${formatMinorCost(quote.cost_high_minor, quote.currency, quote.minor_unit)}`}
+          predictedNote="predicted (estimate)"
+          actual={
+            actuals.cost_minor != null && actuals.currency != null
+              ? // The actuals' cost is derived in the same currency and minor
+                // unit the quote priced (the frozen rate's), so the quote's
+                // published minor unit is the unit to show, never a literal.
+                formatMinorCost(actuals.cost_minor, actuals.currency, quote.minor_unit)
+              : "—"
+          }
+          actualNote="derived from measured duration × frozen rate"
+          sentence={
+            costRatio != null
+              ? `The derived cost was ${formatRatio(costRatio)} the midpoint of its predicted range — ${directionLabel(costDir)}.`
+              : "No cost could be derived for this run."
+          }
+        />
+      </div>
+
+      {(actuals.stages ?? []).length > 0 && (
+        <div className="rounded-lg border bg-card p-4">
+          <dl className="divide-y divide-border">
+            {actuals.stages!.map((p) => (
+              <div
+                key={p.name}
+                className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5 py-1"
+              >
+                <dt className="text-sm text-muted-foreground">{p.name}</dt>
+                <dd className="text-sm font-medium text-right">
+                  {p.duration_s != null ? formatDuration(p.duration_s) : "—"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-2 text-xs text-muted-foreground">
+            What the machine actually did, stage by stage, measured from the
+            job&apos;s own state transitions.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function JobRecordView({
   job,
   events,
@@ -189,6 +354,11 @@ export default function JobRecordView({
         // to cost and how long it was predicted to take (issue #72).
         <QuoteView quote={job.quote} />
       )}
+
+      {/* The measured half of the record (issue #77): what the prediction
+          said against what the run did. Only present on a finished job that
+          has both, so the comparison never claims numbers it does not hold. */}
+      <ComparisonSection job={job} />
 
       <section aria-labelledby="output-heading" className="space-y-2">
         <h2 id="output-heading" className="text-lg font-semibold">

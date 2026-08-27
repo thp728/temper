@@ -358,6 +358,10 @@ DEMO_RESULT = {
     "adapter_path": "run/adapter_model.safetensors",
     "adapter_sha256": hashlib.sha256(DEMO_ADAPTER_BYTES).hexdigest(),
     "adapter_config": {"r": 16, "lora_alpha": 32},
+    # The measured peak the real trainer records via its nvidia-smi sampler
+    # (issue #77); the simulated machine carries it so a journey's finished
+    # job has an actual to compare against its prediction.
+    "peak_memory_gb": 5.31,
 }
 
 # The reserved hyperparameter through which a journey asks the simulated

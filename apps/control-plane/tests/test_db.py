@@ -157,3 +157,24 @@ def test_a_missing_dataset_row_raises_a_coded_error(temp_db):
         temp_db.require_dataset("ds_absent")
     assert exc.value.code == "dataset_not_found"
     assert "ds_absent" in str(exc.value)
+
+
+def test_every_measured_stage_is_a_state_the_state_machine_has(temp_db):
+    """The stages temper_core.actuals measures (issue #77) are a subset of
+    the lifecycle states db defines -- a state renamed on either side fails
+    this loudly rather than silently measuring nothing."""
+    from temper_core.actuals import MEASURED_STAGES
+
+    assert set(MEASURED_STAGES) <= set(temp_db.JOB_STATES)
+
+
+def test_list_jobs_reads_every_row_when_limit_is_none(temp_db):
+    """The job list caps at 50 for a page; an aggregate that says "across N
+    runs" must not silently drop the runs older than its reader's page."""
+    for i in range(3):
+        ds_id = temp_db.create_dataset(
+            "d.jsonl", f"datasets/ds_probe{i}.jsonl", f"ds_probe{i}"
+        )
+        temp_db.create_job(ds_id, "qwen3-4b", {})
+    assert len(temp_db.list_jobs(limit=None)) == 3
+    assert len(temp_db.list_jobs(limit=1)) == 1

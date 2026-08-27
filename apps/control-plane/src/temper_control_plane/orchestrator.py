@@ -50,6 +50,7 @@ from contextlib import suppress
 from typing import BinaryIO, NamedTuple
 
 from temper_core import (
+    actuals,
     catalog,
     disk,
     events,
@@ -738,6 +739,46 @@ def _attempt(
     )
 
 
+def _record_actuals(
+    job_id: str, result: dict | None, terminal_state: str, terminal_ts: float
+) -> None:
+    """Freeze the measured figures onto a terminal job (issue #77).
+
+    Runs *before* the terminal state transition, so that by the moment the
+    job's status reads terminal the actuals are already beside it: the
+    orchestrator thread's database work ends when the status becomes visible,
+    and a reader can never observe a terminal job without its actuals -- nor
+    a test tear down a database while the thread still writes to it. The
+    `packaging` stage ends at the terminal transition, which is happening now
+    (`terminal_ts`, the same instant set_state stamps), so the measurement
+    includes it rather than losing the run's last stage.
+
+    The result document carries the trainer's measured peak VRAM when it
+    exists; a run that produced no result records duration and cost and no
+    peak -- the honest absence, never a guessed number.
+    """
+    job = db.get_job(job_id)
+    if job is None:
+        return
+    row = dict(job)
+    if row.get("finished_at") is None:
+        row["finished_at"] = terminal_ts
+    events = db.get_events(job_id)
+    events = [
+        *events,
+        {
+            "id": 0,
+            "job_id": job_id,
+            "ts": terminal_ts,
+            "kind": "state",
+            "message": terminal_state,
+            "data": {"state": terminal_state},
+        },
+    ]
+    measured = actuals.measure(row, events, result)
+    db.record_actuals(job_id, actuals.to_dict(measured))
+
+
 def run_job(
     job_id: str,
     provider: Provider | None = None,
@@ -767,6 +808,9 @@ def run_job(
     # the thread that picks it up -- should cost nothing at all, and building a
     # client is the first thing on this path that can talk to the account.
     if db.cancel_requested(job_id):
+        # Still recorded (issue #77): the attempt consumed the wall time from
+        # creation to the cancellation, even though no machine was provisioned.
+        _record_actuals(job_id, None, "cancelled", time.time())
         db.set_state(job_id, "cancelled", CANCEL_MESSAGE)
         return
 
@@ -778,6 +822,7 @@ def run_job(
         try:
             provider = new_provider()
         except OrchestratorError as e:
+            _record_actuals(job_id, None, "failed", time.time())
             db.set_state(
                 job_id,
                 "failed",
@@ -790,6 +835,7 @@ def run_job(
             # Nothing was provisioned, so there is nothing to tear down -- but
             # the job still has to reach a terminal state rather than sit in
             # `queued` forever because the SDK failed to import.
+            _record_actuals(job_id, None, "failed", time.time())
             db.set_state(
                 job_id,
                 "failed",
@@ -838,6 +884,12 @@ def run_job(
             )
 
         state, message, fields = outcome
+        # The measured half of issue #77's comparison, frozen the moment the
+        # run ends -- the mirror of the quote frozen at launch -- so no run is
+        # wasted even before anything consumes the record. Frozen *before*
+        # the terminal status is written, so a reader can never observe a
+        # terminal job without its actuals beside it.
+        _record_actuals(job_id, fields.get("result_json"), state, time.time())
         db.set_state(job_id, state, message, **fields)
     finally:
         if owns_provider:
