@@ -22,10 +22,6 @@
             "title": "Context Length",
             "type": "integer"
           },
-          "est_peak_vram_gb": {
-            "title": "Est Peak Vram Gb",
-            "type": "number"
-          },
           "good_for": {
             "title": "Good For",
             "type": "string"
@@ -50,6 +46,9 @@
             "title": "Params B",
             "type": "number"
           },
+          "peak_memory": {
+            "$ref": "#/components/schemas/PeakMemoryEstimate"
+          },
           "repo": {
             "title": "Repo",
             "type": "string"
@@ -69,7 +68,7 @@
           "context_length",
           "good_for",
           "min_gpu",
-          "est_peak_vram_gb"
+          "peak_memory"
         ],
         "title": "CatalogEntry",
         "type": "object"
@@ -667,6 +666,70 @@
         "title": "ModelCatalog",
         "type": "object"
       },
+      "PeakMemoryEstimate": {
+        "description": "The predicted peak VRAM for training a model with its default\nhyperparameters, and the headroom that leaves against its recommended\ncard. Published typed rather than folded into `CatalogEntry`'s flat\nfields, because the breakdown -- not just the total -- is what makes the\nprediction an explanation rather than a number to trust blindly.",
+        "properties": {
+          "activations_gb": {
+            "title": "Activations Gb",
+            "type": "number"
+          },
+          "gpu_capacity_gb": {
+            "title": "Gpu Capacity Gb",
+            "type": "number"
+          },
+          "gpu_type": {
+            "title": "Gpu Type",
+            "type": "string"
+          },
+          "gradients_gb": {
+            "title": "Gradients Gb",
+            "type": "number"
+          },
+          "headroom_gb": {
+            "title": "Headroom Gb",
+            "type": "number"
+          },
+          "optimizer_gb": {
+            "title": "Optimizer Gb",
+            "type": "number"
+          },
+          "overhead_gb": {
+            "title": "Overhead Gb",
+            "type": "number"
+          },
+          "tolerance": {
+            "title": "Tolerance",
+            "type": "number"
+          },
+          "total_gb": {
+            "title": "Total Gb",
+            "type": "number"
+          },
+          "trainable_params": {
+            "title": "Trainable Params",
+            "type": "integer"
+          },
+          "weights_gb": {
+            "title": "Weights Gb",
+            "type": "number"
+          }
+        },
+        "required": [
+          "weights_gb",
+          "gradients_gb",
+          "optimizer_gb",
+          "activations_gb",
+          "overhead_gb",
+          "total_gb",
+          "trainable_params",
+          "tolerance",
+          "gpu_type",
+          "gpu_capacity_gb",
+          "headroom_gb"
+        ],
+        "title": "PeakMemoryEstimate",
+        "type": "object"
+      },
       "PreviewRow": {
         "additionalProperties": true,
         "description": "A parsed row as Temper understood it, before validation judges it.\n\nArbitrary keys are allowed because the row is whatever the JSON line held;\n`messages` is typed because it is the key every supported schema shares.",
@@ -1202,7 +1265,7 @@
     },
     "/v1/models": {
       "get": {
-        "description": "The curated base-model catalog.\n\nAn allow-list, not a limitation: detection of an arbitrary architecture is\neasy, but *support* means testing its chat template, tokenizer quirks and\npacking compatibility. This list is a promise about what has been tested.",
+        "description": "The curated base-model catalog.\n\nAn allow-list, not a limitation: detection of an arbitrary architecture is\neasy, but *support* means testing its chat template, tokenizer quirks and\npacking compatibility. This list is a promise about what has been tested.\n\nEach entry's `peak_memory` is computed fresh through the `models` seam\n(spec 005) rather than read from a stored figure -- see\n`_catalog_entry`.",
         "operationId": "list_models_v1_models_get",
         "responses": {
           "200": {

@@ -28,6 +28,7 @@ from temper_control_plane import (
     datasets,
     db,
     jobs,
+    models,
     orchestrator,
     storage,
 )
@@ -43,7 +44,53 @@ from temper_control_plane.contracts_models import (
 )
 from temper_control_plane.storage import ObjectNotFound
 from temper_control_plane.web import router as web_router
-from temper_core import catalog, feasibility, hyperparams
+from temper_core import catalog, feasibility, gpus, hyperparams, memory
+
+# The default resolver, built once at import: `HuggingFaceModels()` performs
+# no I/O until `.resolve()` is called, so this is as safe at import time as
+# constructing any other stateless client. Tests replace this attribute
+# outright with `fake_models.catalog_models()` -- the models-seam equivalent
+# of `conftest.no_real_provider` -- so the suite never depends on network
+# reachability.
+MODELS: models.Models = models.new_models()
+
+
+def _catalog_entry(m: catalog.BaseModel) -> dict:
+    """One catalog model, with its peak-memory prediction computed fresh.
+
+    Facts are resolved through the seam rather than stored on the catalog
+    entry -- the whole point of spec 005's `models` seam is that a stored
+    number cannot describe a model the catalog has never seen, so even a
+    catalog model's peak is computed the same way an imported one's would
+    be. `functools.lru_cache` would be the obvious next step once resolving
+    costs a real network round trip on every request; not added yet because
+    nothing has measured that it matters.
+    """
+    facts = MODELS.resolve(m.repo, m.revision)
+    peak = memory.predict_peak(
+        facts,
+        method="qlora",
+        lora_r=hyperparams.DEFAULTS["lora_r"],
+        sequence_len=hyperparams.DEFAULTS["sequence_len"],
+        micro_batch_size=hyperparams.DEFAULTS["micro_batch_size"],
+    )
+    capacity = gpus.CAPACITY_GB[m.min_gpu_type]
+    return {
+        **m.to_dict(),
+        "peak_memory": {
+            "weights_gb": peak.weights_gb,
+            "gradients_gb": peak.gradients_gb,
+            "optimizer_gb": peak.optimizer_gb,
+            "activations_gb": peak.activations_gb,
+            "overhead_gb": peak.overhead_gb,
+            "total_gb": peak.total_gb,
+            "trainable_params": peak.trainable_params,
+            "tolerance": memory.PEAK_TOLERANCE,
+            "gpu_type": m.min_gpu_type,
+            "gpu_capacity_gb": capacity,
+            "headroom_gb": memory.headroom_gb(peak, capacity),
+        },
+    }
 
 
 @asynccontextmanager
@@ -94,9 +141,13 @@ def list_models():
     An allow-list, not a limitation: detection of an arbitrary architecture is
     easy, but *support* means testing its chat template, tokenizer quirks and
     packing compatibility. This list is a promise about what has been tested.
+
+    Each entry's `peak_memory` is computed fresh through the `models` seam
+    (spec 005) rather than read from a stored figure -- see
+    `_catalog_entry`.
     """
     return {
-        "models": catalog.listing(),
+        "models": [_catalog_entry(m) for m in catalog.CATALOG.values()],
         "default": catalog.DEFAULT_MODEL,
     }
 

@@ -8,6 +8,8 @@ that costs money per run does not get run.
 
 import json
 
+import pytest
+
 
 def jsonl(tmp_path, rows, name="d.jsonl"):
     p = tmp_path / name
@@ -54,6 +56,30 @@ def test_models_response_is_exactly_the_published_model(client):
     parsed = ModelCatalog.model_validate(body)
     assert parsed.default in [m.id for m in parsed.models]
     assert set(body) == set(ModelCatalog.model_fields)
+
+
+def test_catalog_entries_carry_a_computed_peak_memory_not_a_stored_one(
+    client,
+):
+    """Spec 005, issue #48: the per-entry stored VRAM figure is gone, and
+    every entry's peak is computed through the `models` seam instead --
+    exercised here through the default fake, which the whole suite runs
+    against (`conftest.no_real_models`)."""
+    from temper_core import memory
+
+    body = client.get("/v1/models").json()
+    by_id = {m["id"]: m for m in body["models"]}
+    assert "est_peak_vram_gb" not in by_id["qwen3-4b"]
+
+    peak = by_id["qwen3-4b"]["peak_memory"]
+    assert peak["trainable_params"] == 33_030_144
+    assert peak["gpu_type"] == "L4"
+    assert peak["gpu_capacity_gb"] == 24.0
+    assert peak["headroom_gb"] == pytest.approx(
+        24.0 - peak["total_gb"], abs=1e-6
+    )
+    error = abs(peak["total_gb"] - 5.31) / 5.31
+    assert error <= memory.PEAK_TOLERANCE
 
 
 def test_catalog_revision_shown_alongside_licence_at_model_choice(
