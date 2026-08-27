@@ -246,7 +246,9 @@ def test_a_mixed_thinking_dataset_stays_refused_despite_overrides(
     with open(p, "rb") as f:
         client.post("/v1/datasets", files={"file": (p.name, f)})
     # Find the dataset id and wait for the verdict.
-    ds = wait_validated(client, client.get("/v1/datasets").json()["datasets"][-1]["id"])
+    ds = wait_validated(
+        client, client.get("/v1/datasets").json()["datasets"][-1]["id"]
+    )
     assert ds["status"] != "valid"
     r = client.post(
         "/v1/jobs",
@@ -269,7 +271,9 @@ def test_a_dataset_below_the_row_floor_stays_refused_despite_overrides(
     p = jsonl(tmp_path, [chat(f"q{i}", f"a{i}") for i in range(3)])
     with open(p, "rb") as f:
         client.post("/v1/datasets", files={"file": (p.name, f)})
-    ds = wait_validated(client, client.get("/v1/datasets").json()["datasets"][-1]["id"])
+    ds = wait_validated(
+        client, client.get("/v1/datasets").json()["datasets"][-1]["id"]
+    )
     assert ds["status"] != "valid"
     r = client.post(
         "/v1/jobs",

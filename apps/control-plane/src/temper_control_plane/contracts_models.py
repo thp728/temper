@@ -255,7 +255,9 @@ class SurfaceTiers(BaseModel):
     exposed_with_named_failure_mode: dict[str, SurfaceField] = Field(
         default_factory=dict
     )
-    known_but_unsupported: dict[str, SurfaceField] = Field(default_factory=dict)
+    known_but_unsupported: dict[str, SurfaceField] = Field(
+        default_factory=dict
+    )
 
 
 class RuntimeOnlyValidators(BaseModel):
