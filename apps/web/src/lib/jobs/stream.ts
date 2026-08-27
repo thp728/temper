@@ -6,7 +6,7 @@ import type { JobEvent } from "@/lib/api/generated/client";
 //
 // The generated client cannot carry this -- an EventSource is not a fetch,
 // and `apiFetch` would try to JSON-parse the stream -- so the path lives here,
-// the same way the adapter's download URL lives in the record view. The path
+// the same way the artifact's download URL lives in the record view. The path
 // is the API's own (`GET /v1/jobs/{id}/stream`), published in the contract,
 // and the journeys exercise it end to end, so drift fails a test rather than
 // a page.

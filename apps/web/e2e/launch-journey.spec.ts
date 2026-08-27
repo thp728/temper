@@ -131,7 +131,7 @@ test("a job is chosen, reviewed and launched from the shell", async ({
     timeout: 20_000,
   });
   await expect(
-    page.getByRole("link", { name: /Download the adapter/ }),
+    page.getByRole("link", { name: /Download the artifact/ }),
   ).toBeVisible();
 
   // The same explanation survives the job: the quote frozen at launch still

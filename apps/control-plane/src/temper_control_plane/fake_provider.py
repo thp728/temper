@@ -524,7 +524,7 @@ class SimulatedMachine(FakeProvider):
                 # than what was simulated.
                 "error": (
                     "The training process ended before completing; no "
-                    "adapter was produced."
+                    "artifact was produced."
                 ),
             }
             # Output stops where the failure begins: the history keeps what

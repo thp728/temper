@@ -4,7 +4,7 @@ import type { JobRecord } from "@/lib/api/generated/client";
 
 // The jobs list (#14's screen, ported): every job, newest first, each with
 // its outcome beside it and a link to its full record -- the event history,
-// and the adapter when there is one. Static HTML; nothing on it needs
+// and the artifact when there is one. Static HTML; nothing on it needs
 // JavaScript, exactly as the page it replaces.
 
 function Outcome({ job }: { job: JobRecord }) {
@@ -63,7 +63,7 @@ export default function JobsView({
         <table className="w-full border-collapse text-sm">
           <caption className="pb-2 text-left text-muted-foreground">
             Every job, newest first. Each links to its full record — the event
-            history, and the adapter when there is one.
+            history, and the artifact when there is one.
           </caption>
           <thead>
             <tr className="border-b text-left">

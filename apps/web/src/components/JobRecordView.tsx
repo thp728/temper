@@ -53,35 +53,47 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function AdapterSection({ job }: { job: JobRecord }) {
+function ArtifactSection({ job }: { job: JobRecord }) {
   // `JobRecord` deliberately does not publish the artifact's storage address;
   // whether an artifact exists lives behind the download route (which reads
-  // the job row's `artifact_key`), not in anything the page may inspect. A
-  // completed job with a result is the only shape that can have produced one,
-  // so that is what the offer keys off -- the route answers 409 otherwise.
-  const produced = Boolean(job.result);
+  // the job row's `artifact_key`), not in anything the page may inspect. The
+  // published `artifact` record -- its declared kind and what it contains --
+  // is what the page may show, so the offer keys off that: the route answers
+  // 409 otherwise.
+  const artifact = job.artifact;
   return (
     <section aria-labelledby="result-heading" className="space-y-2">
       <h2 id="result-heading" className="text-lg font-semibold">
-        Your adapter
+        Your artifact
       </h2>
-      {produced ? (
+      {artifact ? (
         <div className="space-y-3">
           <p>
             <Button asChild>
               {/* The artifact travels through the download route; where it
                   is stored is the control plane's business, not the page's. */}
-              <a href={`/v1/jobs/${job.id}/adapter`}>Download the adapter</a>
+              <a href={`/v1/jobs/${job.id}/artifact`}>
+                Download the artifact
+              </a>
             </Button>
           </p>
-          <p className="text-sm text-muted-foreground">
-            A zip of the trained weights together with the{" "}
-            <code>adapter_config.json</code> that makes them loadable.
-          </p>
+          {artifact.members.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Contains: {artifact.members.join(", ")}.
+            </p>
+          )}
+          {/* The load path differs by kind -- an adapter is applied to a base
+              model, a fully trained model is loaded on its own -- so the
+              interface says how to load what it offers (issue #32). */}
+          {artifact.loading && (
+            <p className="text-sm text-muted-foreground">
+              {artifact.loading}
+            </p>
+          )}
         </div>
       ) : (
         <p>
-          Training finished, but no adapter could be retrieved. The log below
+          Training finished, but no artifact could be retrieved. The log below
           says what happened to it.
         </p>
       )}
@@ -118,7 +130,7 @@ function CancelledSection() {
           as one, with no error code and no destructive framing, because a
           decision presented as a defect teaches users not to cancel. */}
       <p>
-        This job was cancelled at your request. No adapter was produced —
+        This job was cancelled at your request. No artifact was produced —
         that is what cancelling means here, not a failure of the job.
       </p>
     </section>
@@ -371,7 +383,7 @@ export default function JobRecordView({
         </section>
       )}
 
-      {job.status === "complete" && <AdapterSection job={job} />}
+      {job.status === "complete" && <ArtifactSection job={job} />}
       {job.status === "failed" && <FailedSection job={job} />}
       {job.status === "cancelled" && <CancelledSection />}
 

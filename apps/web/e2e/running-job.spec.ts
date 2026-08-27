@@ -70,7 +70,7 @@ test("a running job is watched live to completion, without a refresh", async ({
     page.getByRole("heading", { name: "Cancel this job?" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Cancel job" })).toBeVisible();
-  await expect(page.getByText(/no adapter will be produced/i)).toBeVisible();
+  await expect(page.getByText(/no artifact will be produced/i)).toBeVisible();
 
   // Output arrives without the page being refreshed: this line is recorded
   // only after the page was served, so its appearance proves the stream
@@ -86,12 +86,12 @@ test("a running job is watched live to completion, without a refresh", async ({
   });
 
   // The job runs to completion on its own and the page hands back to the
-  // finished record, which offers the adapter.
+  // finished record, which offers the artifact.
   await expect(pairedValue(page, "State")).toHaveText("complete", {
     timeout: 30_000,
   });
   await expect(
-    page.getByRole("link", { name: /Download the adapter/ }),
+    page.getByRole("link", { name: /Download the artifact/ }),
   ).toBeVisible();
 });
 
@@ -176,7 +176,7 @@ test("cancelling a running job is destructive and stops it", async ({
   await expect(
     page.getByText(/that is what cancelling means here/i),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: /Download the adapter/ })).toHaveCount(
+  await expect(page.getByRole("link", { name: /Download the artifact/ })).toHaveCount(
     0,
   );
 });

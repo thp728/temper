@@ -1,6 +1,6 @@
 # Temper
 
-A fine-tuning platform: a user supplies a dataset of examples and chooses a base model, and gets back an adapter that carries the change. This glossary fixes the words for that domain, so the code, the specs and the decision records use one vocabulary rather than three.
+A fine-tuning platform: a user supplies a dataset of examples and chooses a base model, and gets back an artifact that carries the change. This glossary fixes the words for that domain, so the code, the specs and the decision records use one vocabulary rather than three.
 
 ## Work
 
@@ -17,7 +17,7 @@ The full set of choices a job will train with — base model, dataset, and hyper
 _Avoid_: run spec, config, settings
 
 **Cancelled**:
-A job that ended because the user asked it to stop. Distinct from failure: the user's own decision is not a defect, and a cancelled job produces no adapter.
+A job that ended because the user asked it to stop. Distinct from failure: the user's own decision is not a defect, and a cancelled job produces no artifact.
 _Avoid_: aborted, stopped, killed
 
 **Stalled**:
@@ -65,11 +65,11 @@ The curated set of base models offered to users, each pinned and carrying its li
 _Avoid_: model list, registry, supported models
 
 **Adapter**:
-The small set of trained weights a job produces, which modifies a base model's behaviour without altering it. This is the deliverable.
+One kind of artifact: the small set of trained weights a job produces, which modifies a base model's behaviour without altering it. Not the deliverable — the artifact is; an adapter is one of the forms a job's output takes, alongside a fully trained model and a merged model.
 _Avoid_: model, fine-tuned model, tuned model, weights
 
 **Artifact**:
-What a user downloads: the adapter together with the configuration that makes it loadable. An adapter without that configuration is not usable, so the two are not shipped separately.
+The deliverable: what a user downloads from a finished job, together with the record of what it is. An artifact declares its kind — an adapter, a fully trained model, or a merged model — and the load path that kind needs, because loading one differs from loading another. The kind is derived from the job's method, never stored, so a row written before this vocabulary changed reads correctly with no migration. An adapter ships as the weights plus the configuration that makes them loadable; the two are not shipped separately.
 _Avoid_: output, result, download, bundle
 
 **Serialised template**:
@@ -80,7 +80,7 @@ _Avoid_: saved template, stored template, the template
 The check that runs on every export: a fixed probe conversation is tokenised through the template used in training and through the artifact's serialised template, and the token ids must be identical. A mismatch fails the export with the stable code `template_probe_mismatch`, and the failure names what differs rather than only that something did. It is the thing standing between an advanced user and a model that trains cleanly and answers wrongly.
 _Avoid_: template check, consistency check, template validation
 **Checkpoint**:
-A record of a run's state at a point in training - weights, optimiser, scheduler, step - written off the machine to object storage as it is produced, so that it survives the machine being destroyed. Each checkpoint records its step and its held-out loss where one exists, and is presented as complete only once the control plane has verified the stored bytes against the machine's reported checksum. Retention is bounded and configurable: a job keeps at most a set number of checkpoints, the newest.
+A record of a run's state at a point in training - weights, optimiser, scheduler, step - written off the machine to object storage as it is produced, so that it survives the machine being destroyed. Each checkpoint records its step and its held-out loss where one exists, and is presented as complete only once the control plane has verified the stored bytes against the machine's reported checksum. Retention is bounded and configurable: a job keeps at most a set number of checkpoints, the newest. Distinct from an artifact: a checkpoint is recovery material, not a deliverable, so it is never offered through the artifact download.
 _Avoid_: snapshot (for training state), save, backup, resume point
 
 ## Storage

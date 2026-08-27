@@ -26,6 +26,7 @@ import uuid
 from contextlib import contextmanager
 from typing import Any
 
+from temper_core import artifacts
 from temper_core.errors import OrchestratorError
 
 from . import config, storage
@@ -121,6 +122,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     result_json   TEXT,
     -- The storage seam's address for this job's artifact weights.
     artifact_key  TEXT,
+    -- The artifact record (issue #32): the members the artifact consists of
+    -- -- their storage keys -- plus the verification's bytes and checksum.
+    -- Assembled by the orchestrator at packaging time; `kind` is deliberately
+    -- NOT stored here but derived from `method`, so a row can never record a
+    -- kind its method did not produce and pre-existing rows read correctly
+    -- with no migration.
+    artifact_json TEXT,
     -- The checkpoints the control plane has verified in storage (issue #37):
     -- one record per slot, each carrying its step, its loss where one exists,
     -- and the key its bytes were verified at. Only verified checkpoints are
@@ -181,6 +189,7 @@ ADDED_COLUMNS = (
     ("jobs", "quote_json", "TEXT"),
     ("jobs", "overrides_json", "TEXT"),
     ("jobs", "checkpoints_json", "TEXT"),
+    ("jobs", "artifact_json", "TEXT"),
     ("datasets", "progress_json", "TEXT"),
     ("jobs", "actuals_json", "TEXT"),
     ("datasets", "token_count_status", "TEXT"),
@@ -597,22 +606,64 @@ def _with_warnings(job: dict | None) -> dict | None:
     return job
 
 
+def _with_artifact(job: dict | None) -> dict | None:
+    """Publish the artifact record on a job row (issue #32).
+
+    The artifact's kind is **derived from the job's method, never stored**: a
+    QLoRA or LoRA run produces an adapter, a full fine-tune produces a fully
+    trained model, and the derivation is what lets pre-existing rows read
+    correctly with no migration. The members come from the record the
+    orchestrator assembled at packaging time, or -- for a row written before
+    the record existed -- from the canonical adapter pair, so a legacy adapter
+    download is described exactly as it always was.
+
+    The published record is the safe subset: member *names* (arcnames) and the
+    load path, never the storage keys -- where an object lives is the seam's
+    business, not the browser's (the raw keys stay in `artifact_record`, which
+    no response model publishes).
+    """
+    if job is None:
+        return None
+    record = job.get("artifact_record")
+    artifact_key = job.get("artifact_key")
+    if not record and not artifact_key:
+        job["artifact"] = None
+        return job
+    kind = artifacts.kind_for(job.get("method"))
+    if record and record.get("members"):
+        names = [m["name"] for m in record["members"]]
+        bytes_ = record.get("bytes")
+    else:
+        names = list(artifacts.ADAPTER_MEMBER_NAMES)
+        bytes_ = None
+    job["artifact"] = {
+        "kind": kind,
+        "members": names,
+        "bytes": bytes_,
+        "loading": artifacts.loading_instructions(kind),
+    }
+    return job
+
+
 def get_job(job_id: str) -> dict | None:
     with connect() as c:
         r = c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-    return _with_warnings(
-        _row(
-            r,
-            {
-                "hyperparams_json": "hyperparameters",
-                "result_json": "result",
-                "warnings_json": "warnings",
-                "quote_json": "quote",
-                "overrides_json": "overrides",
-                "actuals_json": "actuals",
-                "checkpoints_json": "checkpoints",
-            },
-            defaults={"overrides": [], "checkpoints": []},
+    return _with_artifact(
+        _with_warnings(
+            _row(
+                r,
+                {
+                    "hyperparams_json": "hyperparameters",
+                    "result_json": "result",
+                    "warnings_json": "warnings",
+                    "quote_json": "quote",
+                    "overrides_json": "overrides",
+                    "actuals_json": "actuals",
+                    "checkpoints_json": "checkpoints",
+                    "artifact_json": "artifact_record",
+                },
+                defaults={"overrides": [], "checkpoints": []},
+            )
         )
     )
 
@@ -645,19 +696,22 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
             ).fetchall()
     return [
         _present(
-            _with_warnings(
-                _row(
-                    r,
-                    {
-                        "hyperparams_json": "hyperparameters",
-                        "result_json": "result",
-                        "warnings_json": "warnings",
-                        "quote_json": "quote",
-                        "overrides_json": "overrides",
-                        "actuals_json": "actuals",
-                        "checkpoints_json": "checkpoints",
-                    },
-                    defaults={"overrides": [], "checkpoints": []},
+            _with_artifact(
+                _with_warnings(
+                    _row(
+                        r,
+                        {
+                            "hyperparams_json": "hyperparameters",
+                            "result_json": "result",
+                            "warnings_json": "warnings",
+                            "quote_json": "quote",
+                            "overrides_json": "overrides",
+                            "actuals_json": "actuals",
+                            "checkpoints_json": "checkpoints",
+                            "artifact_json": "artifact_record",
+                        },
+                        defaults={"overrides": [], "checkpoints": []},
+                    )
                 )
             )
         )
@@ -691,16 +745,18 @@ def active_jobs() -> list[dict]:
         ).fetchall()
     return [
         _present(
-            _with_warnings(
-                _row(
-                    r,
-                    {
-                        "hyperparams_json": "hyperparameters",
-                        "quote_json": "quote",
-                        "overrides_json": "overrides",
-                        "actuals_json": "actuals",
-                    },
-                    defaults={"overrides": []},
+            _with_artifact(
+                _with_warnings(
+                    _row(
+                        r,
+                        {
+                            "hyperparams_json": "hyperparameters",
+                            "quote_json": "quote",
+                            "overrides_json": "overrides",
+                            "actuals_json": "actuals",
+                        },
+                        defaults={"overrides": []},
+                    )
                 )
             )
         )
