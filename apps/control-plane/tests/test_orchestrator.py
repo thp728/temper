@@ -1838,3 +1838,242 @@ def test_a_result_naming_an_adapter_with_nothing_landed_fails(harness):
     weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
     with pytest.raises(storage.ObjectNotFound):
         storage.STORE.get(weights_key)
+
+
+# --- checkpoints stored off the machine as they are written (issue #37) ------
+#
+# The machine writes each checkpoint to its own slot through a scoped grant,
+# and reports each one's step, loss and checksum in result.json. What is
+# asserted here is the control plane's half: the grants it mints, the
+# verification it performs, the retention bound it enforces, and the rule that
+# a partially written checkpoint is never presented as complete.
+
+
+def _checkpoint_payloads(*steps: int) -> list[dict]:
+    """Fake-machine checkpoint reports whose bytes land and verify cleanly."""
+    return [
+        {"step": s, "loss": 1.0 / s, "bytes": f"ckpt-{s}".encode()}
+        for s in steps
+    ]
+
+
+def test_the_job_spec_carries_one_scoped_grant_per_checkpoint_slot(harness):
+    """Issue #37: the machine receives exactly `CHECKPOINT_RETENTION` write
+    grants, each scoped to one checkpoint slot key, each expiring within the
+    job's own duration ceiling -- the same grant machinery ADR-0009 uses for
+    the artifact, reused rather than re-invented."""
+    from temper_control_plane import config, storage
+
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    job_id = harness.run(provider)
+
+    assert harness.job(job_id)["status"] == "complete"
+    script = provider.script.decode("utf-8")
+    m = re.search(r"<<'JOBSPEC'\n(.*?)\nJOBSPEC\n", script, re.S)
+    spec = json.loads(m.group(1))
+
+    grants = spec["checkpoint_grants"]
+    assert len(grants) == config.CHECKPOINT_RETENTION
+    expected_keys = storage.checkpoint_keys(
+        job_id, config.CHECKPOINT_RETENTION
+    )
+    assert [g["key"] for g in grants] == expected_keys
+    for grant in grants:
+        assert grant["url"].startswith("temper-local:")
+        assert (
+            0 < grant["expires_at"] - time.time() <= config.MAX_JOB_DURATION_S
+        )
+
+
+def test_a_completed_job_records_its_verified_checkpoints(harness):
+    """The machine wrote each checkpoint to its slot; the control plane
+    streamed each back, matched the reported checksum, and recorded the
+    verified set -- step and loss included -- on the job row."""
+    from temper_control_plane import storage
+
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_checkpoint_payloads(10, 20, 30),
+    )
+    job_id = harness.run(provider)
+
+    job = harness.stored(job_id)
+    assert harness.job(job_id)["status"] == "complete"
+    assert job["artifact_key"] is not None, "the adapter is the deliverable"
+
+    records = job["checkpoints"]
+    assert [r["step"] for r in records] == [10, 20, 30]
+    for record in records:
+        assert record["verified"] is True
+        assert record["loss"] == 1.0 / record["step"]
+        # The bytes the control plane verified are the bytes that landed.
+        assert (
+            storage.STORE.get(record["key"])
+            == f"ckpt-{record['step']}".encode()
+        )
+        assert (
+            record["sha256"]
+            == hashlib.sha256(f"ckpt-{record['step']}".encode()).hexdigest()
+        )
+
+
+def test_a_checkpoint_that_never_landed_is_not_presented_as_complete(harness):
+    """The machine reported a checksum for a slot nothing was written to: the
+    control plane cannot verify bytes that are not there, so the checkpoint is
+    recorded as not complete -- but the adapter, the deliverable, still
+    completes the job."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=[{"step": 10, "loss": 1.5, "bytes": None}],
+    )
+    job_id = harness.run(provider)
+
+    job = harness.stored(job_id)
+    assert harness.job(job_id)["status"] == "complete"
+    assert job["checkpoints"][0]["verified"] is False
+    assert job["checkpoints"][0]["step"] == 10
+    assert job["checkpoints"][0]["loss"] == 1.5
+
+
+def test_a_corrupt_checkpoint_is_never_presented_as_complete(harness):
+    """A slot whose bytes do not hash to the reported checksum is a corrupt
+    upload, not a checkpoint. Recorded as not complete, and the job still
+    completes -- the adapter is the deliverable, and a bad checkpoint does not
+    make a trained adapter untrained."""
+    wrong = hashlib.sha256(b"something-else").hexdigest()
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=[
+            {"step": 10, "loss": 1.5, "bytes": b"real-bytes", "sha256": wrong}
+        ],
+    )
+    job_id = harness.run(provider)
+
+    job = harness.stored(job_id)
+    assert harness.job(job_id)["status"] == "complete"
+    assert job["checkpoints"][0]["verified"] is False
+    assert job["checkpoints"][0]["step"] == 10
+
+
+def test_a_checkpoint_whose_upload_failed_is_recorded_as_not_complete(harness):
+    """The machine itself recorded the upload as failed: nothing to verify,
+    nothing presented as complete."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=[{"step": 10, "ok": False}],
+    )
+    job_id = harness.run(provider)
+
+    job = harness.stored(job_id)
+    assert harness.job(job_id)["status"] == "complete"
+    assert job["checkpoints"][0]["verified"] is False
+    assert job["checkpoints"][0]["step"] == 10
+
+
+def test_checkpoint_retention_is_bounded_configuration(harness, monkeypatch):
+    """Turning the knob changes the number of grants minted, and hence the
+    number of checkpoint objects a job can hold -- bounded by construction
+    rather than by a deletion pass after the fact."""
+    from temper_control_plane import config
+
+    monkeypatch.setattr(config, "CHECKPOINT_RETENTION", 1)
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_checkpoint_payloads(10, 20),
+    )
+    job_id = harness.run(provider)
+
+    script = provider.script.decode("utf-8")
+    m = re.search(r"<<'JOBSPEC'\n(.*?)\nJOBSPEC\n", script, re.S)
+    spec = json.loads(m.group(1))
+    assert len(spec["checkpoint_grants"]) == 1
+    assert harness.job(job_id)["status"] == "complete"
+
+
+def test_cancellation_discards_checkpoint_objects(harness):
+    """A job the user stopped keeps no recovery material either: what the
+    machine wrote to its checkpoint slots is deleted, so nothing reachable by
+    key reads as a checkpoint after the cancellation."""
+    from temper_control_plane import config, storage
+
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_checkpoint_payloads(10, 20),
+        pause_at_stage="checkpoint_upload",
+    )
+    job = cancelled_at(harness, provider)
+
+    assert job["status"] == "cancelled"
+    for key in storage.checkpoint_keys(job["id"], config.CHECKPOINT_RETENTION):
+        with pytest.raises(storage.ObjectNotFound):
+            storage.STORE.get(key)
+
+
+def test_an_evicted_checkpoint_is_superseded_not_corrupt(harness, monkeypatch):
+    """The ring evicts the oldest checkpoint once a job writes more than the
+    retention bound. That eviction is a design decision, not corruption: the
+    old checkpoint's record says *superseded*, and no checksum-mismatch error
+    is invented for bytes that were replaced on purpose."""
+    from temper_control_plane import config
+
+    monkeypatch.setattr(config, "CHECKPOINT_RETENTION", 1)
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_checkpoint_payloads(10, 20),
+    )
+    job_id = harness.run(provider)
+
+    assert harness.job(job_id)["status"] == "complete"
+    by_step = {r["step"]: r for r in harness.stored(job_id)["checkpoints"]}
+    # The newest survives retention and verifies; the oldest was evicted.
+    assert by_step[20]["verified"] is True
+    assert by_step[10]["verified"] is False
+    assert by_step[10].get("superseded") is True
+    # And nothing was misreported as corrupt.
+    errors = [
+        e["message"] for e in harness.events(job_id) if e["kind"] == "error"
+    ]
+    assert not any("checksum" in m for m in errors)
+
+
+def test_a_failed_run_still_records_its_checkpoints(harness):
+    """A run that failed after training wrote checkpoints is exactly the run a
+    resumption would come back to: its checkpoints are verified and recorded
+    before the job reports failure, so what survived the machine is findable
+    rather than orphaned in the store."""
+    failed = {
+        **RESULT,
+        "ok": False,
+        "error_code": "training_failed",
+        "error": "training did not complete",
+    }
+    del failed["adapter_path"]
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=failed,
+        checkpoints=_checkpoint_payloads(10, 20),
+    )
+    job_id = harness.run(provider)
+
+    job = harness.stored(job_id)
+    assert harness.job(job_id)["status"] == "failed"
+    by_step = {r["step"]: r for r in job["checkpoints"]}
+    assert by_step[10]["verified"] is True
+    assert by_step[20]["verified"] is True
+    assert by_step[10]["loss"] == 1.0 / 10

@@ -79,3 +79,6 @@ and carries the *container* port. Not publishing is the only mitigation that hol
 The machine is a pure compute node reached only by the control plane, with one exception: it may
 write its own artifact to a pre-signed URL scoped to a single key
 ([ADR-0009](../docs/adr/0009-the-machine-may-write-its-own-artifact-to-a-scoped-url.md)).
+Issue #37 extends the same scoped-URL mechanism to checkpoints: one one-key grant per retention
+slot, minted by the control plane, so the machine can write each checkpoint off itself as it is
+produced without ever holding a broader credential.

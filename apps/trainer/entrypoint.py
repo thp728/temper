@@ -42,6 +42,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import IO
 
+import checkpoints as checkpoint_upload
 from template_probe import (
     PROBE_UNAVAILABLE_CODE,
     ProbeOutcome,
@@ -148,6 +149,11 @@ ALLOWED_JOB_KEYS = {
     # minted by the control plane and expiring with the job. Optional -- a
     # standalone run carries no grant and simply leaves the artifact on /out.
     "artifact_upload",
+    # Issue #37: the scoped write URLs this machine may put its checkpoints to,
+    # one per retention slot, minted by the control plane and expiring with the
+    # job. Optional -- a standalone run carries no grants and simply leaves its
+    # checkpoints on /out, exactly as it leaves the artifact.
+    "checkpoint_grants",
 }
 
 
@@ -626,6 +632,7 @@ def probe_export(job: dict, cfg: dict, tokenizer) -> ProbeOutcome:
 def main() -> int:
     started = time.time()
     result: dict = {"ok": False, "started_at": time.time()}
+    uploader: checkpoint_upload.CheckpointUploader | None = None
     try:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         job = json.loads((JOB_DIR / "job.json").read_text())
@@ -694,6 +701,30 @@ def main() -> int:
         CONFIG.write_text(yaml.safe_dump(cfg, sort_keys=True))
         result["config"] = cfg
         log(f"config written to {CONFIG}")
+
+        # Issue #37: when the control plane supplied scoped write grants for
+        # this job's checkpoint slots, start the background uploader before
+        # training so each checkpoint leaves the machine as it is produced.
+        # A standalone run carries no grants and keeps its checkpoints on /out.
+        grant_block = job.get("checkpoint_grants")
+        if (
+            isinstance(grant_block, list)
+            and grant_block
+            and all(isinstance(g, dict) and g.get("url") for g in grant_block)
+        ):
+            uploader = checkpoint_upload.CheckpointUploader(
+                OUT_DIR, grant_block, upload=upload_artifact, log=log
+            )
+            uploader.start()
+            log(
+                f"checkpoint uploader started: {len(grant_block)} "
+                f"scoped grant(s)"
+            )
+        else:
+            log(
+                "no checkpoint grants in the job spec; checkpoints will be "
+                "left on the machine"
+            )
 
         cmd = ["axolotl", "train", str(CONFIG)]
         log(f"running: {' '.join(cmd)}")
@@ -790,6 +821,15 @@ def main() -> int:
         log(f"ERROR: {result['error']}")
         return 1
     finally:
+        # The checkpoints are part of the run's result document on every path,
+        # including failure: a run that ended early still reports which
+        # checkpoints reached storage, which is exactly the record a resumption
+        # would consult. `stop_and_finish` runs here so the final checkpoint --
+        # the one a resumption would most want -- is uploaded even if the poll
+        # never saw it.
+        if uploader is not None:
+            uploader.stop_and_finish()
+            result["checkpoints"] = uploader.snapshot()
         result["total_seconds"] = round(time.time() - started, 1)
         write_result(result)
         log(f"result written to {RESULT}")

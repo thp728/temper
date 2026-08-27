@@ -52,6 +52,8 @@ STAGES = (
     # The machine's write of its own artifact to the scoped grant (ADR-0009):
     # where the artifact path can fail or pause on the machine's side.
     "artifact_upload",
+    # Issue #37: where the machine's own checkpoint writes can fail or pause.
+    "checkpoint_upload",
     "stream",
 )
 
@@ -129,6 +131,14 @@ class FakeProvider:
         destroy_failures: int = 0,
         stays_listed: bool = False,
         adapter_bytes: bytes = b"weights",
+        # Issue #37: the checkpoints the machine writes and reports. Each
+        # entry is {"step", "loss"?, "held_out_loss"?, "bytes", "sha256"?} --
+        # the bytes the machine PUTs to its slot, and an optional checksum to
+        # report (default: the true one, so verification passes). `bytes=None`
+        # writes nothing, which is how a test simulates an upload that never
+        # landed. An entry whose reported sha256 differs from its bytes is a
+        # corrupt upload.
+        checkpoints: Sequence[dict] = (),
         pause_at_stage: str | None = None,
         pause_at_line: int | None = None,
         availability: Sequence[GpuAvailability] = DEFAULT_AVAILABILITY,
@@ -149,6 +159,7 @@ class FakeProvider:
         self._destroy_failures = destroy_failures
         self._stays_listed = stays_listed
         self._adapter_bytes = adapter_bytes
+        self._checkpoints = list(checkpoints)
         self._pause_at_stage = pause_at_stage
         self._pause_at_line = pause_at_line
         self._availability = availability
@@ -247,9 +258,89 @@ class FakeProvider:
         # before it reports the result, so what the control plane verifies
         # exists by the time the result names it.
         self._write_artifact(_job_spec_from_script(script))
+        # Issue #37: the machine writes its checkpoints to their slots before
+        # reporting, and reports each one's step, loss and checksum -- the
+        # same shape the trainer's background uploader produces.
+        self._write_checkpoints(_job_spec_from_script(script))
         yield "---RESULT---"
         for line in json.dumps(self._result).splitlines():
             yield line
+
+    def _write_checkpoints(self, spec) -> None:
+        """The machine's half of issue #37, simulated: put each reported
+        checkpoint to its slot, then report the set in result.json.
+
+        Mirrors `_write_artifact`: on the filesystem backend the machine
+        presents the signed token back to the process that minted it
+        (`redeem`); the object-store backend's half is proven by the storage
+        tier separately. The reported checksum is the true one unless the
+        entry overrides it, so a test can make a corrupt upload on purpose.
+        """
+        grants = ((spec or {}).get("checkpoint_grants")) or []
+        records = []
+        for i in range(len(self._checkpoints)):
+            if not grants:
+                break
+            ckpt = self._checkpoints[i]
+            # The ring: the i-th checkpoint goes to slot i mod N, overwriting
+            # whatever the slot held -- the same shape the trainer's uploader
+            # uses, so retention is exercised rather than sidestepped.
+            slot = i % len(grants)
+            record = {"step": ckpt["step"], "slot": slot}
+            for loss_key in ("loss", "held_out_loss"):
+                if ckpt.get(loss_key) is not None:
+                    record[loss_key] = ckpt[loss_key]
+            if ckpt.get("ok") is False:
+                # The machine tried and failed, and reports the failure rather
+                # than a checksum -- the trainer records a failed upload this
+                # way, and the control plane records it as not complete.
+                record.update(
+                    {"ok": False, "error": "simulated upload failure"}
+                )
+                records.append(record)
+                continue
+            payload = ckpt.get("bytes")
+            if payload is None:
+                # The machine PUT to its slot and got a success it believed,
+                # but nothing is at the key -- the report still names a
+                # checksum so the control plane has something to verify and
+                # fail on (the same shape as a vanished artifact object).
+                record.update(
+                    {
+                        "sha256": ckpt.get("sha256")
+                        or hashlib.sha256(b"").hexdigest(),
+                        "ok": True,
+                    }
+                )
+                records.append(record)
+                continue
+            from . import storage
+            from .storage import WriteGrant
+
+            grant = WriteGrant(
+                url=grants[slot]["url"],
+                key=grants[slot]["key"],
+                expires_at=grants[slot]["expires_at"],
+            )
+            if isinstance(storage.STORE, storage.FilesystemStorage):
+                storage.STORE.redeem(grant, payload)
+            else:
+                raise AssertionError(
+                    "the fake machine redeems filesystem grants only; tests "
+                    "run against the filesystem backend"
+                )
+            record.update(
+                {
+                    "sha256": ckpt.get("sha256")
+                    or hashlib.sha256(payload).hexdigest(),
+                    "bytes": len(payload),
+                    "ok": True,
+                }
+            )
+            records.append(record)
+        if records and self._result is not None:
+            self._result = {**self._result, "checkpoints": records}
+        self._enter("checkpoint_upload")
 
     def _write_artifact(self, spec) -> None:
         """The machine's half of ADR-0009, simulated: put the artifact to the

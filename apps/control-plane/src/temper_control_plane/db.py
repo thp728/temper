@@ -120,7 +120,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     actuals_json   TEXT,
     result_json   TEXT,
     -- The storage seam's address for this job's artifact weights.
-    artifact_key  TEXT
+    artifact_key  TEXT,
+    -- The checkpoints the control plane has verified in storage (issue #37):
+    -- one record per slot, each carrying its step, its loss where one exists,
+    -- and the key its bytes were verified at. Only verified checkpoints are
+    -- recorded here; a partially written one is never presented as complete.
+    checkpoints_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -175,6 +180,7 @@ ADDED_COLUMNS = (
     ("jobs", "storage_cost_usd_per_hour", "REAL"),
     ("jobs", "quote_json", "TEXT"),
     ("jobs", "overrides_json", "TEXT"),
+    ("jobs", "checkpoints_json", "TEXT"),
     ("datasets", "progress_json", "TEXT"),
     ("jobs", "actuals_json", "TEXT"),
     ("datasets", "token_count_status", "TEXT"),
@@ -482,6 +488,22 @@ def set_state(
         _append_event(c, job_id, "state", message or state, {"state": state})
 
 
+def set_checkpoints(job_id: str, checkpoints: list[dict]) -> None:
+    """Record the checkpoints the control plane has verified in storage.
+
+    Written without an event: recording a verified checkpoint is bookkeeping,
+    and the verification itself already appends the event a reader would want
+    to see. The column is replaced whole each time -- the machine reports the
+    run's checkpoints once, in result.json, and the control plane records its
+    verdict on that set.
+    """
+    with connect() as c:
+        c.execute(
+            "UPDATE jobs SET checkpoints_json=? WHERE id=?",
+            (json.dumps(checkpoints), job_id),
+        )
+
+
 def request_cancel(job_id: str, note: str = "Cancellation requested") -> str:
     """Ask a job to stop. Says what it found, and never raises for it.
 
@@ -588,8 +610,9 @@ def get_job(job_id: str) -> dict | None:
                 "quote_json": "quote",
                 "overrides_json": "overrides",
                 "actuals_json": "actuals",
+                "checkpoints_json": "checkpoints",
             },
-            defaults={"overrides": []},
+            defaults={"overrides": [], "checkpoints": []},
         )
     )
 
@@ -632,8 +655,9 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
                         "quote_json": "quote",
                         "overrides_json": "overrides",
                         "actuals_json": "actuals",
+                        "checkpoints_json": "checkpoints",
                     },
-                    defaults={"overrides": []},
+                    defaults={"overrides": [], "checkpoints": []},
                 )
             )
         )

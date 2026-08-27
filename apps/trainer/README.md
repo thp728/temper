@@ -61,6 +61,29 @@ failure of training. The upload streams a file body with a declared
 Content-Length from the standard library only — nothing new is installed in
 the image, per the pin discipline above.
 
+## Checkpoints leave the machine as they are produced (issue #37)
+
+When the job spec carries a `checkpoint_grants` block — one scoped write URL
+per retention slot, minted by the control plane and expiring with the job —
+the trainer ships each completed checkpoint to its slot **during training**,
+through the same ADR-0009 machinery the artifact uses. A background thread
+watches `/out/run/` and uploads each `checkpoint-N` once it is complete: its
+own `trainer_state.json` must exist and agree on the step, which is how a save
+cut off mid-way is kept out of storage. Each checkpoint is tarred and PUT as
+one streamed object (nothing held whole), and the i-th successful upload
+overwrites slot `i mod N`, so storage never holds more than `N` checkpoints
+per job and retention is bounded by construction.
+
+Training never waits for an upload: the thread uploads one checkpoint at a
+time in the background, and the entrypoint's `finally` runs one last sweep so
+the final checkpoint — the one a resumption would most want — ships even if
+the poll never saw it. Each upload's step, held-out loss (where the step was
+evaluated), slot, checksum and outcome are reported in `result.json` under
+`checkpoints`; the control plane streams each stored object back through the
+checksum and records it as complete only when they match. A standalone run
+carries no grants and leaves its checkpoints on `/out`, reported as a fact
+rather than a failure of training.
+
 ⚠️ **The boundary of "always written".** The guarantee comes from a `try/finally` inside `main()`, so it holds only from the moment `main()` is entered. **An import-time failure escapes it entirely** — the container exits with no `result.json`, and the orchestrator reports `training_failed: "Trainer produced no result.json"`, an error that points at training and says nothing about the image. That is exactly what a missing COPY produces. A guarantee whose boundary is undocumented is one you will over-trust.
 
 ```bash

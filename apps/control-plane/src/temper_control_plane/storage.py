@@ -92,6 +92,32 @@ def artifact_config_key(weights_key: str) -> str:
     return f"{parent}/{ADAPTER_CONFIG_NAME}"
 
 
+def checkpoint_key(job_id: str, slot: int) -> str:
+    """The key one checkpoint slot of one job is stored under.
+
+    Checkpoints are stored as **slots**, not as one object per step: retention
+    is a bounded, configurable number of checkpoints per job (issue #37), so
+    the machine overwrites the oldest slot with each new checkpoint and
+    storage never holds more than `CHECKPOINT_RETENTION` objects per job. The
+    slot number, not the step, is part of the key, because the step is data
+    the trainer reports and the control plane verifies -- the key must be
+    knowable at mint time, before the run has produced a single step.
+    """
+    return f"checkpoints/{job_id}/slot-{slot}"
+
+
+def checkpoint_keys(job_id: str, count: int) -> list[str]:
+    """The `count` slot keys a job's checkpoints may be written to, in order.
+
+    Defined once here because the orchestrator mints a write grant per slot
+    and the cancellation path deletes every slot: the two must agree on how
+    many slots a job has and what they are called.
+    """
+    if count < 0:
+        raise ValueError("checkpoint slot count cannot be negative")
+    return [checkpoint_key(job_id, slot) for slot in range(count)]
+
+
 class ObjectNotFound(KeyError):
     """No object lives at this key. Raised by `get`, never by `delete`."""
 

@@ -15,6 +15,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from temper_core import hyperparams
+
 
 def _repo_root() -> Path:
     """Walk up to the workspace root rather than counting directories.
@@ -268,3 +270,46 @@ S3_REGION = _text("TEMPER_S3_REGION")
 # correct for local runs, whose grants live exactly one job inside one process,
 # and useless across restarts by construction rather than by hope.
 STORAGE_SECRET = _text("TEMPER_STORAGE_SECRET")
+
+
+def _count(name: str, default: int) -> int:
+    """A non-negative integer from the environment, or its default.
+
+    Same contract as `_seconds` and `_megabytes`: read once at import, and a
+    value that cannot be honoured stops the process rather than falling back
+    silently.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name}={raw!r} is not a whole number. It configures a retention "
+            f"bound, so it is refused rather than ignored."
+        ) from None
+    if value < 0:
+        raise ValueError(
+            f"{name}={raw!r} must be zero or greater. A negative retention "
+            f"bound would delete nothing and keep nothing."
+        )
+    return value
+
+
+# --- checkpoint retention ----------------------------------------------------
+# How many checkpoints one job may keep in object storage at once, and hence
+# how many scoped write grants the control plane mints for a job. Bounded by
+# construction rather than by deletion: the machine overwrites the oldest slot
+# with each new checkpoint, so storage never holds more than this many objects
+# per job (issue #37).
+#
+# The default is read from the resolver's own table rather than retyped: it
+# matches the `save_total_limit` the trainer keeps on the machine's disk, and
+# "a value two components must agree on is defined once and read, never
+# retyped" applies to the default as much as to the value. Set
+# TEMPER_CHECKPOINT_RETENTION explicitly when a deployment wants storage to
+# diverge from disk.
+CHECKPOINT_RETENTION = _count(
+    "TEMPER_CHECKPOINT_RETENTION", hyperparams.DEFAULTS["save_total_limit"]
+)
