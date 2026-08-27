@@ -294,6 +294,11 @@ class Quote(BaseModel):
     storage_cost_usd_per_hour: float
     storage_cost_usd_total_low_minor: int
     storage_cost_usd_total_high_minor: int
+    # The predicted per-device peak VRAM, from the same selection that chose
+    # the card (issue #77 records it against the measured figure). A point,
+    # not a range: memory is the half of the predictor that blocks, so it is
+    # arithmetic rather than an estimate.
+    peak_memory_gb: float | None = None
     is_estimate: bool = True
     decisions: list[QuoteDecision] = Field(default_factory=list)
     override_options: dict[str, list[str]] = Field(default_factory=dict)
@@ -329,6 +334,34 @@ class JobSpecPreview(BaseModel):
     warning: FeasibilityWarning | None = None
 
 
+class StageActual(BaseModel):
+    """One measured stage of a run: its name and how long the machine spent
+    in it, from the job's own state transitions (issue #77). A stage never
+    reached -- a job cancelled in provisioning has no `preparing` to measure
+    -- records None rather than a guessed number."""
+
+    name: str
+    duration_s: float | None = None
+
+
+class JobActuals(BaseModel):
+    """The measured half of issue #77's comparison, frozen at terminal.
+
+    Duration and peak memory are **measured**; the cost lines are **derived**
+    from measured duration and the rate the job froze at launch -- nothing in
+    the product reads a bill (spec 005's out-of-scope note) -- so the
+    interface marks each figure measured or derived wherever both appear.
+    `currency` travels with the cost so it is never shown without the unit
+    that gives it meaning."""
+
+    duration_s: float | None = None
+    peak_memory_gb: float | None = None
+    cost_minor: int | None = None
+    storage_cost_usd_minor: int | None = None
+    currency: str | None = None
+    phases: list[StageActual] = Field(default_factory=list)
+
+
 class JobRecord(BaseModel):
     """A job and the record of what became of it, published typed.
 
@@ -361,6 +394,7 @@ class JobRecord(BaseModel):
     quote: Quote | None = None
     overrides: list[DecisionOverride] = Field(default_factory=list)
     result: dict[str, Any] | None = None
+    actuals: JobActuals | None = None
 
 
 class JobList(BaseModel):
@@ -394,3 +428,50 @@ class EventPage(BaseModel):
 
     events: list[JobEvent]
     last_id: int
+
+
+class CalibrationMetric(BaseModel):
+    """One metric's rollup across runs (issue #77): how many were compared,
+    what was predicted on average, what actually happened, and the spread of
+    the error ratio (actual over predicted midpoint; >1 under-predicts, <1
+    over-predicts). `min_ratio`/`max_ratio` are where a systematically wrong
+    estimate shows up rather than being absorbed into the mean."""
+
+    count: int
+    mean_predicted: float | None = None
+    mean_actual: float | None = None
+    mean_ratio: float | None = None
+    min_ratio: float | None = None
+    max_ratio: float | None = None
+
+
+class CalibrationPhase(CalibrationMetric):
+    """One measured stage's rollup, plus the quote phases (issue #72) that
+    predict it. `preparing` bundles readiness + image_pull + model_download,
+    the orchestrator's own bundling of the job's stages."""
+
+    name: str
+    quotes_phases: list[str] = Field(default_factory=list)
+
+
+class CalibrationRun(BaseModel):
+    """One terminal job in the aggregate, so an outlier can be named rather
+    than pointed at: its identity, and its per-metric prediction-vs-measurement
+    record."""
+
+    job_id: str
+    base_model: str
+    status: str
+    created_at: float
+    comparison: dict[str, Any]
+
+
+class Calibration(BaseModel):
+    """Predictions against measurements across every terminal job that has
+    both (issue #77). Each metric and phase reports its own count, so
+    "calibrated against N real runs" is only as honest as N is visible."""
+
+    count: int
+    metrics: dict[str, CalibrationMetric]
+    phases: list[CalibrationPhase]
+    runs: list[CalibrationRun]

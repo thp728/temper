@@ -15,6 +15,229 @@
         "title": "Body_upload_dataset_v1_datasets_post",
         "type": "object"
       },
+      "Calibration": {
+        "description": "Predictions against measurements across every terminal job that has\nboth (issue #77). Each metric and phase reports its own count, so\n\"calibrated against N real runs\" is only as honest as N is visible.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CalibrationMetric"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationPhase"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationRun"
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "metrics",
+          "phases",
+          "runs"
+        ],
+        "title": "Calibration",
+        "type": "object"
+      },
+      "CalibrationMetric": {
+        "description": "One metric's rollup across runs (issue #77): how many were compared,\nwhat was predicted on average, what actually happened, and the spread of\nthe error ratio (actual over predicted midpoint; >1 under-predicts, <1\nover-predicts). `min_ratio`/`max_ratio` are where a systematically wrong\nestimate shows up rather than being absorbed into the mean.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "max_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Ratio"
+          },
+          "mean_actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Actual"
+          },
+          "mean_predicted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Predicted"
+          },
+          "mean_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Ratio"
+          },
+          "min_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Ratio"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "CalibrationMetric",
+        "type": "object"
+      },
+      "CalibrationPhase": {
+        "description": "One measured stage's rollup, plus the quote phases (issue #72) that\npredict it. `preparing` bundles readiness + image_pull + model_download,\nthe orchestrator's own bundling of the job's stages.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "max_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Ratio"
+          },
+          "mean_actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Actual"
+          },
+          "mean_predicted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Predicted"
+          },
+          "mean_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Ratio"
+          },
+          "min_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Ratio"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "quotes_phases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Quotes Phases",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "name"
+        ],
+        "title": "CalibrationPhase",
+        "type": "object"
+      },
+      "CalibrationRun": {
+        "description": "One terminal job in the aggregate, so an outlier can be named rather\nthan pointed at: its identity, and its per-metric prediction-vs-measurement\nrecord.",
+        "properties": {
+          "base_model": {
+            "title": "Base Model",
+            "type": "string"
+          },
+          "comparison": {
+            "additionalProperties": true,
+            "title": "Comparison",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "base_model",
+          "status",
+          "created_at",
+          "comparison"
+        ],
+        "title": "CalibrationRun",
+        "type": "object"
+      },
       "CatalogEntry": {
         "description": "One base model in the curated catalog: what it is, under what terms,\nand pinned to which revision.\n\nEvery field is shown to a user choosing a model -- licence and revision\nare not metadata here; they are part of what the user is agreeing to\ntrain against.",
         "properties": {
@@ -341,6 +564,75 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "JobActuals": {
+        "description": "The measured half of issue #77's comparison, frozen at terminal.\n\nDuration and peak memory are **measured**; the cost lines are **derived**\nfrom measured duration and the rate the job froze at launch -- nothing in\nthe product reads a bill (spec 005's out-of-scope note) -- so the\ninterface marks each figure measured or derived wherever both appear.\n`currency` travels with the cost so it is never shown without the unit\nthat gives it meaning.",
+        "properties": {
+          "cost_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Minor"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "peak_memory_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Memory Gb"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/StageActual"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "storage_cost_usd_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Cost Usd Minor"
+          }
+        },
+        "title": "JobActuals",
+        "type": "object"
+      },
       "JobEvent": {
         "description": "One entry in a job's durable history.\n\nEvery state transition appends one, in the same transaction as the\ntransition itself. `data` carries the fields promoted from training\noutput at read time -- loss, step, epoch -- when the line carried them;\n`message` is always the original line or narration, so structuring the\nnumbers never costs the reader the text they arrived in.",
         "properties": {
@@ -419,6 +711,16 @@
       "JobRecord": {
         "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead.",
         "properties": {
+          "actuals": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobActuals"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "base_model": {
             "title": "Base Model",
             "type": "string"
@@ -908,6 +1210,17 @@
             "title": "Override Options",
             "type": "object"
           },
+          "peak_memory_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Memory Gb"
+          },
           "phases": {
             "items": {
               "$ref": "#/components/schemas/QuotePhase"
@@ -1102,6 +1415,31 @@
         "title": "QuoteRequest",
         "type": "object"
       },
+      "StageActual": {
+        "description": "One measured stage of a run: its name and how long the machine spent\nin it, from the job's own state transitions (issue #77). A stage never\nreached -- a job cancelled in provisioning has no `preparing` to measure\n-- records None rather than a guessed number.",
+        "properties": {
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StageActual",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1225,6 +1563,28 @@
         "summary": "Health",
         "tags": [
           "ops"
+        ]
+      }
+    },
+    "/v1/calibration": {
+      "get": {
+        "description": "Predictions against measurements across terminal jobs (issue #77).\n\nThe aggregate the calibration view renders: per-metric and per-phase\nrolls of what was predicted against what happened, so a systematically\nwrong estimate is visible rather than absorbed into a better-looking\naverage. Only jobs that reached a terminal state and carry both a frozen\nquote and frozen actuals contribute -- an estimate with no run to measure\nit against is not calibration, it is a guess. The runs themselves ride\nalong so an outlier can be named rather than pointed at.",
+        "operationId": "calibration_summary_v1_calibration_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Calibration"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calibration Summary",
+        "tags": [
+          "jobs"
         ]
       }
     },

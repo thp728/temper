@@ -102,6 +102,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- run says what it actually used rather than what it would have
     -- defaulted to -- and what the orchestrator re-provisions against.
     overrides_json TEXT,
+    -- The measured actuals, frozen at terminal (issue #77): what the run
+    -- actually took and cost, beside the quote it was predicted against.
+    -- Written once, like the quote -- the mirror image of it.
+    actuals_json   TEXT,
     result_json   TEXT,
     -- The storage seam's address for this job's artifact weights.
     artifact_key  TEXT
@@ -160,6 +164,7 @@ ADDED_COLUMNS = (
     ("jobs", "quote_json", "TEXT"),
     ("jobs", "overrides_json", "TEXT"),
     ("datasets", "progress_json", "TEXT"),
+    ("jobs", "actuals_json", "TEXT"),
 )
 
 
@@ -378,7 +383,12 @@ def set_state(
     vals.append(job_id)
     with connect() as c:
         c.execute(f"UPDATE jobs SET {', '.join(cols)} WHERE id=?", vals)
-        _append_event(c, job_id, "state", message or state)
+        # The event carries the state it entered as data, not only as a
+        # message that may be the human narration ("Selecting hardware")
+        # rather than the state's name: issue #77's stage durations are
+        # measured from these events, and a state event that does not say
+        # which state it entered cannot be measured.
+        _append_event(c, job_id, "state", message or state, {"state": state})
 
 
 def request_cancel(job_id: str, note: str = "Cancellation requested") -> str:
@@ -432,6 +442,21 @@ def cancel_requested(job_id: str) -> bool:
     return bool(row and row["cancel_requested"])
 
 
+def record_actuals(job_id: str, actuals: dict) -> None:
+    """Freeze the measured figures onto a terminal job (issue #77).
+
+    Written once, like the quote -- the mirror image of it: the quote says
+    what was predicted before launch, the actuals say what was measured
+    after. Called by the orchestrator the moment a run reaches a terminal
+    state, so recording starts with the first run rather than the last.
+    """
+    with connect() as c:
+        c.execute(
+            "UPDATE jobs SET actuals_json=? WHERE id=?",
+            (json.dumps(actuals), job_id),
+        )
+
+
 def add_event(
     job_id: str, kind: str, message: str, data: dict | None = None
 ) -> None:
@@ -471,6 +496,7 @@ def get_job(job_id: str) -> dict | None:
                 "warnings_json": "warnings",
                 "quote_json": "quote",
                 "overrides_json": "overrides",
+                "actuals_json": "actuals",
             },
             defaults={"overrides": []},
         )
@@ -506,6 +532,7 @@ def list_jobs(limit: int = 50) -> list[dict]:
                         "warnings_json": "warnings",
                         "quote_json": "quote",
                         "overrides_json": "overrides",
+                        "actuals_json": "actuals",
                     },
                     defaults={"overrides": []},
                 )
@@ -548,6 +575,7 @@ def active_jobs() -> list[dict]:
                         "hyperparams_json": "hyperparameters",
                         "quote_json": "quote",
                         "overrides_json": "overrides",
+                        "actuals_json": "actuals",
                     },
                     defaults={"overrides": []},
                 )

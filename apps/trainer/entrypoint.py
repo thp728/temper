@@ -35,9 +35,10 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import IO
 
@@ -236,6 +237,98 @@ def run_streaming(cmd: list[str]) -> tuple[int, list[str]]:
             lf.flush()
             tail.append(line)
     return proc.wait(), list(tail)
+
+
+# --- peak VRAM, measured during training (issue #77) --------------------------
+# The prediction (temper_core.memory) counts in decimal GB (BYTES_PER_GB =
+# 1e9), so the measurement is converted the same way -- one convention for GB,
+# never two. nvidia-smi reports used memory per device in MiB; the maximum
+# across samples and devices is the figure issue #77 records against the
+# prediction, converted with the same 1e9 byte count the predictor used.
+_MIB_PER_GB = 1024 * 1024 / 1e9
+_SAMPLE_INTERVAL_S = 2.0
+_NVIDIA_SMI_QUERY = [
+    "nvidia-smi",
+    "--query-gpu=index,memory.used",
+    "--format=csv,noheader,nounits",
+]
+
+
+def max_vram_gb_from_smi(output_lines: Iterable[str]) -> float | None:
+    """The peak used VRAM, in decimal GB, across nvidia-smi's per-GPU lines.
+
+    Pure over the lines so it is testable without a GPU: the same parse the
+    sampler runs against real output runs against a test's canned lines. A
+    line that is not the "index, MiB" shape is skipped rather than failing
+    the measurement -- the query is ours, but the machine is someone else's.
+    """
+    peak: float | None = None
+    for line in output_lines:
+        fields = line.strip().replace(" MiB", "").split(",")
+        if len(fields) < 2:
+            continue
+        try:
+            used_mib = int(fields[1].strip())
+        except ValueError:
+            continue
+        used_gb = used_mib * _MIB_PER_GB
+        if peak is None or used_gb > peak:
+            peak = used_gb
+    return peak
+
+
+class VramSampler:
+    """Sample the machine's per-GPU used VRAM during training, keep the peak.
+
+    A daemon thread so the training stream is never blocked on the sampling;
+    the peak is read once after training ends and recorded in result.json.
+
+    Why nvidia-smi and not torch: axolotl runs as a subprocess, so this
+    process never allocates on the GPU, and `torch.cuda.max_memory_allocated`
+    here would always be zero. nvidia-smi reports *used* memory per device,
+    which includes the training process -- the same method the spikes
+    measured the 5.31 GB anchor with (spike 6, `bootstrap6.sh`). A machine
+    without nvidia-smi (or a container that cannot see it) measures nothing,
+    honestly: the result simply carries no peak.
+    """
+
+    def __init__(self, interval_s: float = _SAMPLE_INTERVAL_S) -> None:
+        self._interval_s = interval_s
+        self._peak_gb: float | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="vram-sampler"
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=max(self._interval_s * 2, 5.0))
+
+    def peak_gb(self) -> float | None:
+        return self._peak_gb
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                result = subprocess.run(
+                    _NVIDIA_SMI_QUERY,
+                    capture_output=True,
+                    text=True,
+                    timeout=self._interval_s,
+                )
+            except (OSError, subprocess.SubprocessError):
+                return
+            if result.returncode != 0:
+                return
+            peak = max_vram_gb_from_smi(result.stdout.splitlines())
+            if peak is not None and (
+                self._peak_gb is None or peak > self._peak_gb
+            ):
+                self._peak_gb = peak
+            self._stop.wait(self._interval_s)
 
 
 def spec_hyperparameters(job: dict) -> dict:
@@ -542,9 +635,20 @@ def main() -> int:
         cmd = ["axolotl", "train", str(CONFIG)]
         log(f"running: {' '.join(cmd)}")
         t0 = time.time()
-        code, tail = run_streaming(cmd)
+        # Sampled while the trainer runs, not after: the machine is destroyed
+        # the moment the job ends, so the peak must be captured during the
+        # only window it exists (issue #77's "no run is wasted").
+        sampler = VramSampler()
+        sampler.start()
+        try:
+            code, tail = run_streaming(cmd)
+        finally:
+            sampler.stop()
         result["train_seconds"] = round(time.time() - t0, 1)
         result["exit_code"] = code
+        peak = sampler.peak_gb()
+        if peak is not None:
+            result["peak_memory_gb"] = round(peak, 2)
 
         if code != 0:
             result["error"] = "axolotl train failed"

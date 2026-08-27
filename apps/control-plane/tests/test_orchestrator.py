@@ -287,6 +287,109 @@ def test_a_job_runs_to_completion_against_a_fake_provider(harness):
     assert not provider.closed
 
 
+# --- issue #77: every run records what was predicted against what happened ---
+
+
+def test_a_completed_job_records_its_actuals_against_the_quote(harness):
+    """The measured half of the comparison is frozen at terminal, beside the
+    quote: duration (wall and per-stage), the trainer's measured peak VRAM,
+    and the cost derived from measured duration at the frozen rate."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result={**RESULT, "peak_memory_gb": 5.31},
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    job_id = harness.run(provider)
+    job = harness.job(job_id)
+    assert job["status"] == "complete"
+    assert job["quote"] is not None
+
+    actuals = job["actuals"]
+    assert actuals is not None
+    # Wall duration measured from the row's own timestamps; the fake runs
+    # instantly, so it is tiny but never negative.
+    assert actuals["duration_s"] is not None
+    assert actuals["duration_s"] >= 0
+    # The trainer's measured peak, carried back in the result document.
+    assert actuals["peak_memory_gb"] == 5.31
+    # Cost derived from measured duration at the frozen rate, in the rate's
+    # currency -- an integer in the smallest unit, like the quote's.
+    assert actuals["cost_minor"] is not None
+    assert actuals["currency"] == "INR"
+    # The stages are the job's own, each measured from the state events.
+    by_name = {p["name"]: p["duration_s"] for p in actuals["phases"]}
+    assert set(by_name) == {
+        "provisioning",
+        "preparing",
+        "training",
+        "packaging",
+    }
+    assert all(v is not None and v >= 0 for v in by_name.values())
+
+    # Frozen once, on the row, like the quote -- never recomputed on read.
+    stored = harness.stored(job_id)["actuals"]
+    assert stored == actuals
+
+
+def test_a_failed_job_records_duration_and_cost_and_no_peak(harness):
+    """A run that produced no result records the actuals it can measure and
+    no peak: the honest absence, never a guessed number -- a failed run's
+    duration and cost still feed the calibration."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result={
+            "ok": False,
+            "stage": "train",
+            "error_code": "gpu_stalled",
+            "error": "No output for 900.0s (stall limit); machine destroyed.",
+        },
+    )
+    job_id = harness.run(provider)
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    actuals = job["actuals"]
+    assert actuals is not None
+    assert actuals["duration_s"] is not None
+    assert actuals["peak_memory_gb"] is None
+    assert actuals["cost_minor"] is not None
+    assert set(p["name"] for p in actuals["phases"]) == {
+        "provisioning",
+        "preparing",
+        "training",
+        "packaging",
+    }
+
+
+def test_the_calibration_aggregate_compares_predictions_against_actuals(
+    harness,
+):
+    """The aggregate view's data: every terminal job that has both a frozen
+    quote and frozen actuals contributes per-metric rolls, so a systematically
+    wrong estimate is visible rather than absorbed. Jobs without a quote or
+    without actuals (not yet terminal) are excluded."""
+    for _ in range(2):
+        harness.run(
+            FakeProvider(
+                lines=TRAINING_LINES,
+                result={**RESULT, "peak_memory_gb": 5.31},
+                adapter_bytes=ADAPTER_BYTES,
+            )
+        )
+    # A job that never ran has no actuals to compare.
+    harness.queued_job()
+
+    body = harness._client.get("/v1/calibration").json()
+    assert body["count"] == 2  # only the two terminal jobs with actuals
+    for name in ("duration", "peak_memory", "cost"):
+        metric = body["metrics"][name]
+        assert metric["count"] == 2
+        assert metric["mean_ratio"] is not None
+    phases = {p["name"]: p for p in body["phases"]}
+    assert set(phases) == {"provisioning", "preparing", "training"}
+    assert body["runs"][0]["comparison"]["duration"]["actual"] is not None
+    assert all(r["status"] == "complete" for r in body["runs"])
+
+
 def test_disk_is_computed_and_passed_as_a_provisioning_parameter(harness):
     """Issue #64: disk is no longer a constant equal to the platform
     minimum. A tiny model's job still floors there, but the value reaching

@@ -147,6 +147,13 @@ class Quote:
     storage_cost_usd_per_hour: float
     storage_cost_usd_total_low_minor: int
     storage_cost_usd_total_high_minor: int
+    # The predicted per-device peak VRAM, from `temper_core.memory` through
+    # the caller's hardware selection (issue #77 records it against the
+    # measured figure). A point, not a range: memory is the half of the
+    # predictor that blocks rather than warns (spec 005), so it is arithmetic
+    # rather than an estimate. None when the caller priced no configuration
+    # (a quote that could not select hardware carries no peak to record).
+    peak_memory_gb: float | None = None
     is_estimate: bool = True
     decisions: tuple[Decision, ...] = ()
 
@@ -214,6 +221,7 @@ def estimate(
     base_revision: str,
     expires_at: float,
     training_duration_s: float | None = None,
+    peak_memory_gb: float | None = None,
     decisions: tuple[Decision, ...] = (),
 ) -> Quote:
     """The quote for one configuration, computed from its inputs alone.
@@ -225,6 +233,10 @@ def estimate(
     is derived here from `usable_rows` and the hyperparameters, and when the
     volume cannot bound the run (`max_steps` set) the training phase is
     reported as not estimable rather than guessed.
+
+    `peak_memory_gb` is the predicted peak VRAM from the caller's hardware
+    selection (issue #77 records it against the measured figure); None when
+    the caller priced no configuration.
 
     `decisions` are the structured reasons the configuration was chosen (issue
     #76), supplied by the caller that has the hardware and disk plans --
@@ -310,5 +322,6 @@ def estimate(
         storage_cost_usd_per_hour=storage_cost_usd_per_hour,
         storage_cost_usd_total_low_minor=storage_low,
         storage_cost_usd_total_high_minor=storage_high,
+        peak_memory_gb=peak_memory_gb,
         decisions=tuple(decisions),
     )
