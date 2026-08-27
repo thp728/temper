@@ -45,14 +45,16 @@ from pathlib import Path
 from typing import Any
 
 # The three tiers, named once. The tier file uses these strings; everything
-# that branches on tier reads this set rather than retyping them.
+# that branches on tier reads these constants rather than retyping them.
 TIERS: tuple[str, ...] = (
     "calculated",
     "exposed_with_named_failure_mode",
     "known_but_unsupported",
 )
 
+CALCULATED_TIER = "calculated"
 EXPOSED_TIER = "exposed_with_named_failure_mode"
+UNSUPPORTED_TIER = "known_but_unsupported"
 
 # Keys the platform itself carries that are not trainer fields. They travel in
 # the same `hyperparameters` dict (so the create path validates them like any
@@ -207,7 +209,7 @@ def unsupported_fields() -> dict[str, str]:
     return {
         name: entry["reason"]
         for name, entry in TIER_ENTRIES.items()
-        if entry["tier"] == "known_but_unsupported"
+        if entry["tier"] == UNSUPPORTED_TIER
     }
 
 
@@ -217,7 +219,7 @@ def calculated_fields() -> dict[str, str]:
     return {
         name: entry["reason"]
         for name, entry in TIER_ENTRIES.items()
-        if entry["tier"] == "calculated"
+        if entry["tier"] == CALCULATED_TIER
     }
 
 
@@ -246,6 +248,24 @@ def runtime_only_validators() -> dict[str, list[str] | int]:
     }
 
 
+# Tokens in a field's type string that mean its captured enum is a PARTIAL
+# vocabulary rather than the exhaustive one. A field typed
+# `Union[Literal['auto'], bool]` (bf16, tf32, torch_compile, ...) or
+# `str | SomeEnum` (optimizer, chat_template) legitimately accepts values
+# outside the captured list, so enforcing the list as exhaustive would refuse
+# valid values -- `bf16: true` is the platform's own config, and refusing it
+# would be a gate that blocks what the trainer accepts. Enforcement only
+# applies where the type is a bare Literal/Enum (optionally optional).
+_PARTIAL_ENUM_TOKENS = (
+    "bool",
+    "str",
+    "list",
+    "dict",
+    "Any",
+    "PIL.",
+)
+
+
 def _schema_constraint_violation(name: str, value: Any) -> str | None:
     """A reason the value violates what the schema *does* express, or None.
 
@@ -253,11 +273,18 @@ def _schema_constraint_violation(name: str, value: Any) -> str | None:
     (ge/le) Axolotl declares. These are the combinations that can be validated
     ahead of launch; the runtime-only validators (see
     `runtime_only_validators`) are the ones that cannot, and are named as such.
+    A partial enum (a Literal unioned with bool/str/list/... or another enum)
+    is not enforced, because the captured list is not the whole vocabulary and
+    refusing outside it would block values the trainer accepts.
     """
     field = FIELDS[name]
     enums = field.get("enum_values") or []
-    if enums and str(value) not in enums:
-        return f"'{value}' is not one of: {', '.join(sorted(enums))}."
+    partial = any(
+        tok in str(field.get("type", "")) for tok in _PARTIAL_ENUM_TOKENS
+    )
+    if enums and value is not None and not partial:
+        if str(value) not in enums:
+            return f"'{value}' is not one of: {', '.join(sorted(enums))}."
     for raw in field.get("constraints") or []:
         kind, _, bound = raw.partition("=")
         try:

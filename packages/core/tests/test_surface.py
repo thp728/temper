@@ -131,6 +131,20 @@ def test_writing_the_surface_is_deterministic(tmp_path):
     assert a.read_bytes() == b.read_bytes()
 
 
+def test_the_checked_in_surface_is_current():
+    """The committed `advanced-surface.json` is byte-identical to a fresh
+    generation: generation reproduces the artifact, so `just contracts-check`
+    and this test are the same promise stated twice. A hand edit to the
+    committed file -- or to the schema/tier files without regenerating --
+    fails here."""
+    committed = surface.TIERS_PATH.parent / "advanced-surface.json"
+    import json
+
+    assert json.loads(committed.read_text(encoding="utf-8")) == (
+        surface.surface_document()
+    )
+
+
 def test_the_surface_names_its_source_image_and_versions():
     doc = surface.surface_document()
     assert doc["_source_image"].startswith("axolotlai/axolotl:")
@@ -244,11 +258,28 @@ def test_a_value_outside_the_schema_bounds_is_refused():
     assert violation is not None and "minimum" in violation
 
 
-def test_a_value_outside_the_schema_enum_is_refused():
+def test_a_value_outside_a_pure_enum_is_refused():
+    """`relora_prune_method` is a bare `Optional[Literal[...]]`, so its enum is
+    the exhaustive vocabulary and a value outside it is refused before
+    launch."""
     violation = surface._schema_constraint_violation(
-        "optimizer", "not_an_optimizer"
+        "relora_prune_method", "bogus"
     )
     assert violation is not None and "not one of" in violation
+
+
+def test_a_partial_enum_is_not_enforced_as_exhaustive():
+    """`bf16` is typed `Union[Literal['auto'], bool]`; 'auto' is captured but
+    True/False are valid values too. Enforcing the captured list as exhaustive
+    would refuse `bf16: true` -- the platform's own config -- so a partial enum
+    must not block values the trainer accepts."""
+    assert surface._schema_constraint_violation("bf16", True) is None
+    assert surface._schema_constraint_violation("bf16", "auto") is None
+    # optimizer accepts arbitrary strings (str | CustomSupportedOptimizers).
+    assert (
+        surface._schema_constraint_violation("optimizer", "adamw_torch_fused")
+        is None
+    )
 
 
 def test_an_empty_override_dict_is_accepted():
