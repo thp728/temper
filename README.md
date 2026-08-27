@@ -138,7 +138,7 @@ with the flat alternative and why it lost.
 
 ## Known gaps
 
-Named here rather than left for a reader to find. Current as of 2026-08-25.
+Named here rather than left for a reader to find. Current as of 2026-08-28.
 
 - **Loss reaches the page as a number, not a curve.** The job view shows the latest loss and step; a chart is being added to it this wave. The values themselves come from a real run's training output, promoted by a classifier that was checked line by line against that output.
 - **A finished job's page truncates its log.** The event read caps at 500, and a real run writes more than that, so a finished job's page cuts off before its own final events. Live watching polls past the cap; the finished page does not.

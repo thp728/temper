@@ -139,6 +139,16 @@ describe("RunningJobView", () => {
     expect(screen.getByRole("log")).toHaveTextContent("training");
   });
 
+  it("announces state changes to screen readers", () => {
+    // The watch page's aria-live region, ported: a state change is announced
+    // rather than only painted, so a screen-reader user is not left guessing
+    // where the job is (spec 007, stories 18-19).
+    renderView();
+    const state = screen.getByText("training", { selector: "strong" });
+    expect(state).toHaveAttribute("id", "job-state");
+    expect(state).toHaveAttribute("aria-live", "polite");
+  });
+
   it("appends streamed output without a refresh", async () => {
     renderView();
     stream().emit("job", event({ id: 2, kind: "log", message: "building image" }));
