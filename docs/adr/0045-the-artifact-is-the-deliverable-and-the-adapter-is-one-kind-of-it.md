@@ -1,4 +1,4 @@
-# ADR-0044 — The artifact is the deliverable, and the adapter is one kind of it
+# ADR-0045 — The artifact is the deliverable, and the adapter is one kind of it
 
 - **Status:** accepted
 - **Date:** 2026-08-28

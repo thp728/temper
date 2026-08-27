@@ -85,7 +85,7 @@ repository becomes public at submission.
 | [0042](0042-every-export-asserts-the-training-and-artifact-templates-tokenize-identically.md) | Every export asserts the training and artifact templates tokenize identically | accepted | 2026-08-27 |
 | [0043](0043-memory-blocks-at-creation-while-time-and-cost-warn.md) | Memory blocks at job creation while time and cost warn, and the two halves differ on the cost of being wrong | accepted | 2026-08-28 |
 | [0044](0044-the-server-rendered-pages-are-deleted-and-the-interfaces-never-coexist.md) | The server-rendered pages are deleted, and the two interfaces never coexist | accepted | 2026-08-28 |
-| [0044](0044-the-artifact-is-the-deliverable-and-the-adapter-is-one-kind-of-it.md) | The artifact is the deliverable, and the adapter is one kind of it | accepted | 2026-08-28 |
+| [0045](0045-the-artifact-is-the-deliverable-and-the-adapter-is-one-kind-of-it.md) | The artifact is the deliverable, and the adapter is one kind of it | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
