@@ -3,6 +3,7 @@ import {
   Card,
   CardContent,
 } from "@/components/ui/card";
+import { DatasetRecordTokenCountStatus } from "@/lib/api/generated/client";
 import type {
   DatasetRecord,
   TokenDistribution,
@@ -82,7 +83,7 @@ export default function TokenCountView({
   const dist = report?.token_distribution ?? null;
   const total = report?.token_count ?? null;
 
-  if (status === "counting") {
+  if (status === DatasetRecordTokenCountStatus.counting) {
     const percent = percentOf(record);
     return (
       <Card>
@@ -122,7 +123,7 @@ export default function TokenCountView({
     );
   }
 
-  if (status === "failed") {
+  if (status === DatasetRecordTokenCountStatus.failed) {
     return (
       <Alert role="status" className="mt-0">
         <AlertTitle>Token count unavailable</AlertTitle>
@@ -134,7 +135,7 @@ export default function TokenCountView({
     );
   }
 
-  if (status === "done" && total !== null && dist !== null) {
+  if (status === DatasetRecordTokenCountStatus.done && total !== null && dist !== null) {
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

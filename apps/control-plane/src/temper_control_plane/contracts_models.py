@@ -156,9 +156,11 @@ class DatasetRecord(BaseModel):
 
     The token fields (issue #42) belong to the counting phase that runs after
     validation, so they ride on the record rather than inside the validation
-    dict: `token_count_status` is the phase's own state (`counting` | `done` |
-    `failed` | null), and `counting_progress` shows where it has got to while
-    it runs. The count itself is merged into `report` once it lands."""
+    dict: `token_count_status` is the phase's own state, typed as the literal
+    vocabulary (`counting` | `done` | `failed` | null) so the contract is the
+    single source of the state names both halves use, and `counting_progress`
+    shows where it has got to while it runs. The count itself is merged into
+    `report` once it lands."""
 
     id: str
     filename: str
@@ -166,7 +168,7 @@ class DatasetRecord(BaseModel):
     status: str
     report: DatasetReport | None = None
     progress: ValidationProgress | None = None
-    token_count_status: str | None = None
+    token_count_status: Literal["counting", "done", "failed"] | None = None
     counting_progress: ValidationProgress | None = None
 
 

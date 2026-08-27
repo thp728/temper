@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import BackToUpload from "@/components/BackToUpload";
 import ReportView from "@/components/ReportView";
 import ValidationProgressView from "@/components/ValidationProgressView";
+import { DatasetRecordTokenCountStatus } from "@/lib/api/generated/client";
 import { getDatasetV1DatasetsDatasetIdGet } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
@@ -59,7 +60,8 @@ export default async function DatasetPage({
     // re-fetches on a meta refresh until the count lands.
     return (
       <>
-        {record.token_count_status === "counting" && (
+        {record.token_count_status ===
+          DatasetRecordTokenCountStatus.counting && (
           <meta httpEquiv="refresh" content="2" />
         )}
         <ReportView record={record} />

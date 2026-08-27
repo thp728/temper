@@ -164,6 +164,13 @@ class ValidationProgress:
     bytes_total: int | None
     rows: int
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bytes_read": self.bytes_read,
+            "bytes_total": self.bytes_total,
+            "rows": self.rows,
+        }
+
 
 def _normalise(text: str) -> str:
     """NFC, and strip control characters except tab and newline.

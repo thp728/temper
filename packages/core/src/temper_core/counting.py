@@ -49,8 +49,11 @@ from temper_core.validation import (
 # a tunable: the bucket count is what keeps peak memory independent of the
 # file, and a deployment knob on a safety property is a knob on the property.
 # 2048 is an edge on purpose -- it is the trainer's default sequence length, so
-# the histogram itself answers "how many rows reach the context window" at the
-# length the quote is priced against.
+# the bucket that starts there counts the rows that REACH the context window
+# (`tokens >= 2048`). That is deliberately a different number from
+# `TokenCounts.truncated_rows`, which counts only rows that EXCEED the window
+# (`tokens > 2048`): one is the shape, the other is the exact count a user
+# acts on, and the two never pretend to be the same.
 HISTOGRAM_EDGES: tuple[int, ...] = (
     0,
     128,
@@ -140,7 +143,10 @@ def count_tokens_chunks(
     every problem with its line, and validation ran at upload. Rows that do
     not parse are skipped (they contribute zero) rather than re-reported --
     counting is the second, focused phase the measurement said validation
-    must not block on.
+    must not block on. The control plane starts it only for a dataset the
+    report marked valid, so every parsed row here is a usable row and
+    `rows_counted` equals the report's `usable_rows` -- the count and the
+    report cannot disagree about what they covered.
     """
     total_tokens = 0
     rows_counted = 0

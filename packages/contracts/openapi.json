@@ -340,7 +340,7 @@
         "type": "object"
       },
       "DatasetRecord": {
-        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent.\n\nThe token fields (issue #42) belong to the counting phase that runs after\nvalidation, so they ride on the record rather than inside the validation\ndict: `token_count_status` is the phase's own state (`counting` | `done` |\n`failed` | null), and `counting_progress` shows where it has got to while\nit runs. The count itself is merged into `report` once it lands.",
+        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent.\n\nThe token fields (issue #42) belong to the counting phase that runs after\nvalidation, so they ride on the record rather than inside the validation\ndict: `token_count_status` is the phase's own state, typed as the literal\nvocabulary (`counting` | `done` | `failed` | null) so the contract is the\nsingle source of the state names both halves use, and `counting_progress`\nshows where it has got to while it runs. The count itself is merged into\n`report` once it lands.",
         "properties": {
           "counting_progress": {
             "anyOf": [
@@ -391,6 +391,11 @@
           "token_count_status": {
             "anyOf": [
               {
+                "enum": [
+                  "counting",
+                  "done",
+                  "failed"
+                ],
                 "type": "string"
               },
               {

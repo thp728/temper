@@ -88,14 +88,7 @@ def _validate_in_background(ds_id: str, key: str, total_bytes: int) -> None:
         try:
 
             def on_progress(p) -> None:
-                db.set_dataset_progress(
-                    ds_id,
-                    {
-                        "bytes_read": p.bytes_read,
-                        "bytes_total": p.bytes_total,
-                        "rows": p.rows,
-                    },
-                )
+                db.set_dataset_progress(ds_id, p.to_dict())
 
             report = validation.validate_chunks(
                 storage.STORE.get_stream(key),
@@ -159,14 +152,7 @@ def _count_tokens_in_background(
             db.begin_token_count(ds_id)
 
             def on_progress(p) -> None:
-                db.set_counting_progress(
-                    ds_id,
-                    {
-                        "bytes_read": p.bytes_read,
-                        "bytes_total": p.bytes_total,
-                        "rows": p.rows,
-                    },
-                )
+                db.set_counting_progress(ds_id, p.to_dict())
 
             counts = counting.count_tokens_chunks(
                 storage.STORE.get_stream(key),
