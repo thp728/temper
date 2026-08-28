@@ -14,8 +14,8 @@ from collections.abc import Sequence
 
 from fastapi import HTTPException
 
-from temper_control_plane import config, db, orchestrator
-from temper_core import catalog, feasibility, hyperparams, overrides, surface
+from temper_control_plane import admission, config, db, orchestrator
+from temper_core import feasibility, hyperparams, overrides, surface
 
 
 def usable_dataset(dataset_id: str) -> dict:
@@ -83,14 +83,43 @@ def create(
     surface it arrived on.
     """
     ds = usable_dataset(dataset_id)
-    model = catalog.get(base_model)
+    model, admitted_probe = admission.lookup(base_model)
     if not model:
         raise HTTPException(
             400,
             {
                 "code": "unknown_model",
-                "message": f"'{base_model}' is not in the catalog.",
-                "available": [m["id"] for m in catalog.listing()],
+                "message": f"'{base_model}' is not in the catalog and has not "
+                "been admitted by a probe.",
+                "available": admission.available_ids(),
+            },
+        )
+
+    # Issue #58: a model admitted from outside the catalog may be launched
+    # only after its probe is on record, and a probe with blocking findings
+    # refuses the launch with those findings shown. The probe result was
+    # persisted at admission; this gate is what "before a job can be created"
+    # means -- a blocked model cannot be launched into, because the probe
+    # exists to do the testing in front of the user rather than on a paid
+    # machine. A catalog model has no probe (it is the tested default) and
+    # passes by construction. `admitted_probe` came from the same lookup that
+    # materialised the model, so the gate does not re-read the row.
+    if admitted_probe is not None and not admitted_probe.get("ok", False):
+        blocks = [
+            f
+            for f in admitted_probe.get("findings", [])
+            if f.get("severity") == "block"
+        ]
+        raise HTTPException(
+            400,
+            {
+                "code": "model_probe_blocked",
+                "message": (
+                    f"'{model.repo}' at revision '{model.revision}' is blocked "
+                    "by its compatibility probe; it cannot be trained on here. "
+                    "The probe's findings say why."
+                ),
+                "findings": blocks,
             },
         )
 

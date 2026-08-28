@@ -1,6 +1,39 @@
 {
   "components": {
     "schemas": {
+      "AdmittedModel": {
+        "description": "One model admitted from outside the catalog (issue #58), pinned to a\nrevision and carrying the persisted probe result that lets a job be\ncreated against it. A blocked probe is persisted too, so the reason is\nshown rather than retried blindly.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "probe": {
+            "$ref": "#/components/schemas/ProbeResult"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "repo",
+          "revision",
+          "created_at",
+          "probe"
+        ],
+        "title": "AdmittedModel",
+        "type": "object"
+      },
       "AdvancedSurface": {
         "description": "The generated advanced surface, published for the interface to render.\n\nThe same document `temper_core.surface.surface_document()` produces (and\n`just contracts` materialises as `advanced-surface.json`), typed at the\nHTTP boundary so the generated client never falls back to `unknown`. The\nmetadata fields validate from the document's leading-underscore keys and\nserialize under their plain names: the underscore is a \"derived metadata\"\nmarker internal to the generator, not a shape worth publishing.",
         "properties": {
@@ -1325,8 +1358,15 @@
         "type": "object"
       },
       "ModelCatalog": {
-        "description": "The catalog and its default. The default is published beside the list\nbecause \"which one starts selected\" is a product decision, not something\na client should guess by ordering.",
+        "description": "The catalog and its default. The default is published beside the list\nbecause \"which one starts selected\" is a product decision, not something\na client should guess by ordering.\n\n`admitted` (issue #58) are the models probed from outside the catalog,\neach carrying its persisted probe result -- verdict and findings -- so the\ninterface shows what the user is taking on before they commit to a launch.",
         "properties": {
+          "admitted": {
+            "items": {
+              "$ref": "#/components/schemas/AdmittedModel"
+            },
+            "title": "Admitted",
+            "type": "array"
+          },
           "default": {
             "title": "Default",
             "type": "string"
@@ -1344,6 +1384,24 @@
           "default"
         ],
         "title": "ModelCatalog",
+        "type": "object"
+      },
+      "ModelProbeRequest": {
+        "properties": {
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "revision"
+        ],
+        "title": "ModelProbeRequest",
         "type": "object"
       },
       "PeakMemoryEstimate": {
@@ -1500,6 +1558,191 @@
           }
         },
         "title": "PreviewTurn",
+        "type": "object"
+      },
+      "ProbeFinding": {
+        "description": "One compatibility-probe finding (issue #58): the stable code, whether\nit blocks or warns, and the product reason. A `block` means the model is\nnot usable; a `warn` means it is usable and the user is told what they\ntook on.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "block",
+              "warn"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "ProbeFinding",
+        "type": "object"
+      },
+      "ProbeMemory": {
+        "description": "The probe's predicted-memory line (issue #58): the peak at the default\nconfiguration against the smallest card this platform can provision, with\nthe arithmetic shown. `fits` is never False against stale availability,\nbecause availability is a creation-time concern (#54); this is the same\n`memory.predict_peak` arithmetic the launch refusal is built on.",
+        "properties": {
+          "capacity_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Gb"
+          },
+          "card": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card"
+          },
+          "fits": {
+            "title": "Fits",
+            "type": "boolean"
+          },
+          "headroom_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headroom Gb"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "peak_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Gb"
+          }
+        },
+        "required": [
+          "fits"
+        ],
+        "title": "ProbeMemory",
+        "type": "object"
+      },
+      "ProbeResult": {
+        "description": "A persisted compatibility-probe verdict (issue #58), shown rather than\nmerely enforced: a model that passes with warnings is usable, and the user\nknows what they took on. `ok` is what a caller branches on for usability;\n`verdict` is the human-facing label derived from it.",
+        "properties": {
+          "architecture": {
+            "title": "Architecture",
+            "type": "string"
+          },
+          "context_length": {
+            "default": 0,
+            "title": "Context Length",
+            "type": "integer"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ProbeFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "is_moe": {
+            "default": false,
+            "title": "Is Moe",
+            "type": "boolean"
+          },
+          "license": {
+            "default": "",
+            "title": "License",
+            "type": "string"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProbeMemory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "params_b": {
+            "default": 0.0,
+            "title": "Params B",
+            "type": "number"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "blocked",
+              "usable_with_warnings",
+              "usable"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "revision",
+          "ok",
+          "verdict",
+          "architecture"
+        ],
+        "title": "ProbeResult",
         "type": "object"
       },
       "Quote": {
@@ -2713,7 +2956,7 @@
     },
     "/v1/models": {
       "get": {
-        "description": "The curated base-model catalog.\n\nAn allow-list, not a limitation: detection of an arbitrary architecture is\neasy, but *support* means testing its chat template, tokenizer quirks and\npacking compatibility. This list is a promise about what has been tested.\n\nEach entry's `peak_memory` is computed fresh through the `models` seam\n(spec 005) rather than read from a stored figure -- see\n`_catalog_entry`.",
+        "description": "The base-model choices: the curated catalog plus any admitted models.\n\nThe catalog is an allow-list and a promise about what has been tested, not\na limitation (issue #58): a model outside it becomes usable once it has\npassed a compatibility probe, and `admitted` carries each probed model\nwith its result -- verdict and findings -- shown, not merely enforced. The\ncurated entries stay the recommended, tested path.\n\nEach catalog entry's `peak_memory` is computed fresh through the `models`\nseam (spec 005) rather than read from a stored figure -- see\n`_catalog_entry`.",
         "operationId": "list_models_v1_models_get",
         "responses": {
           "200": {
@@ -2728,6 +2971,48 @@
           }
         },
         "summary": "List Models",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/v1/models/probe": {
+      "post": {
+        "description": "Admit a model from outside the catalog by probing it (issue #58).\n\nResolves the pinned reference through the same `models` seam the\npredictor reads, runs the compatibility probe over the resolved facts, and\npersists the result -- verdict and findings -- so the user is shown what\nthey are taking on before a job can be created against it. Re-probing the\nsame pinned reference is idempotent: the existing record is returned, not\na second one.\n\nA reference that is not a pinned revision is refused up front with\n`unpinned_revision`. A pinned reference that fails the probe is still\nadmitted -- as a blocked record, persisted and shown -- and the launch\npath refuses it with its blocking findings rather than launching into a\nmodel that cannot be formatted.",
+        "operationId": "probe_model_v1_models_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdmittedModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Probe Model",
         "tags": [
           "catalog"
         ]

@@ -180,13 +180,13 @@ def quote_for_launch(
     quote, never a refusal: that is a fact about the moment, and refusing it
     would block work that could run once hardware frees.
     """
-    from . import jobs
+    from . import admission, jobs
 
     try:
         ds = jobs.usable_dataset(dataset_id)
     except Exception:  # noqa: BLE001 - no quote, never a broken launch
         return None
-    m = catalog.get(base_model)
+    m = admission.get(base_model)
     if m is None:
         return None
     return for_config(

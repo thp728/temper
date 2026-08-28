@@ -130,6 +130,9 @@ export default async function NewJobPage({
         // launch -- the job is still offered with the defaults, which is what
         // a first-time user gets anyway (issue #80).
         surface={surfaceError || !surface ? null : surface}
+        // The models admitted from outside the catalog, each with its persisted
+        // probe result shown beside it (issue #58).
+        admitted={catalog.admitted ?? []}
       />
 
       {/* The old screen's way back: the report this launch was reached from. */}

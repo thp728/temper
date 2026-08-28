@@ -236,10 +236,75 @@ class CatalogEntry(BaseModel):
 class ModelCatalog(BaseModel):
     """The catalog and its default. The default is published beside the list
     because "which one starts selected" is a product decision, not something
-    a client should guess by ordering."""
+    a client should guess by ordering.
+
+    `admitted` (issue #58) are the models probed from outside the catalog,
+    each carrying its persisted probe result -- verdict and findings -- so the
+    interface shows what the user is taking on before they commit to a launch.
+    """
 
     models: list[CatalogEntry]
+    admitted: list[AdmittedModel] = Field(default_factory=list)
     default: str
+
+
+class ProbeFinding(BaseModel):
+    """One compatibility-probe finding (issue #58): the stable code, whether
+    it blocks or warns, and the product reason. A `block` means the model is
+    not usable; a `warn` means it is usable and the user is told what they
+    took on."""
+
+    code: str
+    severity: Literal["block", "warn"]
+    message: str
+    details: dict[str, Any] | None = None
+
+
+class ProbeMemory(BaseModel):
+    """The probe's predicted-memory line (issue #58): the peak at the default
+    configuration against the smallest card this platform can provision, with
+    the arithmetic shown. `fits` is never False against stale availability,
+    because availability is a creation-time concern (#54); this is the same
+    `memory.predict_peak` arithmetic the launch refusal is built on."""
+
+    fits: bool
+    peak_gb: float | None = None
+    card: str | None = None
+    capacity_gb: float | None = None
+    headroom_gb: float | None = None
+    note: str | None = None
+
+
+class ProbeResult(BaseModel):
+    """A persisted compatibility-probe verdict (issue #58), shown rather than
+    merely enforced: a model that passes with warnings is usable, and the user
+    knows what they took on. `ok` is what a caller branches on for usability;
+    `verdict` is the human-facing label derived from it."""
+
+    repo: str
+    revision: str
+    ok: bool
+    verdict: Literal["blocked", "usable_with_warnings", "usable"]
+    architecture: str
+    params_b: float = 0.0
+    context_length: int = 0
+    license: str = ""
+    is_moe: bool = False
+    findings: list[ProbeFinding] = Field(default_factory=list)
+    memory: ProbeMemory | None = None
+
+
+class AdmittedModel(BaseModel):
+    """One model admitted from outside the catalog (issue #58), pinned to a
+    revision and carrying the persisted probe result that lets a job be
+    created against it. A blocked probe is persisted too, so the reason is
+    shown rather than retried blindly."""
+
+    id: str
+    repo: str
+    revision: str
+    created_at: float
+    probe: ProbeResult
 
 
 class SurfaceField(BaseModel):

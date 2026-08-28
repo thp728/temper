@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import AdmitModelForm from "@/components/AdmitModelForm";
 import AdvancedSurface from "@/components/AdvancedSurface";
+import ProbeResultView from "@/components/ProbeResultView";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +15,7 @@ import {
   getQuoteV1QuotesGet,
   recomputeQuoteV1QuotesPost,
   type AdvancedSurface as AdvancedSurfaceModel,
+  type AdmittedModel,
   type DecisionOverride,
   type JobSpecPreview,
   type ModelCatalog,
@@ -40,10 +43,12 @@ export default function LaunchForm({
   catalog,
   preview,
   surface,
+  admitted = [],
 }: {
   catalog: ModelCatalog;
   preview: JobSpecPreview;
   surface: AdvancedSurfaceModel | null;
+  admitted?: AdmittedModel[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState(catalog.default);
@@ -52,6 +57,12 @@ export default function LaunchForm({
   const [refusal, setRefusal] = useState<ApiError | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [overrides, setOverrides] = useState<DecisionOverride[]>([]);
+  // The models admitted from outside the catalog (issue #58), each carrying
+  // the persisted probe result that lets a job be created against it. Seeded
+  // from the server-rendered list; a freshly admitted model joins here
+  // without a page reload.
+  const [admittedModels, setAdmittedModels] =
+    useState<AdmittedModel[]>(admitted);
   // The advanced-surface overrides (issue #80): name -> value as typed, for
   // the settings the trainer exposes behind the disclosure. They ride the
   // same recompute as the plan decisions and are frozen into the launch.
@@ -130,6 +141,20 @@ export default function LaunchForm({
     setHyperparameters({});
     setPlanRefusal(null);
     lastGood.current = { overrides: [], hyperparameters: {} };
+  }
+
+  function onAdmitted(record: AdmittedModel) {
+    // A freshly probed model joins the imported list (a re-probe of the same
+    // reference is idempotent server-side, so the list never doubles) and, if
+    // it is usable, becomes the selected model. A blocked probe is still
+    // shown -- the reason is the point of showing it -- but it cannot be
+    // launched, matching the launch gate.
+    setAdmittedModels((prev) =>
+      prev.some((a) => a.id === record.id) ? prev : [...prev, record],
+    );
+    if (record.probe.ok) {
+      onModelChange(record.id);
+    }
   }
 
   function handleOverridesChange(next: DecisionOverride[]) {
@@ -243,6 +268,78 @@ export default function LaunchForm({
           ))}
         </div>
       </fieldset>
+
+      {/* Models admitted from outside the catalog (issue #58): the probe did
+          the testing in front of the user, and its result is shown here --
+          a model that passes with warnings is usable, and the user sees what
+          they took on. A blocked model is shown with its reasons and cannot
+          be launched. */}
+      {admittedModels.length > 0 && (
+        <fieldset className="space-y-3">
+          <legend className="text-lg font-semibold">Imported models</legend>
+          <p className="text-sm text-muted-foreground">
+            These models were admitted from outside the catalog after a
+            compatibility probe. A model that passes with warnings is usable;
+            its findings say exactly what you are taking on.
+          </p>
+          <div className="space-y-3">
+            {admittedModels.map((a) => (
+              <Label
+                key={a.id}
+                htmlFor={`model-${a.id}`}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 hover:bg-muted/50 data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-70"
+              >
+                <Input
+                  id={`model-${a.id}`}
+                  type="radio"
+                  name="base_model"
+                  value={a.id}
+                  disabled={!a.probe.ok}
+                  checked={selected === a.id}
+                  onChange={() => onModelChange(a.id)}
+                  className="mt-1 size-4"
+                />
+                <span className="min-w-0 flex-1 space-y-2">
+                  <span className="block font-medium">{a.repo}</span>
+                  <dl className="text-sm text-muted-foreground">
+                    <div>
+                      <dt className="inline">Licence </dt>
+                      <dd className="inline">{a.probe.license || "Unknown"}</dd>
+                      <dt className="inline"> · revision </dt>
+                      <dd className="inline">
+                        <code className="rounded bg-muted px-1">
+                          {a.revision}
+                        </code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="inline">Parameters </dt>
+                      <dd className="inline">
+                        {(a.probe.params_b ?? 0).toFixed(1)}B
+                      </dd>
+                      <dt className="inline"> · context </dt>
+                      <dd className="inline">{a.probe.context_length}</dd>
+                    </div>
+                  </dl>
+                  <ProbeResultView probe={a.probe} />
+                </span>
+              </Label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {/* The boundary coming down (issue #58): use any model repository at a
+          pinned revision, probed in front of the user. A model that cannot
+          be used is shown why, so it is not retried blindly. */}
+      <details className="rounded-lg border p-4">
+        <summary className="cursor-pointer font-medium">
+          Use a model outside the catalog
+        </summary>
+        <div className="mt-3">
+          <AdmitModelForm onAdmitted={onAdmitted} />
+        </div>
+      </details>
 
       <section aria-labelledby="spec-h" className="space-y-2">
         <h2 id="spec-h" className="text-lg font-semibold">

@@ -150,6 +150,17 @@ CREATE TABLE IF NOT EXISTS events (
     data_json TEXT
 );
 
+CREATE TABLE IF NOT EXISTS admitted_models (
+    id          TEXT PRIMARY KEY,
+    repo        TEXT NOT NULL,
+    revision    TEXT NOT NULL,  -- pinned; never a branch name (issue #58)
+    -- The probe result, frozen at admission (issue #58): a blocked probe is
+    -- persisted too, so the user is shown why rather than retrying blindly.
+    probe_json  TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    UNIQUE(repo, revision)
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id, id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 """
@@ -434,6 +445,53 @@ def list_datasets(limit: int = 50) -> list[dict]:
             "SELECT * FROM datasets ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
     return [_present(_dataset_row(r)) for r in rows]
+
+
+# --------------------------------------------------------------------------
+# admitted models (issue #58): the probe result is persisted and shown, and a
+# job can be created against a model only after its probe is on record
+# --------------------------------------------------------------------------
+
+
+def create_admitted_model(repo: str, revision: str, probe: dict) -> str:
+    """Persist one admission. The reference is unique, so re-probing the same
+    pinned model returns its existing row rather than a second one."""
+    model_id = new_id("m")
+    with connect() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO admitted_models "
+            "(id, repo, revision, probe_json, created_at) VALUES (?,?,?,?,?)",
+            (model_id, repo, revision, json.dumps(probe), time.time()),
+        )
+        row = c.execute(
+            "SELECT id FROM admitted_models WHERE repo=? AND revision=?",
+            (repo, revision),
+        ).fetchone()
+    return row["id"]
+
+
+def get_admitted_model(model_id: str) -> dict | None:
+    """One admitted model as the API publishes it: its probe result parsed,
+    never the raw JSON string."""
+    with connect() as c:
+        r = c.execute(
+            "SELECT * FROM admitted_models WHERE id=?", (model_id,)
+        ).fetchone()
+    return _admitted_row(r)
+
+
+def list_admitted_models(limit: int = 50) -> list[dict]:
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM admitted_models ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [_present(_admitted_row(r)) for r in rows]
+
+
+def _admitted_row(r) -> dict | None:
+    row = _row(r, {"probe_json": "probe"})
+    return row
 
 
 # --------------------------------------------------------------------------
