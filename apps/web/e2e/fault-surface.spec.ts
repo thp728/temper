@@ -2,13 +2,14 @@ import { expect, test } from "@playwright/test";
 import { E2E_BACKEND_PORT } from "../src/lib/backend";
 import { pairedValue, requireFakeProvider } from "./helpers";
 
-// The fault surface (#24): a reviewer turns on a fault and watches the run
-// fall, named as deliberately broken. This journey launches a job whose
-// hyperparameters carry a fault spec and lands on its finished record, where
-// the history names the injected fault and the failure carries its
-// `simulated_` code -- the whole point of the surface is that a deliberately
-// broken run can never be mistaken for a real one, and a person should be
-// able to see that in the UI, not only in tests.
+// The fault surface (#24): a reviewer turns on a fault and watches what
+// happens, named as deliberately broken. Since #35 the trainer-side `oom`
+// fault demonstrates the memory recovery: the first machine exhausts memory,
+// the job retries automatically with the effective batch preserved, and it
+// completes -- while the deliberately broken first attempt still carries its
+// `simulated_oom` code and the run's own history still names the fault, so a
+// deliberately broken run can never be mistaken for a real one, and a person
+// should be able to see that in the UI, not only in tests.
 //
 // The control plane is booted with TEMPER_FAKE_PROVIDER (playwright.config.ts),
 // which is also what lets the fault spec past the creation guard: the
@@ -32,7 +33,7 @@ function twelveRows() {
   return Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`));
 }
 
-test("a faulted job is watched to a deliberately broken ending", async ({
+test("an oom fault is watched through the memory recovery it proves", async ({
   page,
   request,
 }) => {
@@ -78,11 +79,10 @@ test("a faulted job is watched to a deliberately broken ending", async ({
     .toMatch(/^(complete|failed|cancelled)$/);
 
   await page.goto(`/jobs/${jobId}`);
-  await expect(pairedValue(page, "State")).toHaveText("failed");
-
-  // The stable code that marks the run as deliberately broken.
-  const alert = page.getByRole("main").getByRole("alert");
-  await expect(alert).toContainText("simulated_oom");
+  // The recovery, not a broken ending: the oom fault exhausts the first
+  // machine and the job retries automatically with the effective batch
+  // preserved, so it completes.
+  await expect(pairedValue(page, "State")).toHaveText("complete");
 
   // The run's own history names the injected fault, in the words a reviewer
   // is looking for.
@@ -91,8 +91,16 @@ test("a faulted job is watched to a deliberately broken ending", async ({
   );
   await expect(page.getByRole("log")).toContainText("deliberately broken");
 
-  // Nothing offers a download that does not exist.
-  await expect(page.getByRole("link", { name: /Download the artifact/ })).toHaveCount(
-    0,
-  );
+  // The user is told a recovery happened and what changed -- and the
+  // deliberately broken first attempt keeps the fault's `simulated_oom` code,
+  // so the marker that makes the break identifiable survives the recovery.
+  const alert = page.getByRole("main").getByRole("alert");
+  await expect(alert).toContainText("Memory recovery");
+  await expect(alert).toContainText(/effective batch/);
+  await expect(alert).toContainText("simulated_oom");
+
+  // The recovered job finished training, so its artifact is downloadable.
+  await expect(
+    page.getByRole("link", { name: /Download the artifact/ }),
+  ).toHaveCount(1);
 });

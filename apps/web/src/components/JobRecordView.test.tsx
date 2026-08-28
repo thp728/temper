@@ -244,6 +244,153 @@ describe("JobRecordView", () => {
     ).toBeNull();
   });
 
+  it("explains an out-of-memory failure with the memory-recovery reason", () => {
+    // Issue #35: a genuine memory exhaustion and an exhausted recovery carry
+    // their own stable codes, explained in plain language -- and they are not
+    // a divergence, so the divergence retry control is absent.
+    render(
+      <JobRecordView
+        job={job({
+          status: "failed",
+          error_code: "memory_retries_exhausted",
+          error_message:
+            "The job ran out of device memory repeatedly, and every memory reduction the platform can apply has been tried.",
+          result: null,
+          attempts: [
+            {
+              attempt: 1,
+              outcome: "failed",
+              error_code: "training_oom",
+              spec: {
+                micro_batch_size: 8,
+                gradient_accumulation_steps: 1,
+                sequence_len: 2048,
+                method: "qlora",
+              },
+              recovery: null,
+            },
+            {
+              attempt: 2,
+              outcome: "failed",
+              error_code: "training_oom",
+              spec: {
+                micro_batch_size: 4,
+                gradient_accumulation_steps: 2,
+                sequence_len: 2048,
+                method: "qlora",
+              },
+              recovery: null,
+            },
+          ],
+        })}
+        events={[]}
+      />,
+    );
+    expect(screen.getByText("memory_retries_exhausted")).toBeVisible();
+    // The explanation gives the recovery's plain-language reason: every
+    // reduction was tried, then the run was stopped rather than retried
+    // forever.
+    expect(
+      screen.getByText(/Try a smaller configuration, a shorter sequence length/),
+    ).toBeVisible();
+    // A memory exhaustion is not offered the divergence retry.
+    expect(
+      screen.queryByRole("button", { name: /Retry at half learning rate/ }),
+    ).toBeNull();
+  });
+
+  it("tells the user a memory recovery happened and what changed", () => {
+    // Issue #35: an out-of-memory failure retried automatically with the
+    // effective batch preserved; the record's attempts list is what the user
+    // reads for "a recovery happened, and this is what changed".
+    render(
+      <JobRecordView
+        job={job({
+          attempts: [
+            {
+              attempt: 1,
+              outcome: "failed",
+              error_code: "simulated_oom",
+              spec: {
+                micro_batch_size: 8,
+                gradient_accumulation_steps: 1,
+                sequence_len: 2048,
+                method: "qlora",
+              },
+              recovery: {
+                rung: "halve_batch",
+                action:
+                  "the per-step batch was halved (8->4) and accumulation doubled (1->2); the effective batch (8x1=8) is unchanged",
+                effective_batch: 8,
+              },
+            },
+            {
+              attempt: 2,
+              outcome: "complete",
+              error_code: null,
+              spec: {
+                micro_batch_size: 4,
+                gradient_accumulation_steps: 2,
+                sequence_len: 2048,
+                method: "qlora",
+              },
+              recovery: null,
+            },
+          ],
+        })}
+        events={[]}
+      />,
+    );
+    expect(screen.getByText("Memory recovery")).toBeVisible();
+    expect(screen.getByText(/retried automatically/)).toBeVisible();
+    expect(screen.getByText(/effective batch was preserved/)).toBeVisible();
+    expect(screen.getByText("Attempt 1")).toBeVisible();
+    expect(screen.getByText("simulated_oom")).toBeVisible();
+    expect(screen.getByText(/per-step batch was halved \(8->4\)/)).toBeVisible();
+    expect(screen.getByText("Attempt 2")).toBeVisible();
+    expect(screen.getAllByText("complete").length).toBeGreaterThan(0);
+  });
+
+  it("shows no memory-recovery banner for a single-attempt job", () => {
+    render(<JobRecordView job={job()} events={[]} />);
+    expect(
+      screen.queryByRole("heading", { name: "Memory recovery" }),
+    ).toBeNull();
+  });
+
+  it("does not present an exhausted recovery as a successful one", () => {
+    // Every attempt failed (the ladder and the retry cap were exhausted): the
+    // record reads as a failure, explained by the failure section, never as a
+    // recovery that succeeded.
+    render(
+      <JobRecordView
+        job={job({
+          status: "failed",
+          error_code: "memory_retries_exhausted",
+          result: null,
+          attempts: [
+            {
+              attempt: 1,
+              outcome: "failed",
+              error_code: "training_oom",
+              recovery: null,
+            },
+            {
+              attempt: 2,
+              outcome: "failed",
+              error_code: "training_oom",
+              recovery: null,
+            },
+          ],
+        })}
+        events={[]}
+      />,
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Memory recovery" }),
+    ).toBeNull();
+  });
+
   it("says an over-long job hit the ceiling, with its code and reason", () => {
     render(
       <JobRecordView

@@ -644,6 +644,29 @@ class BestCheckpoint(BaseModel):
     reason: str
 
 
+class AttemptRecord(BaseModel):
+    """One execution of a job (issue #35): its own machine, its own spec and
+    its own outcome, so the history says what actually happened rather than
+    one continuous run. A memory failure retries automatically and makes
+    attempts plural; the attempt that OOMed carries its `error_code` (the
+    fault's `simulated_oom` or a real `training_oom`) and the `recovery` --
+    which rung fired, what changed, and the effective batch that was
+    preserved -- so "the user is told a recovery happened and what changed"
+    and "the attempts are recorded" are both queryable, not just narrated.
+
+    `spec` is the memory-relevant slice of the resolved spec that attempt ran
+    (per-step batch, accumulation, sequence length) -- the frozen record is
+    the user's request, and the retried attempts are the platform's answer to
+    a failure."""
+
+    attempt: int
+    outcome: str
+    error_code: str | None = None
+    machine_id: int | None = None
+    spec: dict[str, Any] | None = None
+    recovery: dict[str, Any] | None = None
+
+
 class JobRecord(BaseModel):
     """A job and the record of what became of it, published typed.
 
@@ -700,6 +723,10 @@ class JobRecord(BaseModel):
     checkpoints: list[CheckpointRecord] = Field(default_factory=list)
     best_checkpoint: BestCheckpoint | None = None
     retry_from: str | None = None
+    # The executions of this job (issue #35): a memory failure retries
+    # automatically and makes attempts plural, each with its own machine,
+    # spec and outcome.
+    attempts: list[AttemptRecord] = Field(default_factory=list)
     # Whether the model is a mixture-of-experts -- frozen at creation
     # (issue #65): the label travels with the job so a finished run says
     # what it was trained on, untested here rather than refused.
