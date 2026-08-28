@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
+import LossChart from "@/components/LossChart";
+import PlateauNote from "@/components/PlateauNote";
 import { Button } from "@/components/ui/button";
 import {
   TERMINAL_STATUSES,
@@ -11,6 +13,8 @@ import {
   latestLoss,
   shortRevision,
 } from "@/lib/jobs/display";
+import { latestHeldOutLoss, lossSeries } from "@/lib/jobs/loss";
+import { heldOutPlateau } from "@/lib/jobs/plateau";
 import { jobStreamUrl, parseJobEvent } from "@/lib/jobs/stream";
 import {
   cancelJobV1JobsJobIdCancelPost,
@@ -143,6 +147,14 @@ export default function RunningJobView({
   }, [initialJob.id, streamAfter]);
 
   const loss = latestLoss(events);
+  const heldOutLatest = latestHeldOutLoss(events);
+
+  // The two series the chart draws (issue #53) come from the same stream the
+  // view already appends to, so the chart re-renders as each measurement is
+  // pushed -- no second request, no timer. A plateau in the held-out series
+  // is a signal a non-specialist can read, so it is said in those words.
+  const { training, heldOut } = lossSeries(events);
+  const plateau = heldOutPlateau(heldOut.map((p) => p.heldOutLoss!));
 
   const cancel = async () => {
     try {
@@ -200,7 +212,29 @@ export default function RunningJobView({
               ? `${loss.loss}${loss.step !== undefined ? ` at step ${loss.step}` : ""}`
               : "—"}
           </Stat>
+          <Stat label="Latest held-out loss">
+            {heldOutLatest
+              ? `${heldOutLatest.loss}${
+                  heldOutLatest.epoch !== undefined
+                    ? ` at epoch ${heldOutLatest.epoch}`
+                    : ""
+                }`
+              : "—"}
+          </Stat>
         </dl>
+      </section>
+
+      <section aria-labelledby="loss-chart-heading" className="space-y-2">
+        <h2 id="loss-chart-heading" className="text-lg font-semibold">
+          Loss
+        </h2>
+        <LossChart training={training} heldOut={heldOut} />
+        {plateau && (
+          // The plateau is announced as it appears: a live region so a
+          // non-specialist is told, in plain language, that the held-out loss
+          // has stopped improving and why that matters.
+          <PlateauNote message={plateau.message} live />
+        )}
       </section>
 
       <section aria-labelledby="output-heading" className="space-y-2">

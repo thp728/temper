@@ -450,8 +450,17 @@ PUBLISHED_IMAGE_REFERENCE = (
 DEMO_LINES = (
     "[00:00:00] building trainer image",
     "[00:00:02] image built in 2s",
+    # Issue #53: the trainer holds out a portion of the dataset at startup and
+    # says so; the simulated machine narrates the same way so the running view
+    # shows the split alongside the output that follows it.
+    "[00:00:02] held-out split: 1 of 12 rows held out for evaluation "
+    "(0 duplicate(s) removed)",
     "[00:00:02] running training",
     "{'loss': 0.6931, 'step': 10, 'epoch': 0.5}",
+    # The held-out measurement, as the trainer's eval pass prints it: the
+    # control plane promotes eval_loss into a metric event carrying
+    # held_out_loss, so the loss chart has a second series to draw.
+    "{'eval_loss': 0.52, 'eval_runtime': 2.0, 'epoch': 0.5}",
 )
 
 DEMO_RESULT = {
@@ -460,6 +469,18 @@ DEMO_RESULT = {
     "adapter_path": "run/adapter_model.safetensors",
     "adapter_sha256": hashlib.sha256(DEMO_ADAPTER_BYTES).hexdigest(),
     "adapter_config": {"r": 16, "lora_alpha": 32},
+    # Issue #53: the recorded split, shaped exactly as the trainer records it
+    # for a 12-row dataset under the default 5% hold-out -- the simulated
+    # machine carries the same record so every surface that reads a finished
+    # job reads one that says how it was split.
+    "held_out_split": {
+        "rows_in": 12,
+        "rows_removed_duplicates": 0,
+        "train_rows": 11,
+        "held_out_rows": 1,
+        "fraction": 0.05,
+        "seed": 42,
+    },
     # The measured peak the real trainer records via its nvidia-smi sampler
     # (issue #77); the simulated machine carries it so a journey's finished
     # job has an actual to compare against its prediction.

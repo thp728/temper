@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import IO
 
 import checkpoints as checkpoint_upload
+from split import held_out_split
 from template_probe import (
     PROBE_UNAVAILABLE_CODE,
     ProbeOutcome,
@@ -104,6 +105,11 @@ OUT_DIR = Path(os.environ.get("OUT_DIR", "/out"))
 CONFIG = OUT_DIR / "config.yaml"
 RESULT = OUT_DIR / "result.json"
 LOG = OUT_DIR / "train.log"
+
+# The run's seed, used once: it fixes both the model's weight init and the
+# held-out split (issue #53), so the same job spec reproduces the same run and
+# the same split. One value, read twice -- not two seeds that could disagree.
+TRAIN_SEED = 42
 
 # The trainer resolves nothing (#83): the control plane applies its resolver to
 # the user's overrides before launch and writes the full resolved set into the
@@ -168,6 +174,49 @@ def log(msg: str) -> None:
 def write_result(payload: dict) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     RESULT.write_text(json.dumps(payload, indent=2))
+
+
+def write_jsonl(path: Path, rows: Iterable[dict]) -> None:
+    """One JSON object per line, faithful to the source's characters.
+
+    `ensure_ascii=False` so a conversation with non-ASCII text round-trips to
+    the same characters it arrived as: escaping to `\\uXXXX` is semantically
+    identical after decoding, but the bytes should not be changed for no
+    reason on the machine that trains on them.
+    """
+    with path.open("w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def prepare_held_out_split(
+    parsed: list[dict],
+    job: dict,
+    out_dir: Path,
+) -> tuple[Path | None, dict]:
+    """Dedup and split `parsed` (issue #53), write the train/eval files.
+
+    Returns (eval path, or None when nothing was held out, and the recorded
+    split). Deduplication runs before the split, so a duplicated row can never
+    land on both sides; the fraction is the effective `val_set_size` (the
+    product's chosen eval proportion, resolved by the control plane) and the
+    seed is the run's own, so the split is reproducible from the record. The
+    held-out rows are written to a separate file and never enter the training
+    file, so the two cannot overlap.
+    """
+    hp = spec_hyperparameters(job)
+    train_rows, held_out_rows, record = held_out_split(
+        parsed,
+        fraction=float(hp["val_set_size"]),
+        seed=TRAIN_SEED,
+        messages_field=job.get("messages_field", "messages"),
+    )
+    write_jsonl(out_dir / "train.jsonl", train_rows)
+    eval_path = None
+    if held_out_rows:
+        eval_path = out_dir / "eval.jsonl"
+        write_jsonl(eval_path, held_out_rows)
+    return eval_path, record.to_dict()
 
 
 # How much of a failed job's output is carried back inside result.json. The
@@ -368,7 +417,7 @@ def spec_hyperparameters(job: dict) -> dict:
 
 
 def build_config(
-    job: dict, enable_thinking: bool = False
+    job: dict, enable_thinking: bool = False, eval_path: Path | None = None
 ) -> tuple[dict, dict]:
     """Job spec -> Axolotl config. Returns (config, rejected).
 
@@ -376,6 +425,11 @@ def build_config(
     that used to live here -- alpha tracking rank, rsLoRA above rank 32 --
     happen in the control plane's resolver before launch; redoing them would
     be the second resolver again.
+
+    `eval_path`, when supplied, is the platform's own held-out split (issue
+    #53): the training file is configured with no further internal split and
+    the held-out file is given to Axolotl as its test dataset, so the rows
+    never overlap -- they are different files.
     """
     hp = spec_hyperparameters(job)
     rejected: dict = {}
@@ -419,11 +473,11 @@ def build_config(
             "fp16": False,
             "gradient_checkpointing": True,
             "flash_attention": True,
-            "seed": 42,
+            "seed": TRAIN_SEED,
             # --- data ------------------------------------------------------------
             "datasets": [
                 {
-                    "path": str(JOB_DIR / "dataset.jsonl"),
+                    "path": str(OUT_DIR / "train.jsonl"),
                     "type": "chat_template",
                     "field_messages": job.get("messages_field", "messages"),
                 }
@@ -457,6 +511,28 @@ def build_config(
         cfg["save_steps"] = int(job["save_steps"])
     if job.get("resume_from_checkpoint"):
         cfg["resume_from_checkpoint"] = job["resume_from_checkpoint"]
+
+    # The split is the platform's (issue #53): the held-out file arrives as
+    # `eval_path` and is configured as Axolotl's test dataset, so Axolotl
+    # must not carve a second split out of the training file. `val_set_size`
+    # is set to zero rather than left to the value in the spec (the fraction
+    # our own split already used) because Axolotl accepts either
+    # `test_datasets` or a `val_set_size` split, not both.
+    cfg["val_set_size"] = 0.0
+    # The eval cadence is pinned rather than left to a default: criterion 4
+    # and the plateau (issue #53) both need held-out loss measured *during*
+    # the run, and relying on Axolotl's unpinned default would make that a
+    # hope. Evaluating at each epoch end gives the chart and the plateau
+    # their points.
+    cfg["eval_strategy"] = "epoch"
+    if eval_path is not None:
+        cfg["test_datasets"] = [
+            {
+                "path": str(eval_path),
+                "type": "chat_template",
+                "field_messages": job.get("messages_field", "messages"),
+            }
+        ]
 
     return cfg, rejected
 
@@ -670,18 +746,36 @@ def main() -> int:
         result["thinking"] = think.as_dict()
         log(
             f"thinking mode: {think.enable_thinking} "
-            f"({think.with_think}/{think.assistant_turns} assistant turns have <think>)"
+            f"({think.with_think}/{think.assistant_turns} assistant turns have  thinking)"
         )
 
         # An incomplete spec must fail as a named refusal here rather than as
-        # a training anomaly minutes into a paid machine.
+        # a training anomaly minutes into a paid machine. Both the held-out
+        # split (which reads the effective val_set_size from the spec) and
+        # the config build need the spec, so a spec missing a value fails
+        # the same named way whichever of the two trips first.
         try:
+            eval_path, split_record = prepare_held_out_split(
+                parsed, job, OUT_DIR
+            )
             cfg, rejected = build_config(
-                job, enable_thinking=think.enable_thinking
+                job,
+                enable_thinking=think.enable_thinking,
+                eval_path=eval_path,
             )
         except IncompleteJobSpec:
             result["error_code"] = "spec_incomplete"
             raise
+        # The held-out split (issue #53): dedup first, then a deterministic
+        # hold-out, so a duplicated row can never land on both sides. The
+        # sizes are recorded in result.json and the split is written to
+        # separate files, so the held-out rows never enter the training file.
+        result["held_out_split"] = split_record
+        log(
+            f"held-out split: {split_record['held_out_rows']} of "
+            f"{split_record['rows_in']} rows held out for evaluation "
+            f"({split_record['rows_removed_duplicates']} duplicate(s) removed)"
+        )
         # Recorded filtered to keys this trainer knows: the record should name
         # only values that were trained with, and anything else is already
         # echoed verbatim under rejected_overrides.

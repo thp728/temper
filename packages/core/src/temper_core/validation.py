@@ -53,15 +53,18 @@ Two things are deliberately not warnings:
 from __future__ import annotations
 
 import json
-import unicodedata
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from temper_core.split import MIN_TRAIN_ROWS, normalise_text
 from temper_core.thinking import THINK_OPEN, mixed_thinking_message
 
-MIN_ROWS = 10  # hard floor: block
+# The hard floor: block below this. One definition -- the held-out split
+# (issue #53) must never drop the training set below the same number, so both
+# read the value from `temper_core.split` rather than each carrying a copy.
+MIN_ROWS = MIN_TRAIN_ROWS
 RECOMMENDED_ROWS = 50  # below this: warn
 MAX_PREVIEW = 3
 
@@ -170,18 +173,6 @@ class ValidationProgress:
             "bytes_total": self.bytes_total,
             "rows": self.rows,
         }
-
-
-def _normalise(text: str) -> str:
-    """NFC, and strip control characters except tab and newline.
-
-    Not cosmetic: the same visual string existing as two different token
-    sequences distorts length statistics and defeats deduplication.
-    """
-    text = unicodedata.normalize("NFC", text)
-    return "".join(
-        ch for ch in text if ch in "\n\t" or unicodedata.category(ch)[0] != "C"
-    )
 
 
 def _iter_lines(
@@ -505,7 +496,7 @@ def _check_row(
             ),
         )
         return
-    if _normalise(content) != content:
+    if normalise_text(content) != content:
         add(
             rep.warnings,
             Issue(

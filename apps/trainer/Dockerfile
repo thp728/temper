@@ -63,7 +63,13 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # `checkpoints.py` (issue #37) is the checkpoint uploader the entrypoint
 # imports; it must ship in the same layer or the container dies at import,
 # before the `finally` that writes result.json.
-COPY entrypoint.py checkpoints.py thinking.py template_probe.py trainer-defaults.json axolotl-schema.json /opt/trainer/
+#
+# `split.py` (issue #53) is the held-out split the entrypoint runs at the
+# start of every job: it lives in packages/core (the control plane shares the
+# same dedup-and-split behaviour) and is flattened into this context like
+# `thinking.py`, so it must be in the COPY too -- a top-level import, so a
+# missing COPY dies at import, before the `finally` that writes result.json.
+COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py trainer-defaults.json axolotl-schema.json /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.

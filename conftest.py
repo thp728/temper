@@ -15,6 +15,8 @@ rather than duplicated into the trainer directory.
 
 import sys
 
+import temper_core.split
 import temper_core.thinking
 
 sys.modules.setdefault("thinking", temper_core.thinking)
+sys.modules.setdefault("split", temper_core.split)

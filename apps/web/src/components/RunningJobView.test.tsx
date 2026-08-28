@@ -172,6 +172,93 @@ describe("RunningJobView", () => {
     );
   });
 
+  it("shows the latest held-out loss as it becomes available", async () => {
+    renderView();
+    stream().emit("job", event({
+      id: 2,
+      kind: "metric",
+      message: "{'eval_loss': 0.52, 'epoch': 0.5}",
+      data: { held_out_loss: 0.52, epoch: 0.5 },
+    }));
+    await waitFor(() =>
+      expect(
+        screen.getByText("Latest held-out loss").nextElementSibling,
+      ).toHaveTextContent("0.52"),
+    );
+    expect(
+      screen.getByText("Latest held-out loss").nextElementSibling,
+    ).toHaveTextContent("epoch 0.5");
+  });
+
+  it("charts training and held-out loss on one chart", () => {
+    const metric = (
+      id: number,
+      data: Record<string, number>,
+    ) => event({
+      id,
+      kind: "metric",
+      message: JSON.stringify(data),
+      data,
+    });
+    renderView({
+      events: [
+        event({ id: 1, kind: "state", message: "training" }),
+        metric(2, { loss: 1.9, step: 1 }),
+        metric(3, { held_out_loss: 0.7, epoch: 0.5 }),
+        metric(4, { loss: 0.9, step: 2 }),
+        metric(5, { held_out_loss: 0.6, epoch: 1.0 }),
+      ],
+    });
+    // Both series are drawn, not just labelled: one line per series.
+    const svg = screen.getByRole("img", {
+      name: /training loss and held-out loss/i,
+    });
+    expect(svg).toBeInTheDocument();
+    expect(svg.querySelectorAll("polyline")).toHaveLength(2);
+    expect(screen.getByText("Training loss")).toBeVisible();
+    expect(screen.getByText("Held-out loss")).toBeVisible();
+  });
+
+  it("surfaces a held-out loss that stops improving, in plain language", () => {
+    const heldOut = (id: number, loss: number) =>
+      event({
+        id,
+        kind: "metric",
+        message: `{'eval_loss': ${loss}, 'epoch': 1.0}`,
+        data: { held_out_loss: loss, epoch: 1.0 },
+      });
+    renderView({
+      events: [
+        event({ id: 1, kind: "state", message: "training" }),
+        heldOut(2, 0.7),
+        heldOut(3, 0.7),
+        heldOut(4, 0.7),
+      ],
+    });
+    const note = screen.getByRole("status");
+    expect(note).toHaveTextContent(/overfitting/i);
+    expect(note).toHaveTextContent(/held-out loss has not improved/i);
+  });
+
+  it("says nothing while the held-out loss is still improving", () => {
+    const heldOut = (id: number, loss: number) =>
+      event({
+        id,
+        kind: "metric",
+        message: `{'eval_loss': ${loss}, 'epoch': 1.0}`,
+        data: { held_out_loss: loss, epoch: 1.0 },
+      });
+    renderView({
+      events: [
+        event({ id: 1, kind: "state", message: "training" }),
+        heldOut(2, 0.9),
+        heldOut(3, 0.6),
+        heldOut(4, 0.4),
+      ],
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("refetches the record on a state transition and updates the status", async () => {
     getJobMock.mockResolvedValue(
       job({

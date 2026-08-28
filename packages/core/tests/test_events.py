@@ -93,14 +93,38 @@ def test_prose_that_merely_mentions_loss_is_log_output():
     assert is_log("[axolotl] loss masking enabled, train_on_inputs=False")
 
 
-def test_an_evaluation_row_is_not_a_training_step():
-    """`eval_loss` is a different key, and the epoch beside it is not ours.
+def test_an_evaluation_row_carries_held_out_loss_not_training_loss():
+    """The held-out signal (issue #53) rides the same channel as training.
 
-    The trainer holds back a validation split by default, so these lines are
-    guaranteed to appear. Promoting their epoch would interleave a second
-    series into the first.
+    `eval_loss` is a different key from `loss`, and the two are never
+    confused: the evaluation row becomes a metric carrying `held_out_loss`,
+    so the live view can chart training and held-out loss together. Its epoch
+    is promoted as well -- it is the second series the chart shows, not an
+    intruder in the first.
     """
-    assert is_log("{'eval_loss': 1.2, 'eval_runtime': 4.0, 'epoch': 1.0}")
+    assert metric("{'eval_loss': 1.2, 'eval_runtime': 4.0, 'epoch': 1.0}") == {
+        "held_out_loss": 1.2,
+        "epoch": 1.0,
+    }
+
+
+def test_an_eval_row_is_not_mistaken_for_a_training_step():
+    line = "{'eval_loss': 1.2, 'epoch': 1.0}"
+    data = metric(line)
+    assert "loss" not in data
+    assert "step" not in data
+
+
+def test_axolotl_eval_rows_write_strings_and_still_promote():
+    """Axolotl formats every value to a fixed precision and logs strings;
+    the quoting rule from the training side applies to the eval side too."""
+    assert metric(
+        "{'eval_loss': '0.8934', 'eval_runtime': '2.1', 'epoch': '1.0'}"
+    ) == {"held_out_loss": 0.8934, "epoch": 1.0}
+
+
+def test_a_non_finite_held_out_loss_drops_out_but_its_epoch_does_not():
+    assert metric("{'eval_loss': nan, 'epoch': '1.0'}") == {"epoch": 1.0}
 
 
 def test_the_end_of_training_summary_is_not_a_training_step():

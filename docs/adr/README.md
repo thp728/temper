@@ -87,6 +87,7 @@ repository becomes public at submission.
 | [0044](0044-the-server-rendered-pages-are-deleted-and-the-interfaces-never-coexist.md) | The server-rendered pages are deleted, and the two interfaces never coexist | accepted | 2026-08-28 |
 | [0045](0045-the-artifact-is-the-deliverable-and-the-adapter-is-one-kind-of-it.md) | The artifact is the deliverable, and the adapter is one kind of it | accepted | 2026-08-28 |
 | [0046](0046-the-trainer-image-is-built-by-the-pipeline-and-referenced-by-digest.md) | The trainer image is built by the pipeline and referenced by digest, never built on the machine | accepted | 2026-08-27 |
+| [0048](0048-the-held-out-split-is-the-platforms-and-rides-the-existing-event-stream.md) | The held-out split is the platform's, and held-out loss rides the existing event stream | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
