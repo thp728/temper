@@ -94,6 +94,7 @@ repository becomes public at submission.
 | [0051](0051-a-failure-path-is-not-done-until-it-has-been-caused-deliberately.md) | A failure path is not done until it has been caused deliberately | accepted | 2026-08-28 |
 | [0052](0052-full-fine-tuning-is-a-second-method-through-the-existing-seams.md) | Full fine-tuning is a second method through the existing seams | accepted | 2026-08-28 |
 | [0053](0053-progress-is-measured-from-the-output-that-was-going-to-be-thrown-away.md) | Progress is measured from the output that was going to be thrown away | accepted | 2026-08-28 |
+| [0054](0054-every-artifact-ships-with-a-generated-provenance-manifest.md) | Every artifact ships with a generated provenance manifest | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

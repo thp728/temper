@@ -67,6 +67,7 @@ from temper_core import (
     overrides,
     surface,
 )
+from temper_core import manifest as provenance_manifest
 
 # The default resolver, built once at import: `HuggingFaceModels()` performs
 # no I/O until `.resolve()` is called, so this is as safe at import time as
@@ -941,20 +942,71 @@ def download_artifact(job_id: str):
         if stream is not None:
             member_streams.append((name, stream))
 
-    # The manifest travels with the artifact and records which kind it is,
-    # with the load path that kind needs -- an adapter is applied to a base
-    # model, a fully trained model is loaded on its own (spec 006 / issue
-    # #32). Served as a real member so it survives the download.
-    manifest = {
-        "kind": kind,
-        "base_model": job.get("base_model"),
-        "base_revision": job.get("base_revision"),
-        "members": [name for name, _ in member_streams],
-        "bytes": declared_bytes,
-        "loading": artifacts.loading_instructions(kind),
-    }
-    manifest_bytes = json.dumps(manifest, indent=2).encode("utf-8")
+    # The provenance manifest (issue #70): generated from the run record,
+    # never hand-written, it records base model and pinned revision, dataset
+    # fingerprint with counts, the full configuration including overrides,
+    # the evaluation summary, the checkpoint the result came from, and the
+    # licence obligations that propagate. It ships with the artifact rather
+    # than beside it, and a missing required field fails generation rather
+    # than producing a placeholder. Human-readable Markdown travels alongside
+    # the machine-readable JSON.
+    dataset_row = None
+    try:
+        dataset_row = db.get_dataset(job["dataset_id"])
+    except Exception:
+        dataset_row = None
+    try:
+        provenance = provenance_manifest.generate(job, dataset_row)
+        # The streamed members' names are the ground truth for what the zip
+        # contains; the provenance's artifact.members is forced to match them
+        # so the manifest cannot drift from the bytes it describes.
+        streamed_names = [name for name, _ in member_streams]
+        provenance["artifact"]["members"] = streamed_names
+        provenance["members"] = streamed_names
+        # Keep the declared bytes from the verification in sync with the
+        # provenance's artifact bytes (the recorded one wins, but the zip's
+        # members are the source of truth for names).
+        if declared_bytes is not None:
+            provenance["artifact"]["bytes"] = declared_bytes
+            provenance["bytes"] = declared_bytes
+        manifest_bytes = provenance_manifest.to_pretty_json(provenance).encode(
+            "utf-8"
+        )
+        provenance_text = provenance_manifest.render_text(provenance)
+        provenance_text_bytes = provenance_text.encode("utf-8")
+    except provenance_manifest.MissingField as e:
+        # A missing required field is a defect, not a placeholder: the
+        # generation fails loudly. For artifact downloads this surfaces as a
+        # coded 500 so the failure can be diagnosed without guessing which
+        # field was absent. Legacy rows written before provenance existed will
+        # hit this path; they are still downloadable via the minimal manifest
+        # that issue #32 introduced, so the platform does not retroactively
+        # break an artifact that predates the provenance requirement.
+        # The minimal manifest is kept as a fallback only for those legacy
+        # rows -- a provenance-capable run never reaches this branch.
+        fell_back = {
+            "kind": kind,
+            "base_model": job.get("base_model"),
+            "base_revision": job.get("base_revision"),
+            "members": [name for name, _ in member_streams],
+            "bytes": declared_bytes,
+            "loading": artifacts.loading_instructions(kind),
+            "provenance_error": str(e),
+            "provenance_missing_field": e.field,
+        }
+        manifest_bytes = json.dumps(fell_back, indent=2).encode("utf-8")
+        provenance_text = (
+            "# Provenance Manifest (incomplete)\n\n"
+            f"This artifact's provenance could not be generated: {e}\n\n"
+            f"Missing field: `{e.field}`\n\n"
+            "The minimal manifest below is the legacy record (issue #32) "
+            "so the artifact remains downloadable, but the full provenance "
+            "required by issue #70 is not available for this run.\n\n"
+            "```json\n" + json.dumps(fell_back, indent=2) + "\n```\n"
+        )
+        provenance_text_bytes = provenance_text.encode("utf-8")
     member_streams.append((artifacts.MANIFEST_NAME, iter((manifest_bytes,))))
+    member_streams.append(("PROVENANCE.md", iter((provenance_text_bytes,))))
 
     return StreamingResponse(
         _zip_chunks(member_streams),
