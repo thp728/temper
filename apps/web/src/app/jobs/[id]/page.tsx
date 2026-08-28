@@ -97,6 +97,9 @@ export default async function JobPage({
   // does not take the record down with it. Progress and the retained output
   // travel with it (issue #49): the finished record shows how far the pulls
   // got, measured and estimated, with the raw lines collapsed.
+  // `total` is the guardrail from #56: where the stored history is larger than
+  // the page (cap 500) the interface says what it is showing and of how many,
+  // and the full record remains reachable by paging with `after`.
   return (
     <JobRecordView
       job={job}
@@ -104,6 +107,7 @@ export default async function JobPage({
       progress={events?.progress ?? []}
       output={events?.output ?? []}
       datasetFilename={dataset?.filename}
+      total={events?.total ?? (events?.events?.length ?? 0)}
     />
   );
 }

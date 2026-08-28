@@ -1009,6 +1009,22 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
     ]
 
 
+def count_events(job_id: str) -> int:
+    """How many events a job has in total, regardless of any paging window.
+
+    The page returns a window (`after`/`limit`) but the interface must say
+    what it is showing and of how many (issue #56): silently cutting after
+    500 oldest-first hid the artifact verification, teardown and completion.
+    The total is what makes a cut stated rather than silent, and a stated
+    one is a feature.
+    """
+    with connect() as c:
+        row = c.execute(
+            "SELECT COUNT(*) FROM events WHERE job_id=?", (job_id,)
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def get_events(job_id: str, after_id: int = 0, limit: int = 500) -> list[dict]:
     with connect() as c:
         rows = c.execute(
