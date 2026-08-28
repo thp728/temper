@@ -23,6 +23,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+# Fallback total-expert count for legacy fixtures where `is_moe` is set but no
+# count was supplied (e.g. `ModelFacts(is_moe=True)` in tests). Chosen as the
+# modal value among the MoE families this platform expects to probe: Mixtral
+# 8x7B and 8x22B (Mistral AI, 8 experts, top-2 routing) are the most widely
+# deployed reference MoEs and the smallest total among the surveyed families
+# (Qwen2-57B-A14B: 60 experts, DeepSeek-V3: 256 experts, Llama-4 Scout/
+# Maverick: 16 experts, GLM-4.5 / gpt-oss-120B: 32-64 experts; see
+# `docs/research-reports/report-a.md` and report-b §2). For a memory
+# prediction that must **block** at creation (ADR-0043), the conservative
+# direction is *higher* (over-predict) so an OOM is never missed; 8 is the
+# minimum honest MoE total — still 8× the dense MLP and therefore visibly
+# larger than dense, while real configs read their actual count (60, 256, …)
+# and will predict larger. Using a larger default would be more conservative
+# but would overstate the legacy test fixture. This is the value
+# `ModelFacts.params` and the resolver both read, so it is defined once.
+DEFAULT_MOE_NUM_EXPERTS = 8
+
+# Default active experts per token for `ModelFacts.active_params` display
+# only (never for memory; memory always prices on total). Modal among the
+# same families: Mixtral top-2, Qwen2-MoE top-4, DeepSeek-V2/V3 top-6, Llama-4
+# top-2. 2 is the smallest and most common, and `active_params` is only the
+# routed subset shown to explain why pricing on active would be wrong.
+DEFAULT_MOE_ACTIVE_EXPERTS = 2
+
 
 @dataclass(frozen=True)
 class ModelFacts:
@@ -81,9 +105,9 @@ class ModelFacts:
         active parameters per token -- a MoE with 8 experts holds 8× the MLP
         weights even when only 2 are routed per token. When `is_moe` is set
         but no expert count was supplied (legacy fixtures), the count
-        defaults to 8 (Mixtral-like) so the total is visibly larger than the
-        dense equivalent and the memory predictor cannot silently under-price
-        it.
+        defaults to :data:`DEFAULT_MOE_NUM_EXPERTS` so the total is visibly
+        larger than the dense equivalent and the memory predictor cannot
+        silently under-price it.
         """
         q_out = self.num_attention_heads * self.head_dim
         kv_out = self.num_key_value_heads * self.head_dim
@@ -104,7 +128,11 @@ class ModelFacts:
             + mlp_intermediate * self.hidden_size  # down_proj
         )
         if self.is_moe:
-            n_exp = self.num_experts if self.num_experts > 0 else 8
+            n_exp = (
+                self.num_experts
+                if self.num_experts > 0
+                else DEFAULT_MOE_NUM_EXPERTS
+            )
             mlp_per_layer = n_exp * mlp_per_expert
         else:
             mlp_per_layer = mlp_per_expert
@@ -148,7 +176,7 @@ class ModelFacts:
             self.num_experts_per_tok
             if self.num_experts_per_tok is not None
             and self.num_experts_per_tok > 0
-            else 2
+            else DEFAULT_MOE_ACTIVE_EXPERTS
         )
         per_layer = attn_per_layer + n_active * mlp_per_expert
         embeddings = self.vocab_size * self.hidden_size

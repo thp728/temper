@@ -33,7 +33,11 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from temper_core.models import ModelFacts, Models
+from temper_core.models import (
+    DEFAULT_MOE_NUM_EXPERTS,
+    ModelFacts,
+    Models,
+)
 
 _TIMEOUT_S = 10
 
@@ -160,10 +164,11 @@ def _resolve_facts(repo: str, revision: str) -> ModelFacts:
                 num_experts = v
                 break
         # When the config signals MoE but carries no count, the domain
-        # defaults to 8 so the total is visibly larger than dense -- see
-        # `ModelFacts.params`.
+        # defaults to :data:`temper_core.models.DEFAULT_MOE_NUM_EXPERTS` so
+        # the total is visibly larger than dense -- see `ModelFacts.params`.
+        # Defined once in the domain and read here, never retyped.
         if num_experts == 0:
-            num_experts = 8
+            num_experts = DEFAULT_MOE_NUM_EXPERTS
         for k in _MOE_ACTIVE_KEYS:
             v = config.get(k)
             if isinstance(v, int) and v > 0:
