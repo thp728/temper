@@ -551,4 +551,32 @@ describe("JobRecordView", () => {
       screen.queryByRole("heading", { name: "Settings you changed" }),
     ).toBeNull();
   });
+
+  it("discloses how many events are shown when not truncated", () => {
+    render(
+      <JobRecordView
+        job={job()}
+        events={[event({ id: 1, message: "a" }), event({ id: 2, message: "b" })]}
+        total={2}
+      />,
+    );
+    expect(screen.getByTestId("event-disclosure")).toHaveTextContent("Showing 2 of 2 events");
+    // No pagination control when nothing is hidden.
+    expect(screen.queryByRole("button", { name: /Load more events/ })).toBeNull();
+  });
+
+  it("where a limit still applies it says what it is showing and of how many, and the tail is reachable", async () => {
+    // A large run exceeds the 500 cap; the page states the cut and offers pagination.
+    const many = Array.from({ length: 500 }, (_, i) =>
+      event({ id: i + 1, message: `log ${i + 1}` }),
+    );
+    render(<JobRecordView job={job()} events={many} total={734} />);
+    const disclosure = screen.getByTestId("event-disclosure");
+    expect(disclosure).toHaveTextContent("Showing 500 of 734 events");
+    expect(disclosure).toHaveTextContent(/paginated/);
+    expect(disclosure).toHaveTextContent(/full record remains reachable/);
+    const btn = screen.getByRole("button", { name: /Load more events/ });
+    expect(btn).toBeVisible();
+    expect(btn).toHaveTextContent(/234 remaining/);
+  });
 });

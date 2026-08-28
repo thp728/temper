@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import BackToUpload from "@/components/BackToUpload";
+import EventLog from "@/components/EventLog";
 import FocusHeading from "@/components/FocusHeading";
 import LossChart from "@/components/LossChart";
 import PlateauNote from "@/components/PlateauNote";
@@ -401,12 +402,14 @@ export default function JobRecordView({
   progress = [],
   output = [],
   datasetFilename,
+  total,
 }: {
   job: JobRecord;
   events: JobEvent[];
   progress?: JobProgress[];
   output?: JobOutputLine[];
   datasetFilename?: string;
+  total?: number;
 }) {
   const terminal = TERMINAL_STATUSES.includes(job.status);
   const start = job.started_at ?? job.created_at;
@@ -551,28 +554,11 @@ export default function JobRecordView({
         {plateau && <PlateauNote message={plateau.message} />}
       </section>
 
-      <section aria-labelledby="output-heading" className="space-y-2">
-        <h2 id="output-heading" className="text-lg font-semibold">
-          Output
-        </h2>
-        {/* The whole history, oldest first: a finished job is as inspectable
-            as a working one, and the lifecycle's early states stay on the
-            page even though the job ended elsewhere. */}
-        <div
-          role="log"
-          aria-label="Output"
-          tabIndex={0}
-          className="max-h-80 overflow-y-auto rounded-lg border bg-card p-3 font-mono text-xs"
-        >
-          {events.length === 0 ? (
-            <div className="font-sans text-muted-foreground">
-              Nothing recorded yet.
-            </div>
-          ) : (
-            events.map((e) => <div key={e.id}>{e.message}</div>)
-          )}
-        </div>
-      </section>
+      <EventLog
+        jobId={job.id}
+        initialEvents={events}
+        initialTotal={total ?? events.length}
+      />
 
       <div className="flex gap-3">
         <Button variant="outline" asChild>

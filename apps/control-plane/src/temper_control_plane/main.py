@@ -622,7 +622,7 @@ def retry_job(job_id: str):
 
 
 @app.get("/v1/jobs/{job_id}/events", tags=["jobs"], response_model=EventPage)
-def get_events(job_id: str, after: int = 0):
+def get_events(job_id: str, after: int = 0, limit: int = 500):
     """Durable event log. `after` is the last event id the client holds.
 
     Polling against a monotonic id rather than streaming: a reconnecting client
@@ -633,13 +633,30 @@ def get_events(job_id: str, after: int = 0):
     snapshot and the retained raw lines that were promoted into it. Progress
     supersedes per phase, so the snapshot is small by construction; the
     retained lines are the collapsed detail that keeps nothing discarded.
+
+    `total` is the job's event count regardless of the paging window
+    (issue #56): where a limit still applies the page says what it is showing
+    and of how many, and a silent truncation becomes a stated one. `limit`
+    caps the page at 500 (the stored cap that #56 keeps), so a job that
+    genuinely produces very many events is paginated rather than silently cut,
+    and the full record remains reachable by paging with `after`.
     """
+    if limit < 1 or limit > 500:
+        raise HTTPException(
+            400,
+            {
+                "code": "invalid_limit",
+                "message": "limit must be between 1 and 500",
+            },
+        )
     if not db.get_job(job_id):
         raise HTTPException(404, "No such job.")
-    events = db.get_events(job_id, after_id=after)
+    events = db.get_events(job_id, after_id=after, limit=limit)
+    total = db.count_events(job_id)
     return {
         "events": events,
         "last_id": events[-1]["id"] if events else after,
+        "total": total,
         "progress": db.get_progress(job_id),
         "output": db.get_output(job_id),
     }

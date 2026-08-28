@@ -727,10 +727,18 @@ class EventPage(BaseModel):
     a polling client resumes instead of re-reading or skipping. `progress` is
     the whole per-phase snapshot (it supersedes, so it is small by
     construction); `output` is the whole retained record of promoted lines --
-    the collapsed detail that keeps "we keep everything" true."""
+    the collapsed detail that keeps "we keep everything" true.
+
+    `total` is the job's event count regardless of the paging window
+    (issue #56): where a limit still applies the interface says what it is
+    showing and of how many, and a silent truncation becomes a stated one.
+    `total` travels even when the page is not truncated, so the same shape
+    answers "how many did this run produce?" without a second request.
+    """
 
     events: list[JobEvent]
     last_id: int
+    total: int
     progress: list[JobProgress] = Field(default_factory=list)
     output: list[JobOutputLine] = Field(default_factory=list)
 

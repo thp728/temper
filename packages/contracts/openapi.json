@@ -819,7 +819,7 @@
         "type": "object"
       },
       "EventPage": {
-        "description": "A job's durable history: the events, the current per-phase progress, and\nthe retained raw lines that were promoted into it (issue #49).\n\n`after` is what the client holds; `last_id` is where this page reaches, so\na polling client resumes instead of re-reading or skipping. `progress` is\nthe whole per-phase snapshot (it supersedes, so it is small by\nconstruction); `output` is the whole retained record of promoted lines --\nthe collapsed detail that keeps \"we keep everything\" true.",
+        "description": "A job's durable history: the events, the current per-phase progress, and\nthe retained raw lines that were promoted into it (issue #49).\n\n`after` is what the client holds; `last_id` is where this page reaches, so\na polling client resumes instead of re-reading or skipping. `progress` is\nthe whole per-phase snapshot (it supersedes, so it is small by\nconstruction); `output` is the whole retained record of promoted lines --\nthe collapsed detail that keeps \"we keep everything\" true.\n\n`total` is the job's event count regardless of the paging window\n(issue #56): where a limit still applies the interface says what it is\nshowing and of how many, and a silent truncation becomes a stated one.\n`total` travels even when the page is not truncated, so the same shape\nanswers \"how many did this run produce?\" without a second request.",
         "properties": {
           "events": {
             "items": {
@@ -845,11 +845,16 @@
             },
             "title": "Progress",
             "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
           "events",
-          "last_id"
+          "last_id",
+          "total"
         ],
         "title": "EventPage",
         "type": "object"
@@ -2986,7 +2991,7 @@
     },
     "/v1/jobs/{job_id}/events": {
       "get": {
-        "description": "Durable event log. `after` is the last event id the client holds.\n\nPolling against a monotonic id rather than streaming: a reconnecting client\ncatches up from the database instead of losing whatever happened while it\nwas away.\n\nThe page also carries the job's progress (issue #49): the current per-phase\nsnapshot and the retained raw lines that were promoted into it. Progress\nsupersedes per phase, so the snapshot is small by construction; the\nretained lines are the collapsed detail that keeps nothing discarded.",
+        "description": "Durable event log. `after` is the last event id the client holds.\n\nPolling against a monotonic id rather than streaming: a reconnecting client\ncatches up from the database instead of losing whatever happened while it\nwas away.\n\nThe page also carries the job's progress (issue #49): the current per-phase\nsnapshot and the retained raw lines that were promoted into it. Progress\nsupersedes per phase, so the snapshot is small by construction; the\nretained lines are the collapsed detail that keeps nothing discarded.\n\n`total` is the job's event count regardless of the paging window\n(issue #56): where a limit still applies the page says what it is showing\nand of how many, and a silent truncation becomes a stated one. `limit`\ncaps the page at 500 (the stored cap that #56 keeps), so a job that\ngenuinely produces very many events is paginated rather than silently cut,\nand the full record remains reachable by paging with `after`.",
         "operationId": "get_events_v1_jobs__job_id__events_get",
         "parameters": [
           {
@@ -3005,6 +3010,16 @@
             "schema": {
               "default": 0,
               "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "title": "Limit",
               "type": "integer"
             }
           }
