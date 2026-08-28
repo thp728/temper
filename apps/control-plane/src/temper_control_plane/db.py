@@ -36,6 +36,7 @@ from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 from temper_core import artifacts, delivery
 from temper_core.errors import OrchestratorError
 
@@ -66,28 +67,55 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
+# One pool per `DATABASE_URL`, not one connection per call. Measured, not
+# guessed: a single orchestrator test (`test_a_job_runs_to_completion_
+# against_a_fake_provider`) opened 63 separate connections before pooling
+# existed here -- one per state transition, one per promoted progress line,
+# one per event -- and at roughly 17ms to open and close a connection on this
+# machine, that is over a second of pure connection overhead inside one
+# test's `call` phase. Across the suite it was the dominant cost behind the
+# 2306-second run issue #43's PR records finding this in (see the ADR):
+# per-test database cloning was real but secondary, on the order of 100ms a
+# test against connection overhead than ran into the seconds for any test
+# that drives the orchestrator through more than a handful of transitions.
+#
+# Keyed by URL rather than a single pool built at import, because tests
+# monkeypatch `db.DATABASE_URL` to a fresh per-test database
+# (`conftest.isolated`) and a pool bound to the wrong database would serve
+# connections to a database that either is not this test's or, once its
+# `isolated` fixture drops it, no longer exists. Only ever one pool is kept
+# open: the moment a call is made against a new URL, every pool for a
+# different URL is closed first. In production `DATABASE_URL` never changes,
+# so this holds exactly one pool for the life of the process, opened once.
+_pools: dict[str, ConnectionPool] = {}
+
+
+def _pool() -> ConnectionPool:
+    pool = _pools.get(DATABASE_URL)
+    if pool is None:
+        for stale_url, stale_pool in list(_pools.items()):
+            if stale_url != DATABASE_URL:
+                stale_pool.close()
+                del _pools[stale_url]
+        pool = _pools[DATABASE_URL] = ConnectionPool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=8,
+            kwargs={"row_factory": dict_row, "autocommit": False},
+            open=True,
+        )
+    return pool
+
+
 @contextmanager
 def connect():
-    """One connection, one transaction: commits on success, rolls back on any
-    exception raised inside the `with` block.
-
-    A short-lived connection per call rather than a pool held across
-    `DATABASE_URL` changes: this module is monkeypatched to a fresh database
-    per test (`conftest.isolated`), and a pool built once at import would
-    keep talking to whichever database was current when it was built. The
-    control plane's request volume does not need pooling to stay responsive;
-    if it ever does, that is a measured change to make here, not a guess to
-    make now.
-    """
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=False)
-    try:
+    """One connection from the pool, one transaction: `pool.connection()`
+    applies psycopg's normal connection context behaviour -- commits on
+    success, rolls back on any exception raised inside the `with` block --
+    and returns the connection to the pool either way rather than closing
+    it."""
+    with _pool().connection() as conn:
         yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def init() -> None:
