@@ -1545,7 +1545,9 @@ def _attempt_spec(job: dict, resolved_hp: dict | None) -> dict:
     length -- so "what changed" is visible without duplicating the whole
     spec, and the effective batch is carried beside them.
     """
-    hp = resolved_hp or hyperparams.effective(job["hyperparameters"] or {})
+    hp = resolved_hp or hyperparams.effective(
+        job["hyperparameters"] or {}, method=job.get("method")
+    )
     return {
         memory_retry.MICRO_BATCH_KEY: hp[memory_retry.MICRO_BATCH_KEY],
         memory_retry.ACCUMULATION_KEY: hp[memory_retry.ACCUMULATION_KEY],

@@ -207,6 +207,25 @@ def _recovery_events(events):
     ]
 
 
+# The continuity a user sees in the loss chart: consecutive emitted losses
+# move by small steps (no jump), and the curve descends rather than restarting
+# at its initial value. Defined once as a named predicate so the positive test
+# (the recovery's emitted series) and the negative control (a jumped series)
+# exercise exactly the same check -- a regression that silently widened the
+# threshold would fail the negative control.
+MAX_STEP_DELTA = 0.2
+
+
+def assert_continuous_loss_series(series: list[float]) -> None:
+    assert len(series) >= 2
+    for prev, nxt in zip(series, series[1:], strict=False):
+        assert abs(nxt - prev) < MAX_STEP_DELTA, (
+            f"loss curve jumps at the retry: {prev} -> {nxt}"
+        )
+    assert series[0] > series[-1], "loss curve restarts rather than descending"
+    assert abs(series[1] - series[0]) < MAX_STEP_DELTA
+
+
 # ---------------------------------------------------------------------------
 # the automatic retry and the invariant
 # ---------------------------------------------------------------------------
@@ -294,30 +313,61 @@ def test_the_loss_curve_is_continuous_across_the_retry(harness):
     assert harness.job(job_id)["status"] == "complete"
 
     series = harness.metrics(job_id)
-    assert len(series) >= 2
-    # No jump at the retry boundary: the first post-retry loss continues from
-    # the last pre-retry loss, and consecutive losses move by small steps.
-    for prev, nxt in zip(series, series[1:], strict=False):
-        assert abs(nxt - prev) < 0.2, (
-            f"loss curve jumps at the retry: {prev} -> {nxt}"
-        )
+    assert_continuous_loss_series(series)
     # And the pre-OOM value is what the retry continues from (not a restart
     # back up at the initial loss).
     assert series[0] > series[-1]
-    assert abs(series[1] - series[0]) < 0.2
 
 
-def test_a_retry_that_changed_the_effective_batch_would_jump(harness):
-    """The negative control: a machine handed a spec with a *different*
-    effective batch emits a jumped series -- the discontinuity a user would
-    see if the recovery ever changed the optimisation. This is the guard the
-    continuity test stands on."""
-    provider = MemoryRecoveryMachine(
-        oom_attempts=1,
-        launch_effective_batch=8,
-        continuation=[0.7, 0.6, 0.5, 0.49, 0.48, 0.47],
-        jumped=[0.9, 0.85, 0.8, 0.75],
-    )
+def test_a_jumped_emitted_series_is_caught_by_the_continuity_check():
+    """The negative control, and it is a real one: the continuity predicate
+    used on the recovery's emitted series must fail on a series that jumps at
+    the retry boundary -- the discontinuity a user would see if the recovery
+    ever changed the effective batch. A regression that silently removed the
+    jump detection from the check would fail this test, so the positive test
+    cannot pass while the detection is gone."""
+    continuous = [0.7, 0.6, 0.5, 0.49, 0.48, 0.47]
+    assert_continuous_loss_series(continuous)
+    # A restart back at the initial loss (the shape of a changed run) jumps.
+    with pytest.raises(AssertionError, match="jumps at the retry"):
+        assert_continuous_loss_series([0.7, 0.6, 0.5, 0.9, 0.85, 0.8])
+    with pytest.raises(AssertionError, match="jumps at the retry"):
+        assert_continuous_loss_series([0.7, 0.6, 0.5, 0.75, 0.7, 0.68])
+
+
+def test_a_recovery_that_changed_the_effective_batch_shows_the_jump(
+    harness, monkeypatch
+):
+    """The pipeline-level negative control: drive the actual orchestrator
+    through a deliberately broken escalation -- per-step batch halved,
+    accumulation NOT doubled, so the effective batch changes -- and assert the
+    emitted series is discontinuous. This is what would happen to a user if
+    the recovery ever broke the invariant, and it is why the continuity check
+    is a guard rather than a comment: the positive test's continuity assertion
+    fails exactly on this shape."""
+    from temper_core.memory_retry import MemoryRetryStep
+
+    class BrokenEscalator:
+        """A recovery that halves the batch without doubling accumulation."""
+
+        def __init__(self, hyperparameters, **kwargs):
+            self._hp = dict(hyperparameters)
+
+        def step(self):
+            old_b = int(self._hp["micro_batch_size"])
+            new_b = max(old_b // 2, 1)
+            self._hp["micro_batch_size"] = new_b
+            return MemoryRetryStep(
+                hyperparameters=dict(self._hp),
+                rung="halve_batch",
+                action="per-step batch halved without doubling accumulation",
+                changed={"micro_batch_size": (old_b, new_b)},
+                effective_batch=new_b
+                * int(self._hp["gradient_accumulation_steps"]),
+            )
+
+    monkeypatch.setattr(memory_retry, "MemoryEscalator", BrokenEscalator)
+    provider = MemoryRecoveryMachine(oom_attempts=1, launch_effective_batch=8)
     job_id = harness.run(
         provider,
         hyperparameters={
@@ -326,19 +376,11 @@ def test_a_retry_that_changed_the_effective_batch_would_jump(harness):
         },
     )
     assert harness.job(job_id)["status"] == "complete"
-
-    # Simulate the broken recovery: a spec whose effective batch changed.
-    attempts = harness.job(job_id)["attempts"]
-    last_spec = attempts[-1]["spec"]
-    assert (
-        last_spec["micro_batch_size"]
-        * last_spec["gradient_accumulation_steps"]
-        == 8
-    )
-    # If the effective batch had NOT been preserved, the machine would have
-    # emitted the jumped series; assert the machine did what it was told.
-    assert provider._continuation[0] == 0.7
-    assert provider._jumped[0] == 0.9
+    series = harness.metrics(job_id)
+    # The broken escalation changed the effective batch, so the machine
+    # emitted a jumped series and the continuity check fails on it.
+    with pytest.raises(AssertionError):
+        assert_continuous_loss_series(series)
 
 
 # ---------------------------------------------------------------------------
