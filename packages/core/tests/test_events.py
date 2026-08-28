@@ -11,6 +11,7 @@ came from a line that merely looked like a measurement.
 """
 
 from temper_core.events import classify
+from temper_core.progress import PHASE_IMAGE_PULL, PHASE_MODEL_DOWNLOAD
 
 
 def metric(line: str) -> dict:
@@ -22,6 +23,18 @@ def metric(line: str) -> dict:
 def is_log(line: str) -> bool:
     event = classify(line)
     return event.kind == "log" and event.data is None
+
+
+def progress_event(line: str) -> dict:
+    event = classify(line)
+    assert event.kind == "progress", (
+        f"expected a progress event, got {event!r}"
+    )
+    return event.data
+
+
+def is_progress(line: str) -> bool:
+    return classify(line).kind == "progress"
 
 
 # --- what becomes a metric --------------------------------------------------
@@ -135,18 +148,13 @@ def test_a_progress_bar_is_not_a_training_step():
     """The correction this classifier carries.
 
     An undescribed bar looks like the training bar and may be the evaluation
-    bar, which counts batches and restarts every epoch. Described bars — dataset
-    mapping, weight downloads — count something else again. None of them is
-    promoted.
+    bar, which counts batches and restarts every epoch. None of the plain bars
+    is a training step -- and since #49, the *described* download bar is
+    promoted as progress, not left as a log line. What is asserted here is
+    that neither kind of bar is a training metric.
     """
     assert is_log(" 33%|███▎      | 10/30 [00:20<00:40,  2.00s/it]")
     assert is_log("  0%|          | 0/30 [00:00<?, ?it/s]")
-    assert is_log(
-        "Map:  45%|████▌     | 90/200 [00:01<00:01, 88.0 examples/s]"
-    )
-    assert is_log(
-        "model.safetensors:  10%|█         | 400M/4.00G [00:05<00:45]"
-    )
 
 
 def test_a_partial_line_does_not_produce_a_metric():
@@ -169,6 +177,124 @@ def test_ordinary_output_is_log_output():
     assert is_log("[10:03:04] building trainer image")
     assert is_log("#8 [4/6] RUN pip install -r requirements.txt")
     assert is_log("")
+
+
+# --- what becomes progress (issue #49) --------------------------------------
+#
+# Progress is promoted, not filtered: layer-pull and model-download lines stop
+# being log lines and become progress records carrying phase, bytes done, bytes
+# expected and (measured elsewhere) a rate. The finished-job page stopped
+# partway through the image pull precisely because these lines flooded the log;
+# promoting them is what lets the page finish, and retaining the raw lines as
+# collapsed detail is what keeps nothing discarded.
+#
+# **The model-download fixture is the genuinely captured one.** The bar below
+# is verbatim from a real run (the same shape test_events.py already carried),
+# huggingface_hub's tqdm with unit_scale: `model.safetensors: 10%|█ | 400M/4.00G
+# [00:05<00:45]`. The layer-pull fixtures follow docker's documented `docker
+# pull` output format -- layer-id-prefixed `Downloading`/`Extracting`/`Pull
+# complete` lines with a `done/total` byte pair -- because the repo holds no
+# captured pull transcript (spike 6 redirected the pull's output to a file and
+# never kept it); capturing one on a real pull is recorded as outstanding with
+# the ADR. Both formats interleave across layers and arrive in partial lines,
+# so the two failure-shaped cases below exist for both.
+
+
+def test_a_downloading_layer_line_becomes_image_pull_progress():
+    line = "9b829b73a52f: Downloading [===============> ] 15.19MB/42.42MB"
+    assert progress_event(line) == {
+        "phase": PHASE_IMAGE_PULL,
+        "layer": "9b829b73a52f",
+        "done": 15.19e6,
+        "total": 42.42e6,
+    }
+
+
+def test_an_extracting_layer_line_becomes_image_pull_progress():
+    line = (
+        "9b829b73a52f: Extracting [========================> ] 35.2MB/42.42MB"
+    )
+    data = progress_event(line)
+    assert data["phase"] == PHASE_IMAGE_PULL
+    assert data["done"] == 35.2e6
+    assert data["total"] == 42.42e6
+
+
+def test_layer_status_lines_without_bytes_are_promoted_too():
+    """`Pulling fs layer`, `Download complete`, `Pull complete` carry no byte
+    pair but are still layer-pull output: promoted (so they stop flooding the
+    log) and retained, with no bytes to report."""
+    for layer, status in (
+        ("1fe172e4850f", "Pulling fs layer"),
+        ("9b829b73a52f", "Waiting"),
+        ("9b829b73a52f", "Download complete"),
+        ("9b829b73a52f", "Verifying Checksum"),
+        ("9b829b73a52f", "Pull complete"),
+        ("9b829b73a52f", "Layer already exists"),
+    ):
+        data = progress_event(f"{layer}: {status}")
+        assert data["phase"] == PHASE_IMAGE_PULL
+        assert data["layer"] == layer
+        assert data.get("done") is None
+        assert data.get("total") is None
+
+
+def test_interleaved_layers_are_each_promoted():
+    """Docker pulls layers in parallel, so the lines alternate between layers;
+    each belongs to the image-pull phase and carries its own layer's bytes."""
+    lines = [
+        "9b829b73a52f: Downloading [============>      ] 15.19MB/42.42MB",
+        "1fe172e4850f: Downloading [======>            ]  8.5MB/25.54MB",
+        "9b829b73a52f: Downloading [==================> ] 28.1MB/42.42MB",
+        "1fe172e4850f: Downloading [================>   ] 17.2MB/25.54MB",
+    ]
+    assert all(is_progress(line) for line in lines)
+
+
+def test_a_partial_layer_line_is_still_promoted():
+    """A read cut the line before the byte pair arrived. The status word alone
+    names the phase, and the line must not fall back to a log event -- that is
+    the flood this promotion exists to fold."""
+    data = progress_event("9b829b73a52f: Downloading [===============> ")
+    assert data["phase"] == PHASE_IMAGE_PULL
+    assert data.get("done") is None
+
+
+def test_the_captured_model_download_bar_becomes_model_download_progress():
+    line = "model.safetensors:  10%|█         | 400M/4.00G [00:05<00:45]"
+    data = progress_event(line)
+    assert data["phase"] == PHASE_MODEL_DOWNLOAD
+    assert data["done"] == 400e6
+    assert data["total"] == 4e9
+
+
+def test_a_small_file_bar_is_still_a_model_download():
+    """`config.json: 100%|█| 567/567` names a file, so it is a download even
+    though the bytes are small enough that tqdm drops the suffix."""
+    data = progress_event(
+        "config.json: 100%|██████████| 567/567 [00:00<00:00, 567B/s]"
+    )
+    assert data["phase"] == PHASE_MODEL_DOWNLOAD
+    assert data["done"] == 567
+    assert data["total"] == 567
+
+
+def test_the_map_bar_is_not_a_model_download():
+    """The tokenization map counts examples, not bytes: its description is not
+    a file name and its n/total has no size suffix. It stays a log line."""
+    assert is_log(
+        "Map:  45%|████▌     | 90/200 [00:01<00:01, 88.0 examples/s]"
+    )
+
+
+def test_a_training_bar_is_not_progress():
+    assert is_log(" 33%|███▎      | 10/30 [00:20<00:40,  2.00s/it]")
+    assert is_log("  0%|          | 0/30 [00:00<?, ?it/s]")
+
+
+def test_prose_that_merely_mentions_a_pull_is_not_progress():
+    assert is_log("[00:00:00] pulling trainer image")
+    assert is_log("Status: Downloaded newer image for ubuntu:latest")
 
 
 # --- what Axolotl actually emits, captured from job_05300098085f ------------
