@@ -1,4 +1,4 @@
-# ADR-0049 — Full fine-tuning is a second method through the existing seams
+# ADR-0052 — Full fine-tuning is a second method through the existing seams
 
 - **Status:** accepted
 - **Date:** 2026-08-28
