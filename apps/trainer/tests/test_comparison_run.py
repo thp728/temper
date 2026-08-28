@@ -195,3 +195,17 @@ def test_no_checkpoints_on_the_machine_is_recorded_not_a_failure(
     )
     assert result["ok"] is False
     assert result["selection"]["basis"] == "none"
+
+
+def test_a_corrupt_held_out_file_never_fails_the_run(tmp_path: Path):
+    """The whole comparison phase is guarded, not just the generation: a
+    held-out file that cannot be parsed is recorded as a reason, never a run
+    failure -- the exact guarantee Spec 011's negative test protects."""
+    (tmp_path / "eval.jsonl").write_text("{not json at all\n")
+    write_checkpoint(tmp_path, 20, loss=0.35, eval_loss=0.39)
+
+    result = entrypoint.run_machine_comparison(
+        complete_job(), {}, tmp_path, make_generators=stub_loaders()
+    )
+    assert result["ok"] is False
+    assert "JSONDecodeError" in result["reason"]

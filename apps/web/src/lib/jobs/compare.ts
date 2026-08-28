@@ -7,7 +7,7 @@
 //
 // No component knowledge, no React: functions over the published shape.
 
-import type { Comparison, ComparisonRow } from "@/lib/api/generated/client";
+import type { ComparisonRow } from "@/lib/api/generated/client";
 
 // The conversation up to the last user turn is what was actually generated
 // from (the held-out answer is never fed to either model); for display, the
@@ -21,12 +21,6 @@ export function promptText(
     if (turn?.role === "user") return turn.content ?? "";
   }
   return "";
-}
-
-// Whether a comparison produced rows a reader can look at. `ok` and `rows`
-// come from the record as recorded, never assumed.
-export function hasRows(c: Comparison | null | undefined): boolean {
-  return Boolean(c && c.ok && c.rows && c.rows.length > 0);
 }
 
 // The decoding settings as a sentence a non-specialist can read, so a reader

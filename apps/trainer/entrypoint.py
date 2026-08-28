@@ -1291,88 +1291,95 @@ def run_machine_comparison(
     eval loss was measured on, never a second sampling of the dataset), picks
     a fixed slice of it, selects the checkpoint the run's own rule (issue
     #62) would choose, generates from the base model and from that
-    checkpoint, and returns the record. **Never fails the run**: any failure
-    -- including a failure to load the models -- becomes `ok: false` with the
-    reason recorded, and the artifact is still delivered (Spec 011).
-
-    `make_generators` is a seam so the host suite can exercise the whole flow
-    without torch; the default is the machine's real loader.
+    checkpoint, and returns the record. **Never fails the run**: the whole
+    phase -- reading the held-out file, selecting the checkpoint, loading
+    the models, and generating -- is guarded, so any failure becomes
+    `ok: false` with the reason recorded and the artifact is still delivered
+    (Spec 011). `make_generators` is a seam so the host suite can exercise
+    the whole flow without torch; the default is the machine's real loader.
     """
-    eval_path = out_dir / "eval.jsonl"
-    if not eval_path.is_file():
-        return comparison_step.ComparisonOutcome(
-            ok=False,
-            decoding=dict(comparison_step.COMPARISON_DECODING),
-            reason="nothing was held out, so there was nothing to compare",
-        ).to_dict()
-
-    held = [json.loads(line) for line in eval_path.open() if line.strip()]
-    messages_field = job.get("messages_field", "messages")
-    conversations = [
-        row[messages_field]
-        for row in comparison_step.select_prompts(held)
-        if isinstance(row.get(messages_field), list)
-    ]
-    if not conversations:
-        return comparison_step.ComparisonOutcome(
-            ok=False,
-            decoding=dict(comparison_step.COMPARISON_DECODING),
-            reason="the held-out rows carried no conversations to compare",
-        ).to_dict()
-
-    selection = select_best_checkpoint(checkpoint_records(out_dir))
-    selection_record = selection.to_dict()
-    chosen_step = selection.step
-    if chosen_step is None:
-        return comparison_step.ComparisonOutcome(
-            ok=False,
-            decoding=dict(comparison_step.COMPARISON_DECODING),
-            reason=selection.reason,
-            selection=selection_record,
-        ).to_dict()
-    chosen_dir = out_dir / "run" / f"checkpoint-{chosen_step}"
-    if not chosen_dir.is_dir():
-        return comparison_step.ComparisonOutcome(
-            ok=False,
-            decoding=dict(comparison_step.COMPARISON_DECODING),
-            reason=(
-                f"the chosen checkpoint (step {chosen_step}) was not on the "
-                "machine to compare"
-            ),
-            selection=selection_record,
-        ).to_dict()
-
-    method = job.get("method") or "qlora"
+    decoding = dict(comparison_step.COMPARISON_DECODING)
+    # Set as selection is computed, so a failure that happens after it still
+    # records which checkpoint was being compared.
+    selection_record: dict | None = None
     try:
+        eval_path = out_dir / "eval.jsonl"
+        if not eval_path.is_file():
+            return comparison_step.ComparisonOutcome(
+                ok=False,
+                decoding=decoding,
+                reason="nothing was held out, so there was nothing to compare",
+            ).to_dict()
+
+        held = [json.loads(line) for line in eval_path.open() if line.strip()]
+        messages_field = job.get("messages_field", "messages")
+        conversations = [
+            row[messages_field]
+            for row in comparison_step.select_prompts(held)
+            if isinstance(row.get(messages_field), list)
+        ]
+        if not conversations:
+            return comparison_step.ComparisonOutcome(
+                ok=False,
+                decoding=decoding,
+                reason="the held-out rows carried no conversations to compare",
+            ).to_dict()
+
+        selection = select_best_checkpoint(checkpoint_records(out_dir))
+        selection_record = selection.to_dict()
+        chosen_step = selection.step
+        if chosen_step is None:
+            return comparison_step.ComparisonOutcome(
+                ok=False,
+                decoding=decoding,
+                reason=selection.reason,
+                selection=selection_record,
+            ).to_dict()
+        chosen_dir = out_dir / "run" / f"checkpoint-{chosen_step}"
+        if not chosen_dir.is_dir():
+            return comparison_step.ComparisonOutcome(
+                ok=False,
+                decoding=decoding,
+                reason=(
+                    f"the chosen checkpoint (step {chosen_step}) was not on "
+                    "the machine to compare"
+                ),
+                selection=selection_record,
+            ).to_dict()
+
+        method = job.get("method") or "qlora"
         base_gen, tuned_gen = make_generators(job, cfg, chosen_dir, method)
-    except Exception as e:  # noqa: BLE001 - loading must not fail the run
-        log(f"comparison could not load the models: {type(e).__name__}: {e}")
+        log(
+            f"comparison: {len(conversations)} held-out prompt(s) through the "
+            f"base model and the chosen checkpoint (step {chosen_step})"
+        )
+        outcome = comparison_step.run_comparison(
+            conversations=conversations,
+            base=base_gen,
+            tuned=tuned_gen,
+            decoding=decoding,
+            selection=selection_record,
+        )
+        if not outcome.ok:
+            # The reason is recorded with the result; the run continues. This
+            # is the "evaluation failure never fails the run" guarantee,
+            # stated where the failure is swallowed.
+            log(
+                "comparison failed; recorded and the run continues: "
+                f"{outcome.reason}"
+            )
+        return outcome.to_dict()
+    except Exception as e:  # noqa: BLE001 - the run must survive the extra step
+        log(
+            "comparison failed; recorded and the run continues: "
+            f"{type(e).__name__}: {e}"
+        )
         return comparison_step.ComparisonOutcome(
             ok=False,
-            decoding=dict(comparison_step.COMPARISON_DECODING),
+            decoding=decoding,
             reason=f"{type(e).__name__}: {e}",
             selection=selection_record,
         ).to_dict()
-
-    log(
-        f"comparison: {len(conversations)} held-out prompt(s) through the "
-        f"base model and the chosen checkpoint (step {chosen_step})"
-    )
-    outcome = comparison_step.run_comparison(
-        conversations=conversations,
-        base=base_gen,
-        tuned=tuned_gen,
-        decoding=comparison_step.COMPARISON_DECODING,
-        selection=selection_record,
-    )
-    if not outcome.ok:
-        # The reason is recorded with the result; the run continues. This is
-        # the "evaluation failure never fails the run" guarantee, stated where
-        # the failure is swallowed.
-        log(
-            f"comparison failed; recorded and the run continues: {outcome.reason}"
-        )
-    return outcome.to_dict()
 
 
 def main() -> int:

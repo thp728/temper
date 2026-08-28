@@ -1101,35 +1101,35 @@ def get_job(job_id: str) -> dict | None:
             _with_is_moe(
                 _with_warnings(
                     _with_comparison(
-                    _row(
-                        r,
-                        {
-                            "hyperparams_json": "hyperparameters",
-                            "result_json": "result",
-                            "warnings_json": "warnings",
-                            "quote_json": "quote",
-                            "overrides_json": "overrides",
-                            "actuals_json": "actuals",
-                            "checkpoints_json": "checkpoints",
-                            "best_checkpoint_json": "best_checkpoint",
-                            "artifact_json": "artifact_record",
-                            "delivery_request_json": "delivery_request",
-                            "delivery_json": "delivery",
-                            "attempts_json": "attempts",
-                        },
-                        defaults={
-                            "overrides": [],
-                            "checkpoints": [],
-                            "best_checkpoint": None,
-                            "delivery_request": [],
-                            "delivery": [],
-                            "attempts": [],
-                        },
+                        _row(
+                            r,
+                            {
+                                "hyperparams_json": "hyperparameters",
+                                "result_json": "result",
+                                "warnings_json": "warnings",
+                                "quote_json": "quote",
+                                "overrides_json": "overrides",
+                                "actuals_json": "actuals",
+                                "checkpoints_json": "checkpoints",
+                                "best_checkpoint_json": "best_checkpoint",
+                                "artifact_json": "artifact_record",
+                                "delivery_request_json": "delivery_request",
+                                "delivery_json": "delivery",
+                                "attempts_json": "attempts",
+                            },
+                            defaults={
+                                "overrides": [],
+                                "checkpoints": [],
+                                "best_checkpoint": None,
+                                "delivery_request": [],
+                                "delivery": [],
+                                "attempts": [],
+                            },
+                        )
                     )
                 )
             )
         )
-    )
     )
 
 

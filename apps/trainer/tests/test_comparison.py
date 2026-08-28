@@ -251,9 +251,11 @@ def test_the_record_omits_the_reason_when_it_went_well():
 def test_the_generator_produces_real_text_from_a_real_model():
     """The comparison's generation path -- template render, fixed decoding
     settings, decode -- run against a real tiny model. The output is real
-    model text (garbage, from a random untrained model, but real), not a
-    fixture, so the criterion "renders with real generations" is proven by
-    the code that produces it."""
+    model text (garbage, from a random untrained model, but genuinely the
+    model's own tokens, not a fixture): this proves the generator's code
+    path, which a canned string could not. It is not real generations from a
+    real *trained* run -- that acceptance criterion needs the paid pipeline
+    and is stated as outstanding in the PR body."""
     from entrypoint import _ModelGenerator
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
