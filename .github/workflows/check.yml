@@ -102,3 +102,67 @@ jobs:
       # provisions real machines and therefore appears nowhere in this file.
       - name: just check
         run: just check
+
+  # The second mechanism of ADR-0011: the tests exercise the code against
+  # real services, and this job exercises the *composition* -- the thing a
+  # broken environment variable or healthcheck in compose.yaml would leave
+  # every test green but fail for the reviewer who types the documented start
+  # command. It runs the exact command a reviewer runs, then polls /health
+  # until every dependency reports ready and the zero-cost switch took effect
+  # (the same guard the browser journeys enforce before any launch).
+  stack:
+    name: one-command stack (docker compose up)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: bring up the stack
+        # --wait blocks until every service's own healthcheck passes, not just
+        # until the containers start. Without it the web is still booting Next
+        # when the proxy check below runs, and curl exits 56 on a published
+        # port that accepts the connection and answers nothing.
+        run: docker compose up -d --build --wait
+
+      - name: poll /health until every dependency is ready
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+          import time
+          import urllib.request
+
+          deadline = time.time() + 300
+          while time.time() < deadline:
+              try:
+                  with urllib.request.urlopen(
+                      "http://127.0.0.1:5781/health", timeout=5
+                  ) as response:
+                      body = json.load(response)
+                  dependencies = body.get("dependencies", {})
+                  if (
+                      body.get("ok")
+                      and all(
+                          entry.get("ok")
+                          for entry in dependencies.values()
+                      )
+                      and body.get("provider") == "fake"
+                  ):
+                      print("stack healthy:", body)
+                      sys.exit(0)
+              except Exception:
+                  pass
+              time.sleep(5)
+          print("stack never became healthy; /health did not report all "
+                "dependencies ready within 300s", file=sys.stderr)
+          sys.exit(1)
+          PY
+
+      - name: the web shell serves and proxies
+        run: |
+          curl -sf http://127.0.0.1:5780/ > /dev/null
+          curl -sf http://127.0.0.1:5780/v1/models > /dev/null
+
+      - name: tear the stack down
+        if: always()
+        run: docker compose down -v

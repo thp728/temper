@@ -8,12 +8,29 @@ worked only because each one called `load_dotenv()` itself.
 
 So the control plane loads the same file the spikes do. Environment wins over
 the file, so an explicitly exported key still beats a stale checkout.
+
+**The settings layer.** Every deployment value is read from the environment
+through a typed reader with a local default, and the whole set is bundled into
+one typed `Settings` object. The module-level names below (`STALL_TIMEOUT_S`,
+`DB_PATH`, ...) are the public surface the rest of the codebase reads -- it
+never constructs a `Settings` -- so a value two processes or halves share has
+one definition (ADR-0010). A new deployment setting is a new field here, and
+nowhere else.
+
+Where the boundary sits is the subject of
+[ADR-0062](../docs/adr/0062-the-configuration-boundary-sits-at-deployment-settings.md):
+a value is a *deployment* setting when the right number depends on the
+deployment's hardware, catalog or tolerance; a value derived against a
+measured report is a *domain* constant and stays in the module that owns the
+derivation, whatever it happens to read.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+
+from pydantic import BaseModel
 
 from temper_core import divergence, hyperparams
 
@@ -75,6 +92,11 @@ def provider_credentials_present() -> bool:
         return False
 
 
+# The .env files are read into os.environ here, once, before any setting is
+# parsed: the provider SDK resolves JL_API_KEY from os.environ (not from a
+# settings object), so the file's contents must land where the SDK looks. The
+# typed readers below then read the resulting environment, with an explicitly
+# exported variable beating a stale checkout.
 load_env()
 
 
@@ -117,12 +139,16 @@ def _seconds(name: str, default: float) -> float:
 # Both are circuit breakers against a wedged job, not a cap on what a user may
 # legitimately train. Both are configuration, because the right number depends
 # on the catalog and the catalog will grow.
+#
+# Each documented default is defined once, here, and read by the typed reader
+# that parses the environment *and* by the typed Settings view below -- a value
+# two components must agree on is defined once and read, never retyped.
 
 # 15 minutes. The longest legitimately quiet stretch measured on a real run
 # (2026-08-19) was a 183-second image build, so this is an order of magnitude
 # above the worst observed silence -- and far below an unattended overnight,
 # which is the failure it exists to prevent.
-STALL_TIMEOUT_S = _seconds("TEMPER_STALL_TIMEOUT_S", 15 * 60)
+DEFAULT_STALL_TIMEOUT_S = 15 * 60
 
 # 24 hours. **Adopted convention, not a measured or cited figure** -- it is the
 # ceiling commonly used for managed training jobs, taken as a starting point
@@ -130,7 +156,7 @@ STALL_TIMEOUT_S = _seconds("TEMPER_STALL_TIMEOUT_S", 15 * 60)
 # either way. Nothing on the current 4B/8B catalog comes close: the measured
 # training phase on 2026-08-19 was 161 seconds. The number to revisit when the
 # catalog grows is this one, and it is configuration for that reason.
-MAX_JOB_DURATION_S = _seconds("TEMPER_MAX_JOB_DURATION_S", 24 * 60 * 60)
+DEFAULT_MAX_JOB_DURATION_S = 24 * 60 * 60
 
 # How long a quote's prices and availability are honoured for. A quote is an
 # estimate against hardware that changes; "a price I was shown yesterday is not
@@ -138,7 +164,13 @@ MAX_JOB_DURATION_S = _seconds("TEMPER_MAX_JOB_DURATION_S", 24 * 60 * 60)
 # it expires at all, and 24h is the boundary the sentence implies. Configurable
 # because the right value depends on how often this provider's availability and
 # pricing move, which is not something this repo has measured.
-QUOTE_TTL_S = _seconds("TEMPER_QUOTE_TTL_S", 24 * 60 * 60)
+DEFAULT_QUOTE_TTL_S = 24 * 60 * 60
+
+STALL_TIMEOUT_S = _seconds("TEMPER_STALL_TIMEOUT_S", DEFAULT_STALL_TIMEOUT_S)
+MAX_JOB_DURATION_S = _seconds(
+    "TEMPER_MAX_JOB_DURATION_S", DEFAULT_MAX_JOB_DURATION_S
+)
+QUOTE_TTL_S = _seconds("TEMPER_QUOTE_TTL_S", DEFAULT_QUOTE_TTL_S)
 
 
 def _megabytes(name: str, default: float) -> float:
@@ -195,9 +227,13 @@ def _megabytes(name: str, default: float) -> float:
 # Configurable because the right number depends on the deployment's tolerance
 # for a synchronous wait, not on this code. TEMPER_MAX_DATASET_MB, in
 # megabytes. 1.3 GiB is 1331.2 MB.
-MAX_DATASET_BYTES = int(
-    _megabytes("TEMPER_MAX_DATASET_MB", 1331.2) * 1024 * 1024
-)
+DEFAULT_MAX_DATASET_MB = 1331.2
+
+# Parsed once and read twice: the byte ceiling the limit enforces, and the
+# typed view's own figure -- a value two components must agree on is defined
+# once and read, never retyped.
+_max_dataset_mb = _megabytes("TEMPER_MAX_DATASET_MB", DEFAULT_MAX_DATASET_MB)
+MAX_DATASET_BYTES = int(_max_dataset_mb * 1024 * 1024)
 
 
 # --- journey provider -------------------------------------------------------
@@ -210,7 +246,13 @@ MAX_DATASET_BYTES = int(
 # Hugging Face on every run trades that same "runs everywhere" guarantee for
 # a network dependency that costs nothing to remove. Everything else stays
 # real: the same API, the same database, the same orchestrator transitions.
-FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))
+# Whether real compute is used is this one setting (ADR-0024, ADR-0062).
+DEFAULT_FAKE_PROVIDER = False
+DEFAULT_FAKE_LINE_DELAY_S = 0.0
+
+FAKE_PROVIDER = bool(
+    os.environ.get("TEMPER_FAKE_PROVIDER", DEFAULT_FAKE_PROVIDER)
+)
 
 # How long the simulated machine waits between output lines. Zero (default)
 # completes a canned run in milliseconds, which is what the suite wants except
@@ -218,7 +260,9 @@ FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))
 # that lasts long enough to see output arrive without a refresh and to cancel
 # mid-run, so the journeys' own control plane is booted with a positive value.
 # Fake-only -- the real provider's cadence is the trainer's, not this knob's.
-FAKE_LINE_DELAY_S = float(os.environ.get("TEMPER_FAKE_LINE_DELAY_S") or 0)
+FAKE_LINE_DELAY_S = float(
+    os.environ.get("TEMPER_FAKE_LINE_DELAY_S") or DEFAULT_FAKE_LINE_DELAY_S
+)
 
 
 # --- the fault surface (issue #24) -------------------------------------------
@@ -230,7 +274,13 @@ FAKE_LINE_DELAY_S = float(os.environ.get("TEMPER_FAKE_LINE_DELAY_S") or 0)
 # reach a real machine so the trainer-side faults genuinely fire). Without
 # one of the two, no fault spec can even be created, so a fault surface that
 # can be switched on by accident in front of a user does not exist.
-FAULT_SURFACE = bool(os.environ.get("TEMPER_FAULT_SURFACE"))
+# **A default-configured start lands in the safe mode: real compute, faults
+# refused** (ADR-0062).
+DEFAULT_FAULT_SURFACE = False
+
+FAULT_SURFACE = bool(
+    os.environ.get("TEMPER_FAULT_SURFACE", DEFAULT_FAULT_SURFACE)
+)
 
 
 def fault_surface_refusal(name: str) -> dict | None:
@@ -293,13 +343,15 @@ def _text(name: str) -> str | None:
 # "filesystem" (local runs and tests) or "s3" (any S3-compatible store,
 # including MinIO). Nothing set means filesystem: a fresh clone must run with
 # no configuration at all.
-STORAGE_BACKEND = _text("TEMPER_STORAGE_BACKEND") or "filesystem"
+DEFAULT_STORAGE_BACKEND = "filesystem"
+
+STORAGE_BACKEND = _text("TEMPER_STORAGE_BACKEND") or DEFAULT_STORAGE_BACKEND
 
 # Where the filesystem backend roots its keys. Under `/data/` with everything
 # else runtime-written -- test_storage_paths pins that boundary.
-STORAGE_ROOT = Path(
-    _text("TEMPER_STORAGE_ROOT") or REPO_ROOT / "data" / "objects"
-)
+DEFAULT_STORAGE_ROOT = REPO_ROOT / "data" / "objects"
+
+STORAGE_ROOT = Path(_text("TEMPER_STORAGE_ROOT") or DEFAULT_STORAGE_ROOT)
 
 # Where the SQLite database lives, under `/data/` with everything else
 # runtime-written (test_storage_paths pins that boundary). Overridable so the
@@ -308,14 +360,18 @@ STORAGE_ROOT = Path(
 # ports: a journey must not inherit another surface's orphans, and an
 # interrupted journey run must not be able to poison the database the next
 # gate run boots against.
-DB_PATH = Path(_text("TEMPER_DB_PATH") or REPO_ROOT / "data" / "temper.db")
+DEFAULT_DB_PATH = REPO_ROOT / "data" / "temper.db"
+
+DB_PATH = Path(_text("TEMPER_DB_PATH") or DEFAULT_DB_PATH)
 
 # When set, `db.init()` recreates the database at startup rather than reusing
 # it. The e2e journeys set it so their control plane boots against a clean
 # database on every run -- a database is not a thing a journey should inherit,
 # and a run that was interrupted mid-job must not be able to poison the next
 # run's startup. The developer's own database never sets this.
-DB_RESET = bool(os.environ.get("TEMPER_DB_RESET"))
+DEFAULT_DB_RESET = False
+
+DB_RESET = bool(os.environ.get("TEMPER_DB_RESET", DEFAULT_DB_RESET))
 
 S3_BUCKET = _text("TEMPER_S3_BUCKET")
 S3_ENDPOINT_URL = _text("TEMPER_S3_ENDPOINT_URL")
@@ -428,6 +484,71 @@ WARNING_CONSECUTIVE = _positive_int(
 # retyped" applies to the default as much as to the value. Set
 # TEMPER_CHECKPOINT_RETENTION explicitly when a deployment wants storage to
 # diverge from disk.
+DEFAULT_CHECKPOINT_RETENTION = hyperparams.DEFAULTS["save_total_limit"]
+
 CHECKPOINT_RETENTION = _count(
-    "TEMPER_CHECKPOINT_RETENTION", hyperparams.DEFAULTS["save_total_limit"]
+    "TEMPER_CHECKPOINT_RETENTION", DEFAULT_CHECKPOINT_RETENTION
+)
+
+
+class Settings(BaseModel):
+    """The typed view of process configuration, read once at import.
+
+    One object bundling every deployment value, each read from its `TEMPER_*`
+    environment variable by the typed readers above. Nothing is required:
+    every value has a local default, so the process starts with no
+    configuration set, because a reviewer's first run should not require a
+    decision. A value that cannot be honoured is refused by the reader that
+    parses it -- at import, where it is one legible line at boot rather than
+    a control that quietly is not the one anybody configured.
+
+    Call sites read the module-level names (`config.STALL_TIMEOUT_S`, ...),
+    not this object; it exists so the whole configuration set is one typed,
+    documented thing a reviewer can read end to end, and so a value shared by
+    two processes or halves has exactly one definition.
+
+    A bare `Settings()` is exactly what a start with nothing configured
+    resolves to: every field is its documented local default, defined once in
+    the `DEFAULT_*` constants above and read here and by the environment
+    readers alike.
+    """
+
+    stall_timeout_s: float = DEFAULT_STALL_TIMEOUT_S
+    max_job_duration_s: float = DEFAULT_MAX_JOB_DURATION_S
+    quote_ttl_s: float = DEFAULT_QUOTE_TTL_S
+    max_dataset_mb: float = DEFAULT_MAX_DATASET_MB
+    fake_provider: bool = DEFAULT_FAKE_PROVIDER
+    fake_line_delay_s: float = DEFAULT_FAKE_LINE_DELAY_S
+    fault_surface: bool = DEFAULT_FAULT_SURFACE
+    storage_backend: str = DEFAULT_STORAGE_BACKEND
+    storage_root: Path = DEFAULT_STORAGE_ROOT
+    db_path: Path = DEFAULT_DB_PATH
+    db_reset: bool = DEFAULT_DB_RESET
+    s3_bucket: str | None = None
+    s3_endpoint_url: str | None = None
+    s3_region: str | None = None
+    storage_secret: str | None = None
+    checkpoint_retention: int = DEFAULT_CHECKPOINT_RETENTION
+
+
+# Read once at import, like every other piece of process configuration. The
+# typed bundle every value above is drawn from; the module-level names are
+# what the rest of the codebase reads.
+settings = Settings(
+    stall_timeout_s=STALL_TIMEOUT_S,
+    max_job_duration_s=MAX_JOB_DURATION_S,
+    quote_ttl_s=QUOTE_TTL_S,
+    max_dataset_mb=_max_dataset_mb,
+    fake_provider=FAKE_PROVIDER,
+    fake_line_delay_s=FAKE_LINE_DELAY_S,
+    fault_surface=FAULT_SURFACE,
+    storage_backend=STORAGE_BACKEND,
+    storage_root=STORAGE_ROOT,
+    db_path=DB_PATH,
+    db_reset=DB_RESET,
+    s3_bucket=S3_BUCKET,
+    s3_endpoint_url=S3_ENDPOINT_URL,
+    s3_region=S3_REGION,
+    storage_secret=STORAGE_SECRET,
+    checkpoint_retention=CHECKPOINT_RETENTION,
 )

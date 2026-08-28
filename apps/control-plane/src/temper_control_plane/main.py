@@ -136,7 +136,11 @@ async def lifespan(_app: FastAPI):
     db.init()
     storage.STORE.ensure_ready()
     # Fail loudly at boot rather than four seconds into someone's first job.
-    if not config.provider_credentials_present():
+    # The zero-cost tier (TEMPER_FAKE_PROVIDER) never needs credentials -- it
+    # cannot reach the account by construction -- so the warning is only for
+    # the real tier, where a missing key is a jobs-will-fail-at-provisioning
+    # surprise rather than a demo detail.
+    if not config.FAKE_PROVIDER and not config.provider_credentials_present():
         print(
             "WARNING: no provider credentials (JL_API_KEY unset, no jl config "
             "file). Datasets validate fine; jobs will fail at provisioning.",
@@ -1197,6 +1201,37 @@ def download_checkpoint(job_id: str, step: int):
     )
 
 
+def _probe_dependency(report: dict[str, dict], name: str, probe) -> None:
+    """Probe one dependency into `report`, naming it and its failure kind.
+
+    The exception's class name (NotADirectoryError, OperationalError) is what
+    a reader needs to tell one failure from another; the raw message can carry
+    absolute paths and connection details, which a health endpoint that is
+    reachable by anyone who can reach the product should not volunteer.
+    """
+    try:
+        probe()
+        report[name] = {"ok": True}
+    except Exception as e:
+        report[name] = {"ok": False, "error": type(e).__name__}
+
+
+def _dependency_report() -> dict[str, dict]:
+    """Each dependency's readiness, reported separately (issue #29).
+
+    One endpoint returning a single ok is the failure the criterion names: a
+    broken database must be distinguishable from a broken object store, and
+    either from a broken application. So each dependency is probed on its own
+    and reported with its own ok/error, and the endpoint keeps answering
+    (with a non-200 status) while the process is alive -- a broken
+    application is exactly what stops answering at all.
+    """
+    report: dict[str, dict] = {}
+    _probe_dependency(report, "database", db.ping)
+    _probe_dependency(report, "storage", storage.STORE.ensure_ready)
+    return report
+
+
 @app.get("/health", tags=["ops"])
 def health():
     # Which provider implementation a launch would use. The browser journeys
@@ -1204,7 +1239,17 @@ def health():
     # launch unless this field confirms the switch took effect -- a launch
     # that reaches for the billing account from a test is the one mistake
     # this codebase refuses to make cheap.
-    return {
-        "ok": True,
+    dependencies = _dependency_report()
+    ok = all(d["ok"] for d in dependencies.values())
+    payload = {
+        "ok": ok,
         "provider": "fake" if config.FAKE_PROVIDER else "real",
+        "dependencies": dependencies,
     }
+    if not ok:
+        # A broken dependency is not a dead process: the app answers, and
+        # says which dependency failed and why. 503 is what a compose
+        # healthcheck (or a load balancer) treats as not-ready, which is what
+        # a readiness endpoint is for.
+        raise HTTPException(503, payload)
+    return payload

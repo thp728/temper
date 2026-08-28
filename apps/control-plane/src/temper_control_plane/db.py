@@ -305,6 +305,19 @@ def init() -> None:
         _rewrite_legacy_locations(c)
 
 
+def ping() -> None:
+    """One trivial read, proving the database opens and answers.
+
+    The readiness probe the health endpoint reports per dependency (issue
+    #29): a database whose file cannot be created or whose connection fails
+    is a broken dependency, and `/health` must be able to say so separately
+    from a broken application. Raises with the connection's own error when
+    the database cannot answer.
+    """
+    with connect() as c:
+        c.execute("SELECT 1")
+
+
 # Issue #22 renamed what these columns mean, not just their values: stored
 # objects went from filesystem paths to keys. Renamed in place so a database
 # written by the previous build opens cleanly.
@@ -1248,12 +1261,17 @@ def active_jobs() -> list[dict]:
                             r,
                             {
                                 "hyperparams_json": "hyperparameters",
+                                "warnings_json": "warnings",
                                 "quote_json": "quote",
                                 "overrides_json": "overrides",
                                 "actuals_json": "actuals",
                                 "attempts_json": "attempts",
                             },
-                            defaults={"overrides": [], "attempts": []},
+                            defaults={
+                                "overrides": [],
+                                "attempts": [],
+                                "warnings": [],
+                            },
                         )
                     )
                 )
