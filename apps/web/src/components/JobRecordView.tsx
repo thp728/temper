@@ -72,7 +72,15 @@ function ArtifactSection({ job }: { job: JobRecord }) {
   // published `artifact` record -- its declared kind and what it contains --
   // is what the page may show, so the offer keys off that: the route answers
   // 409 otherwise.
+  //
+  // Issue #74: the job can also produce delivery formats beyond the canonical
+  // artifact (a merged single-file model, a quantised local-inference
+  // format). Each is served at the same artifact route with a `format` query
+  // parameter, and the published `delivery_formats` record names each with
+  // its plain-language purpose, so a user chooses a format by what it is for.
   const artifact = job.artifact;
+  const deliveryFormats = job.delivery_formats ?? [];
+  const hasDelivery = deliveryFormats.length > 0;
   return (
     <section aria-labelledby="result-heading" className="space-y-2">
       <h2 id="result-heading" className="text-lg font-semibold">
@@ -80,27 +88,59 @@ function ArtifactSection({ job }: { job: JobRecord }) {
       </h2>
       {artifact ? (
         <div className="space-y-3">
-          <p>
-            <Button asChild>
-              {/* The artifact travels through the download route; where it
-                  is stored is the control plane's business, not the page's. */}
-              <a href={`/v1/jobs/${job.id}/artifact`}>
-                Download the artifact
-              </a>
-            </Button>
-          </p>
-          {artifact.members.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Contains: {artifact.members.join(", ")}.
+          <div className="space-y-3 rounded-lg border bg-card p-4">
+            <p>
+              <Button asChild>
+                {/* The artifact travels through the download route; where it
+                    is stored is the control plane's business, not the page's. */}
+                <a href={`/v1/jobs/${job.id}/artifact`}>
+                  Download the artifact
+                </a>
+              </Button>
             </p>
-          )}
-          {/* The load path differs by kind -- an adapter is applied to a base
-              model, a fully trained model is loaded on its own -- so the
-              interface says how to load what it offers (issue #32). */}
-          {artifact.loading && (
-            <p className="text-sm text-muted-foreground">
-              {artifact.loading}
-            </p>
+            {artifact.members.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Contains: {artifact.members.join(", ")}.
+              </p>
+            )}
+            {/* The load path differs by kind -- an adapter is applied to a base
+                model, a fully trained model is loaded on its own -- so the
+                interface says how to load what it offers (issue #32). */}
+            {artifact.loading && (
+              <p className="text-sm text-muted-foreground">
+                {artifact.loading}
+              </p>
+            )}
+          </div>
+
+          {hasDelivery && (
+            <ul className="divide-y divide-border rounded-lg border bg-card">
+              {deliveryFormats.map((d) => (
+                <li
+                  key={d.format}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="font-medium">{d.format}</p>
+                    {/* What the format is for, in plain language (issue #74):
+                        a user chooses by outcome, not by internals. */}
+                    <p className="text-sm text-muted-foreground">
+                      {d.what_for}
+                    </p>
+                    {d.members.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Contains: {d.members.join(", ")}.
+                      </p>
+                    )}
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={`/v1/jobs/${job.id}/artifact?format=${d.format}`}>
+                      Download {d.format}
+                    </a>
+                  </Button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       ) : (

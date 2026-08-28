@@ -195,6 +195,18 @@ function preview(overrides: Partial<JobSpecPreview> = {}): JobSpecPreview {
       num_epochs: 3,
     },
     warning: null,
+    delivery_formats: [
+      {
+        id: "merged",
+        what_for:
+          "The base model with your trained change built into its full weights — serve it directly.",
+      },
+      {
+        id: "quantised",
+        what_for:
+          "A compact local-inference version of the merged model — run it on your own machine.",
+      },
+    ],
     ...overrides,
   };
 }
@@ -326,9 +338,27 @@ describe("LaunchForm", () => {
       base_model: "qwen3-4b",
       hyperparameters: {},
       overrides: [],
+      delivery: [],
     });
     await vi.waitFor(() =>
       expect(push).toHaveBeenCalledWith("/jobs/job_abc123"),
+    );
+  });
+
+  it("launches with the delivery formats the user asked for (issue #74)", async () => {
+    const user = userEvent.setup();
+    render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
+    createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    // The delivery choices are offered by what each format is for.
+    await user.click(
+      screen.getByRole("checkbox", { name: /Merged model/ }),
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: /Quantised local format/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).toHaveBeenCalledWith(
+      expect.objectContaining({ delivery: ["merged", "quantised"] }),
     );
   });
 
@@ -559,6 +589,7 @@ describe("LaunchForm", () => {
       base_model: "qwen3-4b",
       hyperparameters: {},
       overrides: [{ decision: "method", value: "lora" }],
+      delivery: [],
     });
   });
 
@@ -660,6 +691,7 @@ describe("LaunchForm", () => {
       base_model: "qwen3-4b",
       hyperparameters: { learning_rate: "0.0001" },
       overrides: [],
+      delivery: [],
     });
   });
 
@@ -686,6 +718,7 @@ describe("LaunchForm", () => {
       base_model: "qwen3-4b",
       hyperparameters: {},
       overrides: [],
+      delivery: [],
     });
   });
 });

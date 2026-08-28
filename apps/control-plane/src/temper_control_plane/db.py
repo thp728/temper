@@ -26,7 +26,7 @@ import uuid
 from contextlib import contextmanager
 from typing import Any
 
-from temper_core import artifacts
+from temper_core import artifacts, delivery
 from temper_core.errors import OrchestratorError
 
 from . import config, storage
@@ -151,7 +151,16 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- what it was trained on, even after the admission record changes.
     -- A finished job's page shows its own outcome, but the model it was
     -- trained on is part of that outcome (spec 009).
-    is_moe      INTEGER
+    is_moe      INTEGER,
+    -- Issue #74: the delivery request, frozen at creation -- which delivery
+    -- formats the launch asked for (the canonical artifact plus optional
+    -- merged/quantised forms) -- and the verified per-format delivery records
+    -- the machine produced, written at packaging time like the artifact
+    -- record. Each record names its format, kind, members, bytes and checksum
+    -- as verified; the download path reads these to serve each format with a
+    -- manifest generated from the run record (ADR-0054 flow-through).
+    delivery_request_json TEXT,
+    delivery_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -256,6 +265,12 @@ ADDED_COLUMNS = (
     ("datasets", "counting_progress_json", "TEXT"),
     ("jobs", "retry_from", "TEXT REFERENCES jobs(id)"),
     ("jobs", "is_moe", "INTEGER"),
+    # Issue #74: the delivery request (which formats the launch asked for) and
+    # the verified per-format delivery records the machine produced. The
+    # request is frozen at creation like the hyperparameters; the records are
+    # written at packaging time like the artifact record.
+    ("jobs", "delivery_request_json", "TEXT"),
+    ("jobs", "delivery_json", "TEXT"),
 )
 
 
@@ -552,14 +567,16 @@ def create_job(
     overrides: list | None = None,
     retry_from: str | None = None,
     is_moe: bool | None = None,
+    delivery_request: list | None = None,
 ) -> str:
     job_id = new_id("job")
     with connect() as c:
         c.execute(
             "INSERT INTO jobs (id, dataset_id, base_model, base_revision, "
             "hyperparams_json, status, warnings_json, quote_json, "
-            "overrides_json, retry_from, is_moe, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "overrides_json, retry_from, is_moe, delivery_request_json, "
+            "created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 job_id,
                 dataset_id,
@@ -572,6 +589,7 @@ def create_job(
                 json.dumps(overrides) if overrides else None,
                 retry_from,
                 int(is_moe) if is_moe is not None else None,
+                json.dumps(delivery_request) if delivery_request else None,
                 time.time(),
             ),
         )
@@ -630,6 +648,23 @@ def set_checkpoints(job_id: str, checkpoints: list[dict]) -> None:
         c.execute(
             "UPDATE jobs SET checkpoints_json=? WHERE id=?",
             (json.dumps(checkpoints), job_id),
+        )
+
+
+def set_delivery(job_id: str, records: list[dict]) -> None:
+    """Record the verified per-format delivery records (issue #74).
+
+    Written without an event, like `set_checkpoints`: recording what the
+    machine produced and the control plane verified is bookkeeping, and each
+    format's verification already appends the event a reader would want to
+    see. `records` is the trainer's `result["delivery"]` list, enriched by the
+    orchestrator with each format's storage key and checksum after it verifies
+    what landed -- the same shape the download path reads to serve each format.
+    """
+    with connect() as c:
+        c.execute(
+            "UPDATE jobs SET delivery_json=? WHERE id=?",
+            (json.dumps(records), job_id),
         )
 
 
@@ -839,7 +874,24 @@ def artifact_members(job: dict) -> list[tuple[str, str]]:
     teardown path both read this, so the two cannot disagree about what the
     artifact is or drift apart in spelling (a value two components must agree
     on is defined once and read, never retyped).
+
+    Issue #74 extends the resolution to the delivery formats: each produced
+    format's verified object is a member too, recorded at packaging time, so
+    the download path can serve it and teardown deletes it -- one resolution,
+    every object a job owns.
     """
+    members = _canonical_members(job)
+    for record in job.get("delivery") or []:
+        if not isinstance(record, dict) or not record.get("verified"):
+            continue
+        for m in record.get("members") or []:
+            if isinstance(m, dict) and m.get("name") and m.get("key"):
+                members.append((m["name"], m["key"]))
+    return members
+
+
+def _canonical_members(job: dict) -> list[tuple[str, str]]:
+    """The canonical artifact's members: the record's, or the legacy pair."""
     record = job.get("artifact_record")
     if record and record.get("members"):
         return [
@@ -856,6 +908,42 @@ def artifact_members(job: dict) -> list[tuple[str, str]]:
             (name, storage.artifact_key(job["id"], name))
             for name in artifacts.ADAPTER_MEMBER_NAMES
         ]
+    return []
+
+
+def canonical_artifact_members(job: dict) -> list[tuple[str, str]]:
+    """The canonical artifact's members only -- what the default download serves.
+
+    The download endpoint offers the canonical artifact by default and each
+    delivery format by a `format` query parameter, so it needs the canonical
+    set separate from everything a job owns (`artifact_members`, which
+    teardown deletes). Named for what it resolves: the one artifact a method
+    produced, without the delivery formats.
+    """
+    return _canonical_members(job)
+
+
+def delivery_format_members(
+    job: dict, format_id: str
+) -> list[tuple[str, str]]:
+    """One produced delivery format's members, or an empty list.
+
+    Issue #74. Reads the stored, verified delivery record for `format_id` and
+    returns its member pairs -- the archive entry name and the storage key it
+    was verified at. An unproduced or unverified format returns empty, which
+    the download path turns into a coded refusal rather than an empty archive.
+    """
+    for record in job.get("delivery") or []:
+        if (
+            isinstance(record, dict)
+            and record.get("format") == format_id
+            and record.get("verified")
+        ):
+            return [
+                (m["name"], m["key"])
+                for m in (record.get("members") or [])
+                if isinstance(m, dict) and m.get("name") and m.get("key")
+            ]
     return []
 
 
@@ -877,7 +965,7 @@ def _with_artifact(job: dict | None) -> dict | None:
     """
     if job is None:
         return None
-    members = artifact_members(job)
+    members = _canonical_members(job)
     if not members or job.get("status") != "complete":
         job["artifact"] = None
         return job
@@ -889,7 +977,53 @@ def _with_artifact(job: dict | None) -> dict | None:
         "bytes": record.get("bytes") if record else None,
         "loading": artifacts.loading_instructions(kind),
     }
+    # Issue #74: publish the delivery formats the machine produced, each with
+    # its plain-language purpose and its member names -- the same safe subset
+    # rule as the canonical artifact (names and load path, never storage keys).
+    # The published record is built from the stored `delivery` list (which
+    # keeps its keys for the download and teardown paths), so the two cannot
+    # disagree about what a job produced. Published under `delivery_formats`
+    # so the stored records (keys included) stay intact for those paths.
+    job["delivery_formats"] = _published_delivery(job)
     return job
+
+
+def _published_delivery(job: dict) -> list[dict]:
+    """The delivery formats a complete job produced, for the interface.
+
+    Reads the stored `delivery` records (written by the orchestrator at
+    packaging time) and decorates each with the purpose and loading defined in
+    the domain -- the same single definitions the download manifest reads, so
+    a format is described once. A job that produced no extra formats (or a
+    pre-delivery row) publishes an empty list.
+    """
+    records = job.get("delivery") or []
+    out: list[dict] = []
+    for record in records:
+        if not isinstance(record, dict) or not record.get("format"):
+            continue
+        fmt_id = record["format"]
+        try:
+            kind = delivery.kind_for(fmt_id)
+            what_for = delivery.what_for(fmt_id)
+        except delivery.UnknownDeliveryFormat:
+            continue
+        member_names = [
+            str(m.get("name"))
+            for m in (record.get("members") or [])
+            if isinstance(m, dict) and m.get("name")
+        ]
+        out.append(
+            {
+                "format": fmt_id,
+                "kind": kind,
+                "what_for": what_for,
+                "members": member_names,
+                "bytes": record.get("bytes"),
+                "loading": artifacts.loading_instructions(kind),
+            }
+        )
+    return out
 
 
 def _with_best_checkpoint(job: dict | None) -> dict | None:
@@ -936,11 +1070,15 @@ def get_job(job_id: str) -> dict | None:
                             "checkpoints_json": "checkpoints",
                             "best_checkpoint_json": "best_checkpoint",
                             "artifact_json": "artifact_record",
+                            "delivery_request_json": "delivery_request",
+                            "delivery_json": "delivery",
                         },
                         defaults={
                             "overrides": [],
                             "checkpoints": [],
                             "best_checkpoint": None,
+                            "delivery_request": [],
+                            "delivery": [],
                         },
                     )
                 )
@@ -993,11 +1131,15 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
                                     "checkpoints_json": "checkpoints",
                                     "best_checkpoint_json": "best_checkpoint",
                                     "artifact_json": "artifact_record",
+                                    "delivery_request_json": "delivery_request",
+                                    "delivery_json": "delivery",
                                 },
                                 defaults={
                                     "overrides": [],
                                     "checkpoints": [],
                                     "best_checkpoint": None,
+                                    "delivery_request": [],
+                                    "delivery": [],
                                 },
                             )
                         )

@@ -516,6 +516,11 @@ class JobSpecPreview(BaseModel):
     overrides -- showing anything else would describe a job the trainer will
     not run.
 
+    `delivery_formats` (issue #74) are the delivery formats a launch may ask
+    for beyond the canonical artifact, each with its plain-language purpose --
+    read from the one `temper_core.delivery` vocabulary, so the launch screen
+    and the finished page describe a format the same way.
+
     Deliberately quote-free: the plan page renders immediately and fetches the
     quote for the selected model afterwards, because an estimate never blocks
     the surface it appears on (spec 005)."""
@@ -523,6 +528,16 @@ class JobSpecPreview(BaseModel):
     dataset: DatasetRecord
     hyperparameters: dict[str, Any]
     warning: FeasibilityWarning | None = None
+    delivery_formats: list[DeliveryFormatOption] = Field(default_factory=list)
+
+
+class DeliveryFormatOption(BaseModel):
+    """One delivery format a launch may ask for, with its plain-language
+    purpose. `id` is the request value the launch sends; `what_for` is the
+    sentence a user chooses by, defined once in the domain (issue #74)."""
+
+    id: str
+    what_for: str
 
 
 class StageActual(BaseModel):
@@ -570,6 +585,26 @@ class ArtifactRecord(BaseModel):
     manifest and the docs cannot drift."""
 
     kind: str
+    members: list[str]
+    bytes: int | None = None
+    loading: str
+
+
+class DeliveryFormatRecord(BaseModel):
+    """One produced delivery format, as the interface is allowed to see it.
+
+    Issue #74: beyond the canonical artifact, a job can produce a merged
+    single-file model and a quantised local-inference format. Each is served
+    at the artifact route with a `format` query parameter, and each download
+    carries a manifest generated from the run record (ADR-0054 flow-through).
+    `what_for` is the plain-language purpose a user chooses by, defined once
+    in the domain; `kind` is the artifact kind the format is delivered as.
+    Like `ArtifactRecord`, this publishes member names and never storage keys.
+    """
+
+    format: str
+    kind: str
+    what_for: str
     members: list[str]
     bytes: int | None = None
     loading: str
@@ -653,6 +688,15 @@ class JobRecord(BaseModel):
     result: dict[str, Any] | None = None
     actuals: JobActuals | None = None
     artifact: ArtifactRecord | None = None
+    # Issue #74: the delivery formats this job produced (beyond the canonical
+    # artifact), each with its plain-language purpose. `delivery_request` is
+    # the frozen launch-time request (which formats were asked for);
+    # `delivery_formats` is the verified set the machine produced. Both default
+    # to empty so a pre-delivery row publishes cleanly. The storage keys behind
+    # each format are not published -- they live in the job row's own record,
+    # read by the download and teardown paths.
+    delivery_request: list[str] = Field(default_factory=list)
+    delivery_formats: list[DeliveryFormatRecord] = Field(default_factory=list)
     checkpoints: list[CheckpointRecord] = Field(default_factory=list)
     best_checkpoint: BestCheckpoint | None = None
     retry_from: str | None = None

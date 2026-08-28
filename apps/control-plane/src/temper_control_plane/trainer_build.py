@@ -109,16 +109,31 @@ def published_reference() -> str | None:
 # it ships beside the entrypoint the same way `trainer-defaults.json` does --
 # one definition, read by the control plane's fake provider and by the
 # trainer, so the two cannot drift about what a fault is called.
+#
+# `delivery.py` (issue #74) produces the delivery formats (merged, quantised)
+# off the correctly merged model at export time. It lives beside the entrypoint
+# because only the trainer runs it -- the control plane mints the grants and
+# verifies what landed, it does not perform the conversions -- and it is a
+# top-level import, so a missing COPY would die at import before the `finally`
+# that writes result.json, the same failure shape as a missing `thinking.py`.
+#
+# `delivery-formats.json` (issue #74) is the delivery vocabulary: what a format
+# is called, what kind it maps to, and which conversion produces it. The
+# control plane reads it through `temper_core.delivery` and the trainer reads
+# it as data, so the two sides cannot drift about what a format is or what
+# order the conversions run in.
 TRAINER_SOURCES = (
     TRAINER_DIR / "Dockerfile",
     TRAINER_DIR / "entrypoint.py",
     TRAINER_DIR / "template_probe.py",
     TRAINER_DIR / "checkpoints.py",
+    TRAINER_DIR / "delivery.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "split.py",
     REPO_ROOT / "packages" / "contracts" / "trainer-defaults.json",
     REPO_ROOT / "packages" / "contracts" / "axolotl-schema.json",
     REPO_ROOT / "packages" / "contracts" / "fault-surface.json",
+    REPO_ROOT / "packages" / "contracts" / "delivery-formats.json",
 )
 
 

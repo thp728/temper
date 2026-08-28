@@ -298,6 +298,10 @@ class FakeProvider:
         # before it reports the result, so what the control plane verifies
         # exists by the time the result names it.
         self._write_artifact(_job_spec_from_script(script))
+        # Issue #74: the machine writes each requested delivery format to its
+        # own scoped grant before reporting, the same way it writes the
+        # artifact.
+        self._write_delivery(_job_spec_from_script(script))
         # Issue #37: the machine writes its checkpoints to their slots before
         # reporting, and reports each one's step, loss and checksum -- the
         # same shape the trainer's background uploader produces.
@@ -426,6 +430,51 @@ class FakeProvider:
                 "against the filesystem backend"
             )
         self._enter("artifact_upload")
+
+    def _write_delivery(self, spec) -> None:
+        """The machine's half of issue #74, simulated: write each requested
+        delivery format to its own scoped grant before reporting the result.
+
+        Mirrors `_write_artifact` exactly: the spec's `delivery_grants` are
+        one scoped write URL per format, the fake redeems each on the
+        filesystem backend, and the reported `delivery` records carry each
+        format's checksum so the orchestrator verifies what landed. The bytes
+        are opaque to the fake, as the adapter's are -- it PUTs them and
+        reports their checksum, exactly as the trainer PUTs its produced
+        formats.
+        """
+        grants = (spec or {}).get("delivery_grants") or []
+        if not grants:
+            return
+        from . import storage
+        from .storage import WriteGrant
+
+        records: list[dict] = []
+        for block in grants:
+            format_id = block.get("format")
+            payload = _delivery_bytes(format_id)
+            grant = WriteGrant(
+                url=block["url"],
+                key=block["key"],
+                expires_at=block["expires_at"],
+            )
+            if isinstance(storage.STORE, storage.FilesystemStorage):
+                storage.STORE.redeem(grant, payload)
+            else:
+                raise AssertionError(
+                    "the fake machine redeems filesystem grants only; tests "
+                    "run against the filesystem backend"
+                )
+            records.append(
+                {
+                    "format": format_id,
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "upload": {"ok": True, "bytes": len(payload)},
+                }
+            )
+            self._enter(f"delivery_upload:{format_id}")
+        if records and self._result is not None:
+            self._result = {**self._result, "delivery": records}
 
     def destroy(self, machine_id: int) -> None:
         self.calls.append("destroy")
@@ -569,6 +618,31 @@ class FakeProvider:
 # every surface that watches a finished job watches the same one.
 
 DEMO_ADAPTER_BYTES = b"demo adapter weights"
+
+# The bytes of a delivery format as the simulated machine uploads them (issue
+# #74): opaque, exactly as the adapter's are. The fake PUTs them to the
+# format's scoped grant and reports their checksum; a test can override the
+# bytes or the reported checksum to make a corrupt upload on purpose.
+DEMO_MERGED_BYTES = b"merged model: base + trained change at full precision"
+DEMO_QUANTISED_BYTES = b"gguf: a quantised local-inference format"
+
+
+def _delivery_bytes(format_id: str | None) -> bytes:
+    """The canned bytes of a delivery format, keyed by the format id.
+
+    An unknown format has no bytes -- a machine asked to produce something the
+    vocabulary does not define cannot fake it, and refusing loudly beats
+    uploading garbage the orchestrator would then have to explain.
+    """
+    if format_id == "merged":
+        return DEMO_MERGED_BYTES
+    if format_id == "quantised":
+        return DEMO_QUANTISED_BYTES
+    raise AssertionError(
+        f"no simulated bytes for delivery format {format_id!r}; the fake "
+        "knows merged and quantised only"
+    )
+
 
 # The published-image reference tests inject so the pull-by-digest path is
 # exercised (issue #44). The checked-in contract starts unpublished -- the

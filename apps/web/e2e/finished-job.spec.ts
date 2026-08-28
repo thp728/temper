@@ -177,6 +177,63 @@ test("a finished job compares its prediction against what happened, and the aggr
   await expect(page.getByRole("link", { name: jobId })).toBeVisible();
 });
 
+test("a finished job offers each requested delivery format with its purpose", async ({
+  page,
+}) => {
+  // Issue #74: a launch can ask for a merged single-file model and a
+  // quantised local-inference format, produced on the machine at export time
+  // and offered on the finished record by what each is for -- a user chooses
+  // a format without knowing what a merge is.
+  await uploadRows(page, twelveRows());
+  await expect(page.getByText("Validation passed")).toBeVisible();
+  await page.getByRole("link", { name: "Choose a model and continue" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Choose a base model" }),
+  ).toBeVisible();
+  await page.getByRole("checkbox", { name: /Merged model/ }).check();
+  await page
+    .getByRole("checkbox", { name: /Quantised local format/ })
+    .check();
+  await page.getByRole("button", { name: "Launch job" }).click();
+
+  await expect(page).toHaveURL(/\/jobs\/job_/);
+  const jobId = new URL(page.url()).pathname.split("/").pop() ?? "";
+  await expect(pairedValue(page, "State")).toHaveText("complete", {
+    timeout: 30_000,
+  });
+
+  // The finished record offers the canonical artifact and each delivery
+  // format, named by what it is for.
+  await expect(
+    page.getByRole("link", { name: "Download the artifact" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Download merged" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Download quantised" }),
+  ).toBeVisible();
+  // Each format states what it is for, in plain language (issue #74).
+  await expect(page.getByText(/self-contained model you can serve directly/)).toBeVisible();
+  await expect(page.getByText(/run it on your own machine/)).toBeVisible();
+
+  // Each format downloads through the artifact route with its own format.
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download merged" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(`${jobId}-merged.zip`);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "temper-e2e-merged-"));
+  const target = path.join(dir, "merged.zip");
+  await download.saveAs(target);
+  expect((await fs.readFile(target)).subarray(0, 2).toString()).toBe("PK");
+
+  // The quantised format is offered too, and downloads.
+  const downloadPromise2 = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download quantised" }).click();
+  const download2 = await downloadPromise2;
+  expect(download2.suggestedFilename()).toBe(`${jobId}-quantised.zip`);
+});
+
 test("a failed job says why in plain language, and keeps its stable code", async ({
   request,
   page,

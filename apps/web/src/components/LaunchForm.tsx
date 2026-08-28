@@ -70,6 +70,24 @@ export default function LaunchForm({
     Record<string, string>
   >({});
   const [planRefusal, setPlanRefusal] = useState<OverrideRefusal | null>(null);
+  // Issue #74: the delivery formats this launch asks for, beyond the canonical
+  // artifact. The user opts into a merged single-file model and/or a quantised
+  // local format; each is stated by what it is for, not by its internals. The
+  // request is frozen into the job at launch. Only the converted formats are
+  // opt-in choices -- the adapter (as-trained) is always produced, so it is
+  // not offered here.
+  const [delivery, setDelivery] = useState<string[]>([]);
+  // The options the server offers, each with its plain-language purpose read
+  // from the one delivery vocabulary (the same sentences the finished page
+  // shows). Only the short display name lives here; the "what it is for" text
+  // comes from the API so the two surfaces cannot drift.
+  const deliveryOptions = (preview.delivery_formats ?? [])
+    .filter((d) => d.id !== "adapter")
+    .map((d) => ({
+      id: d.id,
+      name: d.id === "merged" ? "Merged model" : "Quantised local format",
+      whatFor: d.what_for,
+    }));
   // Starts loading: the effect fetches the default model's quote on mount.
   const [quoteLoading, setQuoteLoading] = useState(true);
   // The last set of overrides the server accepted, so a refused change can be
@@ -187,6 +205,7 @@ export default function LaunchForm({
         base_model: chosen,
         hyperparameters,
         overrides,
+        delivery,
       });
       setStatus("Job launched. Opening it…");
       router.push(`/jobs/${job.id}`);
@@ -403,6 +422,53 @@ export default function LaunchForm({
           onChange={handleHyperparametersChange}
         />
       )}
+
+      {/* The delivery formats this launch asks for (issue #74): the canonical
+          artifact always, plus optional merged/quantised forms produced on the
+          machine at export time. Each is offered by what it is for, in plain
+          language -- a user chooses a format without knowing what a merge or a
+          quantisation is. The purposes are read from the server's one delivery
+          vocabulary (the same sentences the finished page shows), so the two
+          surfaces cannot drift; only the short display name lives here. The
+          choice is frozen into the job at launch. */}
+      <fieldset className="space-y-3">
+        <legend className="text-lg font-semibold">
+          What you get back
+        </legend>
+        <p className="text-sm text-muted-foreground">
+          Every job returns the trained artifact. You can also ask for a merged
+          single-file model (to serve it directly) and a quantised local format
+          (to run it on your own machine). These are produced on the machine
+          while it is warm, and each is verified before it ships.
+        </p>
+        <div className="space-y-2">
+          {deliveryOptions.map((option) => (
+            <Label
+              key={option.id}
+              className="flex items-start gap-3 rounded-lg border p-3"
+            >
+              <Input
+                type="checkbox"
+                checked={delivery.includes(option.id)}
+                onChange={(e) =>
+                  setDelivery(
+                    e.target.checked
+                      ? [...new Set([...delivery, option.id])]
+                      : delivery.filter((d) => d !== option.id),
+                  )
+                }
+                className="mt-1 size-4"
+              />
+              <span className="text-sm">
+                <span className="block font-medium">{option.name}</span>
+                <span className="text-muted-foreground">
+                  {option.whatFor}
+                </span>
+              </span>
+            </Label>
+          ))}
+        </div>
+      </fieldset>
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={busy} size="lg">

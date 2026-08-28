@@ -55,6 +55,7 @@ from temper_core import (
     artifacts,
     catalog,
     checkpoint,
+    delivery,
     disk,
     divergence,
     events,
@@ -243,6 +244,7 @@ def _remote_script(
     method: str,
     artifact_grant: storage.WriteGrant | None = None,
     checkpoint_grants: list[storage.WriteGrant] | None = None,
+    delivery_grants: list[tuple[str, storage.WriteGrant]] | None = None,
 ) -> bytes:
     """The on-machine script: pull the published image, run the job, report.
 
@@ -267,6 +269,14 @@ def _remote_script(
     exactly one `checkpoints/...` key, each expiring with the job. The machine
     writes each checkpoint as it is produced to the next slot, so checkpoints
     leave the machine during training rather than only at its end.
+
+    When `delivery_grants` is supplied (issue #74), one scoped write URL per
+    requested delivery format rides into the job spec under `delivery_grants`,
+    beside the frozen `delivery` request. The machine produces each format and
+    writes it to its own grant -- the same ADR-0009 machinery the artifact and
+    checkpoint grants use -- so a merged or quantised format leaves the machine
+    the moment it is verified, and each is a distinct object the control plane
+    verifies against its own checksum.
 
     Nothing here is redirected to a file. That was the outermost of three
     redirections between the training framework and the user, and while any one
@@ -315,6 +325,22 @@ def _remote_script(
                 "expires_at": grant.expires_at,
             }
             for grant in checkpoint_grants
+        ]
+    # Issue #74: the frozen delivery request (which formats the launch asked
+    # for) rides into the spec so the trainer knows what to produce, and each
+    # produced format gets its own scoped write grant, one object per format.
+    requested = job.get("delivery_request")
+    if requested:
+        job_spec["delivery"] = list(requested)
+    if delivery_grants:
+        job_spec["delivery_grants"] = [
+            {
+                "url": grant.url,
+                "key": grant.key,
+                "expires_at": grant.expires_at,
+                "format": format_id,
+            }
+            for format_id, grant in delivery_grants
         ]
     # Issue #24: a fault spec only reaches the trainer's environment when the
     # surface is switched on -- the fake provider (TEMPER_FAKE_PROVIDER) or
@@ -681,6 +707,121 @@ def _collect_artifact(
         "bytes": received,
         "sha256": want,
     }
+
+
+# The archive name each delivery format is written as (issue #74). The trainer
+# writes `delivery/merged.tar.gz` and `delivery/quantised.gguf`; this side
+# must mint the grant's key from the same name, so the two are defined here
+# once -- a value two components must agree on is never retyped.
+DELIVERY_ARCHIVE_NAMES: dict[str, str] = {
+    delivery.DELIVERY_FORMAT_MERGED: "merged.tar.gz",
+    delivery.DELIVERY_FORMAT_QUANTISED: "quantised.gguf",
+}
+
+
+def _delivery_archive_name(format_id: str) -> str:
+    """The archive name a delivery format is written as, or a loud refusal."""
+    try:
+        return DELIVERY_ARCHIVE_NAMES[format_id]
+    except KeyError:
+        raise OrchestratorError(
+            "unknown_delivery_format",
+            f"'{format_id}' is not a delivery format this orchestrator can "
+            "grant a write for.",
+        ) from None
+
+
+def _collect_delivery(job_id: str, result: dict) -> list[dict]:
+    """Verify the delivery formats the machine wrote, and record the verdicts.
+
+    Issue #74. The trainer reports each produced format in
+    `result["delivery"]` -- its archive name, checksum and upload outcome --
+    and writes it to its own scoped grant (ADR-0009, one object per format).
+    This side verifies each object that landed against the checksum the
+    trainer reported, exactly as `_collect_artifact` verifies the canonical
+    artifact, and records the per-format verdict: a format whose bytes do not
+    match is refused rather than served, because a download that looks fine
+    and is not is the silent failure this project treats as the enemy.
+
+    A format whose archive name is unknown to the vocabulary is refused the
+    same way: the trainer and the control plane read the same
+    `delivery-formats.json`, so an unknown name is a drift, not a new format.
+    """
+    reported = result.get("delivery") or []
+    records: list[dict] = []
+    for reported_rec in reported:
+        if not isinstance(reported_rec, dict):
+            continue
+        format_id = reported_rec.get("format")
+        try:
+            archive_name = _delivery_archive_name(str(format_id))
+        except OrchestratorError:
+            records.append(
+                {
+                    **reported_rec,
+                    "verified": False,
+                    "error": f"unknown delivery format {format_id!r}",
+                }
+            )
+            continue
+        want = reported_rec.get("sha256")
+        if not want:
+            records.append(
+                {
+                    **reported_rec,
+                    "verified": False,
+                    "error": "no checksum reported for this format",
+                }
+            )
+            continue
+        key = storage.delivery_key(job_id, str(format_id), archive_name)
+        digest = hashlib.sha256()
+        received = 0
+        try:
+            for chunk in storage.STORE.get_stream(key):
+                digest.update(chunk)
+                received += len(chunk)
+        except storage.ObjectNotFound:
+            recorded = reported_rec.get("upload") or {}
+            cause = ""
+            if isinstance(recorded, dict) and recorded.get("error"):
+                cause = f" The machine recorded: {recorded['error']}"
+            records.append(
+                {
+                    **reported_rec,
+                    "verified": False,
+                    "error": "no object landed for this format." + cause,
+                }
+            )
+            continue
+        got = digest.hexdigest()
+        if got != want:
+            records.append(
+                {
+                    **reported_rec,
+                    "verified": False,
+                    "error": (
+                        f"delivery format checksum mismatch: machine "
+                        f"reported {want[:16]}..., stored is {got[:16]}..."
+                    ),
+                }
+            )
+            continue
+        records.append(
+            {
+                **reported_rec,
+                "verified": True,
+                "key": key,
+                "bytes": received,
+                "members": [
+                    {
+                        "name": archive_name,
+                        "key": key,
+                    }
+                ],
+            }
+        )
+    return records
 
 
 def _base_checkpoint_record(ckpt: dict) -> dict:
@@ -1232,6 +1373,21 @@ def _attempt(
         storage.STORE.mint_write_grant(key, remaining)
         for key in storage.checkpoint_keys(job_id, config.CHECKPOINT_RETENTION)
     ]
+    # Issue #74: the delivery formats the launch asked for each get their own
+    # scoped write grant, one object per format, minted the same way and with
+    # the same lifetime. The key for each is derived from the format and the
+    # archive name the trainer writes; the machine PUTs the produced format to
+    # it, and this side verifies what landed against the trainer's checksum.
+    delivery_request = job.get("delivery_request") or []
+    delivery_grants: list[tuple[str, storage.WriteGrant]] = []
+    for fmt_id in delivery_request:
+        if fmt_id == delivery.DELIVERY_FORMAT_ADAPTER:
+            continue
+        archive = _delivery_archive_name(fmt_id)
+        key = storage.delivery_key(job_id, fmt_id, archive)
+        delivery_grants.append(
+            (fmt_id, storage.STORE.mint_write_grant(key, remaining))
+        )
     script = _remote_script(
         job,
         model,
@@ -1240,6 +1396,7 @@ def _attempt(
         plan.method,
         artifact_grant=grant,
         checkpoint_grants=checkpoint_grants,
+        delivery_grants=delivery_grants,
     )
     # The guard sits between the transport and the reader, so both limits hold
     # for any provider rather than for the SSH one only.
@@ -1282,6 +1439,12 @@ def _attempt(
     # download time (issue #62): a run's answer must not move under retention
     # or a rule edit, so the chosen step and its reason are frozen here.
     _record_best_checkpoint(job_id, checkpoints)
+    # Issue #74: verify the delivery formats the machine wrote, one object per
+    # format, and record the verdicts -- a format whose bytes did not land or
+    # do not match is never served as if it were complete.
+    delivery_records = _collect_delivery(job_id, result)
+    if delivery_records:
+        db.set_delivery(job_id, delivery_records)
     _discard_if_cancelled(job_id, cancelled)
     fields: dict = {
         "result_json": result,

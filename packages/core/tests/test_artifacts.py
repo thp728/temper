@@ -20,6 +20,7 @@ from temper_core.artifacts import (
     ARTIFACT_KIND_ADAPTER,
     ARTIFACT_KIND_FULL_MODEL,
     ARTIFACT_KIND_MERGED_MODEL,
+    ARTIFACT_KIND_QUANTISED_LOCAL,
     UnknownArtifactKind,
     UnknownMethod,
     kind_for,
@@ -78,10 +79,14 @@ def test_the_kind_vocabulary_is_stable():
         ARTIFACT_KIND_ADAPTER,
         ARTIFACT_KIND_FULL_MODEL,
         ARTIFACT_KIND_MERGED_MODEL,
+        ARTIFACT_KIND_QUANTISED_LOCAL,
     }
     # A merged model is named but produced by no method yet (merging is an
     # artifact-time step, spec 011's territory): the vocabulary precedes it.
     assert ARTIFACT_KIND_MERGED_MODEL not in artifacts.KIND_BY_METHOD.values()
+    assert (
+        ARTIFACT_KIND_QUANTISED_LOCAL not in artifacts.KIND_BY_METHOD.values()
+    )
 
 
 def test_the_adapter_member_names_are_the_canonical_pair():

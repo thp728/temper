@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import IO
 
 import checkpoints as checkpoint_upload
+from delivery import DeliveryFailure, run_delivery
 from split import held_out_split
 from template_probe import (
     PROBE_UNAVAILABLE_CODE,
@@ -357,6 +358,14 @@ ALLOWED_JOB_KEYS = {
     # job. Optional -- a standalone run carries no grants and simply leaves its
     # checkpoints on /out, exactly as it leaves the artifact.
     "checkpoint_grants",
+    # Issue #74: the delivery formats this job asked for (the canonical
+    # artifact plus optional merged/quantised forms), and the scoped write URLs
+    # for the produced formats, one per format, minted by the control plane and
+    # expiring with the job -- the same ADR-0009 machinery the artifact and
+    # checkpoint grants use. Optional: a run that asked for no extra formats
+    # carries neither key.
+    "delivery",
+    "delivery_grants",
 }
 
 # The hyperparameters that mean something only to an adapter run. They are
@@ -1330,6 +1339,31 @@ def main() -> int:
                     "error": "no write grant in the job spec; the artifact "
                     "was left on the machine",
                 }
+
+        # Issue #74: produce the requested delivery formats (merged, quantised)
+        # off the correctly merged model, in order -- merge at full precision,
+        # then quantise once -- each verified by loading it, each running the
+        # template probe, each uploaded through its own scoped grant. A
+        # produced format that cannot be loaded fails the export with a stable
+        # code (the failure the issue names is silent, so the assertion that
+        # the order held and each format loaded is the deliverable). A request
+        # for no extra formats records nothing and changes nothing.
+        try:
+            delivery_records = run_delivery(
+                job,
+                OUT_DIR,
+                upload_artifact,
+                tokenizer=load_probe_tokenizer(job),
+                probe=probe_export,
+                cfg=cfg,
+                grants=job.get("delivery_grants"),
+            )
+            if delivery_records:
+                result["delivery"] = delivery_records
+        except DeliveryFailure as e:
+            result["error_code"] = e.error_code
+            result["error"] = str(e)
+            raise
         result["ok"] = True
         log(f"training complete in {result['train_seconds']}s")
         return 0

@@ -76,7 +76,16 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # environment carries, so it ships beside the entrypoint exactly like
 # `trainer-defaults.json` -- one definition, read by the control plane and the
 # trainer alike.
-COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py trainer-defaults.json axolotl-schema.json fault-surface.json /opt/trainer/
+#
+# `delivery.py` (issue #74) produces the delivery formats (merged, quantised)
+# off the correctly merged model at export time. It is a top-level import, so
+# a missing COPY dies at import -- the same failure shape as a missing
+# `thinking.py`.
+#
+# `delivery-formats.json` (issue #74) is the delivery vocabulary the trainer
+# reads as data (it never installs packages/core, ADR-0010), mirrored by the
+# control plane through `temper_core.delivery`.
+COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py delivery.py trainer-defaults.json axolotl-schema.json fault-surface.json delivery-formats.json /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.
