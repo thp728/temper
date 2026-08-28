@@ -601,6 +601,99 @@
         "title": "CheckpointRecord",
         "type": "object"
       },
+      "Comparison": {
+        "description": "The run's side-by-side comparison (Spec 011 / issue #69).\n\nProduced on the warm machine after training and published exactly as the\ntrainer recorded it. `ok` says whether rows were produced at all; `rows`\nare the per-prompt pair of generations; `decoding` is the fixed set of\ngeneration settings the comparison was made under, recorded so a reader\ncan tell whether two outputs are comparable; and `selection` names which\ncheckpoint the tuned side compared -- the run's own selection rule's\nanswer, never the last one written. On a failure `reason` names it and\nthe artifact is still delivered (evaluation failure never fails the run).",
+        "properties": {
+          "decoding": {
+            "additionalProperties": true,
+            "title": "Decoding",
+            "type": "object"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BestCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "Comparison",
+        "type": "object"
+      },
+      "ComparisonRow": {
+        "description": "One prompt and both models' answers, as the interface may show them.\n\n`prompt` is the conversation up to the last user turn; `base` and `tuned`\nare the two models' completions under the recorded decoding settings.",
+        "properties": {
+          "base": {
+            "title": "Base",
+            "type": "string"
+          },
+          "prompt": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonTurn"
+            },
+            "title": "Prompt",
+            "type": "array"
+          },
+          "tuned": {
+            "title": "Tuned",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt",
+          "base",
+          "tuned"
+        ],
+        "title": "ComparisonRow",
+        "type": "object"
+      },
+      "ComparisonTurn": {
+        "description": "One message in a comparison prompt (issue #69).\n\nThe prompt is the conversation up to the last user turn -- the held-out\nanswer is never fed to either model, so the user is never shown an answer\nthe model memorised. Roles and content are strings, the same shape the\ntrainer's rows carry, published typed so the interface can render the\nquestion without hand-typing it.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ComparisonTurn",
+        "type": "object"
+      },
       "DatasetAccepted": {
         "description": "The response to a successful upload: where validation is happening, not\nthe report -- the report lands on the dataset's record\n(`GET /v1/datasets/{id}`) when validation finishes, so a large upload can\nbe watched rather than waited on.",
         "properties": {
@@ -1346,6 +1439,16 @@
             },
             "title": "Checkpoints",
             "type": "array"
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Comparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "title": "Created At",

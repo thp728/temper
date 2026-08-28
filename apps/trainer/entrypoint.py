@@ -44,6 +44,8 @@ from pathlib import Path
 from typing import IO
 
 import checkpoints as checkpoint_upload
+import comparison as comparison_step
+from checkpoint import select_best_checkpoint
 from delivery import DeliveryFailure, run_delivery
 from split import held_out_split
 from template_probe import (
@@ -1142,6 +1144,237 @@ def probe_export(job: dict, cfg: dict, tokenizer) -> ProbeOutcome:
     )
 
 
+def checkpoint_records(out_dir: Path) -> list[dict]:
+    """The machine's completed checkpoints as selection records.
+
+    Each carries its step and, where the step recorded one, its training and
+    held-out losses -- the same shape the control plane's
+    `select_best_checkpoint` reads (issue #62), so the comparison compares the
+    model selection actually chose, not the last one written. The two
+    components use the same pure rule because this module ships the same file
+    the control plane imports (ADR-0010).
+    """
+    run = out_dir / "run"
+    if not run.is_dir():
+        return []
+    records = []
+    for path in sorted(
+        (p for p in run.glob("checkpoint-*") if p.is_dir()),
+        key=lambda p: checkpoint_upload.checkpoint_step(p) or 0,
+    ):
+        if not checkpoint_upload.is_complete(path):
+            continue
+        step = checkpoint_upload.checkpoint_step(path)
+        train_loss, held_out = checkpoint_upload.checkpoint_losses(path)
+        record: dict = {"step": step}
+        if train_loss is not None:
+            record["loss"] = train_loss
+        if held_out is not None:
+            record["held_out_loss"] = held_out
+        records.append(record)
+    return records
+
+
+class _ModelGenerator:
+    """Render a conversation and generate with one loaded model.
+
+    The decoding settings are the fixed constant from `comparison.py`,
+    captured at construction: the comparison is made under exactly the
+    settings that are recorded on the result, so a reader can tell whether
+    two outputs are comparable. The tokenizer renders through the same
+    template the run trained with (`tokenizer_default` plus the detected
+    thinking mode), so what the models answer is the same question the
+    training rows asked.
+    """
+
+    def __init__(
+        self,
+        model,
+        tokenizer,
+        chat_template,
+        chat_template_kwargs,
+        decoding,
+    ) -> None:
+        self._model = model
+        self._tokenizer = tokenizer
+        # The same resolution the export-time probe applies (issue #59): the
+        # `tokenizer_default` directive becomes the tokenizer's own concrete
+        # template, so rendering and the artifact's record cannot disagree.
+        self._template, self._kwargs = resolve_template(
+            tokenizer,
+            chat_template=chat_template,
+            kwargs=chat_template_kwargs,
+        )
+        self._decoding = dict(decoding)
+
+    def generate(self, conversation) -> str:
+        prompt = self._tokenizer.apply_chat_template(
+            conversation,
+            tokenize=False,
+            chat_template=self._template,
+            chat_template_kwargs=self._kwargs,
+        )
+        inputs = self._tokenizer(prompt, return_tensors="pt").to(
+            self._model.device
+        )
+        output = self._model.generate(**inputs, **self._decoding)
+        generated = output[0][inputs["input_ids"].shape[-1] :]
+        return self._tokenizer.decode(generated, skip_special_tokens=True)
+
+
+def load_comparison_generators(
+    job: dict,
+    cfg: dict,
+    chosen_dir: Path,
+    method: str,
+    decoding: dict = comparison_step.COMPARISON_DECODING,
+):
+    """Load the base model and the chosen checkpoint, ready to generate.
+
+    Runs on the machine, never in the host suite: torch, transformers and
+    peft are provided by the base image, so the imports are deliberately
+    inside the function (ADR-0010 -- this trainer ships no dependencies of
+    its own). The base model resolves from the HF cache the run already
+    warmed (issue #49's prefetch), and the tuned side is the base plus the
+    chosen checkpoint's adapter (a QLoRA run) or the checkpoint directory
+    itself (a full fine-tune). The adapter was trained on a 4-bit base;
+    applying it to a bf16 base is the standard inference setup and keeps the
+    whole comparison on one dtype.
+    """
+    import torch  # base image only
+    from peft import PeftModel  # base image only
+    from transformers import (  # base image only  # noqa: PLC0415
+        AutoModelForCausalLM,
+        AutoTokenizer,
+    )
+
+    base_repo = job["base_model"]
+    revision = job.get("base_revision")
+    chat_template = cfg.get("chat_template", "tokenizer_default")
+    chat_template_kwargs = cfg.get("chat_template_kwargs") or {}
+
+    tokenizer = AutoTokenizer.from_pretrained(base_repo, revision=revision)
+    base = AutoModelForCausalLM.from_pretrained(
+        base_repo,
+        revision=revision,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    )
+    if method == "full":
+        tuned = AutoModelForCausalLM.from_pretrained(
+            str(chosen_dir),
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        )
+    else:
+        tuned = PeftModel.from_pretrained(base, str(chosen_dir))
+    return (
+        _ModelGenerator(
+            base, tokenizer, chat_template, chat_template_kwargs, decoding
+        ),
+        _ModelGenerator(
+            tuned, tokenizer, chat_template, chat_template_kwargs, decoding
+        ),
+    )
+
+
+def run_machine_comparison(
+    job: dict,
+    cfg: dict,
+    out_dir: Path,
+    *,
+    make_generators=load_comparison_generators,
+) -> dict:
+    """The side-by-side comparison, run on the warm machine after training.
+
+    Reads the trainer's own held-out file (issue #53 -- the same rows the
+    eval loss was measured on, never a second sampling of the dataset), picks
+    a fixed slice of it, selects the checkpoint the run's own rule (issue
+    #62) would choose, generates from the base model and from that
+    checkpoint, and returns the record. **Never fails the run**: any failure
+    -- including a failure to load the models -- becomes `ok: false` with the
+    reason recorded, and the artifact is still delivered (Spec 011).
+
+    `make_generators` is a seam so the host suite can exercise the whole flow
+    without torch; the default is the machine's real loader.
+    """
+    eval_path = out_dir / "eval.jsonl"
+    if not eval_path.is_file():
+        return comparison_step.ComparisonOutcome(
+            ok=False,
+            decoding=dict(comparison_step.COMPARISON_DECODING),
+            reason="nothing was held out, so there was nothing to compare",
+        ).to_dict()
+
+    held = [json.loads(line) for line in eval_path.open() if line.strip()]
+    messages_field = job.get("messages_field", "messages")
+    conversations = [
+        row[messages_field]
+        for row in comparison_step.select_prompts(held)
+        if isinstance(row.get(messages_field), list)
+    ]
+    if not conversations:
+        return comparison_step.ComparisonOutcome(
+            ok=False,
+            decoding=dict(comparison_step.COMPARISON_DECODING),
+            reason="the held-out rows carried no conversations to compare",
+        ).to_dict()
+
+    selection = select_best_checkpoint(checkpoint_records(out_dir))
+    selection_record = selection.to_dict()
+    chosen_step = selection.step
+    if chosen_step is None:
+        return comparison_step.ComparisonOutcome(
+            ok=False,
+            decoding=dict(comparison_step.COMPARISON_DECODING),
+            reason=selection.reason,
+            selection=selection_record,
+        ).to_dict()
+    chosen_dir = out_dir / "run" / f"checkpoint-{chosen_step}"
+    if not chosen_dir.is_dir():
+        return comparison_step.ComparisonOutcome(
+            ok=False,
+            decoding=dict(comparison_step.COMPARISON_DECODING),
+            reason=(
+                f"the chosen checkpoint (step {chosen_step}) was not on the "
+                "machine to compare"
+            ),
+            selection=selection_record,
+        ).to_dict()
+
+    method = job.get("method") or "qlora"
+    try:
+        base_gen, tuned_gen = make_generators(job, cfg, chosen_dir, method)
+    except Exception as e:  # noqa: BLE001 - loading must not fail the run
+        log(f"comparison could not load the models: {type(e).__name__}: {e}")
+        return comparison_step.ComparisonOutcome(
+            ok=False,
+            decoding=dict(comparison_step.COMPARISON_DECODING),
+            reason=f"{type(e).__name__}: {e}",
+            selection=selection_record,
+        ).to_dict()
+
+    log(
+        f"comparison: {len(conversations)} held-out prompt(s) through the "
+        f"base model and the chosen checkpoint (step {chosen_step})"
+    )
+    outcome = comparison_step.run_comparison(
+        conversations=conversations,
+        base=base_gen,
+        tuned=tuned_gen,
+        decoding=comparison_step.COMPARISON_DECODING,
+        selection=selection_record,
+    )
+    if not outcome.ok:
+        # The reason is recorded with the result; the run continues. This is
+        # the "evaluation failure never fails the run" guarantee, stated where
+        # the failure is swallowed.
+        log(
+            f"comparison failed; recorded and the run continues: {outcome.reason}"
+        )
+    return outcome.to_dict()
+
+
 def main() -> int:
     started = time.time()
     result: dict = {"ok": False, "started_at": time.time()}
@@ -1379,6 +1612,14 @@ def main() -> int:
             result["template_probe"] = unavailable.as_dict()
             raise
         result["template_probe"] = probe_outcome.as_dict()
+
+        # The side-by-side comparison (Spec 011 / issue #69): the same
+        # held-out prompts run through the base model and through the
+        # checkpoint the run's selection rule would choose, on the machine
+        # that is already warm. It is the most directly useful evidence the
+        # platform can produce, and it must never fail the run: a failure is
+        # recorded under `comparison` and the artifact is still delivered.
+        result["comparison"] = run_machine_comparison(job, cfg, OUT_DIR)
 
         if result.get("artifact_path"):
             # ADR-0009: when the control plane supplied a scoped write URL, the

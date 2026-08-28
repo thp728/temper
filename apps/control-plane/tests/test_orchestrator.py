@@ -425,6 +425,87 @@ def test_a_completed_job_records_its_actuals_against_the_quote(harness):
     assert stored == actuals
 
 
+def test_a_completed_job_publishes_its_side_by_side_comparison(harness):
+    """Issue #69: the comparison the machine recorded travels in the result
+    document and is published typed -- both sides per prompt, the fixed
+    decoding settings, and the chosen checkpoint -- so the interface renders
+    it without recomputing or inventing anything."""
+    comparison = {
+        "ok": True,
+        "decoding": {
+            "temperature": 0.7,
+            "max_new_tokens": 128,
+            "do_sample": True,
+        },
+        "selection": {
+            "step": 20,
+            "basis": "best_held_out_loss",
+            "held_out_loss": 0.39,
+            "reason": "Step 20 has the lowest held-out loss (0.39).",
+        },
+        "rows": [
+            {
+                "prompt": [{"role": "user", "content": "q0"}],
+                "base": "the base model's answer",
+                "tuned": "the tuned model's answer",
+            }
+        ],
+    }
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result={**RESULT, "comparison": comparison},
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    job_id = harness.run(provider)
+    job = harness.job(job_id)
+    assert job["status"] == "complete"
+    published = job["comparison"]
+    assert published is not None
+    assert published["ok"] is True
+    assert published["rows"] == comparison["rows"]
+    assert published["decoding"] == comparison["decoding"]
+    assert published["selection"] == comparison["selection"]
+    assert published["reason"] is None
+    # The stored row keeps the raw recorded comparison exactly as the machine
+    # wrote it -- the published typed model presents it, never reshapes it.
+    assert harness.stored(job_id)["result"]["comparison"] == comparison
+
+
+def test_a_failed_comparison_never_fails_the_run(harness):
+    """The negative test that protects a paid run (Spec 011): make the
+    comparison fail -- here the machine recorded it as such -- and the job
+    still reaches its terminal state with the artifact intact and the reason
+    recorded on the published record."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result={
+            **RESULT,
+            "comparison": {
+                "ok": False,
+                "decoding": {
+                    "temperature": 0.7,
+                    "max_new_tokens": 128,
+                    "do_sample": True,
+                },
+                "reason": "RuntimeError: the tuned model could not be loaded",
+            },
+        },
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    job_id = harness.run(provider)
+    job = harness.job(job_id)
+    # The run completed, with the artifact verified and delivered.
+    assert job["status"] == "complete"
+    assert job["artifact"] is not None
+    # The failure is recorded, not buried: ok false, with the reason, and the
+    # decoding settings still stated so a reader knows what was attempted.
+    comparison = job["comparison"]
+    assert comparison is not None
+    assert comparison["ok"] is False
+    assert "could not be loaded" in comparison["reason"]
+    assert comparison["decoding"]["temperature"] == 0.7
+
+
 def test_a_failed_job_records_duration_and_cost_and_no_peak(harness):
     """A run that produced no result records the actuals it can measure and
     no peak: the honest absence, never a guessed number -- a failed run's

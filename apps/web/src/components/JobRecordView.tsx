@@ -27,6 +27,7 @@ import {
   rangeDirection,
   ratio,
 } from "@/lib/jobs/comparison";
+import { decodingSentence, promptText } from "@/lib/jobs/compare";
 import { lossSeries } from "@/lib/jobs/loss";
 import { heldOutPlateau } from "@/lib/jobs/plateau";
 import type {
@@ -437,6 +438,83 @@ function ComparisonSection({ job }: { job: JobRecord }) {
   );
 }
 
+function SideBySideSection({ job }: { job: JobRecord }) {
+  // The side-by-side comparison (issue #69): the same held-out prompts
+  // answered by the base model and by the checkpoint the run chose, recorded
+  // on the machine. Rendered from the published record exactly as recorded --
+  // both sides, the decoding settings (so a reader can tell whether two
+  // outputs are comparable), and the checkpoint the tuned side compared.
+  // A comparison that failed is stated with its reason; it never failed the
+  // run, and the page must not dress that as a failure of the job.
+  const comparison = job.comparison;
+  if (!comparison) return null;
+  const rows = comparison.rows ?? [];
+  const decoding = decodingSentence(comparison.decoding);
+  const selection = comparison.selection;
+  const tunedLabel =
+    selection?.step != null
+      ? `Tuned model (chosen checkpoint, step ${selection.step})`
+      : "Tuned model";
+
+  if (rows.length === 0) {
+    return (
+      <section aria-labelledby="side-by-side-heading" className="space-y-2">
+        <h2 id="side-by-side-heading" className="text-lg font-semibold">
+          Base model vs your tuned model
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          No side-by-side comparison was produced for this run.
+          {comparison.reason && <span> {comparison.reason}</span>}
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section aria-labelledby="side-by-side-heading" className="space-y-3">
+      <div>
+        <h2 id="side-by-side-heading" className="text-lg font-semibold">
+          Base model vs your tuned model
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          The same held-out prompts, answered by the base model and by the
+          model this run produced. This is evidence you can read, not a
+          benchmark.
+        </p>
+      </div>
+      {rows.map((row, i) => {
+        const question = promptText(row.prompt);
+        return (
+          <div
+            key={i}
+            className="space-y-2 rounded-lg border bg-card p-4"
+          >
+            <p className="font-medium">
+              {question || `Prompt ${i + 1}`}
+            </p>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+              <div>
+                <dt className="text-sm text-muted-foreground">Base model</dt>
+                <dd className="whitespace-pre-wrap">{row.base}</dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">{tunedLabel}</dt>
+                <dd className="whitespace-pre-wrap">{row.tuned}</dd>
+              </div>
+            </dl>
+          </div>
+        );
+      })}
+      {decoding && (
+        <p className="text-sm text-muted-foreground">{decoding}</p>
+      )}
+      {selection?.reason && (
+        <p className="text-sm text-muted-foreground">{selection.reason}</p>
+      )}
+    </section>
+  );
+}
+
 export default function JobRecordView({
   job,
   events,
@@ -579,6 +657,12 @@ export default function JobRecordView({
           #62): shown whenever the run recorded checkpoints, on whichever
           outcome -- a failed run's checkpoints are still its history. */}
       <CheckpointSection job={job} />
+
+      {/* The side-by-side comparison (issue #69): held-out prompts answered
+          by the base model and the chosen checkpoint, with the decoding
+          settings recorded. Shown whenever the run recorded one; a failed
+          comparison is stated with its reason, never as a failed job. */}
+      <SideBySideSection job={job} />
 
       {job.quote && (
         // The quote the job launched under, frozen into the spec at launch

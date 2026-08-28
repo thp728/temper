@@ -732,6 +732,39 @@ DEMO_RESULT = {
         "serialised_template": "{{ messages }}",
         "serialised_kwargs": {"enable_thinking": False},
     },
+    # The side-by-side comparison (issue #69): the same held-out prompt run
+    # through the base model and the chosen checkpoint (step 20 -- the fake's
+    # checkpoints make the last one NOT the best), with the fixed decoding
+    # settings recorded so a reader can tell whether two outputs are
+    # comparable. The simulated machine carries the same shape the real
+    # trainer records, so a journey's finished job shows the comparison. The
+    # text is canned -- this is the renderer's fixture, not the generation
+    # proof; real generation runs in the trainer and is exercised by the
+    # hardware-marked trainer test.
+    "comparison": {
+        "ok": True,
+        "decoding": {
+            "temperature": 0.7,
+            "max_new_tokens": 128,
+            "do_sample": True,
+        },
+        "selection": {
+            "step": 20,
+            "basis": "best_held_out_loss",
+            "held_out_loss": 0.39,
+            "reason": (
+                "Step 20 has the lowest held-out loss (0.39) of 3 retained "
+                "checkpoint(s)."
+            ),
+        },
+        "rows": [
+            {
+                "prompt": [{"role": "user", "content": "q0"}],
+                "base": "The base model's answer to the held-out question.",
+                "tuned": "The tuned model's answer to the held-out question.",
+            }
+        ],
+    },
 }
 
 # The hyperparameter through which a journey or an operator asks the simulated

@@ -85,7 +85,18 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # `delivery-formats.json` (issue #74) is the delivery vocabulary the trainer
 # reads as data (it never installs packages/core, ADR-0010), mirrored by the
 # control plane through `temper_core.delivery`.
-COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py delivery.py trainer-defaults.json axolotl-schema.json fault-surface.json delivery-formats.json /opt/trainer/
+#
+# `comparison.py` (issue #69) is the side-by-side comparison the entrypoint
+# runs on the warm machine after training; it must ship in the same layer or
+# the container dies at import, before the `finally` that writes result.json.
+#
+# `checkpoint.py` (issue #62) is the best-checkpoint selection rule, read by
+# the control plane's terminal selection and by this entrypoint when it picks
+# which checkpoint the comparison generates from. It lives in packages/core
+# and is flattened into this context like `split.py`, so it must be in the
+# COPY too -- a top-level import, so a missing COPY dies at import, before the
+# `finally` that writes result.json.
+COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py delivery.py trainer-defaults.json axolotl-schema.json fault-surface.json delivery-formats.json comparison.py checkpoint.py /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.

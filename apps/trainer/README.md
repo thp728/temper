@@ -116,6 +116,19 @@ docker run --rm --gpus all \
   ghcr.io/<owner>/finetune-trainer@sha256:<digest>
 ```
 
+## The side-by-side comparison runs on the warm machine (issue #69)
+
+After training, before result.json is written, the entrypoint runs the same
+held-out prompts through the base model and through the checkpoint the run's
+own selection rule would choose (the same `select_best_checkpoint` the control
+plane records the choice with — `checkpoint.py` ships flat into the image like
+`split.py`). Generation uses fixed decoding settings defined once in
+`comparison.py` and **recorded on the result**, so a reader can tell whether
+two outputs are comparable; the interface displays them from the record
+(ADR-0010). The whole step — including loading the models — can never fail the
+run: a failure is recorded under `comparison` with its reason and the artifact
+is still delivered. See [ADR-0061](../../docs/adr/0061-the-side-by-side-comparison-runs-on-the-warm-machine.md).
+
 ## The job specification carries every value
 
 **The trainer resolves nothing.** The control plane resolves every

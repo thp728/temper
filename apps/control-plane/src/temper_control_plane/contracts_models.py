@@ -667,6 +667,49 @@ class AttemptRecord(BaseModel):
     recovery: dict[str, Any] | None = None
 
 
+class ComparisonTurn(BaseModel):
+    """One message in a comparison prompt (issue #69).
+
+    The prompt is the conversation up to the last user turn -- the held-out
+    answer is never fed to either model, so the user is never shown an answer
+    the model memorised. Roles and content are strings, the same shape the
+    trainer's rows carry, published typed so the interface can render the
+    question without hand-typing it."""
+
+    role: str
+    content: str
+
+
+class ComparisonRow(BaseModel):
+    """One prompt and both models' answers, as the interface may show them.
+
+    `prompt` is the conversation up to the last user turn; `base` and `tuned`
+    are the two models' completions under the recorded decoding settings."""
+
+    prompt: list[ComparisonTurn]
+    base: str
+    tuned: str
+
+
+class Comparison(BaseModel):
+    """The run's side-by-side comparison (Spec 011 / issue #69).
+
+    Produced on the warm machine after training and published exactly as the
+    trainer recorded it. `ok` says whether rows were produced at all; `rows`
+    are the per-prompt pair of generations; `decoding` is the fixed set of
+    generation settings the comparison was made under, recorded so a reader
+    can tell whether two outputs are comparable; and `selection` names which
+    checkpoint the tuned side compared -- the run's own selection rule's
+    answer, never the last one written. On a failure `reason` names it and
+    the artifact is still delivered (evaluation failure never fails the run)."""
+
+    ok: bool
+    rows: list[ComparisonRow] = Field(default_factory=list)
+    decoding: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+    selection: BestCheckpoint | None = None
+
+
 class JobRecord(BaseModel):
     """A job and the record of what became of it, published typed.
 
@@ -731,6 +774,7 @@ class JobRecord(BaseModel):
     # (issue #65): the label travels with the job so a finished run says
     # what it was trained on, untested here rather than refused.
     is_moe: bool | None = None
+    comparison: Comparison | None = None
 
 
 class JobList(BaseModel):

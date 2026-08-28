@@ -312,6 +312,38 @@ test("a failed job says why in plain language, and keeps its stable code", async
   );
 });
 
+test("a finished job shows the side-by-side comparison of both models", async ({
+  page,
+}) => {
+  // Issue #69: the same held-out prompt is answered by the base model and by
+  // the checkpoint the run chose, side by side, with the decoding settings
+  // recorded so a reader can tell whether two outputs are comparable. The
+  // simulated machine's result carries the comparison, so the journey
+  // asserts the surface renders it (the generation itself is the trainer's
+  // hardware path, exercised by the hardware-marked trainer test).
+  await launchFromTheShell(page);
+
+  const section = page.getByRole("region", {
+    name: "Base model vs your tuned model",
+  });
+  await expect(section).toBeVisible();
+  // Both sides of the one held-out prompt the fake recorded.
+  await expect(section.getByText("q0")).toBeVisible();
+  await expect(
+    section.getByText("The base model's answer to the held-out question."),
+  ).toBeVisible();
+  await expect(
+    section.getByText("The tuned model's answer to the held-out question."),
+  ).toBeVisible();
+  // The tuned side names the checkpoint the run chose (the fake's best, step
+  // 20), and the fixed decoding settings are shown beside the answers.
+  await expect(
+    section.getByText("Tuned model (chosen checkpoint, step 20)"),
+  ).toBeVisible();
+  await expect(section.getByText(/temperature 0.7/)).toBeVisible();
+  await expect(section.getByText(/up to 128 new tokens/)).toBeVisible();
+});
+
 test("the list survives a small screen", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 720 });
   await page.goto("/jobs");

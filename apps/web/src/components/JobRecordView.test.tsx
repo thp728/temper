@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import JobRecordView from "@/components/JobRecordView";
 import type { JobEvent, JobRecord, Quote } from "@/lib/api/generated/client";
@@ -779,5 +779,81 @@ describe("JobRecordView", () => {
     const btn = screen.getByRole("button", { name: /Load more events/ });
     expect(btn).toBeVisible();
     expect(btn).toHaveTextContent(/234 remaining/);
+  });
+
+  // The side-by-side comparison (issue #69): held-out prompts answered by the
+  // base model and the chosen checkpoint, with the decoding settings recorded
+  // so a reader can tell whether two outputs are comparable.
+  it("shows both models answering the same held-out prompts", () => {
+    render(
+      <JobRecordView
+        job={job({
+          comparison: {
+            ok: true,
+            decoding: { temperature: 0.7, max_new_tokens: 128, do_sample: true },
+            selection: {
+              step: 20,
+              basis: "best_held_out_loss",
+              reason: "Step 20 has the lowest held-out loss.",
+            },
+            rows: [
+              {
+                prompt: [{ role: "user", content: "What is the capital of France?" }],
+                base: "The base model's answer.",
+                tuned: "The tuned model's answer.",
+              },
+            ],
+          },
+        })}
+        events={[]}
+      />,
+    );
+    const section = within(
+      screen.getByRole("region", { name: "Base model vs your tuned model" }),
+    );
+    expect(section.getByText("What is the capital of France?")).toBeVisible();
+    expect(section.getByText("The base model's answer.")).toBeVisible();
+    expect(section.getByText("The tuned model's answer.")).toBeVisible();
+    // The tuned side names the checkpoint the run chose, and the decoding
+    // settings are shown -- recorded, so two outputs can be compared.
+    expect(
+      section.getByText("Tuned model (chosen checkpoint, step 20)"),
+    ).toBeVisible();
+    expect(section.getByText(/temperature 0.7/)).toBeVisible();
+    expect(section.getByText(/up to 128 new tokens/)).toBeVisible();
+  });
+
+  it("states a failed comparison's reason without dressing it as a failed job", () => {
+    render(
+      <JobRecordView
+        job={job({
+          comparison: {
+            ok: false,
+            decoding: { temperature: 0.7 },
+            reason: "RuntimeError: the tuned model could not be loaded",
+          },
+        })}
+        events={[]}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Base model vs your tuned model" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/No side-by-side comparison was produced/),
+    ).toBeVisible();
+    expect(screen.getByText(/could not be loaded/)).toBeVisible();
+    // The job itself still reads complete -- a comparison failure is not a
+    // failed run.
+    expect(
+      screen.getByText("State").nextElementSibling?.textContent,
+    ).toBe("complete");
+  });
+
+  it("shows nothing when the run recorded no comparison", () => {
+    render(<JobRecordView job={job()} events={[]} />);
+    expect(
+      screen.queryByRole("heading", { name: "Base model vs your tuned model" }),
+    ).toBeNull();
   });
 });
