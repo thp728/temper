@@ -1,4 +1,4 @@
-# ADR-0043 — The held-out split is the platform's, and held-out loss rides the existing event stream
+# ADR-0048 — The held-out split is the platform's, and held-out loss rides the existing event stream
 
 - **Status:** accepted
 - **Date:** 2026-08-28
