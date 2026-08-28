@@ -1,4 +1,4 @@
-# ADR-0054 — The finished job's event history is paginated and disclosed
+# ADR-0058 — The finished job's event history is paginated and disclosed
 
 - **Status:** accepted
 - **Date:** 2026-08-28
