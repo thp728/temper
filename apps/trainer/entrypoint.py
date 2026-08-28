@@ -377,6 +377,31 @@ def oom_error_code(tail: Sequence[str], fault_spec: dict | None) -> str | None:
     return TRAINER_OOM_CODE
 
 
+class GracefulStop(Exception):
+    """Raised by the SIGTERM handler so an ordered stop finalizes the run.
+
+    The spend ceiling's emergency checkpoint (issue #46) asks this trainer to
+    save a final checkpoint and exit. The request arrives as a SIGTERM to the
+    container, and Python's default SIGTERM behaviour -- die immediately --
+    would throw away exactly the checkpoints the request exists to save. This
+    handler converts the signal into the graceful path: the `finally` in
+    `main` runs, shipping the final checkpoint and writing result.json, and
+    the control plane reads the manifest from there.
+    """
+
+
+def _on_sigterm(signum, frame) -> None:
+    """Convert SIGTERM into a graceful, finalizing stop (issue #46).
+
+    The spend ceiling's emergency checkpoint signals the container this way;
+    raising from the handler is how a signal becomes the run's own exception
+    path rather than a silent death. The narration goes to the stream so the
+    run's history says what happened.
+    """
+    log("SIGTERM received — saving a final checkpoint and exiting")
+    raise GracefulStop()
+
+
 # Top-level keys the job spec may carry. Spike 4 caught a real hole here: an
 # unknown key at the TOP level passed silently because only `hyperparameters`
 # was being validated. A caller who misspells `max_steps` as `maxSteps` would
@@ -1386,6 +1411,12 @@ def main() -> int:
     started = time.time()
     result: dict = {"ok": False, "started_at": time.time()}
     uploader: checkpoint_upload.CheckpointUploader | None = None
+    # Issue #46: the spend ceiling's emergency checkpoint signals this
+    # process with SIGTERM; the handler turns that into a graceful, finalizing
+    # stop rather than Python's default immediate death.
+    import signal
+
+    signal.signal(signal.SIGTERM, _on_sigterm)
     try:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         job = json.loads((JOB_DIR / "job.json").read_text())
@@ -1676,6 +1707,14 @@ def main() -> int:
         log(f"training complete in {result['train_seconds']}s")
         return 0
 
+    except GracefulStop:
+        # An ordered stop (issue #46, the spend ceiling's emergency
+        # checkpoint): not a training error, and the run's terminal reason is
+        # the control plane's to decide. The finally below ships the final
+        # checkpoint and writes result.json, which is the whole point of the
+        # request.
+        log("ordered stop — finalizing and writing result.json")
+        return 0
     except Exception as e:
         result["error"] = f"{type(e).__name__}: {e}"
         log(f"ERROR: {result['error']}")

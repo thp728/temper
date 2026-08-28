@@ -1,33 +1,49 @@
 """Circuit breakers for a job that has stopped making progress.
 
-Two controls with different meanings and different outcomes:
+Three controls with different meanings and different outcomes:
 
 * **A stall** — no output for the configured period. The job is not obviously
   broken; it has gone quiet, and a quiet job on a billing machine is
   indistinguishable from a wedged one until somebody looks.
 * **The duration ceiling** — the job has run longer than any legitimate run on
   this catalog should, whether or not it is still talking.
+* **The spend ceiling** — the job has cost more than any single job should,
+  however fast it is talking. This is the one issue #46 adds, and it is a
+  different control from the other two: it is a cap on *money*, so an
+  expensive machine is stopped sooner than a cheap one at the same ceiling.
 
 They are kept apart because the remedies are not the same. A stall points at
-the machine or the training process; hitting the ceiling points at the job
-being too large for the limit, which is a policy conversation. Collapsing them
-into one "job took too long" would hand the user the wrong question, in the
-same way collapsing *unreachable* and *authentication failed* did.
+the machine or the training process; hitting the duration ceiling points at
+the job being too large for the limit, which is a policy conversation;
+hitting the spend ceiling points at the job costing too much, which is a
+money conversation. Collapsing them into one "job took too long" would hand
+the user the wrong question, in the same way collapsing *unreachable* and
+*authentication failed* did.
 
-**These are not spend policy.** They exist to stop a job that is no longer
-doing anything, not to cap what a user may legitimately train. The distinction
-matters because it decides what the defaults are: a spend cap would be set from
-a budget, and these are set from the longest silence and the longest run that
-are still plausible.
+**These are not spend policy beyond the cap itself.** The stall and duration
+controls exist to stop a job that is no longer doing anything; the spend
+ceiling exists to stop a runaway before it consumes the account. The
+distinction matters because it decides what the defaults are: the stall and
+duration limits are set from the longest silence and the longest run that are
+still plausible, and the spend ceiling is set from what a legitimate run can
+cost.
+
+**The spend ceiling is enforced from outside the training process.** The
+training process is the container on the machine; these checks run in the
+control plane, and the spend they measure is elapsed wall clock times the
+price the job froze at provisioning — never anything the trainer reports. A
+process that has stopped responding cannot enforce its own limit, so a
+machine that goes silent (and keeps billing) still trips the ceiling, because
+the measurement does not depend on it answering.
 
 The guard sits between the provider's line iterator and everything that reads
 it, so it works for any transport — the enforcement lives here rather than in
 the SSH implementation, and a push transport inherits it unchanged.
 
-**Time is a parameter.** The clock is injected so that a fifteen-minute silence
-and a twenty-four-hour run can both be exercised in milliseconds. A limit whose
-test has to sleep is a limit whose test gets skipped, and then the limit is
-back to being a constant nobody reads.
+**Time is a parameter.** The clock is injected so that a fifteen-minute
+silence and a twenty-four-hour run can both be exercised in milliseconds. A
+limit whose test has to sleep is a limit whose test gets skipped, and then the
+limit is back to being a constant nobody reads.
 """
 
 from __future__ import annotations
@@ -38,6 +54,7 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 
+from temper_core import quote
 from temper_core.errors import OrchestratorError
 
 from . import config
@@ -50,15 +67,28 @@ from . import config
 # and it is the first warning that the next one may not come back.
 REPORT_FRACTION = 0.25
 
+# The stable code a job stopped by the spend ceiling carries (issue #46). The
+# same vocabulary as the reference architecture's `budget_exhausted` terminal
+# code, so a run stopped by money is distinguishable from one stopped by time
+# (`gpu_max_duration_exceeded`) or by silence (`gpu_stalled`), which is the
+# point of the user story: a safety-limit stop is a failure with a specific
+# reason, not something the user chose and not something that just broke.
+BUDGET_EXHAUSTED_CODE = "budget_exhausted"
+
 
 @dataclass(frozen=True)
 class RunLimits:
-    """The two limits, plus how the guard perceives time.
+    """The limits, plus how the guard perceives time.
 
     `poll_interval_s` is not a limit — it is how long the guard is willing to
     block before looking at the clock again. It exists because the clock is
     injected and the queue's wait is not: with real time the two agree, and a
     test that drives a fake clock needs the guard to come up for air.
+
+    The spend ceiling is `None` until `with_spend` configures it, because the
+    ceiling is a *cost* and a cost can only be enforced against a price. The
+    price is chosen at provisioning, after this object is constructed, so the
+    orchestrator freezes it here the moment the plan is selected.
     """
 
     stall_timeout_s: float
@@ -71,6 +101,14 @@ class RunLimits:
     # from two different places — which is the one way this could silently
     # measure nothing at all.
     started: float | None = None
+    # The spend ceiling (issue #46), as a cost in the account currency's
+    # minor unit, and the rate to derive elapsed spend from. Both are `None`
+    # until `with_spend` configures them after provisioning, which is also
+    # what makes the default "no spend ceiling" — every existing caller
+    # constructs a `RunLimits` without them and is unchanged.
+    spend_ceiling_minor: int | None = None
+    price_per_hour: float | None = None
+    currency: str | None = None
 
     @classmethod
     def from_config(
@@ -83,14 +121,86 @@ class RunLimits:
         )
 
     def start(self) -> RunLimits:
-        """Stamp the job's origin. The ceiling counts from here."""
+        """Stamp the job's origin. The ceilings count from here."""
         return replace(self, started=self.now())
+
+    def with_spend(
+        self,
+        ceiling_minor: int,
+        price_per_hour: float,
+        currency: str,
+    ) -> RunLimits:
+        """Return a copy carrying the spend ceiling and the rate to measure it.
+
+        Called once provisioning chose a machine and froze its price, so the
+        ceiling becomes enforceable as a wall-clock deadline derived from the
+        job's own rate — the same derivation `temper_core.actuals` uses for
+        the measured cost. An unenforceable combination (a currency the quote
+        has no minor unit for, a non-positive rate or ceiling) is refused with
+        a coded error before anything is provisioned, rather than silently
+        becoming a ceiling that never fires.
+        """
+        if not isinstance(price_per_hour, (int, float)) or price_per_hour <= 0:
+            raise OrchestratorError(
+                "budget_unconfigurable",
+                f"A spend ceiling cannot be enforced against price "
+                f"{price_per_hour!r}; refusing to provision a job whose "
+                "ceiling could never fire.",
+            )
+        try:
+            quote.minor_unit_for(currency)
+        except ValueError as e:
+            raise OrchestratorError(
+                "budget_unconfigurable",
+                f"A spend ceiling cannot be enforced in currency "
+                f"{currency!r}; refusing to provision a job whose ceiling "
+                "could never fire.",
+            ) from e
+        if int(ceiling_minor) <= 0:
+            raise OrchestratorError(
+                "budget_unconfigurable",
+                f"A spend ceiling of {ceiling_minor!r} minor units is not a "
+                "ceiling; refusing to provision a job under a cap that "
+                "cannot fire.",
+            )
+        return replace(
+            self,
+            spend_ceiling_minor=int(ceiling_minor),
+            price_per_hour=float(price_per_hour),
+            currency=currency,
+        )
 
     @property
     def deadline(self) -> float:
         if self.started is None:
             raise ValueError("limits were never started")
         return self.started + self.max_duration_s
+
+    @property
+    def spend_deadline(self) -> float:
+        """The moment elapsed spend reaches the ceiling, on this object's clock.
+
+        Derived, never guessed: the ceiling is a cost in minor units, and the
+        rate the job froze at provisioning says how fast those units accrue,
+        so `ceiling_minor * (3600 / (price_per_hour * minor_unit))` is the
+        budget in seconds. An expensive machine exhausts the same cost sooner
+        than a cheap one, which is the whole point of a money ceiling rather
+        than a minute ceiling.
+        """
+        started = self.started
+        ceiling = self.spend_ceiling_minor
+        price = self.price_per_hour
+        currency = self.currency
+        if (
+            started is None
+            or ceiling is None
+            or price is None
+            or currency is None
+        ):
+            raise ValueError("spend ceiling was never configured")
+        minor = quote.minor_unit_for(currency)
+        seconds_per_minor = quote.SECONDS_PER_HOUR / (price * minor)
+        return started + ceiling * seconds_per_minor
 
     def check_duration(self) -> None:
         """Raise if the ceiling has passed. Callable between stages.
@@ -107,12 +217,41 @@ class RunLimits:
                 "gpu_max_duration_exceeded", self.max_duration_message()
             )
 
+    def check_spend(self) -> None:
+        """Raise if the spend ceiling has passed. Callable between stages.
+
+        The same boundary role as `check_duration`, for the money ceiling: a
+        machine that costs more than the cap while the control plane is still
+        setting it up is a runaway as surely as one that overruns in time. A
+        no-op when no spend ceiling has been configured.
+        """
+        if self.spend_ceiling_minor is None:
+            return
+        if self.now() >= self.spend_deadline:
+            raise OrchestratorError(
+                BUDGET_EXHAUSTED_CODE, self.budget_message()
+            )
+
     def max_duration_message(self) -> str:
         return (
             f"The job ran longer than the maximum permitted duration of "
             f"{self.max_duration_s:.0f}s and was stopped. Its machine is "
             f"being destroyed; the teardown confirmation follows in this "
             f"job's events."
+        )
+
+    def budget_message(self) -> str:
+        ceiling = self.spend_ceiling_minor
+        currency = self.currency
+        if ceiling is None or currency is None:
+            raise ValueError("spend ceiling was never configured")
+        minor = quote.minor_unit_for(currency)
+        amount = ceiling / minor
+        return (
+            f"The job exceeded the spend ceiling of {amount:.2f} {currency} "
+            f"and was stopped. Its checkpoints were saved where possible; its "
+            f"machine is being destroyed, and the teardown confirmation "
+            f"follows in this job's events."
         )
 
     def stall_message(self) -> str:
@@ -184,6 +323,18 @@ def guard(
         if t >= deadline:
             raise OrchestratorError(
                 "gpu_max_duration_exceeded", limits.max_duration_message()
+            )
+        # The spend ceiling is checked on the same read of the clock as the
+        # duration ceiling, so the two cannot disagree about the instant. It
+        # is checked before the stall: a machine going silent is often the
+        # same moment its spend is still accumulating, and the money ceiling
+        # is the reason that names the bill.
+        if (
+            limits.spend_ceiling_minor is not None
+            and t >= limits.spend_deadline
+        ):
+            raise OrchestratorError(
+                BUDGET_EXHAUSTED_CODE, limits.budget_message()
             )
         if t - last_line >= limits.stall_timeout_s:
             raise OrchestratorError("gpu_stalled", limits.stall_message())

@@ -163,6 +163,12 @@ class FakeProvider:
         # hardware.
         list_sequence: Sequence[Sequence[object]] | None = None,
         destroying_for: int = 0,
+        # Issue #46: whether the machine answers the spend ceiling's emergency
+        # checkpoint request. A wedged machine cannot be asked to save, and
+        # `request_checkpoint` must return None rather than a manifest it does
+        # not have; this knob makes that state explicit so the unresponsive
+        # case is a decision a test makes, not a race it hopes to catch.
+        checkpoint_unresponsive: bool = False,
     ) -> None:
         if fail_at is not None and fail_at not in STAGES:
             raise ValueError(f"unknown stage {fail_at!r}")
@@ -238,6 +244,7 @@ class FakeProvider:
         self._destroying_for = int(destroying_for)
         self._list_calls = 0
         self._destroyed_at_call: int | None = None
+        self._checkpoint_unresponsive = bool(checkpoint_unresponsive)
 
     # -- protocol -----------------------------------------------------------
 
@@ -328,7 +335,7 @@ class FakeProvider:
         for line in json.dumps(self._result).splitlines():
             yield line
 
-    def _write_checkpoints(self, spec) -> None:
+    def _write_checkpoints(self, spec) -> list[dict]:
         """The machine's half of issue #37, simulated: put each reported
         checkpoint to its slot, then report the set in result.json.
 
@@ -337,6 +344,9 @@ class FakeProvider:
         (`redeem`); the object-store backend's half is proven by the storage
         tier separately. The reported checksum is the true one unless the
         entry overrides it, so a test can make a corrupt upload on purpose.
+
+        Returns the records it wrote, so `request_checkpoint` (issue #46) can
+        hand the control plane the manifest of an emergency save.
         """
         grants = ((spec or {}).get("checkpoint_grants")) or []
         records = []
@@ -403,6 +413,7 @@ class FakeProvider:
         if records and self._result is not None:
             self._result = {**self._result, "checkpoints": records}
         self._enter("checkpoint_upload")
+        return records
 
     def _write_artifact(self, spec) -> None:
         """The machine's half of ADR-0009, simulated: put the artifact to the
@@ -496,6 +507,27 @@ class FakeProvider:
         self.destroyed = True
         if self._destroyed_at_call is None:
             self._destroyed_at_call = self._list_calls
+
+    def request_checkpoint(
+        self, machine: Machine, job_id: str
+    ) -> list[dict] | None:
+        """The spend ceiling's emergency checkpoint (issue #46), simulated.
+
+        A responsive machine saves the checkpoints it has produced -- writing
+        them to their slots exactly as it would at a normal end, so the
+        control plane's verification streams real bytes back -- and reports
+        the manifest. A silent machine, or one a test explicitly made
+        unresponsive, reports None: the ceiling's checkpoint is best-effort by
+        construction, and a wedged machine cannot be asked to save.
+        """
+        self.calls.append("request_checkpoint")
+        if self._silent_after is not None or self._checkpoint_unresponsive:
+            return None
+        if self.script is None:
+            return None
+        spec = _job_spec_from_script(self.script)
+        records = self._write_checkpoints(spec)
+        return records if records else None
 
     def _list_machines_inner(self) -> list[Machine]:
         """The actual machines the provider bills, with lifecycle status.
