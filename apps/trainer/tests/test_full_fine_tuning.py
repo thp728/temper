@@ -14,6 +14,7 @@ import json
 import tarfile
 
 import entrypoint
+import pytest
 
 from temper_core import hyperparams
 
@@ -70,6 +71,24 @@ def test_a_spec_without_a_method_reads_as_qlora():
     job = {"job_id": "j", "base_model": "Qwen/Qwen3-4B", "hyperparameters": hp}
     cfg, _rejected = entrypoint.build_config(job)
     assert cfg["adapter"] == "qlora"
+
+
+def test_an_unknown_method_is_refused_not_run_as_qlora():
+    """A missing method reads as qlora, but a present-and-unknown method is
+    refused loudly: running it as qlora would be a run that lies about what
+    it did -- the same refusal `temper_core.artifacts.kind_for` gives an
+    unknown method string."""
+    hp = hyperparams.effective({})
+    for bogus in ("ful", "lora", "garbage"):
+        job = {
+            "job_id": "j",
+            "base_model": "Qwen/Qwen3-4B",
+            "method": bogus,
+            "hyperparameters": hp,
+        }
+        with pytest.raises(entrypoint.IncompleteJobSpec) as excinfo:
+            entrypoint.build_config(job)
+        assert bogus in str(excinfo.value)
 
 
 def test_a_full_job_uses_the_specs_own_learning_rate():

@@ -768,6 +768,9 @@ def completed_full_run() -> FakeProvider:
             "artifact_format": "tar.gz",
             "artifact_members": ["config.json", "model.safetensors"],
             "held_out_split": DEMO_RESULT["held_out_split"],
+            # Mirrors what `temper_core.memory.predict_peak` expects for a
+            # full fine-tune of the catalog 4B model on one H100 (~67 GB) --
+            # the measured figure a real full run would record (issue #77).
             "peak_memory_gb": 67.0,
             "template_probe": DEMO_RESULT["template_probe"],
         },

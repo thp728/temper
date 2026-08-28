@@ -643,8 +643,18 @@ def build_config(
     # The method the control plane selected at provisioning (issue #66). A
     # spec written before the method key existed reads as qlora -- the only
     # method that ever ran before it -- the same reading
-    # `temper_core.artifacts.kind_for` gives a missing method.
+    # `temper_core.artifacts.kind_for` gives a missing method. But unlike
+    # `kind_for`, which refuses an unknown method, an unknown string here
+    # would silently run qlora -- a run that lies about what it did -- so it
+    # is refused loudly instead, exactly as an unknown key is.
     method = job.get("method") or "qlora"
+    if method not in ("qlora", "full"):
+        raise IncompleteJobSpec(
+            f"job specification carries unknown method {method!r}; the "
+            "trainer executes 'qlora' and 'full' only. A spec without a "
+            "method reads as qlora; anything else is refused rather than "
+            "silently run as qlora."
+        )
     rejected: dict = {}
 
     # Validate the top level before anything else.

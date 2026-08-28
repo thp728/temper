@@ -362,6 +362,22 @@ def test_a_full_fine_tuning_job_runs_end_to_end_against_the_fake_provider(
     weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
     assert storage.STORE.get(weights_key) == DEMO_FULL_MODEL_BYTES
 
+    # The run keyed its settings off the selected method (issue #66): the job
+    # spec the trainer received names the method and carries the full
+    # fine-tune's own learning rate, not the adapter's.
+    from temper_control_plane.fake_provider import _job_spec_from_script
+
+    spec = _job_spec_from_script(provider.script)
+    assert spec["method"] == "full"
+    assert (
+        spec["hyperparameters"]["learning_rate"]
+        == hyperparams.effective({}, method="full")["learning_rate"]
+    )
+    assert (
+        spec["hyperparameters"]["learning_rate"]
+        != hyperparams.effective({}, method="qlora")["learning_rate"]
+    )
+
 
 # --- issue #77: every run records what was predicted against what happened ---
 

@@ -219,6 +219,41 @@ def test_overriding_to_full_is_honoured_when_it_fits(
     assert q["decisions"][1]["chosen"] == "H100"
 
 
+def test_the_quote_keys_its_spec_off_the_selected_method(
+    client, tmp_path, monkeypatch
+):
+    """Issue #66: the spec the quote's own arithmetic is computed on keys off
+    the method the plan chose -- a full fine-tune's learning rate in the
+    quote's hyperparameters, not the adapter's -- so the frozen quote
+    describes the same configuration the trainer will run."""
+    from temper_control_plane import quote as quote_mod
+    from temper_core import hyperparams
+    from temper_core.selection import GpuAvailability
+
+    provider = FakeProvider(availability=[GpuAvailability("H100", 250.0, 2)])
+    monkeypatch.setattr(quote_mod, "QUOTE_PROVIDER", provider)
+    captured = {}
+
+    def spy(
+        facts, *, hyperparameters, plan, disk_plan, overridden=frozenset()
+    ):
+        captured["learning_rate"] = hyperparameters["learning_rate"]
+        captured["method"] = plan.method
+        return ()
+
+    monkeypatch.setattr(quote_mod.decisions, "decide", spy)
+    ds = valid_dataset(client, tmp_path)
+    r = client.post(
+        "/v1/quotes", json={"dataset_id": ds, "base_model": "qwen3-4b"}
+    )
+    assert r.status_code == 200
+    assert captured["method"] == "full"
+    assert (
+        captured["learning_rate"]
+        == hyperparams.effective({}, method="full")["learning_rate"]
+    )
+
+
 def test_launching_freezes_the_decisions_with_the_quote(client, tmp_path):
     """The same explanation is available after the job has finished: the
     reasons are frozen into the job spec beside the quote, not regenerated on

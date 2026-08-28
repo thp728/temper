@@ -335,7 +335,16 @@ def build_quote(
         # fact about the moment, not about the configuration.
         if demanded or (refuse_unfittable and e.is_memory_refusal):
             raise _no_fit_refusal(e) from e
-        return None
+    # The quote describes the configuration the plan chose, so its spec keys
+    # off the selected method (issue #66) -- a full fine-tune's learning rate
+    # is the full fine-tune's, not the adapter's, in the numbers frozen with
+    # the quote as much as in the spec the trainer receives. The method
+    # footing is overlaid from the user's own request (not from `hp`, which
+    # already carries the adapter default) and the sequence-length override is
+    # folded back on top, exactly as the launch path folds it.
+    hp = hyperparams.effective(hyperparameters, method=plan.method)
+    if resolved is not None:
+        hp["sequence_len"] = resolved.hyperparameters["sequence_len"]
     try:
         disk_plan = disk.required_disk(
             facts,

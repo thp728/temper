@@ -51,16 +51,16 @@ EXECUTABLE_METHODS: tuple[str, ...] = ("full", "qlora")
 
 
 def lightest_method(methods: Sequence[str]) -> str:
-    """The cheapest-to-fit method in `methods`, derived from the same weight
-    arithmetic the search prices with.
+    """The method with the smallest per-param weight footprint in `methods`.
 
-    Full fine-tuning holds every weight at 2 bytes/param and trains every
-    parameter, so its footprint dominates an adapter's on every pool; the
-    lightest method is the one with the smallest per-param weight footprint,
-    and it is the last one a best-first search would prefer. A refusal with a
-    card free names it because if even the lightest executable method cannot
-    fit, nothing in the set can -- naming the heaviest would overstate what
-    the user has to beat.
+    Used where no job shape is at hand (`overrides.executable_default` names a
+    method for the launch gate). For the executable set -- qlora at 0.5
+    bytes/param against full at 2.0 -- this is also the smallest total
+    footprint, because an adapter's trainable set is tiny while a full
+    fine-tune trains every parameter, so the two orderings agree there. It
+    does **not** order lora against full (both hold weights at 2 bytes/param);
+    a refusal that names a specific peak picks its method by total peak
+    instead (`_no_fitting_error`), never by this helper.
     """
     return min(methods, key=lambda m: memory.WEIGHT_BYTES_PER_PARAM[m])
 
@@ -222,11 +222,27 @@ def _no_fitting_error(
         "No available GPU predicts a fit for this job, at any method or "
         "device count the provider currently has free."
     )
-    eff_method = (
-        method
-        if method is not None
-        else lightest_method(methods if methods else EXECUTABLE_METHODS)
-    )
+    if method is not None:
+        eff_method = method
+    else:
+        # The lightest method for THIS job's shape, by the same memory
+        # arithmetic the search priced with: the one with the smallest total
+        # predicted peak. Weight-footprint alone (`lightest_method`) cannot
+        # order lora against full (both hold weights at 2 bytes/param), so a
+        # refusal that names a peak must pick by the peak it will name.
+        eff_method = min(
+            (methods if methods else EXECUTABLE_METHODS),
+            key=lambda m: (
+                memory.predict_peak(
+                    facts,
+                    method=m,
+                    lora_r=lora_r,
+                    sequence_len=sequence_len,
+                    micro_batch_size=micro_batch_size,
+                    device_count=1,
+                ).total_gb
+            ),
+        )
     eff_count = device_count or 1
     peak = memory.predict_peak(
         facts,
