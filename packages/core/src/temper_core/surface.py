@@ -44,6 +44,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from . import faults
+
 # The three tiers, named once. The tier file uses these strings; everything
 # that branches on tier reads these constants rather than retyping them.
 TIERS: tuple[str, ...] = (
@@ -59,13 +61,11 @@ UNSUPPORTED_TIER = "known_but_unsupported"
 # Keys the platform itself carries that are not trainer fields. They travel in
 # the same `hyperparameters` dict (so the create path validates them like any
 # other key) but they are not part of the trainer's schema, so they live here,
-# not in the tier file: `simulated_failure_code` is how a journey asks the
-# simulated machine to fail on demand (ADR-0026).
-PLATFORM_INTERNAL_KEYS: frozenset[str] = frozenset(
-    {
-        "simulated_failure_code",
-    }
-)
+# not in the tier file: `simulated_failure_code` is how the fault surface is
+# switched on per job (ADR-0026, grown by issue #24). Its name is defined once
+# in `temper_core.faults` and read here, so the surface and the key cannot
+# drift.
+PLATFORM_INTERNAL_KEYS: frozenset[str] = frozenset({faults.HYPERPARAMETER_KEY})
 
 
 class CompletenessError(Exception):

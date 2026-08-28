@@ -1,0 +1,41 @@
+{
+  "_comment": "The vocabulary of the fault surface (issue #24). One definition of the six faults a job can be made to suffer on demand; the control plane (orchestrator and fake provider) and the trainer image both read this file, so the two sides cannot drift about what a fault is called, which code it carries, and which side is responsible for making it real. A value two components must agree on is defined once and read, never retyped.",
+  "faults": [
+    {
+      "name": "oom",
+      "code": "simulated_oom",
+      "side": "trainer",
+      "description": "exhaust device memory during training"
+    },
+    {
+      "name": "divergence",
+      "code": "simulated_divergence",
+      "side": "trainer",
+      "description": "drive the loss to a meaningless value"
+    },
+    {
+      "name": "worker_kill",
+      "code": "simulated_worker_killed",
+      "side": "trainer",
+      "description": "kill the worker mid-run"
+    },
+    {
+      "name": "machine_silent",
+      "code": "simulated_machine_silent",
+      "side": "provider",
+      "description": "make the machine go silent without ending"
+    },
+    {
+      "name": "orphan",
+      "code": "simulated_orphan",
+      "side": "provider",
+      "description": "leave a machine running with no job that owns it"
+    },
+    {
+      "name": "destroy_refused",
+      "code": "simulated_destroy_refused",
+      "side": "provider",
+      "description": "make the provider refuse a destroy"
+    }
+  ]
+}

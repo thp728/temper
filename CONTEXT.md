@@ -154,3 +154,11 @@ _Avoid_: level, category, bucket
 **Schema snapshot**:
 The checked-in configuration schema of the pinned trainer image, introspected from inside it. The universe the advanced surface is generated from: a key not in it is unknown to the trainer, and is refused loudly and echoed back at every level.
 _Avoid_: schema dump, config model, field list
+
+**Fault surface**:
+The part of the product that makes a failure happen on demand, so a recovery path can be proven rather than argued about: a reviewer turns on a fault and watches what happens. It is off by default, and a job carrying a fault spec is refused unless the deployment has switched the surface on deliberately. Provider-side faults are behaviour of the provider seam (only the fake provider honours them); trainer-side faults are an environment switch the trainer reads. Every injected fault is named in the job's own history and carries a `simulated_` code, so a deliberately broken run can never be mistaken for a real one.
+_Avoid_: fault injection framework, chaos, failure simulation
+
+**Fault spec**:
+The configuration that switches a fault on for one job — the dict form of the `simulated_failure_code` hyperparameter, naming one of the six faults in the surface (`oom`, `divergence`, `worker_kill`, `machine_silent`, `orphan`, `destroy_refused`) and any parameters that pick where it fires. The string form of that hyperparameter is the reserved early-exit affordance from before the surface existed.
+_Avoid_: fault config, failure recipe, chaos config

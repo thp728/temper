@@ -221,6 +221,18 @@ FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))
 FAKE_LINE_DELAY_S = float(os.environ.get("TEMPER_FAKE_LINE_DELAY_S") or 0)
 
 
+# --- the fault surface (issue #24) -------------------------------------------
+# **Off by default, and that is a safety property, not a convenience.** A job
+# whose hyperparameters carry a fault spec is refused at creation unless the
+# deployment has explicitly turned the surface on -- `TEMPER_FAKE_PROVIDER`
+# (the zero-cost tier: the fake provider honours the faults) or
+# `TEMPER_FAULT_SURFACE` (the deliberate operator tier: lets a fault spec
+# reach a real machine so the trainer-side faults genuinely fire). Without
+# one of the two, no fault spec can even be created, so a fault surface that
+# can be switched on by accident in front of a user does not exist.
+FAULT_SURFACE = bool(os.environ.get("TEMPER_FAULT_SURFACE"))
+
+
 # --- stored objects ----------------------------------------------------------
 # Spec 006 / issue #22: every stored object sits behind one storage seam, and
 # which implementation answers is configuration. The values here are parsed

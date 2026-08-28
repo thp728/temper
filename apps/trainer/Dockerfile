@@ -69,7 +69,14 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # same dedup-and-split behaviour) and is flattened into this context like
 # `thinking.py`, so it must be in the COPY too -- a top-level import, so a
 # missing COPY dies at import, before the `finally` that writes result.json.
-COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py trainer-defaults.json axolotl-schema.json /opt/trainer/
+#
+# `fault-surface.json` (issue #24) is the fault surface's vocabulary: the six
+# fault names, the `simulated_` code each carries and which side makes it
+# real. The trainer reads it as data to validate the fault spec its
+# environment carries, so it ships beside the entrypoint exactly like
+# `trainer-defaults.json` -- one definition, read by the control plane and the
+# trainer alike.
+COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py trainer-defaults.json axolotl-schema.json fault-surface.json /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.
