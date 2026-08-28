@@ -122,14 +122,25 @@ def published_reference() -> str | None:
 # control plane reads it through `temper_core.delivery` and the trainer reads
 # it as data, so the two sides cannot drift about what a format is or what
 # order the conversions run in.
+#
+# `comparison.py` (issue #69) is the side-by-side comparison the entrypoint
+# runs on the warm machine after training; it ships in the same layer as the
+# entrypoint, exactly like `checkpoints.py`.
+#
+# `checkpoint.py` (issue #62) is the best-checkpoint selection rule. The
+# control plane imports it from `temper_core`; the entrypoint applies the
+# same rule to pick which checkpoint the comparison generates from, so it
+# ships flat beside the entrypoint like `split.py` -- one file, two consumers.
 TRAINER_SOURCES = (
     TRAINER_DIR / "Dockerfile",
     TRAINER_DIR / "entrypoint.py",
     TRAINER_DIR / "template_probe.py",
     TRAINER_DIR / "checkpoints.py",
     TRAINER_DIR / "delivery.py",
+    TRAINER_DIR / "comparison.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "split.py",
+    REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "checkpoint.py",
     REPO_ROOT / "packages" / "contracts" / "trainer-defaults.json",
     REPO_ROOT / "packages" / "contracts" / "axolotl-schema.json",
     REPO_ROOT / "packages" / "contracts" / "fault-surface.json",
