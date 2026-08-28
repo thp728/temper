@@ -1,0 +1,43 @@
+{
+  "_comment": "The vocabulary of the fault surface (issue #24). One definition of the six faults a job can be made to suffer on demand; the control plane (orchestrator and fake provider) and the trainer image both read this file, so the two sides cannot drift about what a fault is called, which side makes it real, or which parameters it takes. A value two components must agree on is defined once and read, never retyped. `code` is present only where the fault's run carries its own coded result (oom and divergence); the other four fail through the platform's ordinary machinery (the stall detector, a missing result document, teardown) and are named by the run's history instead. `params` is the parameter vocabulary each fault accepts; a parameter outside it is refused loudly rather than silently dropped.",
+  "faults": [
+    {
+      "name": "oom",
+      "code": "simulated_oom",
+      "side": "trainer",
+      "params": ["delay_s"],
+      "description": "exhaust device memory during training"
+    },
+    {
+      "name": "divergence",
+      "code": "simulated_divergence",
+      "side": "trainer",
+      "params": [],
+      "description": "drive the loss to a meaningless value"
+    },
+    {
+      "name": "worker_kill",
+      "side": "trainer",
+      "params": ["delay_s"],
+      "description": "kill the worker mid-run"
+    },
+    {
+      "name": "machine_silent",
+      "side": "provider",
+      "params": ["after_line"],
+      "description": "make the machine go silent without ending"
+    },
+    {
+      "name": "orphan",
+      "side": "provider",
+      "params": ["machine_id"],
+      "description": "leave a machine running with no job that owns it"
+    },
+    {
+      "name": "destroy_refused",
+      "side": "provider",
+      "params": ["times"],
+      "description": "make the provider refuse a destroy"
+    }
+  ]
+}

@@ -103,6 +103,12 @@ def published_reference() -> str | None:
 # dataset with the same module's normalisation rule, so it lives in the domain
 # and is flattened into the image beside the entrypoint, exactly like
 # `thinking.py` -- one file, two consumers.
+#
+# `fault-surface.json` (issue #24) is the fault surface's vocabulary. The
+# trainer reads it as data to validate the fault spec in its environment, so
+# it ships beside the entrypoint the same way `trainer-defaults.json` does --
+# one definition, read by the control plane's fake provider and by the
+# trainer, so the two cannot drift about what a fault is called.
 TRAINER_SOURCES = (
     TRAINER_DIR / "Dockerfile",
     TRAINER_DIR / "entrypoint.py",
@@ -112,6 +118,7 @@ TRAINER_SOURCES = (
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "split.py",
     REPO_ROOT / "packages" / "contracts" / "trainer-defaults.json",
     REPO_ROOT / "packages" / "contracts" / "axolotl-schema.json",
+    REPO_ROOT / "packages" / "contracts" / "fault-surface.json",
 )
 
 

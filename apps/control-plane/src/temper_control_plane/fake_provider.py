@@ -21,6 +21,11 @@ What it can be told to do, because these are the paths worth testing:
   hoping — the difference between cancelling during the image build and
   cancelling during training is minutes on a real machine and microseconds
   here, and only a pause makes the two distinguishable.
+* suffer a fault from the surface (issue #24): when a job spec's
+  `simulated_failure_code` is a dict naming one of the six faults, the
+  machine makes it happen — exhausting memory, diverging, dying mid-run,
+  going silent, leaving an orphan, or refusing a destroy — so a recovery can
+  be watched rather than argued about. Off by default: no dict, no fault.
 
 It ships with a clock for the same reason: the limits that catch a silent job
 are minutes and hours long, and a suite that waits for them is a suite nobody
@@ -35,6 +40,7 @@ import threading
 import time
 from collections.abc import Iterable, Iterator, Sequence
 
+from temper_core import faults as fault_surface
 from temper_core.errors import OrchestratorError
 from temper_core.selection import GpuAvailability
 
@@ -60,6 +66,10 @@ STAGES = (
 # Fixed rather than configurable: tests assert against these, and a knob no
 # test turns is a knob that only makes the double harder to read.
 MACHINE_ID = 4242
+# The machine the `orphan` fault leaves in the provider's listing with no job
+# that owns it (issue #24 / #61). Deliberately a different id from the job's
+# own machine, so a test can prove the job's teardown did not touch it.
+ORPHAN_MACHINE_ID = 7777
 # 8 free devices, matching what spike 6 measured every VM-capable type
 # showing -- enough headroom that a test asking for more than one device
 # never has to invent a second row.
@@ -165,6 +175,16 @@ class FakeProvider:
         self._availability = availability
         self._currency = currency
 
+        # Issue #24: the fault surface. Defaults here are the surface being
+        # off; the dict form of `simulated_failure_code` in a job spec sets
+        # them at stream time, so a fake constructed for one job never leaks
+        # fault behaviour into the next.
+        self._orphan_ids: list[int] = []
+        self._stop_without_result = False
+        # Observable afterwards: the fault this machine was asked to suffer,
+        # or None when the surface was off.
+        self.fault_applied: str | None = None
+
         # A pause the test drives: `paused` is set when the job reaches the
         # chosen point, and it stays there until the test sets `resume`. The
         # job's own thread is the one held, so whatever the test does in
@@ -262,6 +282,12 @@ class FakeProvider:
         # reporting, and reports each one's step, loss and checksum -- the
         # same shape the trainer's background uploader produces.
         self._write_checkpoints(_job_spec_from_script(script))
+        # Issue #24: a `worker_kill` fault dies here -- after the checkpoints
+        # that a resumption would need have left the machine, and before any
+        # result document exists. The orchestrator sees a stream that ended
+        # without a result, which is exactly what a killed worker looks like.
+        if self._stop_without_result:
+            return
         yield "---RESULT---"
         for line in json.dumps(self._result).splitlines():
             yield line
@@ -391,7 +417,12 @@ class FakeProvider:
     def list_machine_ids(self) -> list[int]:
         self.calls.append("list_machine_ids")
         listed = not self.destroyed or self._stays_listed
-        return [MACHINE_ID] if listed else []
+        ids = [MACHINE_ID] if listed else []
+        # Issue #24: the `orphan` fault leaves a machine in the listing that
+        # no job ever created or owns -- exactly what the reconciler (#61)
+        # exists to find. It is never in any job's `machines` list, so no
+        # teardown touches it.
+        return ids + list(self._orphan_ids)
 
     def close(self) -> None:
         self.closed = True
@@ -498,15 +529,17 @@ DEMO_RESULT = {
     },
 }
 
-# The reserved hyperparameter through which a journey asks the simulated
-# machine to end with a named code -- the gap between "a job that succeeds"
-# (above) and Spec 007's failed-job journey, until #24 grows fault injection
-# into product surface. It is a platform-internal key, not a trainer field, so
-# it is carried in `temper_core.surface.PLATFORM_INTERNAL_KEYS` (#33), which
-# is what lets creation's hyperparameter validation pass it through, but it is
-# honoured only here: the real trainer receives it and ignores it, the
-# simulated machine reads it and ends early on the ordinary failure path.
-SIMULATED_FAILURE_KEY = "simulated_failure_code"
+# The hyperparameter through which a journey or an operator asks the simulated
+# machine to fail (issue #24, grown from ADR-0026). A string value ends the
+# machine early with that named code; a dict value is a fault spec naming one
+# of the six faults in the surface. It is a platform-internal key, not a
+# trainer field, so it is carried in `temper_core.surface.PLATFORM_INTERNAL_KEYS`
+# (#33), which is what lets creation's hyperparameter validation pass it
+# through, but it is honoured only here: the real trainer receives it and
+# ignores it (the trainer-side faults reach the real trainer through its
+# environment instead), and the simulated machine reads it and makes the
+# failure happen.
+SIMULATED_FAILURE_KEY = fault_surface.HYPERPARAMETER_KEY
 
 # Where `_remote_script` writes the jobspec into every script it ships, and
 # how that block ends. Parsing this is the same kind of accepted coupling as
@@ -532,13 +565,36 @@ def _job_spec_from_script(script: bytes) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _fault_int(spec: dict, key: str, default: int) -> int:
+    """A fault parameter as a whole number, refusing a value that is not one.
+
+    A fault spec a caller believes is in effect but is not is worse than a
+    refusal, so a malformed parameter refuses loudly rather than silently
+    becoming the default.
+    """
+    raw = spec.get(key, default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise OrchestratorError(
+            "fault_invalid",
+            f"fault parameter '{key}' must be a whole number, got {raw!r}",
+        ) from None
+
+
 class SimulatedMachine(FakeProvider):
-    """`completed_run`'s machine, plus the one thing a canned success cannot
-    do: end early because the spec asked it to.
+    """`completed_run`'s machine, plus the two things a canned success cannot
+    do: end early because the spec asked it to, and suffer a fault from the
+    surface (issue #24).
 
     The failure travels the ordinary path -- result document naming its code,
     OrchestratorError, coded terminal state -- exactly as a trainer that died
-    mid-run would, so nothing downstream can tell it apart by shape."""
+    mid-run would, so nothing downstream can tell it apart by shape. A run
+    broken on purpose is still named as such (the `simulated_` codes, the
+    fault's own line in the history, the orchestrator's launch event), which
+    is what keeps a deliberately broken run from being mistaken for a real
+    one.
+    """
 
     def stream(self, machine, script):
         spec = _job_spec_from_script(script)
@@ -562,7 +618,84 @@ class SimulatedMachine(FakeProvider):
             # Output stops where the failure begins: the history keeps what
             # ran, not what never got the chance to.
             self._lines = DEMO_LINES[:1]
+        elif isinstance(requested, dict):
+            self._configure_fault(requested)
         yield from super().stream(machine, script)
+
+    # -- the fault surface (issue #24) ---------------------------------------
+
+    def _configure_fault(self, spec: dict) -> None:
+        """Apply a fault spec -- the dict form of `simulated_failure_code` --
+        to this machine before the run streams.
+
+        The vocabulary, the codes and the parameters each fault accepts live
+        in `packages/contracts/fault-surface.json` (read through
+        `temper_core.faults`), so the fake and the trainer cannot drift about
+        what a fault is called or what code a broken run carries. A spec the
+        validator rejects -- an unknown fault, an unknown parameter, a
+        malformed value -- is refused loudly rather than run under a fault
+        nobody can explain.
+        """
+        problem = fault_surface.spec_error(spec)
+        if problem is not None:
+            raise OrchestratorError("fault_invalid", problem)
+        name = spec["name"]
+        self.fault_applied = name
+        if name == "machine_silent":
+            # The narration line precedes the silence, so the history says
+            # why the silence came before the stall detector has to.
+            self._lines = [self._narration(name), *self._lines]
+            self._silent_after = _fault_int(spec, "after_line", 3) + 1
+        elif name == "destroy_refused":
+            self._lines = [self._narration(name), *self._lines]
+            self._destroy_failures = _fault_int(spec, "times", 99)
+            self._stays_listed = True
+        elif name == "orphan":
+            self._lines = [self._narration(name), *self._lines]
+            self._orphan_ids = [
+                _fault_int(spec, "machine_id", ORPHAN_MACHINE_ID)
+            ]
+        elif name == "oom":
+            self._lines = [self._narration(name), *DEMO_LINES]
+            self._result = {
+                "ok": False,
+                "stage": "train",
+                "error_code": fault_surface.code_for(name),
+                "error": (
+                    "The training process ran out of device memory "
+                    "(simulated fault); no artifact was produced."
+                ),
+            }
+        elif name == "divergence":
+            self._lines = [
+                self._narration(name),
+                *DEMO_LINES,
+                # The loss becomes meaningless, and says so in the stream.
+                "{'loss': nan, 'step': 20, 'epoch': 1.0}",
+            ]
+            # The loss is the fault; what happens next is the recovery's
+            # job. A run whose loss has gone meaningless still runs out its
+            # duration until the divergence recovery (#36) stops it, so this
+            # run completes with a worthless result -- the honest shape of a
+            # diverged run, exactly what the real trainer produces when its
+            # learning rate is sabotaged.
+        elif name == "worker_kill":
+            self._lines = [self._narration(name), *DEMO_LINES]
+            # The worker dies before any result document exists; `{}` (not
+            # None) keeps the stream on the path that writes whatever
+            # checkpoints were already produced, then stops it before the
+            # result marker -- exactly what a killed worker looks like: no
+            # artifact, no result, only what had already left the machine.
+            self._result = {}
+            self._stop_without_result = True
+        else:  # pragma: no cover - guarded by spec_error above
+            raise AssertionError(f"unhandled fault {name!r}")
+
+    def _narration(self, name: str) -> str:
+        return (
+            f"[simulated fault] {name}: {fault_surface.describe(name)}. "
+            "This run is deliberately broken."
+        )
 
 
 def completed_run() -> FakeProvider:

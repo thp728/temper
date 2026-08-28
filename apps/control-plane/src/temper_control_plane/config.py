@@ -221,6 +221,61 @@ FAKE_PROVIDER = bool(os.environ.get("TEMPER_FAKE_PROVIDER"))
 FAKE_LINE_DELAY_S = float(os.environ.get("TEMPER_FAKE_LINE_DELAY_S") or 0)
 
 
+# --- the fault surface (issue #24) -------------------------------------------
+# **Off by default, and that is a safety property, not a convenience.** A job
+# whose hyperparameters carry a fault spec is refused at creation unless the
+# deployment has explicitly turned the surface on -- `TEMPER_FAKE_PROVIDER`
+# (the zero-cost tier: the fake provider honours the faults) or
+# `TEMPER_FAULT_SURFACE` (the deliberate operator tier: lets a fault spec
+# reach a real machine so the trainer-side faults genuinely fire). Without
+# one of the two, no fault spec can even be created, so a fault surface that
+# can be switched on by accident in front of a user does not exist.
+FAULT_SURFACE = bool(os.environ.get("TEMPER_FAULT_SURFACE"))
+
+
+def fault_surface_refusal(name: str) -> dict | None:
+    """The coded refusal for launching a job carrying fault `name` under this
+    process's switches, or None when the fault may be caused.
+
+    The surface-on policy, defined once and read by the create path and the
+    orchestrator alike, so the two cannot drift. The fake provider (the
+    zero-cost tier) can cause every fault; the deliberate real tier can cause
+    only trainer-side faults, because provider-side faults are behaviour of
+    the fake provider seam and no real provider honours them. A provider-side
+    fault on the real tier is refused rather than launched under a history
+    that would claim a deliberate break no machine will make.
+    """
+    if FAKE_PROVIDER:
+        return None
+    if not FAULT_SURFACE:
+        return {
+            "code": "fault_surface_refused",
+            "message": (
+                "This job carries a fault spec, but the fault surface is off "
+                "by default. It can only be switched on deliberately: set "
+                "TEMPER_FAKE_PROVIDER for the zero-cost tier, or "
+                "TEMPER_FAULT_SURFACE for the deliberate real-hardware tier. "
+                "Nothing was launched."
+            ),
+        }
+    from temper_core import faults
+
+    if faults.side_of(name) == "provider":
+        return {
+            "code": "fault_not_causable",
+            "message": (
+                f"'{name}' is a provider-side fault: it is behaviour of the "
+                "provider seam, so it can only be caused on the zero-cost "
+                "tier (TEMPER_FAKE_PROVIDER). The deliberate real-hardware "
+                "tier has no provider that honours it, so it is refused "
+                "rather than launched under a history that claims a "
+                "deliberate break no machine will make. Nothing was "
+                "provisioned."
+            ),
+        }
+    return None
+
+
 # --- stored objects ----------------------------------------------------------
 # Spec 006 / issue #22: every stored object sits behind one storage seam, and
 # which implementation answers is configuration. The values here are parsed

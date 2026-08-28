@@ -106,6 +106,15 @@ CONFIG = OUT_DIR / "config.yaml"
 RESULT = OUT_DIR / "result.json"
 LOG = OUT_DIR / "train.log"
 
+# The environment variable this trainer reads its fault from (issue #24).
+# Trainer-side faults are an environment switch, by the spec's constraint; the
+# control plane writes the job's fault spec into this variable on the machine
+# and this process reads it, so the fault reaches the trainer without any new
+# seam. It is off by default: an unset or empty value means no fault. The name
+# is pinned equal to `temper_core.faults.FAULT_ENV` by a test, because the
+# trainer image cannot import that package (ADR-0010).
+FAULT_ENV = "TEMPER_FAULT_SPEC"
+
 # The run's seed, used once: it fixes both the model's weight init and the
 # held-out split (issue #53), so the same job spec reproduces the same run and
 # the same split. One value, read twice -- not two seeds that could disagree.
@@ -136,6 +145,186 @@ REQUIRED_HYPERPARAMETERS = set(_CONTRACT["defaults"]) | {"lora_use_rslora"}
 KNOWN_HYPERPARAMETERS = {f["name"] for f in _SCHEMA["fields"]} | {
     "lora_use_rslora"
 }
+
+
+def _fault_contract_path() -> Path:
+    """Find the fault surface's vocabulary (issue #24), sibling or tree.
+
+    The same lookup as the other contracts this trainer reads: beside this
+    file in the image at /opt/trainer, falling back to the workspace tree so
+    the host test suite resolves it without the image. The vocabulary -- the
+    six fault names, the `simulated_` code each carries and which side makes
+    it real -- is data, not code, so the trainer and the control plane's fake
+    provider cannot drift about what a fault is called.
+    """
+    sibling = Path(__file__).resolve().parent / "fault-surface.json"
+    if sibling.is_file():
+        return sibling
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "packages" / "contracts" / "fault-surface.json"
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "packages/contracts/fault-surface.json not found beside this file "
+        "or anywhere in the workspace tree"
+    )
+
+
+_FAULT_CONTRACT = json.loads(
+    _fault_contract_path().read_text(encoding="utf-8")
+)
+_FAULTS_BY_NAME = {f["name"]: f for f in _FAULT_CONTRACT["faults"]}
+
+# Where a deliberately exhausting allocation is parked so it outlives its
+# allocator thread (issue #24); empty on every path but an active `oom` fault.
+_HELD_MEMORY: list = []
+
+
+def _fault_entry(name: str) -> dict:
+    entry = _FAULTS_BY_NAME.get(name)
+    if entry is None:
+        raise ValueError(f"unknown simulated fault {name!r}")
+    return entry
+
+
+def _fault_spec_error(spec: dict) -> str | None:
+    """A reason this fault spec is invalid, or None when it is well-formed.
+
+    The trainer cannot import `temper_core.faults` (ADR-0010), so it runs the
+    same validation the control plane runs, against the same contract data: an
+    unknown fault, an unknown parameter, or a malformed parameter is refused
+    loudly rather than half-honoured -- a fault spec the caller believes is in
+    effect but is not is worse than a refusal.
+    """
+    name = spec.get("name")
+    entry = _FAULTS_BY_NAME.get(name) if isinstance(name, str) else None
+    if entry is None:
+        return f"'{name}' is not a fault the surface knows."
+    allowed = {*(entry.get("params") or []), "name"}
+    unknown = sorted(k for k in spec if k not in allowed)
+    if unknown:
+        return (
+            f"fault '{name}' does not take parameter(s) {unknown}; a "
+            "parameter the caller believes is in effect but is not is worse "
+            "than a refusal."
+        )
+    for key in ("after_line", "times", "machine_id"):
+        if key in spec:
+            try:
+                int(spec[key])
+            except (TypeError, ValueError):
+                return (
+                    f"fault parameter '{key}' must be a whole number, got "
+                    f"{spec[key]!r}"
+                )
+    if "delay_s" in spec:
+        try:
+            delay = float(spec["delay_s"])
+        except (TypeError, ValueError):
+            return (
+                f"fault parameter 'delay_s' must be a number, got "
+                f"{spec['delay_s']!r}"
+            )
+        if delay <= 0:
+            return (
+                f"fault parameter 'delay_s' must be positive, got "
+                f"{spec['delay_s']!r}"
+            )
+    return None
+
+
+def read_fault_spec(env_value: str | None) -> dict | None:
+    """The fault spec from the environment, validated, or None when off.
+
+    Off by default is a safety property: an unset or empty `TEMPER_FAULT_SPEC`
+    is the whole surface being off, and a value that is set but not a valid
+    fault spec is refused loudly rather than half-honoured.
+    """
+    if not env_value or not env_value.strip():
+        return None
+    try:
+        spec = json.loads(env_value)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{FAULT_ENV} is not JSON: {e}") from e
+    if not isinstance(spec, dict):
+        raise ValueError(f"{FAULT_ENV} must be an object with a 'name' string")
+    problem = _fault_spec_error(spec)
+    if problem is not None:
+        raise ValueError(problem)
+    return spec
+
+
+def apply_fault(cfg: dict, spec: dict) -> None:
+    """Mutate the Axolotl config so a requested trainer-side fault fires.
+
+    Only the divergence fault touches the config: a loss driven to a
+    meaningless value is made by handing the optimiser a learning rate no run
+    could survive, so this trainer replaces the resolved rate before the
+    config is written. It is the one place a fault overrides a resolved value
+    on purpose -- the fault is the point -- and the overridden rate is
+    recorded in the config the run writes, so the run's record says what
+    actually trained. The other trainer-side faults act at runtime
+    (`schedule_fault`), not on the config.
+    """
+    if spec["name"] != "divergence":
+        return
+    # The resolved spec always carries `learning_rate` (the trainer refuses a
+    # spec missing a required value rather than falling back), so it is read,
+    # not defaulted -- the trainer holds no defaults of its own.
+    cfg["learning_rate"] = float(cfg["learning_rate"]) * 1e6
+
+
+def schedule_fault(spec: dict) -> None:
+    """Arrange the runtime half of a trainer-side fault (issue #24).
+
+    `oom` holds almost all free device memory a little way into the run so
+    the next training step genuinely fails; `worker_kill` kills this process
+    as a killed worker would die, leaving no result document -- exactly the
+    interruption a resumption exists to recover from. `delay_s` is the chosen
+    point at which the fault fires, and it is a knob because the right value
+    depends on how long this job's model takes to load.
+    """
+    name = spec["name"]
+    if name == "oom":
+        threading.Timer(float(spec["delay_s"]), _exhaust_device_memory).start()
+    elif name == "worker_kill":
+        threading.Timer(float(spec["delay_s"]), _kill_worker).start()
+
+
+def _exhaust_device_memory() -> None:
+    """Hold (almost) all free device memory, so the next step cannot allocate.
+
+    Runs on the machine, never in the host suite: torch is provided by the
+    base image. `torch.cuda.mem_get_info` reports free bytes on the current
+    device; 98% leaves a little headroom so the allocation itself succeeds and
+    the *training step* is what fails -- the shape a genuine out-of-memory
+    has. The tensor is handed to a module-level holder so it stays alive for
+    the life of the process, which is the point.
+    """
+    import torch  # base image only (this trainer ships no dependencies)
+
+    if not torch.cuda.is_available():
+        return
+    free, _total = torch.cuda.mem_get_info()
+    try:
+        blob = torch.empty(int(free * 0.98), dtype=torch.uint8, device="cuda")
+    except RuntimeError:
+        return
+    _HELD_MEMORY.append(blob)
+
+
+def _kill_worker() -> None:
+    """Kill this process as a killed worker would die (issue #24).
+
+    No result document survives a SIGKILL -- the orchestrator sees a stream
+    that ended without a result, which is exactly what an interruption looks
+    like, and what a resumption would recover from.
+    """
+    import os as _os
+    import signal
+
+    _os.kill(_os.getpid(), signal.SIGKILL)
+
 
 # Top-level keys the job spec may carry. Spike 4 caught a real hole here: an
 # unknown key at the TOP level passed silently because only `hyperparameters`
@@ -720,6 +909,26 @@ def main() -> int:
             f"@{job.get('base_revision') or 'unpinned'}"
         )
 
+        # Issue #24: the fault surface, read from the environment and off by
+        # default. A set-but-malformed spec refuses loudly rather than running
+        # under a fault nobody can explain; a valid spec is recorded in the
+        # result document and named in the output, so a run this deliberately
+        # broke can never be mistaken for one that broke on its own.
+        fault_spec = None
+        raw_fault = os.environ.get(FAULT_ENV)
+        if raw_fault:
+            try:
+                fault_spec = read_fault_spec(raw_fault)
+            except ValueError:
+                result["error_code"] = "fault_surface_invalid"
+                raise
+            result["simulated_fault"] = fault_spec
+            log(
+                f"[trainer] simulated fault {fault_spec['name']}: "
+                f"{_fault_entry(fault_spec['name'])['description']}. "
+                "This run is deliberately broken."
+            )
+
         ds = JOB_DIR / "dataset.jsonl"
         if not ds.exists():
             raise FileNotFoundError(f"dataset not found at {ds}")
@@ -792,6 +1001,12 @@ def main() -> int:
 
         import yaml  # provided by the base image
 
+        # Issue #24: a divergence fault rewrites the resolved learning rate so
+        # the loss genuinely becomes meaningless; the sabotaged value is
+        # recorded in the config this run writes, because the run's record
+        # says what actually trained.
+        if fault_spec is not None:
+            apply_fault(cfg, fault_spec)
         CONFIG.write_text(yaml.safe_dump(cfg, sort_keys=True))
         result["config"] = cfg
         log(f"config written to {CONFIG}")
@@ -822,6 +1037,11 @@ def main() -> int:
 
         cmd = ["axolotl", "train", str(CONFIG)]
         log(f"running: {' '.join(cmd)}")
+        # Issue #24: the runtime half of a trainer-side fault is scheduled
+        # just before training starts, so oom and worker_kill fire at their
+        # chosen point a little way into the run.
+        if fault_spec is not None:
+            schedule_fault(fault_spec)
         t0 = time.time()
         # Sampled while the trainer runs, not after: the machine is destroyed
         # the moment the job ends, so the peak must be captured during the

@@ -60,6 +60,7 @@ from temper_core import (
     overrides,
     selection,
 )
+from temper_core import faults as fault_surface
 from temper_core.errors import Cancelled, OrchestratorError
 from temper_core.models import Models
 
@@ -104,6 +105,12 @@ NO_RESULT = json.dumps(
 RESULT_MARKER = "---RESULT---"
 DESTROY_ATTEMPTS = 3
 DESTROY_RETRY_DELAY_S = 5
+
+# The environment variable the trainer reads its fault from (issue #24).
+# Trainer-side faults are an environment switch, by the spec's constraint; the
+# name is defined once in `temper_core.faults` and pinned equal to the
+# trainer's own constant by a trainer test, so the two sides cannot drift.
+FAULT_ENV = fault_surface.FAULT_ENV
 
 # Cancellation says the same thing twice, at the two moments a user is
 # listening. The acknowledgement is one string used both as the API's answer
@@ -287,6 +294,19 @@ def _remote_script(
             }
             for grant in checkpoint_grants
         ]
+    # Issue #24: a fault spec only reaches the trainer's environment when the
+    # surface is switched on -- the fake provider (TEMPER_FAKE_PROVIDER) or
+    # the deliberate operator tier (TEMPER_FAULT_SURFACE). Otherwise the spec
+    # travels in the job spec where the simulated machine honours it, and no
+    # fault can ever fire against a real machine by accident. Single quotes
+    # are escaped for the shell literal the spec rides in.
+    fault_env = ""
+    fault_spec = fault_surface.from_hyperparameters(job.get("hyperparameters"))
+    if fault_spec is not None and (
+        config.FAKE_PROVIDER or config.FAULT_SURFACE
+    ):
+        payload = json.dumps(fault_spec).replace("'", "'\\''")
+        fault_env = f"  -e {FAULT_ENV}='{payload}'"
     script = f"""
 set -u
 say() {{ echo "[$(date +%H:%M:%S)] $*" >&2; }}
@@ -322,10 +342,13 @@ say "running training"
 # the framework beneath it are both Python, and Python buffers its stdout
 # whenever it is a pipe rather than a terminal -- so without this the container
 # holds minutes of output and the two layers outside it relay nothing.
+# `fault_env` (issue #24) carries the job's fault spec into the trainer's
+# environment when the surface is switched on, and nothing otherwise: a fault
+# the surface could not have switched on never reaches the trainer.
 sudo docker run --rm --gpus all \\
   -v /tmp/job:/job:ro -v /tmp/out:/out -e HF_HOME=/out/hf \\
   -e PYTHONUNBUFFERED=1 \\
-  {reference} 1>&2 || say "TRAINER EXITED NONZERO"
+{fault_env}  {reference} 1>&2 || say "TRAINER EXITED NONZERO"
 
 if [ -f /tmp/out/result.json ]; then
   echo "{RESULT_MARKER}"
@@ -852,6 +875,39 @@ def _attempt(
     machine nobody destroys.
     """
     job = db.require_job(job_id)
+
+    # Issue #24: the fault surface, off by default, and checked before
+    # anything else -- before model facts are resolved and long before
+    # anything is provisioned. A job whose spec carries a fault is refused
+    # here too (the create path already refused it; this is the belt for a
+    # row that slipped past, and a guard that only lives on one side of a
+    # money path is a hope). The policy (which switches permit which faults)
+    # is the one in `config`. When the surface is on, the injected fault is
+    # named in the run's own history, so a deliberately broken run can never
+    # be mistaken for a real one.
+    fault_spec = fault_surface.from_hyperparameters(job.get("hyperparameters"))
+    if fault_spec is not None:
+        name = fault_spec.get("name")
+        if not isinstance(name, str) or not fault_surface.is_known(name):
+            raise OrchestratorError(
+                "fault_unknown",
+                f"'{name}' is not a fault the surface knows; the job was "
+                "refused rather than run under a fault nobody can explain.",
+            )
+        problem = fault_surface.spec_error(fault_spec)
+        if problem is not None:
+            raise OrchestratorError("fault_invalid", problem)
+        refusal = config.fault_surface_refusal(name)
+        if refusal is not None:
+            raise OrchestratorError(refusal["code"], refusal["message"])
+        db.add_event(
+            job_id,
+            "log",
+            f"Simulated fault injected: {name} - "
+            f"{fault_surface.describe(name)}. This run is deliberately "
+            "broken and cannot be mistaken for a real one.",
+        )
+
     dataset = db.require_dataset(job["dataset_id"])
     model = catalog.get(job["base_model"]) or catalog.get(
         catalog.DEFAULT_MODEL

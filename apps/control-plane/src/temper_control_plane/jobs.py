@@ -15,7 +15,13 @@ from collections.abc import Sequence
 from fastapi import HTTPException
 
 from temper_control_plane import admission, config, db, orchestrator
-from temper_core import feasibility, hyperparams, overrides, surface
+from temper_core import (
+    faults,
+    feasibility,
+    hyperparams,
+    overrides,
+    surface,
+)
 
 
 def usable_dataset(dataset_id: str) -> dict:
@@ -134,6 +140,42 @@ def create(
     refusals = surface.validate_overrides(hyperparameters)
     if refusals:
         raise HTTPException(400, refusals[0])
+
+    # Issue #24: the fault surface is off by default, and "off" is enforced
+    # here at the single creation path, not hoped for downstream. A fault spec
+    # -- the dict form of `simulated_failure_code` -- can only be created when
+    # the deployment has deliberately switched the surface on, and a spec that
+    # names an unknown fault or carries a parameter that fault does not take
+    # is refused before anything is priced: a fault spec the caller believes
+    # is in effect but is not is worse than a refusal. The policy (which
+    # switches permit which faults) is defined once in `config`.
+    fault_spec = faults.from_hyperparameters(hyperparameters)
+    if fault_spec is not None:
+        name = fault_spec.get("name")
+        if not isinstance(name, str) or not faults.is_known(name):
+            raise HTTPException(
+                400,
+                {
+                    "code": "fault_unknown",
+                    "message": (
+                        f"'{name}' is not a fault the surface knows; the job "
+                        "was refused rather than run under a fault nobody can "
+                        "explain."
+                    ),
+                },
+            )
+        problem = faults.spec_error(fault_spec)
+        if problem is not None:
+            raise HTTPException(
+                400,
+                {
+                    "code": "fault_invalid",
+                    "message": problem,
+                },
+            )
+        refusal = config.fault_surface_refusal(name)
+        if refusal is not None:
+            raise HTTPException(400, refusal)
 
     base_hp = hyperparams.effective(hyperparameters)
     # The frozen record is the user's request, coerced to the schema's type
