@@ -233,6 +233,8 @@ def harness(isolated, tmp_path, monkeypatch):
     from temper_control_plane import fake_provider, main, orchestrator
 
     monkeypatch.setattr(orchestrator, "DESTROY_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(orchestrator, "TEARDOWN_CONFIRM_INTERVAL_S", 0)
+    monkeypatch.setattr(orchestrator, "TEARDOWN_CONFIRM_TIMEOUT_S", 2)
     # The checked-in image contract starts unpublished (issue #44); the suites
     # that drive a real `run_job` inject a reference so the pull-by-digest
     # path is exercised. The refusal is pinned by its own test, below.

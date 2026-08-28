@@ -97,6 +97,7 @@ repository becomes public at submission.
 | [0054](0054-every-artifact-ships-with-a-generated-provenance-manifest.md) | Every artifact ships with a generated provenance manifest | accepted | 2026-08-28 |
 | [0055](0055-divergence-is-detected-on-the-streamed-loss-and-offers-a-single-retry.md) | Divergence is detected on the streamed loss and offers a single retry as a choice | accepted | 2026-08-28 |
 | [0056](0056-a-mixture-of-experts-model-is-usable-and-labelled-untested.md) | A mixture-of-experts model is usable and labelled untested — supersedes 0050, stating that the mechanics reasoning was sound and the consequence was not | accepted | 2026-08-28 |
+| [0057](0057-teardown-is-confirmed-across-consecutive-observations.md) | Teardown is confirmed across consecutive observations | accepted | 2026-08-28 |
 | [0058](0058-the-finished-job-s-event-history-is-paginated-and-disclosed.md) | The finished job's event history is paginated and disclosed | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the

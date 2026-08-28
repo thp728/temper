@@ -131,6 +131,8 @@ def harness(isolated, tmp_path, monkeypatch):
     from temper_control_plane import main, orchestrator
 
     monkeypatch.setattr(orchestrator, "DESTROY_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(orchestrator, "TEARDOWN_CONFIRM_INTERVAL_S", 0)
+    monkeypatch.setattr(orchestrator, "TEARDOWN_CONFIRM_TIMEOUT_S", 2)
     monkeypatch.setattr(
         orchestrator,
         "published_reference",

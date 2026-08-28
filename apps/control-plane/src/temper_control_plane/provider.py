@@ -110,10 +110,20 @@ class Machine:
     `handle` is how the implementation reaches the machine and is opaque to
     everything outside it — the SSH implementation stores a command, a push
     transport would store a URL. Nothing in the orchestrator reads it.
+
+    `status` is the provider's view of the machine's lifecycle. A machine
+    that is still billing but mid-destroy reports `destroying` — this is
+    what the eventual-consistency observation is about (spec 010, C17):
+    after a destroy the listing can read absent, then reappear as
+    destroying, then go absent for good. Treating `destroying` as gone
+    is the mistake the confirmation rule exists to close, and the
+    teardown and the reconciler must both treat it as not yet confirmed
+    rather than as a stray.
     """
 
     machine_id: int
     handle: str = ""
+    status: str = "running"
 
 
 class Provider(Protocol):
@@ -158,7 +168,23 @@ class Provider(Protocol):
 
     def destroy(self, machine_id: int) -> None: ...
 
-    def list_machine_ids(self) -> list[int]: ...
+    def list_machines(self) -> Sequence[Machine]:
+        """Every machine the provider still bills, with its lifecycle status.
+
+        `destroying` is the state the confirmation rule treats as not yet
+        confirmed (spec 010, C17): a machine in `destroying` is still
+        present and still billing, not a stray to be counted or collected
+        twice. A provider that lists absent-then-destroying-then-absent
+        is the reason confirmation requires consecutive absences.
+        """
+
+    def list_machine_ids(self) -> list[int]:
+        """Billing machine ids, derived from `list_machines`.
+
+        Kept for callers that only need ids; the confirmation path reads
+        `list_machines` so it can see `destroying` explicitly rather than
+        inferring it from presence.
+        """
 
     def close(self) -> None: ...
 
@@ -508,8 +534,24 @@ class JarvisLabsProvider:
     def destroy(self, machine_id: int) -> None:
         self._client.instances.destroy(machine_id)
 
+    def list_machines(self) -> Sequence[Machine]:
+        machines: list[Machine] = []
+        for inst in self._client.instances.list():
+            raw = getattr(inst, "status", None) or getattr(inst, "state", None)
+            status = str(raw).lower() if raw else "running"
+            # Normalise provider spellings: "Destroying" and "destroying" are the
+            # same transitional state the confirmation rule must not count as
+            # absent (spec 010, C17). Anything not destroying is treated as
+            # running for the confirmation's purpose.
+            if "destroy" in status:
+                status = "destroying"
+            else:
+                status = "running"
+            machines.append(Machine(machine_id=inst.machine_id, status=status))
+        return machines
+
     def list_machine_ids(self) -> list[int]:
-        return [i.machine_id for i in self._client.instances.list()]
+        return [m.machine_id for m in self.list_machines()]
 
     def close(self) -> None:
         close = getattr(self._client, "close", None)

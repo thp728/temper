@@ -109,6 +109,17 @@ RESULT_MARKER = "---RESULT---"
 DESTROY_ATTEMPTS = 3
 DESTROY_RETRY_DELAY_S = 5
 
+# Teardown confirmation (spec 010, spike/teardown.py C17). The provider's
+# listing is eventually consistent: after a destroy the machine can read
+# absent, then reappear as `destroying`, then go absent for good. A single
+# absent observation is therefore not evidence; confirmation requires
+# consecutive absent listings, and a machine reported as `destroying` is
+# treated as not yet confirmed rather than as a stray that will be
+# retried or counted as leaked.
+TEARDOWN_CONFIRM_SAMPLES = 3
+TEARDOWN_CONFIRM_INTERVAL_S = 1.0
+TEARDOWN_CONFIRM_TIMEOUT_S = 30.0
+
 # The environment variable the trainer reads its fault from (issue #24).
 # Trainer-side faults are an environment switch, by the spec's constraint; the
 # name is defined once in `temper_core.faults` and pinned equal to the
@@ -896,32 +907,99 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
     A destroy call that returns cleanly is a claim. The evidence is the machine
     no longer being listed, and a machine that is still listed is billing right
     now — so it is reported as an error an operator cannot miss.
+
+    The listing itself is eventually consistent (spec 010, spike/teardown.py
+    C17): after a destroy the provider can report absent, then reappear as
+    `destroying`, then go absent for good. A single absent observation is
+    therefore not proof; confirmation requires `TEARDOWN_CONFIRM_SAMPLES`
+    consecutive absent listings, and a machine reported as `destroying` is
+    treated as not yet confirmed rather than as a stray. A  `destroy` the
+    provider refuses is retried `DESTROY_ATTEMPTS` times and, when exhausted,
+    escalated as a loud error — an orphaned GPU bills until someone notices.
     """
+    last_exc: Exception | None = None
+    destroyed = False
     for attempt in range(DESTROY_ATTEMPTS):
         try:
             provider.destroy(machine.machine_id)
             db.add_event(
                 job_id, "log", f"Machine {machine.machine_id} destroyed"
             )
+            destroyed = True
             break
         except Exception as e:
-            db.add_event(job_id, "error", f"Destroy attempt failed: {e}")
-            if attempt < DESTROY_ATTEMPTS - 1:
-                time.sleep(DESTROY_RETRY_DELAY_S)
-    try:
-        if machine.machine_id in provider.list_machine_ids():
+            last_exc = e
             db.add_event(
                 job_id,
                 "error",
-                f"STRAY MACHINE {machine.machine_id} still listed — "
-                f"destroy it manually, it is billing",
+                f"Destroy attempt failed: {e} (attempt {attempt + 1}/{DESTROY_ATTEMPTS})",
             )
-    except Exception as e:
+            if attempt < DESTROY_ATTEMPTS - 1:
+                time.sleep(DESTROY_RETRY_DELAY_S)
+    if not destroyed:
         db.add_event(
             job_id,
             "error",
-            f"Could not confirm teardown of machine {machine.machine_id}: {e}",
+            f"Machine {machine.machine_id} destroy refused after "
+            f"{DESTROY_ATTEMPTS} attempts: {last_exc}; still billing — "
+            f"manual removal required",
         )
+    # Confirmation: require consecutive absent observations. `destroying`
+    # is not absent — it is still billing and still present, so it resets
+    # the counter rather than being counted as a stray.
+    consecutive_absent = 0
+    start = time.time()
+    while time.time() - start < TEARDOWN_CONFIRM_TIMEOUT_S:
+        try:
+            machines = provider.list_machines()
+            match = next(
+                (m for m in machines if m.machine_id == machine.machine_id),
+                None,
+            )
+            if match is None:
+                status = "ABSENT"
+            else:
+                raw = getattr(match, "status", "running")
+                status = str(raw).lower() if raw else "running"
+                if "destroy" in status:
+                    status = "destroying"
+                else:
+                    status = "running"
+
+            if status == "ABSENT":
+                consecutive_absent += 1
+                if consecutive_absent >= TEARDOWN_CONFIRM_SAMPLES:
+                    db.add_event(
+                        job_id,
+                        "log",
+                        f"Teardown confirmed: machine {machine.machine_id} "
+                        f"absent in {TEARDOWN_CONFIRM_SAMPLES} consecutive listings",
+                    )
+                    return
+            elif status == "destroying":
+                db.add_event(
+                    job_id,
+                    "log",
+                    f"Machine {machine.machine_id} still destroying — "
+                    f"not yet confirmed",
+                )
+                consecutive_absent = 0
+            else:
+                consecutive_absent = 0
+        except Exception as e:
+            db.add_event(
+                job_id,
+                "error",
+                f"Could not confirm teardown of machine {machine.machine_id}: {e}",
+            )
+            consecutive_absent = 0
+        time.sleep(TEARDOWN_CONFIRM_INTERVAL_S)
+    db.add_event(
+        job_id,
+        "error",
+        f"STRAY MACHINE {machine.machine_id} still listed — "
+        f"destroy it manually, it is billing",
+    )
 
 
 def _stall_reporter(job_id: str, limits: RunLimits):
