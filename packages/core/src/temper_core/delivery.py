@@ -96,11 +96,6 @@ def _formats() -> dict[str, DeliveryFormat]:
 
 FORMATS: dict[str, DeliveryFormat] = _formats()
 
-# The artifact kind each delivery format maps to. Defined here because a format
-# is a delivery-time concept and a kind is an artifact-time concept; the map is
-# the one place the two vocabularies meet.
-KIND_BY_FORMAT: dict[str, str] = {fmt.id: fmt.kind for fmt in FORMATS.values()}
-
 
 class UnknownDeliveryFormat(ValueError):
     """A format id this module does not define.

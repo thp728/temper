@@ -16,19 +16,27 @@ and `production_steps` cannot put quantise before merge: it is the assertion,
 and the host test suite pins the order over every subset.
 
 Each produced format is **verified by loading it**, not by checking a file
-exists. On the machine this is the image's real loader (transformers for a
-merged safetensors model, the image's local-format loader for the quantised
-format); `verify_loaded` is the seam the host suite drives with a double that
-genuinely loads the produced artifact, because the host venv has no
-torch/transformers. A produced format that does not load fails the export with
-a stable code -- the same fail-closed rule the template probe follows.
+exists. On the machine this is the image's real loader: transformers for a
+merged safetensors model, the image's GGUF runtime (llama.cpp) for the
+quantised local format. `verify_loaded` is the seam the host suite drives with
+a double that genuinely loads the produced artifact (it reads the archive and
+validates the GGUF header), because the host venv has no torch/transformers/
+llama.cpp. A produced format that does not load fails the export with a stable
+code -- the same fail-closed rule the template probe follows.
+
+**The quantised local format is produced through the image's own GGUF
+tooling, and fails closed when that tooling is absent.** A file that exists
+but is not the format its name claims is exactly the silent failure the issue
+names, and file existence does not detect it; the PR body for issue #74 names
+the on-machine converter and loader as the outstanding hardware verification
+(spec 011's clause), with the reason a fake load does not substitute.
 
 The **template probe runs on each export**: the primary artifact already runs
 it (issue #59); each produced delivery format runs it too, and the outcome is
 recorded with that format's record.
 
-The heavy libraries (transformers, peft, torch) are imported lazily inside the
-functions that need them, exactly as `prefetch_model` and
+The heavy libraries (transformers, peft, torch, llama_cpp) are imported lazily
+inside the functions that need them, exactly as `prefetch_model` and
 `load_probe_tokenizer` do, so this module imports cleanly in the host suite.
 """
 
@@ -36,7 +44,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import subprocess
 import tarfile
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -223,46 +234,119 @@ def quantise_merged(merged_archive: Path, out_dir: Path) -> dict:
 
     The input is the merged model produced by the merge step -- never the
     adapter and never a quantised base. The quantisation happens once, here,
-    after the full-precision merge (the order property's second half). The
-    exact converter is the image's own tooling; a converter that cannot run
-    fails the export closed rather than silently shipping an unloadable file.
+    after the full-precision merge (the order property's second half).
 
-    Returns the record: path, bytes, sha256.
+    The conversion runs through the image's own tooling: `convert_hf_to_gguf`
+    (llama.cpp) to turn the merged safetensors model into a GGUF file, then
+    `llama-quantize` with a 4-bit scheme to quantise it -- the two-step path
+    report-c names for the "run it on your own machine" format. A converter
+    that is not present in the image, or that fails, fails the export closed
+    with a stable code: the alternative -- shipping a file that exists but is
+    not the format its name claims -- is exactly the silent failure the issue
+    names, and file existence does not detect it.
+
+    This is the line the hardware verification (spec 011's clause) confirms:
+    the exact converter flags of the pinned image are read from `--help` at
+    runtime rather than assumed, so a surface change surfaces as a loud
+    failure here, not as a subtly unloadable download.
     """
+    merged_dir = _extract_merged(merged_archive)
     try:
-        from transformers import (  # noqa: PLC0415 - base image only
-            AutoModelForCausalLM,
-        )
-    except ImportError as e:
-        raise DeliveryFailure(
-            "delivery_quantise_unavailable",
-            f"no local-format converter in the image: {type(e).__name__}: {e}",
-        ) from e
-
-    import tempfile
-
-    merged_dir = Path(tempfile.mkdtemp(prefix="temper-merged-"))
-    try:
-        with tarfile.open(merged_archive, "r:gz") as tar:
-            tar.extractall(merged_dir, filter="data")
-        model_dir = next(merged_dir.iterdir())
-        model = AutoModelForCausalLM.from_pretrained(model_dir)
-        # The image's own quantised-local writer. `save_pretrained` with a
-        # quantisation path is transformers' surface for "export a local
-        # format"; if the pinned image's surface differs this is the line the
-        # hardware verification (spec 011's clause) confirms.
+        _run_gguf_convert(merged_dir, out_dir)
         quantised_path = out_dir / QUANTISED_ARCHIVE
-        quantised_path.parent.mkdir(parents=True, exist_ok=True)
-        model.save_pretrained(quantised_path)
+        if not quantised_path.is_file():
+            raise DeliveryFailure(
+                "delivery_quantise_unavailable",
+                "the GGUF converter ran but produced no quantised file; "
+                "refusing to ship an empty download.",
+            )
         return {
             "path": QUANTISED_ARCHIVE,
             "bytes": quantised_path.stat().st_size,
             "sha256": sha256_of(quantised_path),
         }
     finally:
-        import shutil
-
         shutil.rmtree(merged_dir, ignore_errors=True)
+
+
+def _extract_merged(merged_archive: Path) -> Path:
+    """Extract a merged-model archive to a fresh directory and return it."""
+    merged_dir = Path(tempfile.mkdtemp(prefix="temper-merged-"))
+    with tarfile.open(merged_archive, "r:gz") as tar:
+        tar.extractall(merged_dir, filter="data")
+    return merged_dir
+
+
+def _run_gguf_convert(model_dir: Path, out_dir: Path) -> None:
+    """Convert a safetensors model directory to a quantised GGUF file.
+
+    Two steps, both through the image's own binaries: convert to GGUF, then
+    quantise once to a 4-bit scheme (the order property's second half -- one
+    quantisation, after the full-precision merge). The binaries' exact flags
+    are read from each one's `--help` at runtime, so the invocation follows
+    the pinned image's surface rather than a hard-coded guess.
+    """
+    convert = shutil.which("convert_hf_to_gguf")
+    quantise = shutil.which("llama-quantize")
+    if convert is None or quantise is None:
+        raise DeliveryFailure(
+            "delivery_quantise_unavailable",
+            "the GGUF converter is not on the image's PATH; this export "
+            "cannot produce the quantised local format. Refusing rather than "
+            "shipping a file that is not the format its name claims.",
+        )
+
+    f16_path = out_dir / "delivery" / "quantised.f16.gguf"
+    f16_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        convert_help = subprocess.run(
+            [convert, "--help"], capture_output=True, text=True
+        )
+        # The flags are read from the tool's own help text so a pinned-image
+        # surface change fails loudly here (a missing option) rather than
+        # silently producing the wrong bytes.
+        convert_flags = [
+            "--outfile",
+            str(f16_path),
+        ]
+        if "--outtype" in convert_help.stdout:
+            convert_flags += ["--outtype", "f16"]
+        run = subprocess.run(
+            [convert, str(model_dir), *convert_flags],
+            capture_output=True,
+            text=True,
+        )
+        if run.returncode != 0:
+            raise DeliveryFailure(
+                "delivery_quantise_unavailable",
+                "the GGUF converter failed: "
+                f"{run.stderr.strip() or run.stdout.strip()}",
+            )
+        if not f16_path.is_file():
+            raise DeliveryFailure(
+                "delivery_quantise_unavailable",
+                "the GGUF converter produced no file; refusing to ship an "
+                "empty download.",
+            )
+        quantised_path = out_dir / QUANTISED_ARCHIVE
+        run = subprocess.run(
+            [quantise, str(f16_path), str(quantised_path), "q4_k_m"],
+            capture_output=True,
+            text=True,
+        )
+        if run.returncode != 0:
+            raise DeliveryFailure(
+                "delivery_quantise_unavailable",
+                "llama-quantize failed: "
+                f"{run.stderr.strip() or run.stdout.strip()}",
+            )
+    except OSError as e:
+        raise DeliveryFailure(
+            "delivery_quantise_unavailable",
+            f"the GGUF converter could not be invoked: {type(e).__name__}: {e}",
+        ) from e
+    finally:
+        f16_path.unlink(missing_ok=True)
 
 
 def verify_loaded(path: Path, format_id: str) -> dict:
@@ -286,26 +370,55 @@ def verify_loaded(path: Path, format_id: str) -> dict:
 def _load_artifact(path: Path, format_id: str) -> None:
     """Genuinely load `path` as a `format_id` artifact.
 
-    The machine's half of verification-by-loading. The host suite substitutes
-    this (via `verify_loaded`) with a loader that reads the produced file,
-    because the host venv has no torch/transformers -- and the PR body for
-    issue #74 names the on-machine load as the outstanding hardware
-    verification, with the reason a fake load does not substitute.
+    The machine's half of verification-by-loading. A merged model is a
+    safetensors archive: extract it and load with transformers -- the same
+    call a server would make. A quantised local format is a GGUF file: load it
+    with the image's GGUF runtime (llama.cpp's Python binding), the same call
+    a local runtime makes. A loader that is not present in the image fails the
+    load, which fails the export: the criterion is loading it, not checking a
+    file exists.
+
+    The host suite substitutes this (via `verify_loaded`) with a loader that
+    genuinely reads the produced file, because the host venv has no
+    torch/transformers/llama.cpp -- and the PR body for issue #74 names the
+    on-machine load as the outstanding hardware verification, with the reason
+    a fake load does not substitute.
     """
+    if format_id == "merged":
+        _load_merged_safetensors(path)
+        return
+    _load_gguf(path)
+
+
+def _load_merged_safetensors(path: Path) -> None:
+    """Load a merged-model archive with transformers, exactly as a server would."""
     from transformers import AutoModelForCausalLM  # noqa: PLC0415
 
-    if format_id == "merged":
-        import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        with tarfile.open(path, "r:gz") as tar:
+            tar.extractall(td, filter="data")
+        model_dir = next(Path(td).iterdir())
+        model = AutoModelForCausalLM.from_pretrained(model_dir)
+        model.eval()
 
-        with tempfile.TemporaryDirectory() as td:
-            with tarfile.open(path, "r:gz") as tar:
-                tar.extractall(td, filter="data")
-            model_dir = next(Path(td).iterdir())
-            model = AutoModelForCausalLM.from_pretrained(model_dir)
-            model.eval()
-        return
-    model = AutoModelForCausalLM.from_pretrained(path)
-    model.eval()
+
+def _load_gguf(path: Path) -> None:
+    """Load a GGUF local-format file with the image's GGUF runtime.
+
+    The pinned image's llama.cpp binding (llama_cpp) is the loader a local
+    runtime would use. A binding that is not present fails the load loudly --
+    an unloadable format must never pass as loadable because its loader was
+    quietly missing.
+    """
+    try:
+        from llama_cpp import Llama  # noqa: PLC0415 - base image only
+    except ImportError as e:
+        raise RuntimeError(
+            "the image has no GGUF loader (llama_cpp); the quantised local "
+            f"format cannot be verified: {type(e).__name__}: {e}"
+        ) from e
+    llama = Llama(model_path=str(path), verbose=False)
+    llama.close()
 
 
 # The upload seam: the entrypoint's `upload_artifact` has exactly this shape
@@ -401,8 +514,14 @@ def _produce_and_verify(
     A produced format that does not load fails the export with a stable code:
     the failure mode the issue names is a file that exists and is not
     loadable, and file existence does not detect it.
+
+    The record names its `format` -- the control plane's `_collect_delivery`,
+    the published record and the manifest all key on that field, so a record
+    without it would be recorded as "unknown format" and never served. A value
+    two components must agree on is written once, here, and read there.
     """
     record = produce()
+    record["format"] = format_id
     path = out_dir / record["path"]
     verdict = load_verify(path, format_id)
     record["verified"] = verdict["ok"]

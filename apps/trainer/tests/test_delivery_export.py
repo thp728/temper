@@ -12,6 +12,7 @@ docstring and the PR body for what runs on the machine).
 from __future__ import annotations
 
 import json
+import struct
 from pathlib import Path
 
 import delivery
@@ -86,9 +87,13 @@ def _loading_loader(path: Path, format_id: str) -> dict:
 
     For the merged format it opens the tar and confirms a model directory with
     a config.json is present -- the load a downloader's extraction performs.
-    This is the criterion's host-side evidence: the file is loaded (its
-    structure read and validated), not merely asserted to exist.
+    For the quantised format it reads the GGUF file header: a real GGUF begins
+    with the 4-byte magic 0x46554747, so a file that does not carry it is not
+    the format its name claims. This is the criterion's host-side evidence:
+    the file is loaded (its structure read and validated), not merely asserted
+    to exist.
     """
+    import struct
     import tarfile
 
     if format_id == "merged":
@@ -97,8 +102,10 @@ def _loading_loader(path: Path, format_id: str) -> dict:
         assert any(n.startswith("model/") for n in names)
         assert "model/config.json" in names
         return {"ok": True}
-    if not path.is_file() or path.stat().st_size == 0:
-        return {"ok": False, "error": "empty"}
+    with path.open("rb") as f:
+        magic = f.read(4)
+    if len(magic) != 4 or struct.unpack("<I", magic)[0] != 0x46554747:
+        return {"ok": False, "error": "not a GGUF file (bad magic)"}
     return {"ok": True}
 
 
@@ -173,6 +180,67 @@ def test_a_produced_format_that_cannot_be_loaded_fails_the_export(
     assert excinfo.value.error_code == "delivery_unloadable"
 
 
+def test_a_quantised_file_that_is_not_a_real_gguf_fails_the_export(
+    tmp_path, monkeypatch
+):
+    """THE criterion for the local format: a file that exists but is not the
+    format its name claims is the silent failure the issue names. A produced
+    'quantised.gguf' that does not carry the GGUF magic must fail the export,
+    because the loader genuinely reads the header rather than checking size."""
+    out = tmp_path / "out"
+    merged_archive = out / "delivery" / "merged.tar.gz"
+    _write_fake_merged_archive(merged_archive)
+
+    def fake_merge(job, out_dir):
+        return {
+            "path": "delivery/merged.tar.gz",
+            "members": ["config.json"],
+            "bytes": merged_archive.stat().st_size,
+            "sha256": delivery.sha256_of(merged_archive),
+        }
+
+    def fake_quantise(merged_archive, out_dir):
+        q = out / "delivery" / "quantised.gguf"
+        # A non-empty file with the wrong magic: file existence does not
+        # detect this, the loader does.
+        q.write_bytes(b"not a gguf at all")
+        return {
+            "path": "delivery/quantised.gguf",
+            "bytes": 18,
+            "sha256": "y" * 64,
+        }
+
+    monkeypatch.setattr(delivery, "merge_adapter", fake_merge)
+    monkeypatch.setattr(delivery, "quantise_merged", fake_quantise)
+    job = {"delivery": ["quantised"]}
+    with pytest.raises(DeliveryFailure) as excinfo:
+        delivery.run_delivery(
+            job,
+            out,
+            lambda url, path: {"ok": True},
+            tokenizer=None,
+            probe=lambda job, cfg, tokenizer: _ok_outcome(),
+            load_verify=_loading_loader,
+            grants=[{"format": "quantised", "url": "u://g"}],
+        )
+    assert excinfo.value.error_code == "delivery_unloadable"
+
+
+def test_quantise_fails_closed_when_the_image_has_no_converter(
+    tmp_path, monkeypatch
+):
+    """The quantised local format is produced by the image's own GGUF tooling.
+    A converter that is not present fails the export closed rather than
+    shipping a file that is not the format its name claims."""
+    out = tmp_path / "out"
+    merged_archive = out / "delivery" / "merged.tar.gz"
+    _write_fake_merged_archive(merged_archive)
+    monkeypatch.setattr(delivery.shutil, "which", lambda name: None)
+    with pytest.raises(DeliveryFailure) as excinfo:
+        delivery.quantise_merged(merged_archive, out)
+    assert excinfo.value.error_code == "delivery_quantise_unavailable"
+
+
 def _ok_outcome():
     class _O:
         def as_dict(self):
@@ -215,10 +283,13 @@ def test_run_delivery_merges_before_it_quantises(tmp_path, monkeypatch):
     def fake_quantise(merged_archive, out_dir):
         calls.append("quantise")
         q = out / "delivery" / "quantised.gguf"
-        q.write_bytes(b"gguf")
+        # A real GGUF begins with the 4-byte magic, so the host loader can
+        # genuinely load it (read and validate the header), not merely see
+        # that a file exists.
+        q.write_bytes(struct.pack("<I", 0x46554747) + b"rest")
         return {
             "path": "delivery/quantised.gguf",
-            "bytes": 4,
+            "bytes": 8,
             "sha256": "x" * 64,
         }
 

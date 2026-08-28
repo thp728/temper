@@ -818,6 +818,25 @@
         "title": "DecisionOverride",
         "type": "object"
       },
+      "DeliveryFormatOption": {
+        "description": "One delivery format a launch may ask for, with its plain-language\npurpose. `id` is the request value the launch sends; `what_for` is the\nsentence a user chooses by, defined once in the domain (issue #74).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "what_for": {
+            "title": "What For",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "what_for"
+        ],
+        "title": "DeliveryFormatOption",
+        "type": "object"
+      },
       "DeliveryFormatRecord": {
         "description": "One produced delivery format, as the interface is allowed to see it.\n\nIssue #74: beyond the canonical artifact, a job can produce a merged\nsingle-file model and a quantised local-inference format. Each is served\nat the artifact route with a `format` query parameter, and each download\ncarries a manifest generated from the run record (ADR-0054 flow-through).\n`what_for` is the plain-language purpose a user chooses by, defined once\nin the domain; `kind` is the artifact kind the format is delivered as.\nLike `ArtifactRecord`, this publishes member names and never storage keys.",
         "properties": {
@@ -1537,10 +1556,17 @@
         "type": "object"
       },
       "JobSpecPreview": {
-        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\nDeliberately quote-free: the plan page renders immediately and fetches the\nquote for the selected model afterwards, because an estimate never blocks\nthe surface it appears on (spec 005).",
+        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\n`delivery_formats` (issue #74) are the delivery formats a launch may ask\nfor beyond the canonical artifact, each with its plain-language purpose --\nread from the one `temper_core.delivery` vocabulary, so the launch screen\nand the finished page describe a format the same way.\n\nDeliberately quote-free: the plan page renders immediately and fetches the\nquote for the selected model afterwards, because an estimate never blocks\nthe surface it appears on (spec 005).",
         "properties": {
           "dataset": {
             "$ref": "#/components/schemas/DatasetRecord"
+          },
+          "delivery_formats": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryFormatOption"
+            },
+            "title": "Delivery Formats",
+            "type": "array"
           },
           "hyperparameters": {
             "additionalProperties": true,

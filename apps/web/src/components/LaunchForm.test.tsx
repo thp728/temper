@@ -195,6 +195,18 @@ function preview(overrides: Partial<JobSpecPreview> = {}): JobSpecPreview {
       num_epochs: 3,
     },
     warning: null,
+    delivery_formats: [
+      {
+        id: "merged",
+        what_for:
+          "The base model with your trained change built into its full weights — serve it directly.",
+      },
+      {
+        id: "quantised",
+        what_for:
+          "A compact local-inference version of the merged model — run it on your own machine.",
+      },
+    ],
     ...overrides,
   };
 }

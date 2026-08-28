@@ -87,6 +87,21 @@ def _launch_via_fake(monkeypatch, provider):
 # --- creation: the request is validated and frozen ----------------------------
 
 
+def test_the_spec_preview_offers_the_delivery_formats_with_their_purpose(
+    client, tmp_path
+):
+    """The launch screen offers each format by what it is for, read from the
+    one delivery vocabulary -- the same sentences the finished page shows, so
+    the two surfaces cannot drift about what a format is (ADR-0010)."""
+    ds = _valid_dataset(client, tmp_path)
+    r = client.get("/v1/jobs/spec", params={"dataset_id": ds})
+    assert r.status_code == 200
+    formats = {d["id"]: d for d in r.json()["delivery_formats"]}
+    assert set(formats) == {"adapter", "merged", "quantised"}
+    for fmt in formats.values():
+        assert fmt["what_for"].strip()
+
+
 def test_a_delivery_request_is_accepted_and_frozen(client, tmp_path):
     job = _job_request(client, tmp_path, delivery=["merged", "quantised"])
     # Frozen at creation, like the hyperparameters: the run says what it was

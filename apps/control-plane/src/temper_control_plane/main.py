@@ -440,10 +440,22 @@ def get_job_spec_preview(dataset_id: str):
     warn = feasibility.warning(
         feasibility.usable_rows(ds), {}, config.MAX_JOB_DURATION_S
     )
+    # Issue #74: the delivery formats a launch may ask for, read from the one
+    # domain vocabulary -- the launch screen offers each by what it is for,
+    # exactly as the finished page does, so the two cannot drift about what a
+    # format is.
+    delivery_formats = [
+        {
+            "id": fmt.id,
+            "what_for": fmt.what_for,
+        }
+        for fmt in delivery.FORMATS.values()
+    ]
     return {
         "dataset": ds,
         "hyperparameters": hyperparams.effective({}),
         "warning": warn,
+        "delivery_formats": delivery_formats,
     }
 
 

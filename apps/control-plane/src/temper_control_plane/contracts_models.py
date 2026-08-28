@@ -516,6 +516,11 @@ class JobSpecPreview(BaseModel):
     overrides -- showing anything else would describe a job the trainer will
     not run.
 
+    `delivery_formats` (issue #74) are the delivery formats a launch may ask
+    for beyond the canonical artifact, each with its plain-language purpose --
+    read from the one `temper_core.delivery` vocabulary, so the launch screen
+    and the finished page describe a format the same way.
+
     Deliberately quote-free: the plan page renders immediately and fetches the
     quote for the selected model afterwards, because an estimate never blocks
     the surface it appears on (spec 005)."""
@@ -523,6 +528,16 @@ class JobSpecPreview(BaseModel):
     dataset: DatasetRecord
     hyperparameters: dict[str, Any]
     warning: FeasibilityWarning | None = None
+    delivery_formats: list[DeliveryFormatOption] = Field(default_factory=list)
+
+
+class DeliveryFormatOption(BaseModel):
+    """One delivery format a launch may ask for, with its plain-language
+    purpose. `id` is the request value the launch sends; `what_for` is the
+    sentence a user chooses by, defined once in the domain (issue #74)."""
+
+    id: str
+    what_for: str
 
 
 class StageActual(BaseModel):
