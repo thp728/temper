@@ -353,22 +353,29 @@ DEFAULT_STORAGE_ROOT = REPO_ROOT / "data" / "objects"
 
 STORAGE_ROOT = Path(_text("TEMPER_STORAGE_ROOT") or DEFAULT_STORAGE_ROOT)
 
-# Where the SQLite database lives, under `/data/` with everything else
-# runtime-written (test_storage_paths pins that boundary). Overridable so the
+# Where the PostgreSQL database lives (issue #43: the local SQLite file is
+# replaced by a real relational store, connected to by URL rather than
+# resolved to a path -- the value two processes must agree on is the
+# connection string, not a filesystem location under `/data/`).
+# `compose.yaml` starts a `postgres` service and points this at it; a bare
+# local run needs one already listening (`just db-up`). Overridable so the
 # e2e journeys can run their control plane against a database of their own
 # rather than the developer's -- the same ownership rule as the journeys'
 # ports: a journey must not inherit another surface's orphans, and an
 # interrupted journey run must not be able to poison the database the next
 # gate run boots against.
-DEFAULT_DB_PATH = REPO_ROOT / "data" / "temper.db"
+DEFAULT_DATABASE_URL = (
+    "postgresql://temper:temper@localhost:5432/temper"
+)
 
-DB_PATH = Path(_text("TEMPER_DB_PATH") or DEFAULT_DB_PATH)
+DATABASE_URL = _text("TEMPER_DATABASE_URL") or DEFAULT_DATABASE_URL
 
-# When set, `db.init()` recreates the database at startup rather than reusing
-# it. The e2e journeys set it so their control plane boots against a clean
-# database on every run -- a database is not a thing a journey should inherit,
-# and a run that was interrupted mid-job must not be able to poison the next
-# run's startup. The developer's own database never sets this.
+# When set, `db.init()` rolls the schema back to nothing and forward again
+# rather than reusing what is there. The e2e journeys set it so their control
+# plane boots against a clean database on every run -- a database is not a
+# thing a journey should inherit, and a run that was interrupted mid-job must
+# not be able to poison the next run's startup. The developer's own database
+# never sets this.
 DEFAULT_DB_RESET = False
 
 DB_RESET = bool(os.environ.get("TEMPER_DB_RESET", DEFAULT_DB_RESET))
@@ -522,7 +529,7 @@ class Settings(BaseModel):
     fault_surface: bool = DEFAULT_FAULT_SURFACE
     storage_backend: str = DEFAULT_STORAGE_BACKEND
     storage_root: Path = DEFAULT_STORAGE_ROOT
-    db_path: Path = DEFAULT_DB_PATH
+    database_url: str = DEFAULT_DATABASE_URL
     db_reset: bool = DEFAULT_DB_RESET
     s3_bucket: str | None = None
     s3_endpoint_url: str | None = None
@@ -544,7 +551,7 @@ settings = Settings(
     fault_surface=FAULT_SURFACE,
     storage_backend=STORAGE_BACKEND,
     storage_root=STORAGE_ROOT,
-    db_path=DB_PATH,
+    database_url=DATABASE_URL,
     db_reset=DB_RESET,
     s3_bucket=S3_BUCKET,
     s3_endpoint_url=S3_ENDPOINT_URL,

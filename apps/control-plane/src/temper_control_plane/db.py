@@ -1,42 +1,50 @@
-"""SQLite persistence. Three tables, no ORM.
+"""PostgreSQL persistence behind the same functions Phase A's SQLite did.
 
-The reference architecture specifies PostgreSQL with Alembic, an outbox, and a
-transactional launch. That is correct for a product with tenants; it is not
-correct for a build with four evenings. SQLite with explicit SQL keeps the
-state machine visible, and every column here earns its place by being read
-somewhere.
+Issue #43: the local file cannot express a claim on a row surviving
+contention, so there is no path to running orchestration anywhere but inside
+the request-serving process. A relational database with real migrations
+replaces it. **Function names and return shapes stay; only their bodies
+change** -- the measure of success is that nothing outside this file (and
+`migrations.py`, its migration machinery) noticed.
 
-What is kept from the architecture, because these are the parts that matter:
+What is kept from Phase A, because these are the parts that matter and they
+travel with the seam rather than with SQLite:
 
 * **The run spec is immutable after launch.** Hyperparameters are frozen into
-  the job row at creation, so a later edit to a dataset or a default cannot
+  the job row at creation. `create_job` is the only function that writes
+  `hyperparams_json`, `base_model` or `base_revision`; no function here
+  updates them, so a later edit to a dataset or a default cannot
   retroactively change what a completed run claims to have done.
 * **Every state transition appends an event, in the same transaction.** A job
   whose status moved with no event recorded is a job you cannot explain, and
-  explaining runs is the product.
+  explaining runs is the product. `set_state` writes both inside one
+  connection's transaction (psycopg's default: commit on success, rollback on
+  any exception before it), so a failure between the two leaves neither.
+
+See ADR-0064 for what the migration found: the seam bounded `db.py`'s
+functions as claimed, but not the tests that reached past them at `DB_PATH`
+directly, nor the health check's way of *causing* a database failure.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import sqlite3
 import time
 import uuid
 from contextlib import contextmanager
 from typing import Any
 
+import psycopg
+from psycopg.rows import dict_row
 from temper_core import artifacts, delivery
 from temper_core.errors import OrchestratorError
 
-from . import config, storage
+from . import config, migrations, storage
 
-# Via config, not by counting directories up from this file. The counted form
-# meant the repo root at `api/db.py` and `apps/control-plane/src/` after the
-# move, which put the database outside the anchored `/data/` gitignore rule.
-# The e2e journeys point it at a database of their own (`TEMPER_DB_PATH`), so
-# a journey never writes to the developer's data/ nor inherits its orphans.
-DB_PATH = config.DB_PATH
+# Via config, not a literal: the value two processes (and every test that
+# isolates itself) must agree on is the connection string, defined once here
+# and read everywhere else through this module -- never retyped (ADR-0010).
+DATABASE_URL = config.DATABASE_URL
 
 # The full lifecycle. `preparing` covers image build and model download --
 # separated from `training` because they fail for completely different reasons
@@ -53,174 +61,6 @@ JOB_STATES = (
 )
 TERMINAL_STATES = {"complete", "failed", "cancelled"}
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS datasets (
-    id            TEXT PRIMARY KEY,
-    filename      TEXT NOT NULL,
-    -- The storage seam's address for the dataset's object. Not a path: only
-    -- storage.py resolves a key to a location (spec 006, issue #22).
-    object_key    TEXT NOT NULL,
-    created_at    REAL NOT NULL,
-    row_count     INTEGER,
-    schema_type   TEXT,
-    enable_thinking INTEGER,      -- detected, not chosen; NULL until validated
-    status        TEXT NOT NULL,  -- validating | valid | invalid
-    report_json   TEXT,           -- the full validation report, errors included
-    progress_json TEXT            -- validation progress while status is validating
-    -- The token count and its bounded distribution (issue #42), produced by
-    -- the counting phase that runs after validation and recorded with the
-    -- dataset version so the quote reads it without recomputation. The status
-    -- is the counting phase's own state: NULL (never started / not applicable),
-    -- 'counting', 'done' or 'failed'.
-    token_count_status TEXT,
-    token_count       INTEGER,
-    token_stats_json  TEXT,
-    counting_progress_json TEXT
-);
-
-CREATE TABLE IF NOT EXISTS jobs (
-    id            TEXT PRIMARY KEY,
-    dataset_id    TEXT NOT NULL REFERENCES datasets(id),
-    base_model    TEXT NOT NULL,
-    base_revision TEXT,
-    -- Frozen at creation. The run spec is immutable after launch.
-    hyperparams_json TEXT NOT NULL,
-    status        TEXT NOT NULL,
-    -- The user has asked for this job to stop. Set by a request, read by the
-    -- thread running the job: the two are not in the same call stack, and a
-    -- row is the one place both can see.
-    cancel_requested INTEGER NOT NULL DEFAULT 0,
-    created_at    REAL NOT NULL,
-    started_at    REAL,
-    finished_at   REAL,
-    machine_id    INTEGER,
-    gpu_type      TEXT,
-    device_count  INTEGER,
-    method        TEXT,          -- qlora | lora | full; issue #55's decision
-    price_per_hour REAL,
-    currency      TEXT,
-    disk_gb       INTEGER,        -- computed, not the old platform-minimum constant; issue #64
-    storage_cost_usd_per_hour REAL,
-    error_code    TEXT,
-    error_message TEXT,
-    -- Warnings attached at creation, frozen like the hyperparameters: what
-    -- the user was told before launching is part of the run's record.
-    warnings_json TEXT,
-    -- The quote the job launched under, frozen at creation and never updated
-    -- (issue #72): a completed job can say what it was predicted to cost and
-    -- how long it was predicted to take, not only what actually happened.
-    quote_json    TEXT,
-    -- The decision overrides the launch committed to (issue #79): the
-    -- {decision, value} pairs the user pinned, frozen beside the spec so a
-    -- run says what it actually used rather than what it would have
-    -- defaulted to -- and what the orchestrator re-provisions against.
-    overrides_json TEXT,
-    -- The measured actuals, frozen at terminal (issue #77): what the run
-    -- actually took and cost, beside the quote it was predicted against.
-    -- Written once, like the quote -- the mirror image of it.
-    actuals_json   TEXT,
-    result_json   TEXT,
-    -- The storage seam's address for this job's artifact weights.
-    artifact_key  TEXT,
-    -- The artifact record (issue #32): the members the artifact consists of
-    -- -- their storage keys -- plus the verification's bytes and checksum.
-    -- Assembled by the orchestrator at packaging time; `kind` is deliberately
-    -- NOT stored here but derived from `method`, so a row can never record a
-    -- kind its method did not produce and pre-existing rows read correctly
-    -- with no migration.
-    artifact_json TEXT,
-    -- The checkpoints the control plane has verified in storage (issue #37):
-    -- one record per slot, each carrying its step, its loss where one exists,
-    -- and the key its bytes were verified at. Only verified checkpoints are
-    -- recorded here; a partially written one is never presented as complete.
-    checkpoints_json TEXT,
-    -- The recorded choice of result checkpoint (issue #62): the step with
-    -- the best held-out loss and the reason, frozen once at terminal time.
-    -- Stored rather than re-derived, so a run's answer cannot change when
-    -- retention evicts a checkpoint or the selection rule is edited.
-    best_checkpoint_json TEXT,
-    -- The job this one retries, if any (issue #36): a diverging run offers a
-    -- single retry at half the learning rate as a choice, not an automatic
-    -- rerun, because a diverging run usually means the data or the rate is
-    -- wrong and repeating it is rarely the answer. The link is stored so the
-    -- single-retry offer can be offered once and the history can name what
-    -- came from what.
-    retry_from TEXT REFERENCES jobs(id),
-    -- Whether the model is a mixture-of-experts -- frozen at creation
-    -- (issue #65): the label travels with the job so a finished run says
-    -- what it was trained on, even after the admission record changes.
-    -- A finished job's page shows its own outcome, but the model it was
-    -- trained on is part of that outcome (spec 009).
-    is_moe      INTEGER,
-    -- Issue #74: the delivery request, frozen at creation -- which delivery
-    -- formats the launch asked for (the canonical artifact plus optional
-    -- merged/quantised forms) -- and the verified per-format delivery records
-    -- the machine produced, written at packaging time like the artifact
-    -- record. Each record names its format, kind, members, bytes and checksum
-    -- as verified; the download path reads these to serve each format with a
-    -- manifest generated from the run record (ADR-0054 flow-through).
-    delivery_request_json TEXT,
-    delivery_json TEXT,
-    -- The executions of this job (issue #35): one record per attempt, each
-    -- carrying its own machine, its own spec and its own outcome. A memory
-    -- failure retries automatically and makes attempts plural; a resumed run
-    -- (#60) will append here too, so the history says what actually happened
-    -- rather than presenting one continuous run that was not.
-    attempts_json TEXT
-);
-
-CREATE TABLE IF NOT EXISTS events (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id   TEXT NOT NULL REFERENCES jobs(id),
-    ts       REAL NOT NULL,
-    kind     TEXT NOT NULL,   -- state | metric | log | error
-    message  TEXT,
-    data_json TEXT
-);
-
-CREATE TABLE IF NOT EXISTS admitted_models (
-    id          TEXT PRIMARY KEY,
-    repo        TEXT NOT NULL,
-    revision    TEXT NOT NULL,  -- pinned; never a branch name (issue #58)
-    -- The probe result, frozen at admission (issue #58): a blocked probe is
-    -- persisted too, so the user is shown why rather than retrying blindly.
-    probe_json  TEXT NOT NULL,
-    created_at  REAL NOT NULL,
-    UNIQUE(repo, revision)
-);
-
-CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id, id);
-
--- Issue #49: progress is promoted, not filtered. The events table above holds
--- log/metric/state/error only; the layer-pull and model-download lines that
--- used to flood it now live here, one superseding row per phase.
-CREATE TABLE IF NOT EXISTS job_progress (
-    job_id  TEXT NOT NULL REFERENCES jobs(id),
-    phase   TEXT NOT NULL,
-    done    REAL,             -- bytes so far (None: a status line carried none)
-    total   REAL,             -- bytes expected (None until the first total)
-    rate    REAL,             -- measured bytes/second, live (None before 2nd reading)
-    eta_s   REAL,             -- estimated seconds remaining from the live rate
-    ts      REAL NOT NULL,    -- when this superseding reading landed
-    message TEXT,             -- the latest raw line that produced it
-    PRIMARY KEY (job_id, phase)
-);
-
--- The raw lines that were promoted, retained whole so nothing is discarded:
--- the job's own output record, offered as collapsed detail per phase. Not
--- events -- they were never emitted as such, which is what stops the finished
--- page from truncating -- but kept, so "we keep the whole log" stays true.
-CREATE TABLE IF NOT EXISTS job_output (
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id  TEXT NOT NULL REFERENCES jobs(id),
-    phase   TEXT NOT NULL,
-    line    TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_job_output_job ON job_output(job_id, id);
-CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-"""
-
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
@@ -228,12 +68,18 @@ def new_id(prefix: str) -> str:
 
 @contextmanager
 def connect():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    # WAL so the orchestrator thread can write while the API reads.
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    """One connection, one transaction: commits on success, rolls back on any
+    exception raised inside the `with` block.
+
+    A short-lived connection per call rather than a pool held across
+    `DATABASE_URL` changes: this module is monkeypatched to a fresh database
+    per test (`conftest.isolated`), and a pool built once at import would
+    keep talking to whichever database was current when it was built. The
+    control plane's request volume does not need pooling to stay responsive;
+    if it ever does, that is a measured change to make here, not a guess to
+    make now.
+    """
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=False)
     try:
         yield conn
         conn.commit()
@@ -244,127 +90,33 @@ def connect():
         conn.close()
 
 
-# Columns added after a database already existed somewhere. `CREATE TABLE IF
-# NOT EXISTS` is a no-op against a table that is already there, so a column
-# added to SCHEMA alone would exist on a fresh machine and be missing on the
-# one that has been running all week — and the failure would be a stray
-# `no such column` from inside a request handler. Alembic does this properly in
-# Phase B; until then, four lines beat a silent divergence.
-ADDED_COLUMNS = (
-    ("jobs", "cancel_requested", "INTEGER NOT NULL DEFAULT 0"),
-    ("jobs", "warnings_json", "TEXT"),
-    ("jobs", "base_revision", "TEXT"),
-    ("jobs", "device_count", "INTEGER"),
-    ("jobs", "method", "TEXT"),
-    ("jobs", "disk_gb", "INTEGER"),
-    ("jobs", "storage_cost_usd_per_hour", "REAL"),
-    ("jobs", "quote_json", "TEXT"),
-    ("jobs", "overrides_json", "TEXT"),
-    ("jobs", "checkpoints_json", "TEXT"),
-    ("jobs", "best_checkpoint_json", "TEXT"),
-    ("jobs", "artifact_json", "TEXT"),
-    ("datasets", "progress_json", "TEXT"),
-    ("jobs", "actuals_json", "TEXT"),
-    ("datasets", "token_count_status", "TEXT"),
-    ("datasets", "token_count", "INTEGER"),
-    ("datasets", "token_stats_json", "TEXT"),
-    ("datasets", "counting_progress_json", "TEXT"),
-    ("jobs", "retry_from", "TEXT REFERENCES jobs(id)"),
-    ("jobs", "is_moe", "INTEGER"),
-    # Issue #74: the delivery request (which formats the launch asked for) and
-    # the verified per-format delivery records the machine produced. The
-    # request is frozen at creation like the hyperparameters; the records are
-    # written at packaging time like the artifact record.
-    ("jobs", "delivery_request_json", "TEXT"),
-    ("jobs", "delivery_json", "TEXT"),
-    ("jobs", "attempts_json", "TEXT"),
-)
-
-
 def init() -> None:
-    if config.DB_RESET:
-        # A clean slate, once, at startup: remove the database (and any WAL
-        # side files) so the process boots against a fresh schema. The e2e
-        # journeys ask for this so an interrupted run cannot leave an orphaned
-        # non-terminal job behind that crashes the next run's startup.
-        for suffix in ("", "-wal", "-shm"):
-            try:
-                os.remove(str(DB_PATH) + suffix)
-            except FileNotFoundError:
-                pass
     with connect() as c:
-        c.executescript(SCHEMA)
-        for table, column, decl in ADDED_COLUMNS:
-            present = {
-                r["name"]
-                for r in c.execute(f"PRAGMA table_info({table})").fetchall()
-            }
-            if column not in present:
-                c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
-        _rename_location_columns(c)
-        _rewrite_legacy_locations(c)
+        if config.DB_RESET:
+            # A clean slate, once, at startup: roll every migration back and
+            # forward again so the process boots against a fresh schema. The
+            # e2e journeys ask for this so an interrupted run cannot leave an
+            # orphaned non-terminal job behind that crashes the next run's
+            # startup. The Phase A equivalent deleted the SQLite file; a
+            # shared server has no file to delete, so this walks the same
+            # migrations everything else runs through instead of a second,
+            # untested way to build the schema.
+            migrations.reset(c)
+        else:
+            migrations.migrate_up(c)
 
 
 def ping() -> None:
     """One trivial read, proving the database opens and answers.
 
     The readiness probe the health endpoint reports per dependency (issue
-    #29): a database whose file cannot be created or whose connection fails
-    is a broken dependency, and `/health` must be able to say so separately
-    from a broken application. Raises with the connection's own error when
-    the database cannot answer.
+    #29): a database that cannot be reached or whose connection fails is a
+    broken dependency, and `/health` must be able to say so separately from a
+    broken application. Raises with the driver's own error when the database
+    cannot answer.
     """
     with connect() as c:
         c.execute("SELECT 1")
-
-
-# Issue #22 renamed what these columns mean, not just their values: stored
-# objects went from filesystem paths to keys. Renamed in place so a database
-# written by the previous build opens cleanly.
-RENAMED_COLUMNS = (
-    ("datasets", "path", "object_key"),
-    ("jobs", "adapter_path", "artifact_key"),
-)
-
-
-def _rename_location_columns(c) -> None:
-    for table, old, new in RENAMED_COLUMNS:
-        present = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
-        if old in present and new not in present:
-            c.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
-
-
-def _rewrite_legacy_locations(c) -> None:
-    """Best-effort conversion of pre-seam absolute paths into their keys.
-
-    The old layout named uploads `{id}.jsonl` and artifact directories after
-    the job, so most legacy rows map onto exactly one key and are rewritten.
-    A value whose shape does not match is left alone: an address that reads
-    back as missing beats a plausible-looking wrong one. Dev databases hold
-    disposable data; submission starts fresh.
-    """
-    rows = c.execute(
-        "SELECT id, object_key FROM datasets "
-        "WHERE object_key NOT LIKE 'datasets/%'"
-    ).fetchall()
-    for ds_id, location in rows:
-        name = location.replace("\\", "/").rsplit("/", 1)[-1]
-        if name == f"{ds_id}.jsonl":
-            c.execute(
-                "UPDATE datasets SET object_key=? WHERE id=?",
-                (storage.dataset_key(ds_id), ds_id),
-            )
-    rows = c.execute(
-        "SELECT id, artifact_key FROM jobs "
-        "WHERE artifact_key IS NOT NULL AND artifact_key NOT LIKE 'artifacts/%'"
-    ).fetchall()
-    for job_id, location in rows:
-        parts = location.replace("\\", "/").split("/")
-        if len(parts) >= 2 and parts[-2] == job_id:
-            c.execute(
-                "UPDATE jobs SET artifact_key=? WHERE id=?",
-                (storage.artifact_key(job_id, parts[-1]), job_id),
-            )
 
 
 # --------------------------------------------------------------------------
@@ -381,7 +133,7 @@ def create_dataset(
     with connect() as c:
         c.execute(
             "INSERT INTO datasets (id, filename, object_key, created_at, status)"
-            " VALUES (?,?,?,?,?)",
+            " VALUES (%s,%s,%s,%s,%s)",
             (ds_id, filename, object_key, time.time(), "validating"),
         )
     return ds_id
@@ -396,14 +148,14 @@ def delete_dataset(ds_id: str) -> None:
     report is not this function's contract.
     """
     with connect() as c:
-        c.execute("DELETE FROM datasets WHERE id=?", (ds_id,))
+        c.execute("DELETE FROM datasets WHERE id=%s", (ds_id,))
 
 
 def finish_dataset(ds_id: str, report: dict) -> None:
     with connect() as c:
         c.execute(
-            "UPDATE datasets SET status=?, row_count=?, schema_type=?, "
-            "enable_thinking=?, report_json=?, progress_json=NULL WHERE id=?",
+            "UPDATE datasets SET status=%s, row_count=%s, schema_type=%s, "
+            "enable_thinking=%s, report_json=%s, progress_json=NULL WHERE id=%s",
             (
                 "valid" if report.get("valid") else "invalid",
                 report.get("row_count"),
@@ -421,7 +173,7 @@ def set_dataset_progress(ds_id: str, progress: dict) -> None:
     """Record where validation has got to, for the page watching it run."""
     with connect() as c:
         c.execute(
-            "UPDATE datasets SET progress_json=? WHERE id=?",
+            "UPDATE datasets SET progress_json=%s WHERE id=%s",
             (json.dumps(progress), ds_id),
         )
 
@@ -452,9 +204,9 @@ def begin_token_count(ds_id: str) -> None:
     posture for a count that does not exist yet)."""
     with connect() as c:
         c.execute(
-            "UPDATE datasets SET token_count_status=?, "
+            "UPDATE datasets SET token_count_status=%s, "
             "token_count=NULL, token_stats_json=NULL, "
-            "counting_progress_json=NULL WHERE id=?",
+            "counting_progress_json=NULL WHERE id=%s",
             (COUNT_PHASE_COUNTING, ds_id),
         )
 
@@ -463,7 +215,7 @@ def set_counting_progress(ds_id: str, progress: dict) -> None:
     """Where the counting pass has got to, for the report page watching it."""
     with connect() as c:
         c.execute(
-            "UPDATE datasets SET counting_progress_json=? WHERE id=?",
+            "UPDATE datasets SET counting_progress_json=%s WHERE id=%s",
             (json.dumps(progress), ds_id),
         )
 
@@ -473,8 +225,8 @@ def finish_token_count(ds_id: str, counts: dict) -> None:
     bounded distribution. A finished phase has no progress to show."""
     with connect() as c:
         c.execute(
-            "UPDATE datasets SET token_count_status=?, token_count=?, "
-            "token_stats_json=?, counting_progress_json=NULL WHERE id=?",
+            "UPDATE datasets SET token_count_status=%s, token_count=%s, "
+            "token_stats_json=%s, counting_progress_json=NULL WHERE id=%s",
             (
                 COUNT_PHASE_DONE,
                 counts.get("total_tokens"),
@@ -490,15 +242,17 @@ def fail_token_count(ds_id: str) -> None:
     rather than leaving the report page to wonder."""
     with connect() as c:
         c.execute(
-            "UPDATE datasets SET token_count_status=?, "
-            "counting_progress_json=NULL WHERE id=?",
+            "UPDATE datasets SET token_count_status=%s, "
+            "counting_progress_json=NULL WHERE id=%s",
             (COUNT_PHASE_FAILED, ds_id),
         )
 
 
 def get_dataset(ds_id: str) -> dict | None:
     with connect() as c:
-        r = c.execute("SELECT * FROM datasets WHERE id=?", (ds_id,)).fetchone()
+        r = c.execute(
+            "SELECT * FROM datasets WHERE id=%s", (ds_id,)
+        ).fetchone()
     return _dataset_row(r)
 
 
@@ -520,7 +274,8 @@ def require_dataset(ds_id: str) -> dict:
 def list_datasets(limit: int = 50) -> list[dict]:
     with connect() as c:
         rows = c.execute(
-            "SELECT * FROM datasets ORDER BY created_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM datasets ORDER BY created_at DESC LIMIT %s",
+            (limit,),
         ).fetchall()
     return [_present(_dataset_row(r)) for r in rows]
 
@@ -537,12 +292,13 @@ def create_admitted_model(repo: str, revision: str, probe: dict) -> str:
     model_id = new_id("m")
     with connect() as c:
         c.execute(
-            "INSERT OR IGNORE INTO admitted_models "
-            "(id, repo, revision, probe_json, created_at) VALUES (?,?,?,?,?)",
+            "INSERT INTO admitted_models "
+            "(id, repo, revision, probe_json, created_at) VALUES (%s,%s,%s,%s,%s) "
+            "ON CONFLICT (repo, revision) DO NOTHING",
             (model_id, repo, revision, json.dumps(probe), time.time()),
         )
         row = c.execute(
-            "SELECT id FROM admitted_models WHERE repo=? AND revision=?",
+            "SELECT id FROM admitted_models WHERE repo=%s AND revision=%s",
             (repo, revision),
         ).fetchone()
     return row["id"]
@@ -553,7 +309,7 @@ def get_admitted_model(model_id: str) -> dict | None:
     never the raw JSON string."""
     with connect() as c:
         r = c.execute(
-            "SELECT * FROM admitted_models WHERE id=?", (model_id,)
+            "SELECT * FROM admitted_models WHERE id=%s", (model_id,)
         ).fetchone()
     return _admitted_row(r)
 
@@ -561,7 +317,7 @@ def get_admitted_model(model_id: str) -> dict | None:
 def list_admitted_models(limit: int = 50) -> list[dict]:
     with connect() as c:
         rows = c.execute(
-            "SELECT * FROM admitted_models ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM admitted_models ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
     return [_present(_admitted_row(r)) for r in rows]
@@ -596,7 +352,7 @@ def create_job(
             "hyperparams_json, status, warnings_json, quote_json, "
             "overrides_json, retry_from, is_moe, delivery_request_json, "
             "created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 job_id,
                 dataset_id,
@@ -621,7 +377,7 @@ def has_retry(job_id: str) -> bool:
     """Whether a job already has a retry child (issue #36 single-retry offer)."""
     with connect() as c:
         row = c.execute(
-            "SELECT id FROM jobs WHERE retry_from=? LIMIT 1", (job_id,)
+            "SELECT id FROM jobs WHERE retry_from=%s LIMIT 1", (job_id,)
         ).fetchone()
     return row is not None
 
@@ -632,21 +388,26 @@ def set_state(
     """Move a job to a new state and record why, atomically.
 
     The event is written in the same transaction as the status change on
-    purpose: a status that moved with no event is a run you cannot account for.
+    purpose: a status that moved with no event is a run you cannot account
+    for. `connect()` commits both together on success and rolls both back on
+    any exception raised before the block exits -- forcing the event write to
+    fail (e.g. a job id the events table's foreign key rejects) leaves the
+    status update rolled back too, which is what `test_transactions.py`
+    proves rather than asserts.
     """
     if state not in JOB_STATES:
         raise ValueError(f"unknown state {state!r}")
-    cols, vals = ["status=?"], [state]
+    cols, vals = ["status=%s"], [state]
     if state == "training" and "started_at" not in fields:
         fields["started_at"] = time.time()
     if state in TERMINAL_STATES:
         fields.setdefault("finished_at", time.time())
     for k, v in fields.items():
-        cols.append(f"{k}=?")
+        cols.append(f"{k}=%s")
         vals.append(json.dumps(v) if k.endswith("_json") else v)
     vals.append(job_id)
     with connect() as c:
-        c.execute(f"UPDATE jobs SET {', '.join(cols)} WHERE id=?", vals)
+        c.execute(f"UPDATE jobs SET {', '.join(cols)} WHERE id=%s", vals)
         # The event carries the state it entered as data, not only as a
         # message that may be the human narration ("Selecting hardware")
         # rather than the state's name: issue #77's stage durations are
@@ -666,7 +427,7 @@ def set_checkpoints(job_id: str, checkpoints: list[dict]) -> None:
     """
     with connect() as c:
         c.execute(
-            "UPDATE jobs SET checkpoints_json=? WHERE id=?",
+            "UPDATE jobs SET checkpoints_json=%s WHERE id=%s",
             (json.dumps(checkpoints), job_id),
         )
 
@@ -683,7 +444,7 @@ def set_delivery(job_id: str, records: list[dict]) -> None:
     """
     with connect() as c:
         c.execute(
-            "UPDATE jobs SET delivery_json=? WHERE id=?",
+            "UPDATE jobs SET delivery_json=%s WHERE id=%s",
             (json.dumps(records), job_id),
         )
 
@@ -700,7 +461,7 @@ def set_best_checkpoint(job_id: str, selection: dict) -> None:
     """
     with connect() as c:
         c.execute(
-            "UPDATE jobs SET best_checkpoint_json=? WHERE id=?",
+            "UPDATE jobs SET best_checkpoint_json=%s WHERE id=%s",
             (json.dumps(selection), job_id),
         )
 
@@ -716,7 +477,7 @@ def set_attempts(job_id: str, attempts: list[dict]) -> None:
     """
     with connect() as c:
         c.execute(
-            "UPDATE jobs SET attempts_json=? WHERE id=?",
+            "UPDATE jobs SET attempts_json=%s WHERE id=%s",
             (json.dumps(attempts), job_id),
         )
 
@@ -745,7 +506,7 @@ def request_cancel(job_id: str, note: str = "Cancellation requested") -> str:
     """
     with connect() as c:
         row = c.execute(
-            "SELECT status, cancel_requested FROM jobs WHERE id=?", (job_id,)
+            "SELECT status, cancel_requested FROM jobs WHERE id=%s", (job_id,)
         ).fetchone()
         if row is None:
             return "missing"
@@ -753,7 +514,7 @@ def request_cancel(job_id: str, note: str = "Cancellation requested") -> str:
             return "terminal"
         if row["cancel_requested"]:
             return "already_cancelling"
-        c.execute("UPDATE jobs SET cancel_requested=1 WHERE id=?", (job_id,))
+        c.execute("UPDATE jobs SET cancel_requested=1 WHERE id=%s", (job_id,))
         _append_event(c, job_id, "log", note)
     return "accepted"
 
@@ -767,7 +528,7 @@ def cancel_requested(job_id: str) -> bool:
     """
     with connect() as c:
         row = c.execute(
-            "SELECT cancel_requested FROM jobs WHERE id=?", (job_id,)
+            "SELECT cancel_requested FROM jobs WHERE id=%s", (job_id,)
         ).fetchone()
     return bool(row and row["cancel_requested"])
 
@@ -782,7 +543,7 @@ def record_actuals(job_id: str, actuals: dict) -> None:
     """
     with connect() as c:
         c.execute(
-            "UPDATE jobs SET actuals_json=? WHERE id=?",
+            "UPDATE jobs SET actuals_json=%s WHERE id=%s",
             (json.dumps(actuals), job_id),
         )
 
@@ -796,7 +557,7 @@ def add_event(
 
 def _append_event(conn, job_id, kind, message, data=None) -> None:
     conn.execute(
-        "INSERT INTO events (job_id, ts, kind, message, data_json) VALUES (?,?,?,?,?)",
+        "INSERT INTO events (job_id, ts, kind, message, data_json) VALUES (%s,%s,%s,%s,%s)",
         (
             job_id,
             time.time(),
@@ -833,7 +594,7 @@ def upsert_progress(
     with connect() as c:
         c.execute(
             "INSERT INTO job_progress (job_id, phase, done, total, rate, "
-            "eta_s, ts, message) VALUES (?,?,?,?,?,?,?,?) "
+            "eta_s, ts, message) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT(job_id, phase) DO UPDATE SET "
             "done=excluded.done, total=excluded.total, rate=excluded.rate, "
             "eta_s=excluded.eta_s, ts=excluded.ts, message=excluded.message",
@@ -850,7 +611,7 @@ def append_output(job_id: str, phase: str, line: str) -> None:
     """
     with connect() as c:
         c.execute(
-            "INSERT INTO job_output (job_id, phase, line) VALUES (?,?,?)",
+            "INSERT INTO job_output (job_id, phase, line) VALUES (%s,%s,%s)",
             (job_id, phase, line),
         )
 
@@ -859,7 +620,7 @@ def get_progress(job_id: str) -> list[dict]:
     """The job's per-phase progress records, superseded latest."""
     with connect() as c:
         rows = c.execute(
-            "SELECT * FROM job_progress WHERE job_id=? ORDER BY phase",
+            "SELECT * FROM job_progress WHERE job_id=%s ORDER BY phase",
             (job_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -869,7 +630,7 @@ def get_output(job_id: str) -> list[dict]:
     """The job's retained promoted lines, in the order they were written."""
     with connect() as c:
         rows = c.execute(
-            "SELECT * FROM job_output WHERE job_id=? ORDER BY id",
+            "SELECT * FROM job_output WHERE job_id=%s ORDER BY id",
             (job_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -885,7 +646,7 @@ def _with_warnings(job: dict | None) -> dict | None:
 def _with_is_moe(job: dict | None) -> dict | None:
     """Normalise the `is_moe` column for API publication.
 
-    SQLite stores booleans as 0/1 integers and legacy rows carry NULL.
+    The store keeps booleans as 0/1 integers and legacy rows carry NULL.
     The API publishes `is_moe` as a boolean when known and null otherwise,
     so the stored integer is converted and an absent value stays absent.
     Frozen at creation (issue #65): the label travels with the job so a
@@ -1108,7 +869,7 @@ def _with_comparison(job: dict | None) -> dict | None:
 
 def get_job(job_id: str) -> dict | None:
     with connect() as c:
-        r = c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        r = c.execute("SELECT * FROM jobs WHERE id=%s", (job_id,)).fetchone()
     return _with_best_checkpoint(
         _with_artifact(
             _with_is_moe(
@@ -1170,7 +931,8 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
             ).fetchall()
         else:
             rows = c.execute(
-                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT %s",
+                (limit,),
             ).fetchall()
     return [
         _present(
@@ -1223,15 +985,15 @@ def count_events(job_id: str) -> int:
     """
     with connect() as c:
         row = c.execute(
-            "SELECT COUNT(*) FROM events WHERE job_id=?", (job_id,)
+            "SELECT COUNT(*) AS n FROM events WHERE job_id=%s", (job_id,)
         ).fetchone()
-    return int(row[0]) if row else 0
+    return int(row["n"]) if row else 0
 
 
 def get_events(job_id: str, after_id: int = 0, limit: int = 500) -> list[dict]:
     with connect() as c:
         rows = c.execute(
-            "SELECT * FROM events WHERE job_id=? AND id>? ORDER BY id LIMIT ?",
+            "SELECT * FROM events WHERE job_id=%s AND id>%s ORDER BY id LIMIT %s",
             (job_id, after_id, limit),
         ).fetchall()
     out = []
@@ -1247,7 +1009,7 @@ def get_events(job_id: str, after_id: int = 0, limit: int = 500) -> list[dict]:
 def active_jobs() -> list[dict]:
     """Non-terminal jobs. Used at startup to spot runs orphaned by a restart."""
     with connect() as c:
-        q = ",".join("?" * len(TERMINAL_STATES))
+        q = ",".join(["%s"] * len(TERMINAL_STATES))
         rows = c.execute(
             f"SELECT * FROM jobs WHERE status NOT IN ({q})",
             tuple(TERMINAL_STATES),
