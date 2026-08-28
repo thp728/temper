@@ -192,7 +192,9 @@ class ProbeResult:
             "license": self.summary.license,
             "is_moe": self.summary.is_moe,
             "findings": [f.as_dict() for f in self.findings],
-            "memory": self.memory.as_dict() if self.memory is not None else None,
+            "memory": self.memory.as_dict()
+            if self.memory is not None
+            else None,
         }
 
 
