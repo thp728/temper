@@ -306,13 +306,13 @@ def test_the_checkpoint_saved_at_the_ceiling_is_retrievable_and_selected(
     assert r.content == b"ckpt-20"
 
 
-def test_a_machine_that_cannot_checkpoint_leaves_the_record_honest(
+def test_a_ceiling_stop_with_no_checkpoints_records_none_honestly(
     harness, monkeypatch
 ):
-    """An unresponsive machine cannot be asked to save a final checkpoint.
-    The job still stops at the ceiling and destroys the machine, and the
-    record says plainly that nothing was saved rather than claiming a
-    checkpoint it does not have."""
+    """A machine that has nothing to save at the ceiling records nothing, and
+    the record says so plainly rather than claiming a checkpoint it does not
+    have. The shutdown still completes: the reason is budget_exhausted and
+    the machine is destroyed."""
     from temper_control_plane import orchestrator
 
     monkeypatch.setattr(orchestrator, "SPEND_CEILING_MINOR", 100)
@@ -323,10 +323,6 @@ def test_a_machine_that_cannot_checkpoint_leaves_the_record_honest(
             "artifact_sha256": hashlib.sha256(b"weights").hexdigest(),
         },
         adapter_bytes=b"weights",
-        checkpoints=[
-            {"step": 10, "loss": 1.0, "bytes": b"ckpt-10"},
-        ],
-        checkpoint_unresponsive=True,
     )
     job_id = harness.run(provider, limits=spend_limits(step=300.0))
 

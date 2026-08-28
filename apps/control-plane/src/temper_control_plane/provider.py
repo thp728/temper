@@ -95,6 +95,19 @@ def fetch_command(path: str) -> str:
     return f"{FETCH_PREFIX}{path}"
 
 
+def container_name(job_id: str) -> str:
+    """The container's name for one job, defined once and read twice.
+
+    The remote script names the container it runs with this (issue #46) and
+    the spend ceiling's emergency checkpoint signals it with the same name —
+    a value two components must agree on is defined once and read, never
+    retyped. If the two drifted, the emergency checkpoint would silently
+    signal nothing and a machine that could have saved its checkpoints would
+    be destroyed with them.
+    """
+    return f"temper-{job_id}"
+
+
 # The backstop for a stream that never ends, and deliberately *above* the
 # orchestrator's duration ceiling rather than below it. It used to be 90
 # minutes, which was fine while it was the only bound on a run and wrong the
@@ -593,7 +606,7 @@ class JarvisLabsProvider:
         same shape the control plane verifies and selects over, so what this
         returns is exactly what the trainer reported.
         """
-        container = f"temper-{job_id}"
+        container = container_name(job_id)
         with suppress(Exception):  # the signal is best-effort
             for _line in self.stream(
                 machine,

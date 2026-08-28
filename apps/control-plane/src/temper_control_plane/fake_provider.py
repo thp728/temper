@@ -163,12 +163,6 @@ class FakeProvider:
         # hardware.
         list_sequence: Sequence[Sequence[object]] | None = None,
         destroying_for: int = 0,
-        # Issue #46: whether the machine answers the spend ceiling's emergency
-        # checkpoint request. A wedged machine cannot be asked to save, and
-        # `request_checkpoint` must return None rather than a manifest it does
-        # not have; this knob makes that state explicit so the unresponsive
-        # case is a decision a test makes, not a race it hopes to catch.
-        checkpoint_unresponsive: bool = False,
     ) -> None:
         if fail_at is not None and fail_at not in STAGES:
             raise ValueError(f"unknown stage {fail_at!r}")
@@ -244,7 +238,6 @@ class FakeProvider:
         self._destroying_for = int(destroying_for)
         self._list_calls = 0
         self._destroyed_at_call: int | None = None
-        self._checkpoint_unresponsive = bool(checkpoint_unresponsive)
 
     # -- protocol -----------------------------------------------------------
 
@@ -516,12 +509,13 @@ class FakeProvider:
         A responsive machine saves the checkpoints it has produced -- writing
         them to their slots exactly as it would at a normal end, so the
         control plane's verification streams real bytes back -- and reports
-        the manifest. A silent machine, or one a test explicitly made
-        unresponsive, reports None: the ceiling's checkpoint is best-effort by
-        construction, and a wedged machine cannot be asked to save.
+        the manifest. A silent machine (the `machine_silent` fault, which is
+        the unresponsive case the ceiling exists for) reports None: the
+        ceiling's checkpoint is best-effort by construction, and a wedged
+        machine cannot be asked to save.
         """
         self.calls.append("request_checkpoint")
-        if self._silent_after is not None or self._checkpoint_unresponsive:
+        if self._silent_after is not None:
             return None
         if self.script is None:
             return None

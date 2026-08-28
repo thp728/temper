@@ -74,7 +74,12 @@ from . import config, db, storage
 from .chunks import ChunkReader, piped_chunks
 from .limits import BUDGET_EXHAUSTED_CODE, RunLimits, guard
 from .models import new_models
-from .provider import Provider, new_provider, normalize_status
+from .provider import (
+    Provider,
+    container_name,
+    new_provider,
+    normalize_status,
+)
 from .trainer_build import published_reference
 
 DATASET_TARBALL = "/tmp/dataset.tar.gz"
@@ -429,7 +434,7 @@ say "running training"
 # SIGTERM to the job's container and the trainer converts that into a final
 # save + report.
 sudo docker run --rm --gpus all \\
-  --name temper-{job["id"]} \\
+  --name {container_name(job["id"])} \\
   -v /tmp/job:/job:ro -v /tmp/out:/out -e HF_HOME=/out/hf \\
   -e PYTHONUNBUFFERED=1 \\
 {fault_env}  {reference} 1>&2 || say "TRAINER EXITED NONZERO"
@@ -1089,10 +1094,15 @@ def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
     the ceiling must be visible to that selection, not stored somewhere it
     cannot see.
 
-    Best-effort and bounded. A machine that does not answer — it is, after
+    Best-effort and bounded, and **failure-isolated**: this runs in the middle
+    of the budget_exhausted handling, so nothing it does may prevent the job
+    reaching its terminal state. A machine that does not answer — it is, after
     all, the machine that has gone wrong — records nothing and the shutdown
     proceeds regardless: an unresponsive trainer cannot be asked to save, and
-    the record says so rather than claiming a checkpoint it does not have.
+    the record says so rather than claiming a checkpoint it does not have. A
+    recording step that itself fails (a malformed manifest, a storage error)
+    is logged and the shutdown proceeds; the terminal reason is
+    budget_exhausted either way.
     """
     db.add_event(
         job_id,
@@ -1118,15 +1128,23 @@ def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
             "none",
         )
         return
-    records = _collect_checkpoints(job_id, {"checkpoints": reported})
-    db.set_checkpoints(job_id, records)
-    _record_best_checkpoint(job_id, records)
-    verified = sum(1 for r in records if r.get("verified") is True)
-    db.add_event(
-        job_id,
-        "log",
-        f"{verified} checkpoint(s) saved and verified at the spend ceiling",
-    )
+    try:
+        records = _collect_checkpoints(job_id, {"checkpoints": reported})
+        db.set_checkpoints(job_id, records)
+        _record_best_checkpoint(job_id, records)
+        verified = sum(1 for r in records if r.get("verified") is True)
+        db.add_event(
+            job_id,
+            "log",
+            f"{verified} checkpoint(s) saved and verified at the spend "
+            "ceiling",
+        )
+    except Exception as e:  # noqa: BLE001 - a recording failure must not block the shutdown
+        db.add_event(
+            job_id,
+            "error",
+            f"Could not record the emergency checkpoint: {e}",
+        )
 
 
 def _teardown(provider: Provider, job_id: str, machine) -> None:

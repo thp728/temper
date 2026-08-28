@@ -176,16 +176,13 @@ class RunLimits:
             raise ValueError("limits were never started")
         return self.started + self.max_duration_s
 
-    @property
-    def spend_deadline(self) -> float:
-        """The moment elapsed spend reaches the ceiling, on this object's clock.
+    def _resolved_spend(self) -> tuple[float, int]:
+        """(started, minor unit) for the configured spend ceiling, or raise.
 
-        Derived, never guessed: the ceiling is a cost in minor units, and the
-        rate the job froze at provisioning says how fast those units accrue,
-        so `ceiling_minor * (3600 / (price_per_hour * minor_unit))` is the
-        budget in seconds. An expensive machine exhausts the same cost sooner
-        than a cheap one, which is the whole point of a money ceiling rather
-        than a minute ceiling.
+        The one place the spend ceiling's configuration is resolved: the
+        deadline and the message both need the same "is it configured, and
+        what is the currency's minor unit" answer, and a value read once is a
+        value that cannot disagree with itself between the two readers.
         """
         started = self.started
         ceiling = self.spend_ceiling_minor
@@ -198,9 +195,23 @@ class RunLimits:
             or currency is None
         ):
             raise ValueError("spend ceiling was never configured")
-        minor = quote.minor_unit_for(currency)
-        seconds_per_minor = quote.SECONDS_PER_HOUR / (price * minor)
-        return started + ceiling * seconds_per_minor
+        return started + ceiling * (
+            quote.SECONDS_PER_HOUR / (price * quote.minor_unit_for(currency))
+        ), quote.minor_unit_for(currency)
+
+    @property
+    def spend_deadline(self) -> float:
+        """The moment elapsed spend reaches the ceiling, on this object's clock.
+
+        Derived, never guessed: the ceiling is a cost in minor units, and the
+        rate the job froze at provisioning says how fast those units accrue,
+        so `ceiling_minor * (3600 / (price_per_hour * minor_unit))` is the
+        budget in seconds. An expensive machine exhausts the same cost sooner
+        than a cheap one, which is the whole point of a money ceiling rather
+        than a minute ceiling.
+        """
+        deadline, _minor = self._resolved_spend()
+        return deadline
 
     def check_duration(self) -> None:
         """Raise if the ceiling has passed. Callable between stages.
@@ -217,17 +228,21 @@ class RunLimits:
                 "gpu_max_duration_exceeded", self.max_duration_message()
             )
 
-    def check_spend(self) -> None:
+    def check_spend(self, at: float | None = None) -> None:
         """Raise if the spend ceiling has passed. Callable between stages.
 
         The same boundary role as `check_duration`, for the money ceiling: a
         machine that costs more than the cap while the control plane is still
         setting it up is a runaway as surely as one that overruns in time. A
-        no-op when no spend ceiling has been configured.
+        no-op when no spend ceiling has been configured. `at` is the instant
+        to judge, for callers that already read the clock once (the guard
+        passes the same `t` it uses for the duration ceiling, so the two
+        cannot disagree about the moment); a boundary call reads it fresh.
         """
         if self.spend_ceiling_minor is None:
             return
-        if self.now() >= self.spend_deadline:
+        instant = self.now() if at is None else at
+        if instant >= self.spend_deadline:
             raise OrchestratorError(
                 BUDGET_EXHAUSTED_CODE, self.budget_message()
             )
@@ -241,12 +256,12 @@ class RunLimits:
         )
 
     def budget_message(self) -> str:
+        _deadline, minor = self._resolved_spend()
         ceiling = self.spend_ceiling_minor
-        currency = self.currency
-        if ceiling is None or currency is None:
-            raise ValueError("spend ceiling was never configured")
-        minor = quote.minor_unit_for(currency)
+        assert ceiling is not None  # _resolved_spend just confirmed it
         amount = ceiling / minor
+        currency = self.currency
+        assert currency is not None  # _resolved_spend just confirmed it
         return (
             f"The job exceeded the spend ceiling of {amount:.2f} {currency} "
             f"and was stopped. Its checkpoints were saved where possible; its "
@@ -329,13 +344,7 @@ def guard(
         # is checked before the stall: a machine going silent is often the
         # same moment its spend is still accumulating, and the money ceiling
         # is the reason that names the bill.
-        if (
-            limits.spend_ceiling_minor is not None
-            and t >= limits.spend_deadline
-        ):
-            raise OrchestratorError(
-                BUDGET_EXHAUSTED_CODE, limits.budget_message()
-            )
+        limits.check_spend(at=t)
         if t - last_line >= limits.stall_timeout_s:
             raise OrchestratorError("gpu_stalled", limits.stall_message())
 

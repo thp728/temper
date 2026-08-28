@@ -135,11 +135,13 @@ def test_an_error_from_the_source_reaches_the_caller():
 # and from an over-long run.
 
 
-def _spend_limits(step=300.0, ceiling=100, price=41.31, **kwargs):
+def _spend_limits(
+    step=300.0, ceiling_minor=100, price_per_hour=41.31, **kwargs
+):
     return replace(
         simulated_limits(step=step, **kwargs),
-        spend_ceiling_minor=ceiling,
-        price_per_hour=price,
+        spend_ceiling_minor=ceiling_minor,
+        price_per_hour=price_per_hour,
         currency="INR",
     )
 
@@ -159,7 +161,9 @@ def test_the_guard_stops_a_job_that_exceeds_the_spend_ceiling():
 
 def test_a_job_under_the_spend_ceiling_is_untouched():
     source = iter(["a", "b", "c", "d"])
-    out = list(guard(source, _spend_limits(ceiling=1_000_000, step=60.0)))
+    out = list(
+        guard(source, _spend_limits(ceiling_minor=1_000_000, step=60.0))
+    )
     assert out == ["a", "b", "c", "d"]
 
 
@@ -190,8 +194,8 @@ def test_the_spend_deadline_shrinks_as_the_machines_price_rises():
     """The ceiling is a cost, so the same ceiling is exhausted sooner on an
     expensive machine than a cheap one: the deadline is derived from the job's
     own frozen price, not from a fixed number of minutes."""
-    cheap = _spend_limits(price=41.31, ceiling=1000)
-    dear = _spend_limits(price=250.0, ceiling=1000)
+    cheap = _spend_limits(price_per_hour=41.31, ceiling_minor=1000)
+    dear = _spend_limits(price_per_hour=250.0, ceiling_minor=1000)
     assert cheap.spend_deadline > dear.spend_deadline
 
 
