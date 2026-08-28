@@ -29,6 +29,7 @@ directly, nor the health check's way of *causing* a database failure.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -87,25 +88,36 @@ def new_id(prefix: str) -> str:
 # `isolated` fixture drops it, no longer exists. Only ever one pool is kept
 # open: the moment a call is made against a new URL, every pool for a
 # different URL is closed first. In production `DATABASE_URL` never changes,
-# so this holds exactly one pool for the life of the process, opened once.
+# so this holds exactly one pool for the life of the process, opened once --
+# and the lock below only ever guards the fast "it already exists" path there,
+# since eviction never fires without a URL change.
+#
+# `_pools_lock` makes the read-check-create sequence atomic: without it, two
+# threads racing on `pool is None` (the FastAPI request thread and a launched
+# job's orchestrator thread both call `db.connect()`, per
+# apps/control-plane/AGENTS.md) could each construct a `ConnectionPool` for
+# the same URL, silently orphaning whichever loses the assignment -- a pool
+# that is never closed, holding connections open for the life of the process.
 _pools: dict[str, ConnectionPool] = {}
+_pools_lock = threading.Lock()
 
 
 def _pool() -> ConnectionPool:
-    pool = _pools.get(DATABASE_URL)
-    if pool is None:
-        for stale_url, stale_pool in list(_pools.items()):
-            if stale_url != DATABASE_URL:
-                stale_pool.close()
-                del _pools[stale_url]
-        pool = _pools[DATABASE_URL] = ConnectionPool(
-            DATABASE_URL,
-            min_size=1,
-            max_size=8,
-            kwargs={"row_factory": dict_row, "autocommit": False},
-            open=True,
-        )
-    return pool
+    with _pools_lock:
+        pool = _pools.get(DATABASE_URL)
+        if pool is None:
+            for stale_url, stale_pool in list(_pools.items()):
+                if stale_url != DATABASE_URL:
+                    stale_pool.close()
+                    del _pools[stale_url]
+            pool = _pools[DATABASE_URL] = ConnectionPool(
+                DATABASE_URL,
+                min_size=1,
+                max_size=8,
+                kwargs={"row_factory": dict_row, "autocommit": False},
+                open=True,
+            )
+        return pool
 
 
 @contextmanager
