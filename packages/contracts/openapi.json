@@ -1304,6 +1304,17 @@
             "title": "Id",
             "type": "string"
           },
+          "is_moe": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Moe"
+          },
           "machine_id": {
             "anyOf": [
               {

@@ -235,6 +235,12 @@ def create(
     )
     warnings = [warn] if warn else []
 
+    # Issue #65: the mixture-of-experts label travels with the job so a
+    # finished run says what it was trained on. A catalog model is dense
+    # (neither MoE nor untested); an admitted model's probe snapshot carries
+    # `is_moe` and the finding, frozen here alongside the hyperparameters so
+    # the run cannot later claim a different model kind.
+    is_moe = bool((admitted_probe or {}).get("is_moe", False))
     job_id = db.create_job(
         dataset_id,
         base_model,
@@ -243,6 +249,7 @@ def create(
         base_revision=model.revision,
         quote=quote,
         overrides=frozen_overrides,
+        is_moe=is_moe,
     )
     if warn:
         db.add_event(
