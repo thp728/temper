@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import BackToUpload from "@/components/BackToUpload";
 import ReportView from "@/components/ReportView";
+import TokenCountPoll from "@/components/TokenCountPoll";
 import ValidationProgressView from "@/components/ValidationProgressView";
 import { DatasetRecordTokenCountStatus } from "@/lib/api/generated/client";
 import { getDatasetV1DatasetsDatasetIdGet } from "@/lib/api/generated/client";
@@ -56,13 +57,17 @@ export default async function DatasetPage({
   }
   if (record) {
     // While the token count is being produced (issue #42) the report is
-    // already complete, so this renders it with a counting indicator and
-    // re-fetches on a meta refresh until the count lands.
+    // already complete, so this renders it with a counting indicator. The
+    // count lands on its own: TokenCountPoll re-renders this route while the
+    // user is still on it, and never fires once they have navigated on (a
+    // meta-refresh cannot promise that -- it is scheduled at parse time and
+    // fires even after a client-side navigation has left the page, which
+    // yanked a launching user back to the report).
     return (
       <>
         {record.token_count_status ===
           DatasetRecordTokenCountStatus.counting && (
-          <meta httpEquiv="refresh" content="2" />
+          <TokenCountPoll datasetId={record.id} />
         )}
         <ReportView record={record} />
       </>

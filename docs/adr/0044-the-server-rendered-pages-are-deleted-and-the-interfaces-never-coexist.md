@@ -4,7 +4,7 @@
 - **Date:** 2026-08-28
 - **Spec:** `docs/specs/007-the-application-shell.md`
 - **Issue:** [#47](https://github.com/thp728/temper/issues/47)
-- **Supersedes in part:** [ADR-0023](0023-the-interface-consumes-a-client-generated-from-the-api-contract.md)
+- **Completes the promise made in:** [ADR-0023](0023-the-interface-consumes-a-client-generated-from-the-api-contract.md)
 
 ## Context
 
@@ -100,6 +100,8 @@ never-coexist rule exists to prevent. Git history is the reference.
   | Invalid/unknown dataset refused at launch | e2e launch journey; `test_api.py` launch-preview tests |
   | Watch shows state, elapsed, machine, price | `JobRecordView.test.tsx`, `RunningJobView.test.tsx` |
   | Latest loss with its step | `JobRecordView.test.tsx`, `RunningJobView.test.tsx`; e2e running journey |
+  | State change announced to screen readers | `RunningJobView.test.tsx` (new: the State region is `aria-live="polite"`) |
+  | Unknown job's record 404s | `test_api.py::test_missing_job_is_404`; the shell renders "Not found" for it |
   | Cancel offered with its consequence stated | `RunningJobView.test.tsx`; e2e running journey |
   | Cancel offered in every working state, spend visible while accruing | `RunningJobView.test.tsx` (machine line appears as provisioning reports it) |
   | Terminal jobs hide the cancel control | `JobRecordView.test.tsx` (new) |
@@ -125,6 +127,20 @@ never-coexist rule exists to prevent. Git history is the reference.
 - The `just check` gate no longer boots a server that renders HTML; the e2e
   journeys drive the shell, which is the surface Spec 007 requires every flow
   to be verified through.
+- **Verifying criterion four surfaced a real defect in the shell, fixed here.**
+  The report page's token count (issue #42) is produced by a background
+  phase, and the landing update used `<meta http-equiv="refresh" content="2">`.
+  A meta-refresh is scheduled when its tag is parsed and is *not* cancelled by
+  a later client-side navigation, so a user who launched and moved on to the
+  job page was yanked back to the report ~2s later — the browser navigated the
+  whole tab to `/datasets/{id}` mid-launch, abandoning the running job page.
+  That made the launch journeys flaky (intermittent, timing-dependent, present
+  on the base commit) and is a direct breach of "the whole journey remains
+  walkable". The counting update now rides on a client component
+  (`TokenCountPoll`) that lives in the page's React tree: while the user is on
+  the report it re-renders the route on the same cadence the meta-refresh
+  used, and when the user navigates away the component unmounts and the poll
+  stops, so nothing can navigate the tab out from under the next page.
 - `jinja2` remains a declared dependency of the control plane though nothing
   imports it now; removing it from `pyproject.toml` and the lockfile is
   deferred to avoid lockfile churn colliding with the parallel wave.
