@@ -34,9 +34,9 @@ import uuid
 from contextlib import contextmanager
 from typing import Any
 
-import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+
 from temper_core import artifacts, delivery
 from temper_core.errors import OrchestratorError
 
@@ -74,10 +74,11 @@ def new_id(prefix: str) -> str:
 # one per event -- and at roughly 17ms to open and close a connection on this
 # machine, that is over a second of pure connection overhead inside one
 # test's `call` phase. Across the suite it was the dominant cost behind the
-# 2306-second run issue #43's PR records finding this in (see the ADR):
-# per-test database cloning was real but secondary, on the order of 100ms a
-# test against connection overhead than ran into the seconds for any test
-# that drives the orchestrator through more than a handful of transitions.
+# 2306-second run the PR for issue #43 records finding this in (see
+# ADR-0064): per-test database cloning was real but secondary, on the order
+# of 100ms a test, against a connection overhead that ran into the seconds
+# for any test that drives the orchestrator through more than a handful of
+# transitions.
 #
 # Keyed by URL rather than a single pool built at import, because tests
 # monkeypatch `db.DATABASE_URL` to a fresh per-test database

@@ -40,7 +40,13 @@ rejected, not an oversight.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import psycopg
+
+Migration = tuple[
+    str, Callable[[psycopg.Cursor], None], Callable[[psycopg.Cursor], None]
+]
 
 MIGRATIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -218,7 +224,9 @@ def _up_0002(cur: psycopg.Cursor) -> None:
             ts            DOUBLE PRECISION NOT NULL
         )
     """)
-    cur.execute("CREATE INDEX idx_metric_series_job ON metric_series(job_id, name, step)")
+    cur.execute(
+        "CREATE INDEX idx_metric_series_job ON metric_series(job_id, name, step)"
+    )
     cur.execute("""
         CREATE TABLE checkpoints (
             id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -240,7 +248,7 @@ def _down_0002(cur: psycopg.Cursor) -> None:
     cur.execute("DROP TABLE quotes")
 
 
-MIGRATIONS: tuple[tuple[str, object, object], ...] = (
+MIGRATIONS: tuple[Migration, ...] = (
     ("0001_baseline", _up_0001, _down_0001),
     ("0002_phase_b_tables", _up_0002, _down_0002),
 )

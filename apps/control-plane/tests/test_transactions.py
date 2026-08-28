@@ -10,6 +10,7 @@ reading `set_state`'s source and trusting the `with connect()` block.
 
 from __future__ import annotations
 
+import psycopg
 import pytest
 
 from temper_control_plane import db
@@ -24,7 +25,7 @@ def test_a_failed_event_write_rolls_back_the_state_change_too(isolated):
     # table rejects makes the INSERT inside `_append_event` fail exactly
     # where the real failure this criterion is about would happen -- after
     # the status UPDATE has been sent, before the transaction commits.
-    with pytest.raises(Exception):
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
         db.set_state("job_does_not_exist", "training")
 
     # The row for `job_does_not_exist` was never going to exist, so this
@@ -41,7 +42,9 @@ def test_a_failed_event_write_rolls_back_the_state_change_too(isolated):
 
     db_module._append_event = failing_append
     try:
-        with pytest.raises(RuntimeError, match="simulated event-write failure"):
+        with pytest.raises(
+            RuntimeError, match="simulated event-write failure"
+        ):
             db.set_state(job_id, "training")
     finally:
         db_module._append_event = original_append

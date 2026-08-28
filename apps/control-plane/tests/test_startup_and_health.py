@@ -139,7 +139,7 @@ def test_the_system_starts_with_no_configuration_and_no_secrets():
     container = PostgresContainer(
         "postgres:16",
         username="temper",
-        password="temper",
+        password="temper",  # noqa: S106 - throwaway container, torn down below
         dbname="temper",
         port=5432,
     ).with_bind_ports(5432, 5432)
@@ -323,7 +323,9 @@ def test_a_broken_object_store_is_reported_as_a_broken_store(
 # --- stopping and restarting preserves data ----------------------------------
 
 
-def test_stopping_and_restarting_preserves_data(isolated, tmp_path, monkeypatch):
+def test_stopping_and_restarting_preserves_data(
+    isolated, tmp_path, monkeypatch
+):
     """One boot writes; a second boot over the same database and paths
     reads it all back.
 

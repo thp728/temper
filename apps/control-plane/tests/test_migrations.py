@@ -122,7 +122,13 @@ def test_rolling_back_the_baseline_loses_the_data_it_held(empty_database):
     empty_database.execute(
         "INSERT INTO datasets (id, filename, object_key, created_at, status) "
         "VALUES (%s,%s,%s,%s,%s)",
-        ("ds_roundtrip", "d.jsonl", "datasets/ds_roundtrip.jsonl", 1.0, "valid"),
+        (
+            "ds_roundtrip",
+            "d.jsonl",
+            "datasets/ds_roundtrip.jsonl",
+            1.0,
+            "valid",
+        ),
     )
     empty_database.commit()
 

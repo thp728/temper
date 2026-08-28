@@ -32,7 +32,10 @@ def _postgres_template():
     from temper_control_plane import migrations
 
     container = PostgresContainer(
-        "postgres:16", username="temper", password="temper", dbname="temper"
+        "postgres:16",
+        username="temper",
+        password="temper",  # noqa: S106 - throwaway container, torn down with the session
+        dbname="temper",
     )
     container.start()
     admin_url = container.get_connection_url(driver=None)
@@ -64,9 +67,7 @@ def isolated(tmp_path, monkeypatch, _postgres_template):
     db_name = f"test_{uuid.uuid4().hex[:16]}"
     base_url = admin_url.rsplit("/", 1)[0]
     with psycopg.connect(admin_url, autocommit=True) as conn:
-        conn.execute(
-            f'CREATE DATABASE "{db_name}" TEMPLATE temper_template'
-        )
+        conn.execute(f'CREATE DATABASE "{db_name}" TEMPLATE temper_template')
     monkeypatch.setattr(db, "DATABASE_URL", f"{base_url}/{db_name}")
     monkeypatch.setattr(
         storage,

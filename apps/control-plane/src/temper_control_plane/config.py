@@ -364,9 +364,7 @@ STORAGE_ROOT = Path(_text("TEMPER_STORAGE_ROOT") or DEFAULT_STORAGE_ROOT)
 # ports: a journey must not inherit another surface's orphans, and an
 # interrupted journey run must not be able to poison the database the next
 # gate run boots against.
-DEFAULT_DATABASE_URL = (
-    "postgresql://temper:temper@localhost:5432/temper"
-)
+DEFAULT_DATABASE_URL = "postgresql://temper:temper@localhost:5432/temper"
 
 DATABASE_URL = _text("TEMPER_DATABASE_URL") or DEFAULT_DATABASE_URL
 
