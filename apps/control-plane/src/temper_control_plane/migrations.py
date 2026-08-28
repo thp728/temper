@@ -251,11 +251,18 @@ def _ensure_tracking_table(conn: psycopg.Connection) -> None:
 
 
 def applied_ids(conn: psycopg.Connection) -> list[str]:
+    """Every migration id already recorded, oldest first.
+
+    Reads positionally rather than by column name: callers pass connections
+    built with either row factory (`db.connect()`'s `dict_row`, or the plain
+    tuple rows a maintenance connection outside `db.py` opens), and a
+    migration id is unambiguous by position either way.
+    """
     _ensure_tracking_table(conn)
     rows = conn.execute(
         "SELECT id FROM schema_migrations ORDER BY id"
     ).fetchall()
-    return [r[0] for r in rows]
+    return [(r["id"] if isinstance(r, dict) else r[0]) for r in rows]
 
 
 def migrate_up(conn: psycopg.Connection) -> None:

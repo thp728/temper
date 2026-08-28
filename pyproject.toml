@@ -28,6 +28,10 @@ dev = [
     # integration work; this proves wiring and round-trip without Docker or
     # credentials.
     "moto[server]>=5.0",
+    # Issue #43: the persistence suite runs against a real PostgreSQL,
+    # started as a throwaway container by the suite itself -- a fake database
+    # in a spec whose entire content is *which* database defeats the purpose.
+    "testcontainers[postgres]>=4.8",
 ]
 
 [tool.pytest.ini_options]

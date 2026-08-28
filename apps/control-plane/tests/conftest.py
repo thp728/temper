@@ -5,13 +5,53 @@ client. A suite that can reach the billing account by accident is a suite that
 eventually does.
 """
 
+import os
+import uuid
+
+import psycopg
 import pytest
+
+# Issue #43: SQLite's per-test isolation was "point `db.DB_PATH` at a fresh
+# file in tmp_path" -- a knob that stopped existing the moment the store
+# became a shared server. A real relational store needs a real server, so the
+# suite starts one throwaway PostgreSQL container for the whole session (a
+# fake database in a spec whose entire content is *which* database defeats
+# the purpose -- AGENTS.md's testing rule), migrates it once into a template,
+# and gives each test its own database cloned from that template. Cloning is
+# what keeps this fast: `CREATE DATABASE ... TEMPLATE` copies an
+# already-migrated schema in milliseconds rather than re-running every
+# migration per test.
+os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+
+
+@pytest.fixture(scope="session")
+def _postgres_template():
+    """One container, one migrated template database, for the whole session."""
+    from testcontainers.community.postgres import PostgresContainer
+
+    from temper_control_plane import migrations
+
+    container = PostgresContainer(
+        "postgres:16", username="temper", password="temper", dbname="temper"
+    )
+    container.start()
+    admin_url = container.get_connection_url(driver=None)
+    with psycopg.connect(admin_url, autocommit=True) as conn:
+        conn.execute("CREATE DATABASE temper_template")
+    template_url = admin_url.rsplit("/", 1)[0] + "/temper_template"
+    with psycopg.connect(template_url) as conn:
+        migrations.migrate_up(conn)
+    try:
+        yield admin_url, template_url
+    finally:
+        container.stop()
 
 
 @pytest.fixture()
-def isolated(tmp_path, monkeypatch):
-    """Redirect every writable surface into this test's own directory.
-    Nothing a test does may reach the checkout's real data/ tree.
+def isolated(tmp_path, monkeypatch, _postgres_template):
+    """Redirect every writable surface into this test's own database and
+    directory. Nothing a test does may reach the checkout's real data/ tree
+    or another test's rows.
 
     Fixtures that need the app add their TestClient on top of this one. This
     deliberately does NOT neuter `orchestrator.launch`: the orchestrator
@@ -20,13 +60,22 @@ def isolated(tmp_path, monkeypatch):
     """
     from temper_control_plane import db, storage
 
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    admin_url, template_url = _postgres_template
+    db_name = f"test_{uuid.uuid4().hex[:16]}"
+    base_url = admin_url.rsplit("/", 1)[0]
+    with psycopg.connect(admin_url, autocommit=True) as conn:
+        conn.execute(
+            f'CREATE DATABASE "{db_name}" TEMPLATE temper_template'
+        )
+    monkeypatch.setattr(db, "DATABASE_URL", f"{base_url}/{db_name}")
     monkeypatch.setattr(
         storage,
         "STORE",
         storage.FilesystemStorage(root=tmp_path / "objects"),
     )
-    db.init()
+    yield
+    with psycopg.connect(admin_url, autocommit=True) as conn:
+        conn.execute(f'DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)')
 
 
 @pytest.fixture()

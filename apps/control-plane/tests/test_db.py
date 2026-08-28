@@ -1,132 +1,47 @@
-"""Stored objects are addressed by key, and the raising companions over rows.
-
-Issue #22 renamed what the two location columns mean: `datasets.path` became
-`object_key`, `jobs.adapter_path` became `artifact_key`. A database written by
-the previous build must open cleanly -- renamed in place, with legacy values
-that map onto their key rewritten rather than silently left pointing at
-nothing.
+"""The raising companions over rows, and the counting phase's own state.
 
 Issue #85 adds `require_job` and `require_dataset`: `db.get_job` returns
 `dict | None` but the orchestration path spends money, so a missing row must
 arrive as a named error, not as `TypeError` on `None`.
+
+**A finding from issue #43** belongs here rather than in the tests it
+replaced. Issue #22's `datasets.path` -> `object_key` and
+`jobs.adapter_path` -> `artifact_key` rename shipped as a SQLite-specific
+compatibility shim (`_rename_location_columns` /
+`_rewrite_legacy_locations`, both now deleted): a database written by the
+previous build opened cleanly because `db.init()` detected and rewrote the
+old column names and values in place. Three tests pinned that shim by
+constructing a SQLite file with the pre-#22 schema, running `db.init()`
+over it, and asserting the rewrite. None of that has a PostgreSQL
+equivalent: this migration's baseline (`migrations.py`'s `0001_baseline`)
+starts every database at the post-#22 schema, `object_key` and
+`artifact_key` from birth, because no PostgreSQL-backed deployment of this
+product ever ran the pre-#22 column names to begin with. There is nothing
+for a rewrite to find. Carrying the shim (and its tests) forward would mean
+testing dead code against a database engine it was never written for --
+the honest move is to delete both together, not to keep a compatibility
+path unreachable in production and untested in truth. `db.py` still starts
+every fresh row with the correct column names, which
+`test_a_fresh_database_has_the_key_columns_from_birth` below still checks;
+what is gone is only the one-time rewrite of a different engine's legacy
+values.
 """
 
 from __future__ import annotations
-
-import sqlite3
 
 import pytest
 
 from temper_control_plane import db
 from temper_core.errors import OrchestratorError
 
-OLD_SCHEMA = """
-CREATE TABLE IF NOT EXISTS datasets (
-    id            TEXT PRIMARY KEY,
-    filename      TEXT NOT NULL,
-    path          TEXT NOT NULL,
-    created_at    REAL NOT NULL,
-    status        TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS jobs (
-    id            TEXT PRIMARY KEY,
-    dataset_id    TEXT NOT NULL REFERENCES datasets(id),
-    hyperparams_json TEXT NOT NULL,
-    status        TEXT NOT NULL,
-    created_at    REAL NOT NULL,
-    adapter_path  TEXT
-);
-"""
 
-
-def write_old_database(path) -> None:
-    conn = sqlite3.connect(path)
-    conn.executescript(OLD_SCHEMA)
-    conn.execute(
-        "INSERT INTO datasets (id, filename, path, created_at, status) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (
-            "ds_legacy01",
-            "notes.jsonl",
-            r"C:\dev\temper\data\uploads\ds_legacy01.jsonl",
-            1.0,
-            "valid",
-        ),
-    )
-    conn.execute(
-        "INSERT INTO jobs (id, dataset_id, hyperparams_json, status, "
-        "created_at, adapter_path) VALUES (?,?,?,?,?,?)",
-        (
-            "job_legacy01",
-            "ds_legacy01",
-            "{}",
-            "complete",
-            1.0,
-            r"C:\dev\temper\data\artifacts\job_legacy01"
-            r"\adapter_model.safetensors",
-        ),
-    )
-    conn.commit()
-    conn.close()
-
-
-def test_init_renames_the_location_columns_and_rewrites_legacy_values(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    write_old_database(db.DB_PATH)
-
-    db.init()
-
-    ds = db.get_dataset("ds_legacy01")
-    assert ds["object_key"] == "datasets/ds_legacy01.jsonl"
-    job = db.get_job("job_legacy01")
-    assert (
-        job["artifact_key"]
-        == "artifacts/job_legacy01/adapter_model.safetensors"
-    )
-    with sqlite3.connect(db.DB_PATH) as conn:
-        names = {
-            r[1]
-            for r in conn.execute("PRAGMA table_info(datasets)").fetchall()
-        } | {r[1] for r in conn.execute("PRAGMA table_info(jobs)").fetchall()}
-    assert "object_key" in names and "artifact_key" in names
-    assert "path" not in names and "adapter_path" not in names
-
-
-def test_a_legacy_value_that_maps_to_no_key_is_left_alone(
-    tmp_path, monkeypatch
-):
-    """Rewriting requires the old layout's shape. Anything else is not
-    invented into a key -- a wrong address beats a plausible-looking one."""
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    write_old_database(db.DB_PATH)
-    conn = sqlite3.connect(db.DB_PATH)
-    conn.execute(
-        "UPDATE datasets SET path=? WHERE id=?",
-        ("somewhere.jsonl", "ds_legacy01"),
-    )
-    conn.commit()
-    conn.close()
-
-    db.init()
-
-    assert db.get_dataset("ds_legacy01")["object_key"] == "somewhere.jsonl"
-
-
-def test_a_fresh_database_has_the_key_columns_from_birth(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    db.init()
+def test_a_fresh_database_has_the_key_columns_from_birth(isolated):
     ds_id = db.create_dataset("d.jsonl", "datasets/ds_new.jsonl", "ds_new")
     assert db.get_dataset(ds_id)["object_key"] == "datasets/ds_new.jsonl"
 
 
 @pytest.fixture()
-def temp_db(tmp_path, monkeypatch):
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    db.init()
+def temp_db(isolated):
     return db
 
 
@@ -302,7 +217,7 @@ def test_token_count_failure_leaves_the_dataset_valid_and_launchable(
     assert record["counting_progress"] is None
 
 
-def test_init_with_reset_recreates_a_dirty_database(tmp_path, monkeypatch):
+def test_init_with_reset_recreates_a_dirty_database(isolated, monkeypatch):
     """TEMPER_DB_RESET is the journeys' guarantee of a clean slate: a
     database left with a stale non-terminal job (an interrupted run) must not
     survive into the next run's startup, where it would crash the orphaned-job
@@ -310,8 +225,6 @@ def test_init_with_reset_recreates_a_dirty_database(tmp_path, monkeypatch):
     from temper_control_plane import config
 
     monkeypatch.setattr(config, "DB_RESET", True)
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    db.init()
     ds_id = db.create_dataset("d.jsonl", "datasets/ds_stale.jsonl", "ds_stale")
     job_id = db.create_job(
         ds_id, "qwen3-4b", {}
