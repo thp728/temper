@@ -545,7 +545,7 @@ def test_cancelling_a_job_that_vanishes_mid_request_is_a_404(
 def test_a_completed_adapter_job_downloads_a_loadable_artifact(
     client, tmp_path
 ):
-    """The download is a zip carrying the adapter's config and a manifest.
+    """The download is a zip carrying the adapter's config and a provenance manifest.
 
     Regression test for shipping a bare .safetensors: PEFT cannot load weights
     without the config that records rank, alpha and target modules, so a
@@ -553,7 +553,9 @@ def test_a_completed_adapter_job_downloads_a_loadable_artifact(
     are stored as objects behind the storage seam; the endpoint reads them by
     key and must not know where they live. The manifest declares the artifact's
     kind and its load path (issue #32) -- the artifact is the deliverable, and
-    the adapter is one kind of it.
+    the adapter is one kind of it. Issue #70 extends the manifest to a
+    provenance document generated from the run record, with a human-readable
+    Markdown alongside the machine-readable JSON.
     """
     import io
     import zipfile
@@ -569,12 +571,34 @@ def test_a_completed_adapter_job_downloads_a_loadable_artifact(
         storage.artifact_key(job["id"], storage.ADAPTER_CONFIG_NAME),
         b'{"r": 16, "lora_alpha": 32}',
     )
+    # The provenance manifest (issue #70) requires the held-out split and the
+    # chosen checkpoint to be recorded; a complete job's download must carry a
+    # full provenance, not just the minimal kind record.
+    ds_row = db.get_dataset(ds)
+    row_count = (ds_row.get("report") or {}).get("row_count") or 12
     db.set_state(
         job["id"],
         "complete",
         "done",
         method="qlora",
         artifact_key=weights_key,
+        result_json={
+            "held_out_split": {
+                "rows_in": row_count,
+                "rows_removed_duplicates": 0,
+                "train_rows": max(0, row_count - 1),
+                "held_out_rows": 1,
+                "fraction": 0.05,
+                "seed": 42,
+            },
+            "template_probe": {"ok": True},
+        },
+        best_checkpoint_json={
+            "step": 20,
+            "basis": "best_held_out_loss",
+            "reason": "Step 20 has the lowest held-out loss (0.39) of 3 retained checkpoint(s).",
+            "held_out_loss": 0.39,
+        },
     )
 
     r = client.get(f"/v1/jobs/{job['id']}/artifact")
@@ -586,6 +610,7 @@ def test_a_completed_adapter_job_downloads_a_loadable_artifact(
 
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         assert sorted(z.namelist()) == [
+            "PROVENANCE.md",
             "adapter_config.json",
             "adapter_model.safetensors",
             "temper-artifact.json",
@@ -595,6 +620,25 @@ def test_a_completed_adapter_job_downloads_a_loadable_artifact(
         assert manifest["kind"] == "adapter"
         assert manifest["base_model"] == job["base_model"]
         assert manifest["loading"]
+        # Provenance (issue #70): the manifest is generated from the run record
+        # and carries the dataset fingerprint, configuration, evaluation and
+        # checkpoint, plus licence obligations.
+        assert manifest["base_revision"] == job[
+            "base_revision"
+        ] or manifest.get("base_model_info", {}).get("revision")
+        assert "license" in (manifest.get("base_model_info") or {})
+        assert "license_obligations" in (manifest.get("base_model_info") or {})
+        assert manifest.get("dataset") is not None
+        assert manifest.get("configuration") is not None
+        assert manifest.get("evaluation") is not None
+        assert manifest.get("checkpoint", {}).get("step") == 20
+        # Human-readable provenance travels alongside the JSON.
+        provenance_md = z.read("PROVENANCE.md").decode("utf-8")
+        assert "# Provenance Manifest" in provenance_md
+        assert (
+            "licence" in provenance_md.lower()
+            or "license" in provenance_md.lower()
+        )
 
 
 def test_a_job_whose_stored_weights_are_gone_refuses_loudly(client, tmp_path):
@@ -639,6 +683,8 @@ def test_a_recorded_full_model_artifact_downloads_without_special_casing(
     }
     storage.STORE.put(keys["model.safetensors"], b"full weights")
     storage.STORE.put(keys["config.json"], b'{"architectures": ["Qwen3"]}')
+    ds_row = db.get_dataset(ds)
+    row_count = (ds_row.get("report") or {}).get("row_count") or 12
     db.set_state(
         job["id"],
         "complete",
@@ -657,12 +703,30 @@ def test_a_recorded_full_model_artifact_downloads_without_special_casing(
             + len(b'{"architectures": ["Qwen3"]}'),
             "sha256": "x",
         },
+        result_json={
+            "held_out_split": {
+                "rows_in": row_count,
+                "rows_removed_duplicates": 0,
+                "train_rows": max(0, row_count - 1),
+                "held_out_rows": 1,
+                "fraction": 0.05,
+                "seed": 42,
+            },
+            "template_probe": {"ok": True},
+        },
+        best_checkpoint_json={
+            "step": 20,
+            "basis": "best_held_out_loss",
+            "reason": "Step 20 has the lowest held-out loss",
+            "held_out_loss": 0.39,
+        },
     )
 
     r = client.get(f"/v1/jobs/{job['id']}/artifact")
     assert r.status_code == 200
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         assert sorted(z.namelist()) == [
+            "PROVENANCE.md",
             "config.json",
             "model.safetensors",
             "temper-artifact.json",
@@ -766,7 +830,31 @@ def test_the_download_zip_streams_without_holding_it_whole(
         storage.artifact_key(job["id"], storage.ADAPTER_CONFIG_NAME),
         b'{"r": 16}',
     )
-    db.set_state(job["id"], "complete", "done", artifact_key=weights_key)
+    ds_row = db.get_dataset(ds)
+    row_count = (ds_row.get("report") or {}).get("row_count") or 12
+    db.set_state(
+        job["id"],
+        "complete",
+        "done",
+        artifact_key=weights_key,
+        result_json={
+            "held_out_split": {
+                "rows_in": row_count,
+                "rows_removed_duplicates": 0,
+                "train_rows": max(0, row_count - 1),
+                "held_out_rows": 1,
+                "fraction": 0.05,
+                "seed": 42,
+            },
+            "template_probe": {"ok": True},
+        },
+        best_checkpoint_json={
+            "step": 10,
+            "basis": "best_held_out_loss",
+            "reason": "Step 10 has the lowest held-out loss",
+            "held_out_loss": 0.5,
+        },
+    )
 
     block = bytes(range(256)) * 1024
 
@@ -810,6 +898,7 @@ def test_the_download_zip_streams_without_holding_it_whole(
     joined = asyncio.run(collect())
     with zipfile.ZipFile(io.BytesIO(joined)) as z:
         assert sorted(z.namelist()) == [
+            "PROVENANCE.md",
             "adapter_config.json",
             "adapter_model.safetensors",
             "temper-artifact.json",
