@@ -170,6 +170,11 @@ class FakeProvider:
             raise ValueError(f"unknown stage {pause_at_stage!r}")
         self._lines = list(lines)
         self._result = result
+        # The constructor's own behaviour, kept for the memory recovery
+        # (issue #35): the `oom` fault replaces it once, then the retried
+        # machine is restored to it, so the recovered run completes normally.
+        self._base_lines = list(lines)
+        self._base_result = result
         self._fail_at = fail_at
         self._fail_code = fail_code
         self._fail_unexpectedly = fail_unexpectedly
@@ -191,6 +196,13 @@ class FakeProvider:
         # fault behaviour into the next.
         self._orphan_ids: list[int] = []
         self._stop_without_result = False
+        # Issue #35: whether the `oom` fault has already fired for this job.
+        # The fault exhausts the *first* machine's memory; the memory
+        # recovery's retried attempt runs a smaller batch on a fresh machine
+        # and fits, so the fault fires once per job rather than once per
+        # attempt (firing on every retried machine would turn the
+        # demonstration of the recovery into a retry-until-surface loop).
+        self._oom_fired = False
         # Observable afterwards: the fault this machine was asked to suffer,
         # or None when the surface was off.
         self.fault_applied: str | None = None
@@ -813,6 +825,31 @@ class SimulatedMachine(FakeProvider):
             self._lines = DEMO_LINES[:1]
         elif isinstance(requested, dict):
             self._configure_fault(requested)
+            # Issue #35: the oom fault exhausts the first machine's memory
+            # and the memory recovery's retried attempt -- a smaller batch on
+            # a fresh machine -- fits, so the fault fires once per job. The
+            # first machine's run fails with the fault's own `simulated_oom`
+            # code (a deliberately broken run is never mistaken for a real
+            # one); the recovery that follows is the thing the fault exists
+            # to prove.
+            if requested.get("name") == "oom" and not self._oom_fired:
+                self._oom_fired = True
+                self._lines = [self._narration("oom"), *self._base_lines]
+                self._result = {
+                    "ok": False,
+                    "stage": "train",
+                    "error_code": fault_surface.code_for("oom"),
+                    "error": (
+                        "The training process ran out of device memory "
+                        "(simulated fault); no artifact was produced."
+                    ),
+                }
+            elif requested.get("name") == "oom":
+                # The recovery's retried machine -- a smaller batch on a
+                # fresh machine -- fits, so it behaves like the normal
+                # completed machine it was constructed as.
+                self._lines = list(self._base_lines)
+                self._result = self._base_result
         yield from super().stream(machine, script)
 
     # -- the fault surface (issue #24) ---------------------------------------
@@ -849,16 +886,11 @@ class SimulatedMachine(FakeProvider):
                 _fault_int(spec, "machine_id", ORPHAN_MACHINE_ID)
             ]
         elif name == "oom":
-            self._lines = [self._narration(name), *DEMO_LINES]
-            self._result = {
-                "ok": False,
-                "stage": "train",
-                "error_code": fault_surface.code_for(name),
-                "error": (
-                    "The training process ran out of device memory "
-                    "(simulated fault); no artifact was produced."
-                ),
-            }
+            # The failure itself is applied in `stream`, once per job (issue
+            # #35): the first machine exhausts memory and the recovery's
+            # retried machine -- a smaller batch -- fits. `fault_applied` is
+            # set above; there is nothing more to configure here.
+            pass
         elif name == "divergence":
             self._lines = [
                 self._narration(name),

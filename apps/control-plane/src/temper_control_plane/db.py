@@ -160,7 +160,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- as verified; the download path reads these to serve each format with a
     -- manifest generated from the run record (ADR-0054 flow-through).
     delivery_request_json TEXT,
-    delivery_json TEXT
+    delivery_json TEXT,
+    -- The executions of this job (issue #35): one record per attempt, each
+    -- carrying its own machine, its own spec and its own outcome. A memory
+    -- failure retries automatically and makes attempts plural; a resumed run
+    -- (#60) will append here too, so the history says what actually happened
+    -- rather than presenting one continuous run that was not.
+    attempts_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -271,6 +277,7 @@ ADDED_COLUMNS = (
     # written at packaging time like the artifact record.
     ("jobs", "delivery_request_json", "TEXT"),
     ("jobs", "delivery_json", "TEXT"),
+    ("jobs", "attempts_json", "TEXT"),
 )
 
 
@@ -685,6 +692,22 @@ def set_best_checkpoint(job_id: str, selection: dict) -> None:
         )
 
 
+def set_attempts(job_id: str, attempts: list[dict]) -> None:
+    """Record the job's executions (issue #35): one record per attempt, each
+    carrying its own machine, spec and outcome.
+
+    Written whole each time because the orchestrator appends as each attempt
+    ends and there is one writer per job; a memory failure's automatic retry
+    makes attempts plural, and the record is what "the attempts recorded"
+    means in the retry-cap criterion.
+    """
+    with connect() as c:
+        c.execute(
+            "UPDATE jobs SET attempts_json=? WHERE id=?",
+            (json.dumps(attempts), job_id),
+        )
+
+
 def request_cancel(job_id: str, note: str = "Cancellation requested") -> str:
     """Ask a job to stop. Says what it found, and never raises for it.
 
@@ -1072,6 +1095,7 @@ def get_job(job_id: str) -> dict | None:
                             "artifact_json": "artifact_record",
                             "delivery_request_json": "delivery_request",
                             "delivery_json": "delivery",
+                            "attempts_json": "attempts",
                         },
                         defaults={
                             "overrides": [],
@@ -1079,6 +1103,7 @@ def get_job(job_id: str) -> dict | None:
                             "best_checkpoint": None,
                             "delivery_request": [],
                             "delivery": [],
+                            "attempts": [],
                         },
                     )
                 )
@@ -1203,8 +1228,9 @@ def active_jobs() -> list[dict]:
                                 "quote_json": "quote",
                                 "overrides_json": "overrides",
                                 "actuals_json": "actuals",
+                                "attempts_json": "attempts",
                             },
-                            defaults={"overrides": []},
+                            defaults={"overrides": [], "attempts": []},
                         )
                     )
                 )

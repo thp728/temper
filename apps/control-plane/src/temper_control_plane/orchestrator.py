@@ -45,7 +45,7 @@ import json
 import tarfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import suppress
 from pathlib import Path
 from typing import BinaryIO, NamedTuple
@@ -59,7 +59,9 @@ from temper_core import (
     disk,
     divergence,
     events,
+    gpus,
     hyperparams,
+    memory_retry,
     overrides,
     progress,
     selection,
@@ -245,6 +247,7 @@ def _remote_script(
     artifact_grant: storage.WriteGrant | None = None,
     checkpoint_grants: list[storage.WriteGrant] | None = None,
     delivery_grants: list[tuple[str, storage.WriteGrant]] | None = None,
+    resolved_hp: dict | None = None,
 ) -> bytes:
     """The on-machine script: pull the published image, run the job, report.
 
@@ -302,14 +305,19 @@ def _remote_script(
     # full fine-tune's, not the adapter's. The method itself rides in the
     # spec so the trainer builds the matching config and collects the matching
     # artifact; a value two components must agree on is written once and read.
+    # Issue #35: a memory recovery's retried attempt runs a different
+    # resolved spec than the frozen one -- `resolved_hp` is the recovery's
+    # answer (batch halved, accumulation doubled, ...) computed by
+    # `memory_retry.MemoryEscalator` and carries the effective batch
+    # unchanged. The trainer still resolves nothing: it applies whatever
+    # spec arrives, exactly as before.
     job_spec = {
         "job_id": job["id"],
         "base_model": model.repo,
         "base_revision": revision,
         "method": method,
-        "hyperparameters": hyperparams.effective(
-            job["hyperparameters"] or {}, method=method
-        ),
+        "hyperparameters": resolved_hp
+        or hyperparams.effective(job["hyperparameters"] or {}, method=method),
     }
     if artifact_grant is not None:
         job_spec["artifact_upload"] = {
@@ -1185,6 +1193,9 @@ def _attempt(
     machines: list,
     limits: RunLimits,
     models: Models,
+    *,
+    resolved_hp: dict | None = None,
+    availability_override: Sequence | None = None,
 ) -> tuple[str, str, dict]:
     """Do the work. Returns the terminal state to record, but never records it.
 
@@ -1246,19 +1257,35 @@ def _attempt(
     enable_thinking = bool(dataset.get("enable_thinking"))
     revision = job.get("base_revision") or model.revision
     facts = models.resolve(model.repo, revision)
-    hp = hyperparams.effective(job["hyperparameters"] or {})
+    # Issue #35: a memory recovery's retried attempt arrives with its spec
+    # already resolved by the escalator (the frozen spec, transformed with
+    # the effective batch preserved). The first attempt resolves from the
+    # frozen record exactly as before; nothing here chooses a value, so the
+    # trainer's "applies values, resolves nothing" contract is unchanged.
+    if resolved_hp is not None:
+        hp = resolved_hp
+    else:
+        hp = hyperparams.effective(job["hyperparameters"] or {})
 
     # The decisions the launch committed to (issue #79), re-applied here so
     # provisioning honours them rather than silently re-picking the
     # predictor's cheapest configuration: a run that provisioned something
     # other than what the plan froze would be lying about what it did. An
     # override that is no longer available at provisioning fails here, by
-    # name, rather than being silently dropped.
+    # name, rather than being silently dropped. A retried attempt keeps the
+    # user's hardware pins (they are the user's, not the recovery's to
+    # override) and pins the method the first attempt ran -- a memory
+    # recovery must not quietly switch an adapter run to a full fine-tune.
     frozen_overrides = job.get("overrides") or []
     resolved_overrides = overrides.resolve(
         hp,
         [overrides.from_dict(d) for d in frozen_overrides],
     )
+    sequence_len = int(hp[memory_retry.SEQUENCE_LEN_KEY])
+    if resolved_hp is not None:
+        method_pin = resolved_overrides.method or job.get("method")
+    else:
+        method_pin = resolved_overrides.method
 
     # The image the machine will pull, read before anything is provisioned.
     # A job that cannot know which image it would run must not spend money
@@ -1276,14 +1303,23 @@ def _attempt(
     limits.check_duration()
     db.set_state(job_id, "provisioning", "Selecting hardware")
     try:
+        # Issue #35: a hardware-rung retry narrows the provider's rows to
+        # cards with strictly more memory than the one that OOMed -- the
+        # only thing that can help once every in-place reduction is spent.
+        # Every other attempt reads the provider's availability as usual.
+        availability = (
+            availability_override
+            if availability_override is not None
+            else provider.gpu_availability()
+        )
         plan = selection.select_hardware(
             facts,
             lora_r=hp["lora_r"],
-            sequence_len=resolved_overrides.hyperparameters["sequence_len"],
+            sequence_len=sequence_len,
             micro_batch_size=hp["micro_batch_size"],
-            availability=provider.gpu_availability(),
+            availability=availability,
             currency=provider.currency(),
-            method=resolved_overrides.method,
+            method=method_pin,
             gpu_type=resolved_overrides.gpu_type,
             device_count=resolved_overrides.device_count,
         )
@@ -1397,6 +1433,7 @@ def _attempt(
         artifact_grant=grant,
         checkpoint_grants=checkpoint_grants,
         delivery_grants=delivery_grants,
+        resolved_hp=resolved_hp,
     )
     # The guard sits between the transport and the reader, so both limits hold
     # for any provider rather than for the SSH one only.
@@ -1499,6 +1536,142 @@ def _record_actuals(
     db.record_actuals(job_id, actuals.to_dict(measured))
 
 
+def _attempt_spec(job: dict, resolved_hp: dict | None) -> dict:
+    """The memory-relevant spec one attempt ran, for the attempts record.
+
+    The frozen record is the user's request; a memory recovery's retried
+    attempt runs a transformed spec. The record keeps the three values that
+    can change between attempts -- per-step batch, accumulation and sequence
+    length -- so "what changed" is visible without duplicating the whole
+    spec, and the effective batch is carried beside them.
+    """
+    hp = resolved_hp or hyperparams.effective(
+        job["hyperparameters"] or {}, method=job.get("method")
+    )
+    return {
+        memory_retry.MICRO_BATCH_KEY: hp[memory_retry.MICRO_BATCH_KEY],
+        memory_retry.ACCUMULATION_KEY: hp[memory_retry.ACCUMULATION_KEY],
+        memory_retry.SEQUENCE_LEN_KEY: hp[memory_retry.SEQUENCE_LEN_KEY],
+        "method": job.get("method"),
+    }
+
+
+def _recovery_record(step: memory_retry.MemoryRetryStep | None) -> dict | None:
+    """The structured record of one memory-recovery step, or None.
+
+    What changed (per key, old -> new), which rung fired, and the preserved
+    effective batch -- the half of "told the user what changed" that is
+    queryable rather than prose.
+    """
+    if step is None:
+        return None
+    return {
+        "rung": step.rung,
+        "action": step.action,
+        "changed": {k: [old, new] for k, (old, new) in step.changed.items()},
+        "effective_batch": step.effective_batch,
+        "notes": list(step.notes),
+    }
+
+
+def _memory_recovery_message(
+    step: memory_retry.MemoryRetryStep, attempt_no: int
+) -> str:
+    """The user-facing narrative for one automatic memory recovery.
+
+    Says what changed, what was already in force (the notes), and -- the
+    distinction ADR-0055 depends on -- that this is a memory recovery, not a
+    divergence retry.
+    """
+    parts = [
+        f"Out of device memory during attempt {attempt_no}. Automatically "
+        f"retrying on a fresh machine: {step.action}.",
+        *step.notes,
+        "This is a memory recovery: the effective batch is preserved, and it "
+        "is not a divergence retry (a diverging run offers a half-rate retry "
+        "as a choice instead).",
+    ]
+    return " ".join(parts)
+
+
+def _bigger_than(provider: Provider, capacity_gb: float) -> list:
+    """The provider's rows for cards with strictly more memory than `capacity_gb`.
+
+    The hardware rung of the escalation ladder: once every in-place reduction
+    is spent (batch, gradient checkpointing, sequence length), the only thing
+    that can help is a card the failed one cannot be. An empty list means the
+    ladder is exhausted and the job surfaces.
+    """
+    return [
+        row
+        for row in provider.gpu_availability()
+        if gpus.CAPACITY_GB.get(row.gpu_type, 0) > capacity_gb
+    ]
+
+
+def _memory_surface(
+    job_id: str, attempts: list[dict]
+) -> tuple[str, str, dict]:
+    """The terminal outcome when the escalation ladder or the retry cap is
+    exhausted: the job fails with the stable code and the attempts recorded.
+
+    The criterion is that exhausting the retries fails the job with the
+    reason *and the attempts recorded* -- the attempts list is already
+    persisted by the loop, so the surface says how many were made and names
+    the code a client can branch on. This is a memory failure, never a
+    divergence abort and never a bare `training_failed`.
+    """
+    message = memory_retry.MEMORY_RETRIES_EXHAUSTED_MESSAGE
+    db.add_event(
+        job_id,
+        "error",
+        message,
+        {
+            "code": memory_retry.MEMORY_RETRIES_EXHAUSTED_CODE,
+            "attempts": len(attempts),
+        },
+    )
+    return (
+        "failed",
+        message,
+        {
+            "error_code": memory_retry.MEMORY_RETRIES_EXHAUSTED_CODE,
+            "error_message": message,
+        },
+    )
+
+
+def _record_attempt(
+    job_id: str,
+    attempts: list[dict],
+    attempt_no: int,
+    machines: list,
+    outcome: str,
+    error_code: str | None,
+    resolved_hp: dict | None,
+    recovery: dict | None = None,
+) -> None:
+    """Persist one attempt's record: what it ran, what it ended as, and (for
+    a memory-failed attempt) what the recovery changed for the next one.
+
+    This is the "attempts recorded" half of the retry-cap criterion (issue
+    #35) and the shape a resumption ticket (#60) will read: each attempt
+    carries its own machine, its own spec, and its own outcome, so the
+    history says what actually happened rather than one continuous run.
+    """
+    job = db.require_job(job_id)
+    record: dict = {
+        "attempt": attempt_no,
+        "outcome": outcome,
+        "error_code": error_code,
+        "machine_id": machines[-1].machine_id if machines else None,
+        "spec": _attempt_spec(job, resolved_hp),
+        "recovery": recovery,
+    }
+    attempts.append(record)
+    db.set_attempts(job_id, attempts)
+
+
 def run_job(
     job_id: str,
     provider: Provider | None = None,
@@ -1568,44 +1741,225 @@ def run_job(
     machines: list = []
     wall_started = time.time()
     try:
-        try:
-            outcome = _attempt(provider, job_id, machines, limits, models)
-        except Cancelled as e:
-            # No error code and no error message: the user's own decision is
-            # not a defect, and a `cancelled` job carrying an error code would
-            # be read as one by every client that branches on codes.
-            #
-            # The machine writes its artifact directly, so an upload that
-            # landed before the cancellation was seen is discarded here rather
-            # than left readable as the deliverable. Checkpoints are discarded
-            # with it (issue #37): a job the user stopped keeps no recovery
-            # material.
-            _delete_stored_artifact(job_id)
-            _delete_stored_checkpoints(job_id)
-            outcome = ("cancelled", str(e), {})
-        except OrchestratorError as e:
-            outcome = (
-                "failed",
-                str(e),
-                {"error_code": e.code, "error_message": str(e)},
-            )
-        except Exception as e:
-            outcome = (
-                "failed",
-                f"{type(e).__name__}: {e}",
-                {"error_code": "internal_error", "error_message": str(e)},
-            )
-        finally:
-            # Before the terminal transition, and on every path including one
-            # nobody anticipated.
-            for machine in machines:
-                _teardown(provider, job_id, machine)
-            db.add_event(
-                job_id,
-                "log",
-                f"Job finished in {time.time() - wall_started:.0f}s",
-            )
+        # Issue #35: an out-of-memory failure retries **automatically**,
+        # climbing the escalation ladder one rung per retry (halve the
+        # per-step batch, gradient checkpointing, sequence length, more
+        # capable hardware), each retry on its own machine -- torn down
+        # before the next one provisions -- until the ladder or the retry cap
+        # is exhausted and the failure is surfaced with the attempts recorded.
+        # Every other failure, and a cancellation, ends the job exactly as
+        # before. The retry being automatic is precisely what distinguishes it
+        # from a divergence retry (ADR-0055), which is a *choice*: a diverging
+        # run usually means the data or the rate is wrong, while a memory
+        # retry preserves the effective batch and so cannot change the
+        # optimisation. The two decisions never look alike in the record or
+        # the database (the codes are asserted disjoint by a core test).
+        escalator: memory_retry.MemoryEscalator | None = None
+        resolved_hp: dict | None = None
+        availability_override: Sequence | None = None
+        last_rung: str | None = None
+        retries_used = 0
+        attempts: list[dict] = []
+        outcome: tuple[str, str, dict] | None = None
+        while True:
+            attempt_no = len(attempts) + 1
+            attempt_started = time.time()
+            try:
+                outcome = _attempt(
+                    provider,
+                    job_id,
+                    machines,
+                    limits,
+                    models,
+                    resolved_hp=resolved_hp,
+                    availability_override=availability_override,
+                )
+                _record_attempt(
+                    job_id,
+                    attempts,
+                    attempt_no,
+                    machines,
+                    outcome[0],
+                    None,
+                    resolved_hp,
+                )
+                break
+            except Cancelled as e:
+                # No error code and no error message: the user's own decision
+                # is not a defect, and a `cancelled` job carrying an error
+                # code would be read as one by every client that branches on
+                # codes.
+                #
+                # The machine writes its artifact directly, so an upload that
+                # landed before the cancellation was seen is discarded here
+                # rather than left readable as the deliverable. Checkpoints
+                # are discarded with it (issue #37): a job the user stopped
+                # keeps no recovery material.
+                _delete_stored_artifact(job_id)
+                _delete_stored_checkpoints(job_id)
+                _record_attempt(
+                    job_id,
+                    attempts,
+                    attempt_no,
+                    machines,
+                    "cancelled",
+                    None,
+                    resolved_hp,
+                )
+                outcome = ("cancelled", str(e), {})
+                break
+            except OrchestratorError as e:
+                is_memory = e.code in memory_retry.MEMORY_FAILURE_CODES
+                if is_memory:
+                    if retries_used >= memory_retry.MEMORY_RETRY_CAP:
+                        # The retry cap is exhausted: every permitted retry is
+                        # spent, so the job surfaces with the attempts recorded
+                        # rather than failing with a bare out-of-memory code.
+                        _record_attempt(
+                            job_id,
+                            attempts,
+                            attempt_no,
+                            machines,
+                            "failed",
+                            e.code,
+                            resolved_hp,
+                        )
+                        outcome = _memory_surface(job_id, attempts)
+                        break
+                    job = db.require_job(job_id)
+                    if escalator is None:
+                        # The escalator starts from the frozen spec's
+                        # effective values -- the recovery's first decision is
+                        # relative to what the user actually launched with --
+                        # resolved against the method the first attempt ran,
+                        # so the retried spec keeps the method's own defaults
+                        # (a full fine-tune's learning rate is the full
+                        # fine-tune's, never the adapter's).
+                        escalator = memory_retry.MemoryEscalator(
+                            resolved_hp
+                            or hyperparams.effective(
+                                job["hyperparameters"] or {},
+                                method=job.get("method"),
+                            )
+                        )
+                    step = escalator.step()
+                    _record_attempt(
+                        job_id,
+                        attempts,
+                        attempt_no,
+                        machines,
+                        "failed",
+                        e.code,
+                        resolved_hp,
+                        recovery=_recovery_record(step),
+                    )
+                    if step is None:
+                        # Every reduction the ladder can express is spent;
+                        # surfacing is the last rung.
+                        outcome = _memory_surface(job_id, attempts)
+                        break
+                    retries_used += 1
+                    resolved_hp = step.hyperparameters
+                    last_rung = step.rung
+                    if step.rung == memory_retry.RUNG_HARDWARE:
+                        # Narrow the provider's rows to cards with strictly
+                        # more memory than the one that OOMed; when none
+                        # exists the ladder is exhausted and the job surfaces
+                        # rather than provisioning the same card again.
+                        job = db.require_job(job_id)
+                        gpu_type = job.get("gpu_type")
+                        capacity = (
+                            gpus.CAPACITY_GB.get(gpu_type, 0.0)
+                            if isinstance(gpu_type, str)
+                            else 0.0
+                        )
+                        availability_override = _bigger_than(
+                            provider, capacity
+                        )
+                        if not availability_override:
+                            outcome = _memory_surface(job_id, attempts)
+                            break
+                    else:
+                        availability_override = None
+                    db.add_event(
+                        job_id,
+                        "log",
+                        _memory_recovery_message(step, attempt_no),
+                        {
+                            "code": memory_retry.MEMORY_RECOVERY_CODE,
+                            "attempt": attempt_no,
+                            "rung": step.rung,
+                            "effective_batch": step.effective_batch,
+                            "retries_used": retries_used,
+                        },
+                    )
+                    continue
+                if (
+                    last_rung == memory_retry.RUNG_HARDWARE
+                    and e.code == "provider_capacity_unavailable"
+                ):
+                    # The hardware rung found no bigger card that fits; the
+                    # ladder is exhausted, so this surfaces as a memory
+                    # exhaustion rather than a capacity failure to retry.
+                    _record_attempt(
+                        job_id,
+                        attempts,
+                        attempt_no,
+                        machines,
+                        "failed",
+                        e.code,
+                        resolved_hp,
+                    )
+                    outcome = _memory_surface(job_id, attempts)
+                    break
+                _record_attempt(
+                    job_id,
+                    attempts,
+                    attempt_no,
+                    machines,
+                    "failed",
+                    e.code,
+                    resolved_hp,
+                )
+                outcome = (
+                    "failed",
+                    str(e),
+                    {"error_code": e.code, "error_message": str(e)},
+                )
+                break
+            except Exception as e:
+                _record_attempt(
+                    job_id,
+                    attempts,
+                    attempt_no,
+                    machines,
+                    "failed",
+                    "internal_error",
+                    resolved_hp,
+                )
+                outcome = (
+                    "failed",
+                    f"{type(e).__name__}: {e}",
+                    {"error_code": "internal_error", "error_message": str(e)},
+                )
+                break
+            finally:
+                # Before the terminal transition and between attempts, on
+                # every path including one nobody anticipated: each attempt's
+                # machine is destroyed before the next one provisions, so the
+                # retry never stacks machines.
+                for machine in machines:
+                    _teardown(provider, job_id, machine)
+                machines.clear()
+                db.add_event(
+                    job_id,
+                    "log",
+                    f"Attempt {attempt_no} ended in "
+                    f"{time.time() - attempt_started:.0f}s",
+                )
 
+        # Every break above sets `outcome`; the loop cannot fall through.
+        assert outcome is not None
         state, message, fields = outcome
         # The measured half of issue #77's comparison, frozen the moment the
         # run ends -- the mirror of the quote frozen at launch -- so no run is
@@ -1613,6 +1967,13 @@ def run_job(
         # the terminal status is written, so a reader can never observe a
         # terminal job without its actuals beside it.
         _record_actuals(job_id, fields.get("result_json"), state, time.time())
+        # Before the terminal transition, so the terminal state stays the
+        # last word on the job (the teardown-confirmation test pins that).
+        db.add_event(
+            job_id,
+            "log",
+            f"Job finished in {time.time() - wall_started:.0f}s",
+        )
         db.set_state(job_id, state, message, **fields)
     finally:
         if owns_provider:

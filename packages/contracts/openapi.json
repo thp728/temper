@@ -136,6 +136,71 @@
         "title": "ArtifactRecord",
         "type": "object"
       },
+      "AttemptRecord": {
+        "description": "One execution of a job (issue #35): its own machine, its own spec and\nits own outcome, so the history says what actually happened rather than\none continuous run. A memory failure retries automatically and makes\nattempts plural; the attempt that OOMed carries its `error_code` (the\nfault's `simulated_oom` or a real `training_oom`) and the `recovery` --\nwhich rung fired, what changed, and the effective batch that was\npreserved -- so \"the user is told a recovery happened and what changed\"\nand \"the attempts are recorded\" are both queryable, not just narrated.\n\n`spec` is the memory-relevant slice of the resolved spec that attempt ran\n(per-step batch, accumulation, sequence length) -- the frozen record is\nthe user's request, and the retried attempts are the platform's answer to\na failure.",
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec"
+          }
+        },
+        "required": [
+          "attempt",
+          "outcome"
+        ],
+        "title": "AttemptRecord",
+        "type": "object"
+      },
       "BestCheckpoint": {
         "description": "The run's recorded choice of result checkpoint (issue #62).\n\nStored once at terminal time and never recomputed: a user who returns a\nweek later sees the same answer even if retention evicts a checkpoint or\nthe selection rule is edited. `basis` names the rule that decided, and\n`reason` says it in words -- the \"why\" that is shown with the choice.",
         "properties": {
@@ -1237,6 +1302,13 @@
                 "type": "null"
               }
             ]
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/AttemptRecord"
+            },
+            "title": "Attempts",
+            "type": "array"
           },
           "base_model": {
             "title": "Base Model",

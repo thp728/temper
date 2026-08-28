@@ -9,6 +9,7 @@ import ProgressRegion from "@/components/ProgressRegion";
 import QuoteView from "@/components/QuoteView";
 import { Button } from "@/components/ui/button";
 import DivergenceRetry from "@/components/DivergenceRetry";
+import MemoryRecovery from "@/components/MemoryRecovery";
 import {
   TERMINAL_STATUSES,
   epochNow,
@@ -563,6 +564,11 @@ export default function JobRecordView({
 
       {job.status === "complete" && <ArtifactSection job={job} />}
       {job.status === "failed" && <FailedSection job={job} events={events} />}
+      {/* A memory recovery is an automatic retry with the effective batch
+          preserved (issue #35): shown as its own banner whenever the job's
+          executions are plural and the last one completed, so the user is
+          told a recovery happened and what changed. */}
+      <MemoryRecovery job={job} />
       {/* Instability is a warning rather than an abort (issue #36): the
           same exceedance that would become a divergence after 20 steps is
           surfaced at 5 steps as a banner that does not stop the run. */}

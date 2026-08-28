@@ -31,14 +31,18 @@ from temper_core import faults as fault_surface
 
 ALL_FAULTS = fault_surface.names()
 # The six faults the surface must cover, and the terminal state each drives
-# the job to when it fires against the fake machine. `oom` fails with its own
-# simulated code; `divergence` is the trainer-side fault that drives loss to a
-# meaningless value -- before #36 it completed with a worthless result so the
-# recovery could be demonstrated rather than reasoned about, but after #36 the
-# detector aborts it with training_diverged (the fault is the cause, the abort
-# is the recovery).
+# the job to when it fires against the fake machine. `oom` now demonstrates
+# the memory recovery (#35): the fault exhausts the first machine's memory,
+# the automatic retry re-provisions with the effective batch preserved, and
+# the job completes -- the `simulated_oom` code is carried by the first
+# attempt's record, and the fault is still named in the history. `divergence`
+# is the trainer-side fault that drives loss to a meaningless value -- before
+# #36 it completed with a worthless result so the recovery could be
+# demonstrated rather than reasoned about, but after #36 the detector aborts
+# it with training_diverged (the fault is the cause, the abort is the
+# recovery).
 EXPECTED_OUTCOMES = {
-    "oom": ("failed", "simulated_oom"),
+    "oom": ("complete", None),
     "divergence": ("failed", "training_diverged"),
     "worker_kill": ("failed", "training_failed"),
     "machine_silent": ("failed", "gpu_stalled"),
@@ -227,18 +231,27 @@ def test_every_fault_in_the_vocabulary_is_causable(harness, name):
 
 def test_oom_records_the_fault_in_the_result_document(harness):
     """A trainer-side fault on the fake machine travels the ordinary result
-    path, so the job's record carries the `simulated_` code -- the marker
-    that makes the broken run identifiable."""
+    path, so the first attempt's record carries the `simulated_` code -- the
+    marker that makes the broken run identifiable. Since #35 the oom fault
+    *demonstrates* the memory recovery: the first machine exhausts memory and
+    the job retries automatically with the effective batch preserved, so the
+    job completes and the simulated code lives on the attempt that OOMed."""
     harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "oom"}}
     )
     assert response.status_code == 201
     job = harness.job(job_id)
-    assert job["status"] == "failed"
-    assert job["error_code"] == "simulated_oom"
+    assert job["status"] == "complete"
     # The machine's own stream says the fault, at the moment it fired.
-    assert any("out of device memory" in m for m in harness.messages(job_id))
+    assert any("exhaust device memory" in m for m in harness.messages(job_id))
+    # The fault's own code is on the attempt that was deliberately broken.
+    attempts = job.get("attempts") or []
+    assert attempts
+    assert attempts[0]["outcome"] == "failed"
+    assert attempts[0]["error_code"] == "simulated_oom"
+    assert len(attempts) >= 2
+    assert attempts[-1]["outcome"] == "complete"
 
 
 def test_divergence_leaves_the_meaningless_loss_in_the_history(harness):
@@ -408,15 +421,20 @@ def test_a_provider_side_fault_is_refused_on_the_real_tier(harness):
 
 def test_a_trainer_side_fault_is_allowed_on_the_real_tier(harness):
     """The deliberate real tier exists exactly for trainer-side faults: the
-    trainer genuinely makes them happen on hardware, and nothing is refused."""
+    trainer genuinely makes them happen on hardware, and nothing is refused.
+    Against the fake machine the oom fault demonstrates the memory recovery
+    (#35), so the job completes after an automatic retry -- the point of the
+    test is that the real tier does not refuse a trainer-side fault, not that
+    the run's terminal state is the fault's own."""
     harness.enable_real_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "oom"}}
     )
     assert response.status_code == 201
     job = harness.job(job_id)
-    assert job["status"] == "failed"
-    assert job["error_code"] == "simulated_oom"
+    assert job["status"] == "complete"
+    # The fault is still named in the run's own history.
+    assert fault_event(harness.messages(job_id), "oom")
 
 
 def test_only_result_producing_faults_carry_a_simulated_code():

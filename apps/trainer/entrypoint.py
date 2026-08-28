@@ -39,7 +39,7 @@ import tarfile
 import threading
 import time
 from collections import deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import IO
 
@@ -326,6 +326,53 @@ def _kill_worker() -> None:
     import signal
 
     _os.kill(_os.getpid(), signal.SIGKILL)
+
+
+# Issue #35: the stable code the trainer reports for a genuine device
+# out-of-memory failure. The trainer image cannot import `temper_core`
+# (ADR-0010), so the value is pinned equal to
+# `temper_core.memory_retry.REAL_OOM_CODE` by a trainer test -- the same
+# FAULT_ENV pattern that keeps the wire name of the fault surface defined
+# once. The control plane reads either this code (a real exhaustion) or the
+# fault surface's own `simulated_oom` (a deliberately caused one) and retries
+# with the effective batch preserved.
+TRAINER_OOM_CODE = "training_oom"
+
+# A device-memory exhaustion is named by the lines the framework leaves in
+# the failed run's output: torch says "CUDA out of memory" (or the CUDA
+# runtime reports "out of memory"). Matched case-insensitively so a framework
+# capitalisation change cannot miss it, and only when a CUDA context is
+# named -- a host that ran out of RAM is not a memory *retry*: halving the
+# per-step batch does not help the host.
+_OOM_MARKERS = ("cuda out of memory", "out of memory")
+
+
+def is_oom_tail(line: str) -> bool:
+    """Whether `line` is a device out-of-memory failure line.
+
+    CPU out-of-memory (`MemoryError`, "out of memory" without a CUDA context)
+    is not something the memory recovery can fix -- halving the batch does not
+    add RAM -- so only a CUDA/device exhaustion is named as one.
+    """
+    low = line.lower()
+    return "cuda" in low and any(marker in low for marker in _OOM_MARKERS)
+
+
+def oom_error_code(tail: Sequence[str], fault_spec: dict | None) -> str | None:
+    """The error code a failed run's tail names, or None when it did not run
+    out of device memory.
+
+    A run broken deliberately by the `oom` fault keeps the fault surface's own
+    `simulated_oom` code -- a deliberately broken run is never mistaken for a
+    real one (ADR-0051), and the vocabulary is the contract data this trainer
+    already reads. A genuine exhaustion carries the platform's real code, so
+    the control plane can tell the two apart while retrying both.
+    """
+    if not any(is_oom_tail(line) for line in tail):
+        return None
+    if fault_spec is not None and fault_spec.get("name") == "oom":
+        return _fault_entry("oom")["code"]
+    return TRAINER_OOM_CODE
 
 
 # Top-level keys the job spec may carry. Spike 4 caught a real hole here: an
@@ -1278,6 +1325,19 @@ def main() -> int:
             # orchestrator reads, and it should never have to go back and
             # reassemble a failure out of the event log.
             result["log_tail"] = tail
+            # Issue #35: name a device-memory exhaustion as the specific
+            # failure it is, so the control plane can retry with the effective
+            # batch preserved instead of reading a bare training failure. A
+            # deliberately caused oom (the fault surface) keeps the fault's
+            # own simulated_ code; a genuine one carries the platform's
+            # training_oom.
+            oom = oom_error_code(tail, fault_spec)
+            if oom is not None:
+                result["error_code"] = oom
+                result["error"] = (
+                    "The training process ran out of device memory "
+                    f"({oom}); no artifact was produced."
+                )
             log(f"training FAILED (exit {code})")
             return code
 
