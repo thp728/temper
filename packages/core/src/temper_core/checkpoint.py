@@ -102,13 +102,18 @@ def _reason(
     step: int,
     loss: float,
     candidates: int,
+    retained: int,
     tied_with: Sequence[int],
 ) -> str:
     """The legible why for a held-out-loss choice, tie or not.
 
     The reason is part of the recorded choice, not a presentation layer's
     paraphrase: it is stored on the run beside the step, so the user's answer
-    to "why this one" cannot drift from the rule that chose it.
+    to "why this one" cannot drift from the rule that chose it. The candidate
+    pool is stated precisely: when every retained checkpoint carried a usable
+    held-out loss the pool *is* the retained set and is named so; when some
+    did not, the reason says how many had a loss to choose on among how many
+    were retained, rather than claiming a count that understates either.
     """
     tail = ""
     if tied_with:
@@ -125,9 +130,15 @@ def _reason(
                 "later checkpoint won because it trained further while "
                 "matching it."
             )
+    if candidates == retained:
+        pool = f"{candidates} retained checkpoint(s)"
+    else:
+        pool = (
+            f"{candidates} checkpoint(s) with a held-out loss "
+            f"among {retained} retained"
+        )
     return (
-        f"Step {step} has the lowest held-out loss ({loss}) of "
-        f"{candidates} retained checkpoint(s).{tail}"
+        f"Step {step} has the lowest held-out loss ({loss}) of {pool}.{tail}"
     )
 
 
@@ -172,16 +183,13 @@ def select_best_checkpoint(
                 chosen,
                 best_loss,
                 len(candidates),
+                len(checkpoints),
                 tied[1:] if len(tied) > 1 else (),
             ),
             held_out_loss=best_loss,
         )
 
-    steps = [
-        record["step"]
-        for record in checkpoints
-        if isinstance(record.get("step"), int)
-    ]
+    steps = [record["step"] for record in checkpoints]
     if steps:
         last = max(steps)
         return CheckpointSelection(

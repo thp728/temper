@@ -175,7 +175,8 @@ function CheckpointSection({ job }: { job: JobRecord }) {
   );
 }
 
-function FailedSection({ job }: { job: JobRecord }) {  return (
+function FailedSection({ job }: { job: JobRecord }) {
+  return (
     <Alert variant="destructive">
       <AlertTitle>Failed</AlertTitle>
       <AlertDescription>

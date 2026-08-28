@@ -76,6 +76,22 @@ def test_a_checkpoint_without_a_held_out_loss_is_not_a_candidate():
     assert selection.basis == BASIS_BEST
 
 
+def test_the_reason_names_the_pool_precisely_when_a_retained_checkpoint_lacks_a_loss():
+    """The recorded reason must not understate either count: when one retained
+    checkpoint carried no held-out loss, the reason says how many had a loss
+    to choose on among how many were retained -- a claim that says 'of 3
+    retained checkpoints' when only two had losses would be the recorded
+    reason lying."""
+    selection = select_best_checkpoint(
+        [ckpt(10, 0.3), ckpt(20, 0.4), ckpt(30)]
+    )
+    assert selection.step == 10
+    assert (
+        "of 2 checkpoint(s) with a held-out loss among 3 retained"
+        in selection.reason
+    )
+
+
 def test_a_non_finite_loss_is_treated_as_absent():
     """A NaN or infinite loss cannot be compared, so it is a gap, not a
     candidate -- a diverged run must not be named the best."""

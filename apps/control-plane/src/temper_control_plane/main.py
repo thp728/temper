@@ -885,7 +885,7 @@ def download_checkpoint(job_id: str, step: int):
         (
             c
             for c in job.get("checkpoints", [])
-            if c.get("step") == step and isinstance(c, dict)
+            if isinstance(c, dict) and c.get("step") == step
         ),
         None,
     )
