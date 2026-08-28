@@ -96,6 +96,17 @@ test("a running job is watched live to completion, without a refresh", async ({
     timeout: 15_000,
   });
 
+  // Progress rides the same stream (issue #49): the image pull advances with
+  // a measured rate while the job is still working, so the longest phases of a
+  // job are never a blank screen.
+  await expect(
+    page.getByRole("progressbar", { name: "image pull" }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/MB\/s/).first()).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "model download" }),
+  ).toBeVisible({ timeout: 15_000 });
+
   // The job runs to completion on its own and the page hands back to the
   // finished record, which offers the artifact.
   await expect(pairedValue(page, "State")).toHaveText("complete", {

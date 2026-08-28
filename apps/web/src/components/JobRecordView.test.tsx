@@ -343,6 +343,56 @@ describe("JobRecordView", () => {
     expect(screen.getByText("Held-out loss")).toBeVisible();
   });
 
+  it("shows the pulls' progress on the finished record, with the detail kept", () => {
+    // Issue #49: the finished record keeps the promoted progress and the raw
+    // lines that became it, so a returned visitor sees how the run got there
+    // and nothing was discarded.
+    render(
+      <JobRecordView
+        job={job()}
+        events={[]}
+        progress={[
+          {
+            phase: "image pull",
+            done: 42420000,
+            total: 42420000,
+            rate: 12_000_000,
+            eta_s: 0,
+            ts: 1,
+          },
+          {
+            phase: "model download",
+            done: 2_400_000_000,
+            total: 4_000_000_000,
+            rate: 28_000_000,
+            eta_s: 57,
+            ts: 2,
+          },
+        ]}
+        output={[
+          { id: 1, phase: "image pull", line: "9b829b73a52f: Pull complete" },
+          {
+            id: 2,
+            phase: "model download",
+            line: "model.safetensors:  60%|██████    | 2.4G/4.00G [00:30<00:20]",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Progress" })).toBeVisible();
+    expect(
+      screen.getByRole("progressbar", { name: "image pull" }),
+    ).toHaveAttribute("aria-valuenow", "100");
+    expect(screen.getByText("model download")).toBeVisible();
+    expect(screen.getByText(/2\.4 GB of 4\.0 GB/)).toBeVisible();
+    expect(screen.getByText(/28\.0 MB\/s/)).toBeVisible();
+    expect(screen.getByText(/about 57s left/)).toBeVisible();
+    // The raw lines are offered as collapsed detail, not scattered into the
+    // event log: the promoted line is present but hidden behind the summary.
+    expect(screen.getByText(/60%\|██████/)).not.toBeVisible();
+  });
+
   it("surfaces a held-out loss that stopped improving, in plain language", () => {
     const heldOut = (id: number, loss: number) =>
       event({

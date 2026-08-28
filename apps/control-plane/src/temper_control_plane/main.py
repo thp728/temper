@@ -602,11 +602,21 @@ def get_events(job_id: str, after: int = 0):
     Polling against a monotonic id rather than streaming: a reconnecting client
     catches up from the database instead of losing whatever happened while it
     was away.
+
+    The page also carries the job's progress (issue #49): the current per-phase
+    snapshot and the retained raw lines that were promoted into it. Progress
+    supersedes per phase, so the snapshot is small by construction; the
+    retained lines are the collapsed detail that keeps nothing discarded.
     """
     if not db.get_job(job_id):
         raise HTTPException(404, "No such job.")
     events = db.get_events(job_id, after_id=after)
-    return {"events": events, "last_id": events[-1]["id"] if events else after}
+    return {
+        "events": events,
+        "last_id": events[-1]["id"] if events else after,
+        "progress": db.get_progress(job_id),
+        "output": db.get_output(job_id),
+    }
 
 
 # How often the live stream re-reads the durable log, and how long it may stay
@@ -655,10 +665,43 @@ def _sse_event(e: dict) -> str:
     return f"id: {e['id']}\nevent: job\ndata: {json.dumps(payload)}\n\n"
 
 
+def _sse_progress(row: dict) -> str:
+    """One phase's progress snapshot as a server-sent event.
+
+    Not replayable by `Last-Event-ID`: the page renders the current snapshot
+    from the durable events endpoint on load, and the stream re-sends each
+    snapshot only when it changes, so a client that reconnects never misses
+    the latest per phase.
+    """
+    payload = {
+        "phase": row["phase"],
+        "done": row["done"],
+        "total": row["total"],
+        "rate": row["rate"],
+        "eta_s": row["eta_s"],
+        "ts": row["ts"],
+        "message": row.get("message"),
+    }
+    return f"event: progress\ndata: {json.dumps(payload)}\n\n"
+
+
+def _sse_output(row: dict) -> str:
+    """One retained raw line as a server-sent event.
+
+    These are the lines that were promoted into progress (issue #49) and so
+    are not events; they ride the same connection so the collapsed detail on
+    the running view stays live. The client deduplicates by id, because a
+    reconnecting stream re-sends the retained record from the start.
+    """
+    payload = {"id": row["id"], "phase": row["phase"], "line": row["line"]}
+    return f"event: output\ndata: {json.dumps(payload)}\n\n"
+
+
 async def _job_event_stream(
     request: Request, job_id: str, cursor: int
 ) -> AsyncIterator[str]:
-    """The job's events, oldest-first, as they are recorded.
+    """The job's events, oldest-first, as they are recorded, with the live
+    per-phase progress snapshot riding the same connection (issue #49).
 
     The durable log is the source, never this connection: a visitor returning
     to the page or a stream that dropped is caught up from the database, which
@@ -670,12 +713,23 @@ async def _job_event_stream(
     delivered before it closes, which is the interface's cue that the record
     has stopped changing.
 
+    Progress rides the same connection as the events (no second channel): each
+    poll also re-reads the per-phase snapshot and emits it whenever it changed
+    since the last emission, and re-reads the retained output lines, emitting
+    any new ones. Progress supersedes rather than accumulates, so the snapshot
+    is the whole of it -- the running view replaces its per-phase figures,
+    never appends to them -- and the output lines are deduplicated by id on
+    the client, because a reconnecting stream re-sends the retained record
+    from the start.
+
     DB reads go through `asyncio.to_thread`: they are quick local reads, but a
     blocking read on the event loop would stall every other request for as long
     as a connection stays open, which is exactly the mistake the upload path
     records in its own docstring.
     """
     last_send = time.monotonic()
+    last_progress: list[dict] | None = None
+    output_cursor = 0
     while True:
         if await request.is_disconnected():
             return
@@ -690,6 +744,15 @@ async def _job_event_stream(
         ):
             cursor = e["id"]
             yield _sse_event(e)
+        progress_rows = await asyncio.to_thread(db.get_progress, job_id)
+        if progress_rows != last_progress:
+            last_progress = progress_rows
+            for row in progress_rows:
+                yield _sse_progress(row)
+        for row in await asyncio.to_thread(db.get_output, job_id):
+            if row["id"] > output_cursor:
+                output_cursor = row["id"]
+                yield _sse_output(row)
         if job["status"] in db.TERMINAL_STATES:
             # The explicit end marker is the hand-back the interface waits
             # for. Relying on the connection merely closing would not be

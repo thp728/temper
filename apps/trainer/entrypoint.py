@@ -509,6 +509,49 @@ def run_streaming(cmd: list[str]) -> tuple[int, list[str]]:
     return proc.wait(), list(tail)
 
 
+def prefetch_model(job: dict) -> None:
+    """Download the base model before training, reporting progress (issue #49).
+
+    The model download is the phase that dominates a large job, and it must be
+    *invoked* in a mode that reports progress: axolotl downloads the model
+    itself during training, but whether that download's bars reach the control
+    plane is left to tqdm's own TTY detection, and piped output is exactly
+    where bars disappear. Downloading here first -- with progress bars forced
+    on, so a non-TTY cannot silence them -- makes the phase visible, and
+    axolotl then resolves the model from the HF cache instead of downloading
+    again.
+
+    The import is inside the function because this trainer ships no
+    dependencies of its own (ADR-0010): `huggingface_hub` and `tqdm` are
+    provided by the base image (both are transformers dependencies), and the
+    host test suite may not have them. A prefetch that cannot run is not a
+    reason to fail the job: training proceeds as it always has, and axolotl
+    downloads the model itself -- the failure loses a progress signal, never a
+    run.
+    """
+    try:
+        from huggingface_hub import snapshot_download  # noqa: PLC0415
+        from tqdm.std import tqdm as _tqdm  # noqa: PLC0415
+
+        def visible(*args, **kwargs):
+            # Never auto-disable on a non-TTY: the whole point is that piped
+            # output reports progress, and tqdm's default `disable=None`
+            # suppresses bars exactly there.
+            kwargs["disable"] = False
+            return _tqdm(*args, **kwargs)
+
+        snapshot_download(
+            repo_id=job["base_model"],
+            revision=job.get("base_revision"),
+            tqdm_class=visible,
+        )
+        log("base model downloaded")
+    except Exception as e:  # noqa: BLE001 - see the docstring
+        log(
+            f"base model prefetch failed; training will download as usual: {e}"
+        )
+
+
 # --- peak VRAM, measured during training (issue #77) --------------------------
 # The prediction (temper_core.memory) counts in decimal GB (BYTES_PER_GB =
 # 1e9), so the measurement is converted the same way -- one convention for GB,
@@ -1188,6 +1231,13 @@ def main() -> int:
                 "no checkpoint grants in the job spec; checkpoints will be "
                 "left on the machine"
             )
+
+        # Issue #49: the base model is downloaded here, first, in a mode that
+        # reports progress -- the phase that dominates a large job should not
+        # be a blank screen. Axolotl then resolves from the HF cache, so the
+        # prefetch is not a second download, and a prefetch that cannot run
+        # costs a progress signal, never the job.
+        prefetch_model(job)
 
         cmd = ["axolotl", "train", str(CONFIG)]
         log(f"running: {' '.join(cmd)}")

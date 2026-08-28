@@ -76,11 +76,15 @@ export default async function JobPage({
     // the job is terminal the stream closes and the page hands back to the
     // finished record below.
     const history = events?.events ?? [];
+    const progress = events?.progress ?? [];
+    const output = events?.output ?? [];
     const start = job.started_at ?? job.created_at;
     return (
       <RunningJobView
         job={job}
         events={history}
+        progress={progress}
+        output={output}
         datasetFilename={dataset?.filename}
         streamAfter={events?.last_id ?? 0}
         initialElapsedSeconds={Math.max(0, epochNow() - start)}
@@ -90,11 +94,15 @@ export default async function JobPage({
 
   // The history is what makes the record complete -- how it ended sits
   // beside what it was doing until then. A history that cannot be fetched
-  // does not take the record down with it.
+  // does not take the record down with it. Progress and the retained output
+  // travel with it (issue #49): the finished record shows how far the pulls
+  // got, measured and estimated, with the raw lines collapsed.
   return (
     <JobRecordView
       job={job}
       events={events?.events ?? []}
+      progress={events?.progress ?? []}
+      output={events?.output ?? []}
       datasetFilename={dataset?.filename}
     />
   );

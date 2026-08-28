@@ -4,6 +4,7 @@ import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
 import LossChart from "@/components/LossChart";
 import PlateauNote from "@/components/PlateauNote";
+import ProgressRegion from "@/components/ProgressRegion";
 import QuoteView from "@/components/QuoteView";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +26,12 @@ import {
 } from "@/lib/jobs/comparison";
 import { lossSeries } from "@/lib/jobs/loss";
 import { heldOutPlateau } from "@/lib/jobs/plateau";
-import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
+import type {
+  JobEvent,
+  JobOutputLine,
+  JobProgress,
+  JobRecord,
+} from "@/lib/api/generated/client";
 
 // A job's record (#13/#14's screen, ported): the same thing during and after
 // the job, so there is no separate finished-job page to drift out of
@@ -370,10 +376,14 @@ function ComparisonSection({ job }: { job: JobRecord }) {
 export default function JobRecordView({
   job,
   events,
+  progress = [],
+  output = [],
   datasetFilename,
 }: {
   job: JobRecord;
   events: JobEvent[];
+  progress?: JobProgress[];
+  output?: JobOutputLine[];
   datasetFilename?: string;
 }) {
   const terminal = TERMINAL_STATUSES.includes(job.status);
@@ -437,6 +447,13 @@ export default function JobRecordView({
           </Stat>
         </dl>
       </section>
+
+      {/* Progress is part of the durable record too (issue #49): what image
+          pull and model download reached, measured and estimated, and the raw
+          lines that were promoted -- kept whole as collapsed detail. The
+          finished page therefore shows how the run got there, not just that
+          it did. */}
+      <ProgressRegion progress={progress} output={output} />
 
       {/* The advanced-surface overrides the user froze into the job spec
           (issue #80): what the run actually trained with, shown after it is
