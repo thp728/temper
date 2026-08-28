@@ -102,18 +102,86 @@ On an NVIDIA L4 (24 GB), Qwen3-4B:
 
 ## Running it
 
-Prerequisites: [uv](https://docs.astral.sh/uv/) and [just](https://just.systems).
-Both are single-binary installs, and every `just` recipe is one readable command
-if you would rather not install the second.
+Written for someone who has never run this and is starting on a clean machine.
+
+### The one command (recommended)
+
+**Prerequisite: [Docker](https://www.docker.com/products/docker-desktop/) with
+Compose.** Nothing else — not uv, not Node, not a compute account. Docker must
+be installed and running; nothing in this repository can check that for you, so
+verify `docker compose version` answers before the step below.
+
+```
+git clone https://github.com/thp728/temper.git
+cd temper
+docker compose up          # or: just up, if you have just
+```
+
+That builds two containers — the **control plane** (the API) and the **web
+shell** (the interface) — and starts them. The first run builds images, so
+give it a few minutes; every later run starts in seconds. When it is up:
+
+| What | Where |
+| --- | --- |
+| Web shell | http://localhost:5780 |
+| Control plane API | http://localhost:5781 (`/docs` for the interactive API) |
+| Health | http://localhost:5781/health |
+
+**Nothing is required of you — no configuration, no secrets, no account.**
+The control plane image ships with only local defaults, and compose.yaml sets
+exactly one value beyond them: `TEMPER_FAKE_PROVIDER=1`, which chooses the
+**zero-cost tier**. On that tier launched jobs run against the in-package
+simulated machine, so you can walk the whole journey — upload a dataset,
+validate it, pick a model, review the plan, watch a run complete over a live
+event stream, download the artifact — without spending anything. `/health`
+says which tier is in force (`provider: "fake"`) and reports the database and
+the object store **separately**, so a broken dependency reads as a broken
+dependency, not as a broken application.
+
+**Data survives a restart.** Datasets, jobs and artifacts live on a named
+volume, so stopping and bringing it back up preserves everything:
+
+```
+docker compose down        # or: just down
+docker compose up          # your datasets and jobs are still there
+```
+
+**Real compute is one switch away.** Set `TEMPER_FAKE_PROVIDER=0` in
+`compose.yaml` (or delete that line) and put `JL_API_KEY=...` in a `.env` file
+at the repo root. That is the only thing that differs between the modes. (For
+the record: a bare process with nothing set lands on the real tier with fault
+injection refused — the safe default. The one-command stack's zero-cost tier
+is an explicit, visible choice in compose.yaml, and it cannot reach real
+hardware or the billing account.)
+
+### The no-Docker path (development)
+
+For working on the code rather than evaluating it:
+
+**Prerequisites:** [uv](https://docs.astral.sh/uv/), [just](https://just.systems),
+and Node 22 with corepack enabled. Each is a single-binary install; every `just`
+recipe is one readable command if you would rather not install the second.
 
 ```
 just setup     # resolve and install everything, one lockfile
 just check     # format, lint, types, tests, contract drift. One pass or fail
-just dev       # the control plane on localhost
+just dev       # the control plane on localhost (port 8000), with reload
+just dev-web   # the web shell, in a second terminal
 just --list    # every task
 ```
 
-Running a real job additionally needs a JarvisLabs account: `JL_API_KEY`, a registered SSH key pair, and an agent that can see the key (`ssh-add -l` must list one before any GPU work). Without credentials the control plane starts and datasets validate fine; jobs fail at provisioning with the reason named.
+Without credentials the control plane starts and datasets validate fine; jobs
+fail at provisioning with the reason named.
+
+### Real jobs, and the one trap worth naming
+
+Running a job on real hardware needs a [JarvisLabs](https://jarvislabs.ai)
+account: `JL_API_KEY`, a registered SSH key pair, and an SSH agent holding the
+key (`ssh-add -l` must list one before any GPU work). The product checks what
+it can at boot and says what is missing in the job's own error record; one
+thing nothing can check for you is a Windows-only trap: everything that SSHes
+must run through PowerShell, never Git Bash, whose bundled `ssh` cannot see the
+Windows agent and fails in a way that looks exactly like a dead machine.
 
 ## Layout
 
@@ -144,7 +212,7 @@ Named here rather than left for a reader to find. Current as of 2026-08-28.
 - **A finished job's page truncates its log.** The event read caps at 500, and a real run writes more than that, so a finished job's page cuts off before its own final events. Live watching polls past the cap; the finished page does not.
 - **The job log is mostly build noise.** A real run writes several hundred events, the large majority of them container-build progress, which buries the trainer's own output.
 - **Costs are derived, never invoiced.** See the note above.
-- **It has never been started anywhere but the author's machine,** which runs Windows. The cold-clone test — fresh machine, fresh clone, one command, one real job — is specified in [spec 012](docs/specs/012-clone-and-run.md) and scheduled before submission, because every significant defect in this project was found by running the assembled thing rather than reasoning about it.
+- **It has never been started anywhere but the author's machine,** which runs Windows. The one-command stack (`docker compose up`) now exists and is verified here, including that a restart preserves data; the cold-clone test — fresh machine, fresh clone, one command, one real job — is specified in [spec 012](docs/specs/012-clone-and-run.md) and scheduled before submission, because every significant defect in this project was found by running the assembled thing rather than reasoning about it.
 
 ## License
 

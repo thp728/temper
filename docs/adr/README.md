@@ -102,6 +102,7 @@ repository becomes public at submission.
 | [0059](0059-delivery-formats-flow-through-the-artifact-manifest.md) | Delivery formats are produced off the correctly merged model and flow through the artifact manifest | accepted | 2026-08-28 |
 | [0060](0060-out-of-memory-retries-with-the-effective-batch-preserved.md) | An out-of-memory failure retries automatically with the effective batch preserved | accepted | 2026-08-28 |
 | [0061](0061-the-side-by-side-comparison-runs-on-the-warm-machine.md) | The side-by-side comparison runs on the warm machine, compares the chosen checkpoint, and never fails the run | accepted | 2026-08-28 |
+| [0062](0062-the-configuration-boundary-sits-at-deployment-settings.md) | The configuration boundary sits at deployment settings, and the stack starts with one command | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

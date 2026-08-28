@@ -67,10 +67,27 @@ contracts-check: contracts
     git diff --exit-code packages/contracts/openapi.json
     git diff --exit-code packages/contracts/advanced-surface.json
 
-# The control plane alone, against local defaults, with reload. ADR-0011 has this
-# starting the whole stack; that needs a compose file, which is #29.
+# The control plane alone, against local defaults, with reload. For the whole
+# stack -- control plane plus web shell -- in one command, use `just up`.
 dev:
     uv run uvicorn temper_control_plane.main:app --reload
+
+# --- the whole stack (issue #29) --------------------------------------------
+# One command starts every service the product needs. Defaults to the
+# zero-cost tier (the in-package fake provider), so a reviewer with no account
+# and no secrets can walk the whole journey; real compute is one line in
+# compose.yaml away. Images build on first run; add --build to rebuild after
+# source changes.
+up:
+    docker compose up
+
+# Stop the stack. The named volume keeps data, so a later `just up` resumes it
+# (stopping and restarting preserves data).
+down:
+    docker compose down
+
+logs:
+    docker compose logs -f
 
 # --- the web application (apps/web) -----------------------------------------
 # Every recipe is a single invocation; read the line and run it if you lack
