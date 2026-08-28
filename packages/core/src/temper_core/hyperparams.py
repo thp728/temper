@@ -10,9 +10,12 @@ moves alone, and rsLoRA is inferred at rank >= 32, both before launch.
 The defaults are **not declared here**. They are data in
 `packages/contracts/trainer-defaults.json` -- the one definition (#82), read
 through this module and shipped into the trainer image at build time because
-the image never installs this package (ADR-0010). The *reachable* set -- which
-keys a user may override -- is no longer declared here either: since #33 it is
-the exposed tier of the generated advanced surface
+the image never installs this package (ADR-0010). The same file carries the
+**per-method table** (`by_method`, issue #66): the values that key off the
+selected method -- a full fine-tune's lower learning rate -- so a method is a
+second *footing* for the same defaults, not a second defaults file. The
+*reachable* set -- which keys a user may override -- is no longer declared here
+either: since #33 it is the exposed tier of the generated advanced surface
 (`temper_core.surface.overrideable_keys`), so the refusal vocabulary and the
 surface cannot drift apart. This module owns only the resolution rules around
 the data, so an edit to either data file reaches the page and the run together
@@ -57,6 +60,14 @@ CONTRACT_PATH = _contract_path()
 _loaded = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
 DEFAULTS: dict[str, Any] = _loaded["defaults"]
+# The per-method table (issue #66): the values that key off the selected
+# method rather than a global constant. A full fine-tune updates every weight
+# and trains at a lower learning rate than a QLoRA adapter does, and the
+# difference is data in the one contract both the resolver and the trainer
+# read (ADR-0010) -- never a second table, never a branch at the use site.
+# Every key here is also a key in `defaults`, which is what keeps the
+# trainer's required-key set (built from `defaults`) complete for every method.
+BY_METHOD: dict[str, dict[str, Any]] = _loaded.get("by_method", {})
 # The reachable set comes from the generated surface (issue #33): the exposed
 # tier plus the platform's own internal keys (e.g. simulated_failure_code).
 # `validate_overrides` in `temper_core.surface` is the gate; this set is what
@@ -64,14 +75,26 @@ DEFAULTS: dict[str, Any] = _loaded["defaults"]
 ALLOWED_OVERRIDES: set[str] = set(surface.overrideable_keys())
 
 
-def effective(overrides: dict[str, Any] | None) -> dict[str, Any]:
+def effective(
+    overrides: dict[str, Any] | None, *, method: str | None = None
+) -> dict[str, Any]:
     """Resolve overrides against the defaults, exactly as the trainer will.
+
+    `method` selects the per-method table (`BY_METHOD`) when given, so a full
+    fine-tune resolves its own learning rate rather than the adapter's. The
+    method is chosen by the predictor at provisioning, so the caller that
+    knows it (the orchestrator writing the job spec) passes it; callers that
+    only shape a quote read the method-agnostic base.
 
     Returns the full specification including the inferred `lora_use_rslora`,
     because rsLoRA is inferred from the rank and never exposed as a choice --
     but a user reading the frozen spec should still see that it is in force.
     """
     cfg = dict(DEFAULTS)
+    if method:
+        method_defaults = BY_METHOD.get(method)
+        if method_defaults:
+            cfg.update(method_defaults)
     applied = {
         k: v for k, v in (overrides or {}).items() if k in ALLOWED_OVERRIDES
     }

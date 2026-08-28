@@ -119,6 +119,59 @@ def test_method_chooses_the_executable_one_and_names_the_alternatives():
     assert "execute" in m.constraint.lower()
 
 
+H100_ONLY = [GpuAvailability("H100", 250.0, 2)]
+
+
+def test_the_full_alternative_shows_what_it_would_have_cost():
+    """The reasoning against the adapter alternative, with its price (issue
+    #66): on the chosen L4 a full fine-tune of the 4B model cannot fit, and the
+    reason says the memory it would have needed -- the cost of the more capable
+    method, in the same numbers the predictor priced with."""
+    m = decision("method")
+    full = next(a for a in m.alternatives if a.value == "full fine-tune")
+    assert "GB" in full.cost
+    assert (
+        "beyond" in full.constraint.lower()
+        or "bigger" in full.constraint.lower()
+    )
+
+
+def test_full_is_chosen_and_the_adapter_alternative_is_priced_when_it_is_the_right_call():
+    """When full fine-tuning is the cheapest configuration that fits (only an
+    H100 is free), the method decision chooses it and the qlora alternative
+    carries what it would have cost -- the mirror image of the L4 case."""
+    m = decision("method", H100_ONLY)
+    assert m.chosen == "full"
+    values = [a.value for a in m.alternatives]
+    assert "qlora" in values
+    qlora = m.alternatives[values.index("qlora")]
+    assert (
+        "GB" in qlora.cost
+    )  # the adapter's own footprint is the price of taking it
+    assert (
+        "prefers the more capable" in m.constraint
+        or "cheapest executable" in m.constraint
+    )
+
+
+def test_a_full_device_count_shrinks_the_footprint_and_is_not_shipped():
+    """Full fine-tuning's sharding is real (memory.py divides weights,
+    gradients and optimizer state by device count; spike 6 proved the
+    mechanism), so the device-count reason must not claim extra cards merely
+    replicate the footprint -- while also stating that multi-device execution
+    is not shipped, so a launch of more than one device is still refused."""
+    n = decision("device count", H100_ONLY)
+    assert n.chosen == "1"
+    assert "shard" in n.constraint.lower()
+    assert (
+        "not shipped" in n.constraint.lower()
+        or "refused" in n.constraint.lower()
+    )
+    # The qlora lie is gone: extra devices are never claimed to merely
+    # replicate the footprint of a full fine-tune.
+    assert "replicate the same per-device footprint" not in n.constraint
+
+
 # --- hardware -----------------------------------------------------------------
 
 

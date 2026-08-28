@@ -142,4 +142,4 @@ def test_launching_with_the_key_yields_a_failed_job_record(
     assert record["error_code"] == "gpu_stalled"
     assert record["error_message"]
     # The leak ADR-0023 removed stays removed on every path.
-    assert "adapter_path" not in record
+    assert "artifact_path" not in record

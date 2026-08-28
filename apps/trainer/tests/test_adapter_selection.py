@@ -1,4 +1,4 @@
-"""Which artifact the trainer calls the adapter.
+"""Which artifact the trainer ships.
 
 Moved out of the control plane's suite: it asserts the trainer entrypoint's
 behaviour, and an application reaching into another application to test it is
@@ -31,8 +31,8 @@ def test_adapter_selection_prefers_final_over_checkpoints(
     monkeypatch.setattr(entrypoint, "OUT_DIR", out)
 
     # Only checkpoints so far: the numerically highest wins, not "9".
-    info = entrypoint.collect_artifacts()
-    assert info["adapter_source"] == "checkpoint-10"
+    info = entrypoint.collect_artifacts("qlora")
+    assert info["artifact_source"] == "checkpoint-10"
     assert info["adapter_config"] == {"r": 10}
     assert info["checkpoints"] == [
         "checkpoint-2",
@@ -43,6 +43,6 @@ def test_adapter_selection_prefers_final_over_checkpoints(
     # Once training writes the final adapter, that is the one shipped.
     (run / "adapter_model.safetensors").write_bytes(b"final")
     (run / "adapter_config.json").write_text(json.dumps({"r": 16}))
-    info = entrypoint.collect_artifacts()
-    assert info["adapter_source"] == "final"
+    info = entrypoint.collect_artifacts("qlora")
+    assert info["artifact_source"] == "final"
     assert info["adapter_config"] == {"r": 16}

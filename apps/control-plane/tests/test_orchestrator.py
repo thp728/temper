@@ -20,10 +20,12 @@ from fastapi.testclient import TestClient
 from helpers import wait_validated
 
 from temper_control_plane.fake_provider import (
+    DEMO_FULL_MODEL_BYTES,
     MACHINE_ID,
     REACH_S,
     FakeClock,
     FakeProvider,
+    completed_full_run,
     simulated_limits,
 )
 from temper_control_plane.limits import RunLimits
@@ -33,8 +35,8 @@ ADAPTER_BYTES = b"weights"
 RESULT = {
     "ok": True,
     "stage": "train",
-    "adapter_path": "run/adapter_model.safetensors",
-    "adapter_sha256": hashlib.sha256(ADAPTER_BYTES).hexdigest(),
+    "artifact_path": "run/adapter_model.safetensors",
+    "artifact_sha256": hashlib.sha256(ADAPTER_BYTES).hexdigest(),
     "adapter_config": {"r": 16, "lora_alpha": 32},
 }
 TRAINING_LINES = [
@@ -271,7 +273,7 @@ def test_a_job_runs_to_completion_against_a_fake_provider(harness):
     assert job["gpu_type"] == "L4"
     assert job["currency"] == "INR"
     assert job["machine_id"] == MACHINE_ID
-    assert job["result"]["adapter_path"] == RESULT["adapter_path"]
+    assert job["result"]["artifact_path"] == RESULT["artifact_path"]
 
     # The artifact is the adapter *and* the config that makes it loadable.
     # Both live behind the storage seam, addressed by key; the key itself is
@@ -305,6 +307,60 @@ def test_a_job_runs_to_completion_against_a_fake_provider(harness):
     # An injected provider belongs to whoever injected it; the job does not
     # close a resource it did not open.
     assert not provider.closed
+
+
+def test_a_full_fine_tuning_job_runs_end_to_end_against_the_fake_provider(
+    harness, monkeypatch
+):
+    """Issue #66, the whole loop: a job whose cheapest fit is full
+    fine-tuning is predicted as full, provisioned as full, and delivers a
+    whole-model artifact -- verified through the interface (the job record,
+    the artifact record, the stored bytes), the same path any kind rides, at
+    full-model size.
+
+    The predictor only picks full when it is the right call: the fake offers
+    an 80 GB H100, the one card a full fine-tune of the catalog 4B model
+    fits, so the creation-time quote and the provisioning-time selection both
+    choose it. What is asserted is what a user can observe -- the method, the
+    kind, the artifact -- never how many times a helper was called.
+    """
+    from temper_control_plane import quote as quote_mod
+    from temper_control_plane import storage
+
+    provider = completed_full_run()
+    # The creation-time quote must see the same hardware the provisioning-time
+    # selection does, or the frozen plan would predict qlora while the run
+    # chose full -- a divergence no user should ever be shown.
+    monkeypatch.setattr(quote_mod, "QUOTE_PROVIDER", provider)
+    job_id = harness.run(provider)
+
+    job = harness.job(job_id)
+    assert job["status"] == "complete"
+    assert job["method"] == "full"
+    assert job["gpu_type"] == "H100"
+
+    # The reasoning against the adapter alternative travels with the choice
+    # (issue #76 / #66): the frozen quote's method decision chose full, and
+    # the qlora alternative carries what it would have cost.
+    method_decision = next(
+        d for d in job["quote"]["decisions"] if d["decision"] == "method"
+    )
+    assert method_decision["chosen"] == "full"
+    qlora_alt = next(
+        a for a in method_decision["alternatives"] if a["value"] == "qlora"
+    )
+    assert "GB" in qlora_alt["cost"]
+
+    # The artifact declares its kind and was delivered at full-model size:
+    # one archive, verified against the machine's own checksum, stored behind
+    # the same seam an adapter rides.
+    stored = harness.stored(job_id)
+    record = stored["artifact_record"]
+    assert record["kind"] == "full_model"
+    assert [m["name"] for m in record["members"]] == ["model.tar.gz"]
+    assert record["bytes"] == len(DEMO_FULL_MODEL_BYTES)
+    weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
+    assert storage.STORE.get(weights_key) == DEMO_FULL_MODEL_BYTES
 
 
 # --- issue #77: every run records what was predicted against what happened ---
@@ -1019,7 +1075,7 @@ def test_an_unchecksummed_adapter_is_refused_rather_than_trusted(harness):
     """
     provider = FakeProvider(
         lines=TRAINING_LINES,
-        result={k: v for k, v in RESULT.items() if k != "adapter_sha256"},
+        result={k: v for k, v in RESULT.items() if k != "artifact_sha256"},
         adapter_bytes=ADAPTER_BYTES,
     )
     job_id = harness.run(provider)
@@ -1887,8 +1943,8 @@ def test_verifying_a_large_artifact_stays_flat_in_memory(harness, peak_memory):
         payload = bytes(range(256)) * (total // 256 + 1)
         payload = payload[:total]
         result = {
-            "adapter_path": "run/adapter_model.safetensors",
-            "adapter_sha256": hashlib.sha256(payload).hexdigest(),
+            "artifact_path": "run/adapter_model.safetensors",
+            "artifact_sha256": hashlib.sha256(payload).hexdigest(),
             "adapter_config": {"r": 16},
         }
         job_id = harness._create()
@@ -1919,7 +1975,7 @@ def test_an_unverified_or_corrupt_collection_stores_nothing(harness):
     weights_key = storage.artifact_key(job_id, "adapter_model.safetensors")
 
     unverified = {
-        "adapter_path": "run/adapter_model.safetensors",
+        "artifact_path": "run/adapter_model.safetensors",
         "adapter_config": {"r": 16},
     }
     storage.STORE.put(weights_key, b"weights")
@@ -1932,8 +1988,8 @@ def test_an_unverified_or_corrupt_collection_stores_nothing(harness):
         storage.STORE.get(weights_key)
 
     corrupt = {
-        "adapter_path": "run/adapter_model.safetensors",
-        "adapter_sha256": hashlib.sha256(b"other").hexdigest(),
+        "artifact_path": "run/adapter_model.safetensors",
+        "artifact_sha256": hashlib.sha256(b"other").hexdigest(),
     }
     storage.STORE.put(weights_key, b"weights")
     with pytest.raises(OrchestratorError, match="SHA mismatch") as second:
@@ -2185,7 +2241,7 @@ def test_a_failed_run_still_records_its_checkpoints(harness):
         "error_code": "training_failed",
         "error": "training did not complete",
     }
-    del failed["adapter_path"]
+    del failed["artifact_path"]
     provider = FakeProvider(
         lines=TRAINING_LINES,
         result=failed,

@@ -12,5 +12,10 @@
     "lr_scheduler": "cosine",
     "val_set_size": 0.05,
     "save_total_limit": 3
+  },
+  "by_method": {
+    "full": {
+      "learning_rate": 1e-5
+    }
   }
 }

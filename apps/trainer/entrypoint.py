@@ -35,6 +35,7 @@ import os
 import re
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 from collections import deque
@@ -336,6 +337,13 @@ ALLOWED_JOB_KEYS = {
     "base_model",
     "base_revision",
     "messages_field",
+    # Issue #66: the training method the control plane selected at
+    # provisioning. The trainer applies the spec's method (adapter or full
+    # fine-tune) and does not choose one; a spec without it is a pre-method
+    # row and reads as qlora, the only method that ever ran before the column
+    # existed -- the same reading `temper_core.artifacts.kind_for` gives a
+    # missing method.
+    "method",
     "hyperparameters",
     "max_steps",
     "save_steps",
@@ -350,6 +358,17 @@ ALLOWED_JOB_KEYS = {
     # checkpoints on /out, exactly as it leaves the artifact.
     "checkpoint_grants",
 }
+
+# The hyperparameters that mean something only to an adapter run. They are
+# part of the one resolved spec every method carries (issue #66), but a full
+# fine-tune's config must not claim a rank or a scale it does not use --
+# writing them into YAML names values Axolotl would not act on.
+ADAPTER_ONLY_HYPERPARAMETERS = (
+    "lora_r",
+    "lora_alpha",
+    "lora_dropout",
+    "lora_use_rslora",
+)
 
 
 class IncompleteJobSpec(ValueError):
@@ -621,6 +640,11 @@ def build_config(
     never overlap -- they are different files.
     """
     hp = spec_hyperparameters(job)
+    # The method the control plane selected at provisioning (issue #66). A
+    # spec written before the method key existed reads as qlora -- the only
+    # method that ever ran before it -- the same reading
+    # `temper_core.artifacts.kind_for` gives a missing method.
+    method = job.get("method") or "qlora"
     rejected: dict = {}
 
     # Validate the top level before anything else.
@@ -636,27 +660,18 @@ def build_config(
         rejected[k] = hp[k]
 
     cfg = {k: v for k, v in hp.items() if k in KNOWN_HYPERPARAMETERS}
+    if method == "full":
+        # A full fine-tune configures no adapter: the rank, scale, dropout and
+        # rsLoRA flags are still in the resolved spec, but they name nothing
+        # Axolotl would act on without an `adapter`, so they are dropped from
+        # the config rather than written as claims that do nothing.
+        for k in ADAPTER_ONLY_HYPERPARAMETERS:
+            cfg.pop(k, None)
 
     cfg.update(
         {
             "base_model": job["base_model"],
             "output_dir": str(OUT_DIR / "run"),
-            # --- method: QLoRA. NF4 + double-quant, bf16 compute -------------------
-            # This said "adapters in bf16" and that was wrong: measured from the
-            # first real run's safetensors header, all 504 adapter tensors are F32,
-            # which is why the artifact is 132 MB rather than ~66 MB. bf16 is the
-            # COMPUTE dtype; trainable parameters are kept in fp32 under 4-bit
-            # quantisation, which is standard and correct. The claim was the bug,
-            # not the behaviour.
-            "adapter": "qlora",
-            "load_in_4bit": True,
-            "bnb_4bit_quant_type": "nf4",
-            "bnb_4bit_use_double_quant": True,
-            "bnb_4bit_compute_dtype": "bfloat16",
-            # --- targets: ALL linear, not attention-only -------------------------
-            # The MLP is ~78% of every transformer block's parameters, so
-            # attention-only leaves most of the model untouched at any rank.
-            "lora_target_linear": True,
             # --- precision: bf16, same exponent range as fp32, no loss scaler ----
             "bf16": True,
             "fp16": False,
@@ -675,7 +690,7 @@ def build_config(
             # the modal production bug in this category.
             "chat_template": "tokenizer_default",
             # Detected from the dataset, never guessed and never exposed. Qwen3
-            # emits <think> blocks through its template by default; training data
+            # emits  thinking blocks through its template by default; training data
             # without them under that template is a silent train/infer mismatch.
             # The SAME value must be applied at serving.
             "chat_template_kwargs": {"enable_thinking": enable_thinking},
@@ -693,6 +708,34 @@ def build_config(
             # on is defined once, in packages/contracts/trainer-defaults.json.
         }
     )
+
+    if method == "full":
+        # A full fine-tune trains every weight in bf16: no PEFT adapter and
+        # no 4-bit quantisation. Explicit rather than omitted, so the config
+        # cannot silently drift into an adapter shape the method never asked
+        # for.
+        cfg["load_in_4bit"] = False
+    else:
+        # --- method: QLoRA. NF4 + double-quant, bf16 compute -------------------
+        # This said "adapters in bf16" and that was wrong: measured from the
+        # first real run's safetensors header, all 504 adapter tensors are F32,
+        # which is why the artifact is 132 MB rather than ~66 MB. bf16 is the
+        # COMPUTE dtype; trainable parameters are kept in fp32 under 4-bit
+        # quantisation, which is standard and correct. The claim was the bug,
+        # not the behaviour.
+        cfg.update(
+            {
+                "adapter": "qlora",
+                "load_in_4bit": True,
+                "bnb_4bit_quant_type": "nf4",
+                "bnb_4bit_use_double_quant": True,
+                "bnb_4bit_compute_dtype": "bfloat16",
+                # --- targets: ALL linear, not attention-only ---------------------
+                # The MLP is ~78% of every transformer block's parameters, so
+                # attention-only leaves most of the model untouched at any rank.
+                "lora_target_linear": True,
+            }
+        )
 
     if job.get("max_steps"):
         cfg["max_steps"] = int(job["max_steps"])
@@ -734,22 +777,58 @@ def _checkpoint_step(path: Path) -> int:
         return -1
 
 
-def collect_artifacts() -> dict:
+# The top-level name of the archive a full fine-tune's artifact is tarred
+# into. The archive is what the machine uploads through the one scoped grant
+# (ADR-0009): a whole model is a set of files -- config, weight shards,
+# tokenizer -- that cannot be addressed by a single pre-minted key the way an
+# adapter's two fixed files can, so they travel as one streamed archive and
+# the control plane verifies it against this one checksum, exactly as it does
+# an adapter.
+FULL_MODEL_ARCHIVE = "model.tar.gz"
+
+# Files written beside a full model's weights that are training state, not
+# part of a loadable model. Shipped into the artifact they would bloat the
+# download with bytes `from_pretrained` ignores; the exact member set a real
+# full fine-tune writes is one of the things the hardware verification
+# (issue #66) confirms, so this denylist is an assumption, not a measured list.
+FULL_MODEL_STATE_NAMES = {"optimizer.pt", "scheduler.pt", "trainer_state.json"}
+FULL_MODEL_STATE_SUFFIXES = (".pt",)
+
+
+def _holds_model(d: Path) -> bool:
+    """Whether `d` is a trained model directory: a config beside a weights
+    file, single (`model.safetensors` / `pytorch_model.bin`) or sharded
+    (`model-00001-of-N.safetensors`)."""
+    if not (d / "config.json").is_file():
+        return False
+    if any(
+        (d / cand).is_file()
+        for cand in ("model.safetensors", "pytorch_model.bin")
+    ):
+        return True
+    return any(d.glob("model-*.safetensors"))
+
+
+def collect_artifacts(method: str) -> dict:
     """Find what training produced, and fingerprint it.
 
-    Which adapter gets shipped is not a detail: it is the entire deliverable,
+    Which artifact gets shipped is not a detail: it is the entire deliverable,
     and "which weights did I actually download?" is a question the product has
-    to answer exactly. Two ways to get it wrong were both present here:
+    to answer exactly. Two ways to get it wrong were both present in the
+    original adapter search:
 
     * `sorted(rglob(...))[-1]` sorts lexicographically, so once a run produces
       ten checkpoints it picks `checkpoint-9` over `checkpoint-10`.
-    * It also preferred a checkpoint over the final adapter Axolotl writes at
+    * It also preferred a checkpoint over the final artifact Axolotl writes at
       the top of the output directory at the end of training, because
       `run/checkpoint-N/...` sorts after `run/adapter_model.safetensors`.
 
-    The rule is explicit instead: the end-of-training adapter wins; failing
-    that, the numerically highest checkpoint. `adapter_source` records which,
-    so the answer is in result.json rather than inferred.
+    The rule is explicit instead: the end-of-training artifact wins; failing
+    that, the numerically highest checkpoint. `artifact_source` records which,
+    so the answer is in result.json rather than inferred. The method picks the
+    shape (issue #66): an adapter is the weights file plus its config; a full
+    fine-tune is a whole model directory, shipped as one streamed archive
+    because the machine writes one object through one grant.
     """
     run = OUT_DIR / "run"
     ckpt_dirs = sorted(
@@ -757,9 +836,17 @@ def collect_artifacts() -> dict:
         key=_checkpoint_step,
     )
     info: dict = {"checkpoints": [p.name for p in ckpt_dirs]}
+    if method == "full":
+        return _collect_full_model(run, ckpt_dirs, info)
+    return _collect_adapter(run, ckpt_dirs, info)
 
-    # Search order, most authoritative first: the final adapter, then
-    # checkpoints from the highest step down.
+
+def _collect_adapter(run: Path, ckpt_dirs: list[Path], info: dict) -> dict:
+    """The adapter-shaped artifact: the weights file and the config beside it.
+
+    Search order, most authoritative first: the final adapter, then
+    checkpoints from the highest step down.
+    """
     search_dirs = [run, *reversed(ckpt_dirs)]
     adapter = None
     for d in search_dirs:
@@ -771,19 +858,19 @@ def collect_artifacts() -> dict:
             break
 
     if adapter:
-        # Hashed in bounded blocks, not read whole: a full fine-tune's artifact
-        # can be arbitrarily large, and nothing here needs to hold it.
+        # Hashed in bounded blocks, not read whole: an artifact can be
+        # arbitrarily large, and nothing here needs to hold it.
         digest = hashlib.sha256()
         with adapter.open("rb") as f:
             while chunk := f.read(1 << 20):
                 digest.update(chunk)
         info.update(
             {
-                "adapter_path": str(adapter.relative_to(OUT_DIR)),
-                "adapter_bytes": adapter.stat().st_size,
-                "adapter_sha256": digest.hexdigest(),
-                "adapter_format": adapter.suffix.lstrip("."),
-                "adapter_source": (
+                "artifact_path": str(adapter.relative_to(OUT_DIR)),
+                "artifact_bytes": adapter.stat().st_size,
+                "artifact_sha256": digest.hexdigest(),
+                "artifact_format": adapter.suffix.lstrip("."),
+                "artifact_source": (
                     "final" if adapter.parent == run else adapter.parent.name
                 ),
             }
@@ -794,6 +881,58 @@ def collect_artifacts() -> dict:
         cfg_path = adapter.parent / "adapter_config.json"
         if cfg_path.is_file():
             info["adapter_config"] = json.loads(cfg_path.read_text())
+    return info
+
+
+def _collect_full_model(run: Path, ckpt_dirs: list[Path], info: dict) -> dict:
+    """The full-model artifact: the trained model's directory, tarred.
+
+    Search order matches the adapter's: the final model at the top of the
+    output directory wins; failing that, the highest checkpoint. Only the
+    chosen directory's top-level files are shipped -- checkpoint
+    sub-directories would double the download with the run's whole history,
+    and only the one model is the deliverable.
+
+    The archive is written streaming (tarfile streams each member in blocks)
+    and hashed after in bounded blocks, so a whole model that is larger than
+    any adapter is still never held whole here (the flat-memory rule that
+    already guards the artifact path).
+    """
+    search_dirs = [run, *reversed(ckpt_dirs)]
+    model_dir = next((d for d in search_dirs if _holds_model(d)), None)
+    if model_dir is None:
+        return info
+
+    members = [
+        p
+        for p in sorted(model_dir.iterdir())
+        if p.is_file()
+        and p.name not in FULL_MODEL_STATE_NAMES
+        and not p.name.endswith(FULL_MODEL_STATE_SUFFIXES)
+    ]
+    tar_path = OUT_DIR / FULL_MODEL_ARCHIVE
+    with tarfile.open(tar_path, "w:gz") as tar:
+        for path in members:
+            # One top-level `model/` folder in the archive, so extraction
+            # produces a loadable directory rather than dumping the files
+            # into whatever folder the user extracted into.
+            tar.add(path, arcname=f"model/{path.name}")
+    digest = hashlib.sha256()
+    with tar_path.open("rb") as f:
+        while chunk := f.read(1 << 20):
+            digest.update(chunk)
+    info.update(
+        {
+            "artifact_path": FULL_MODEL_ARCHIVE,
+            "artifact_bytes": tar_path.stat().st_size,
+            "artifact_sha256": digest.hexdigest(),
+            "artifact_format": "tar.gz",
+            "artifact_source": (
+                "final" if model_dir == run else model_dir.name
+            ),
+            "artifact_members": [p.name for p in members],
+        }
+    )
     return info
 
 
@@ -904,9 +1043,14 @@ def main() -> int:
         result["job_id"] = job.get("job_id")
         result["base_model"] = job.get("base_model")
         result["base_revision"] = job.get("base_revision")
+        # The method the control plane selected, read once (issue #66): it
+        # shapes the config and the artifact, and a missing value reads as
+        # qlora, the only method that ever ran before the key existed.
+        method = job.get("method") or "qlora"
+        result["method"] = method
         log(
             f"job {job.get('job_id')} ΓÇö base_model={job.get('base_model')}"
-            f"@{job.get('base_revision') or 'unpinned'}"
+            f"@{job.get('base_revision') or 'unpinned'} method={method}"
         )
 
         # Issue #24: the fault surface, read from the environment and off by
@@ -1068,7 +1212,7 @@ def main() -> int:
             log(f"training FAILED (exit {code})")
             return code
 
-        result.update(collect_artifacts())
+        result.update(collect_artifacts(method))
 
         # The export-time template probe (Spec 009 / issue #59): a fixed probe
         # conversation is tokenised through the template used in training and
@@ -1107,7 +1251,7 @@ def main() -> int:
             raise
         result["template_probe"] = probe_outcome.as_dict()
 
-        if result.get("adapter_path"):
+        if result.get("artifact_path"):
             # ADR-0009: when the control plane supplied a scoped write URL, the
             # machine puts its artifact to it directly. The outcome -- not a
             # bare claim -- is recorded, and the control plane verifies what
@@ -1118,7 +1262,7 @@ def main() -> int:
             grant_block = job.get("artifact_upload")
             if isinstance(grant_block, dict) and grant_block.get("url"):
                 result["artifact_upload"] = upload_artifact(
-                    grant_block["url"], OUT_DIR / result["adapter_path"]
+                    grant_block["url"], OUT_DIR / result["artifact_path"]
                 )
             else:
                 result["artifact_upload"] = {

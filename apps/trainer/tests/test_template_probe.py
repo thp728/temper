@@ -239,9 +239,9 @@ def _drive_export(tmp_path, monkeypatch, *, tokenizer, recorded_template=None):
     monkeypatch.setattr(
         ep,
         "collect_artifacts",
-        lambda: {
-            "adapter_path": "run/adapter_model.safetensors",
-            "adapter_sha256": "x" * 64,
+        lambda method: {
+            "artifact_path": "run/adapter_model.safetensors",
+            "artifact_sha256": "x" * 64,
         },
     )
     exit_code = ep.main()

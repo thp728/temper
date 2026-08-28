@@ -165,6 +165,42 @@ def test_default_methods_are_only_what_the_trainer_can_run():
     assert result.method in selection.EXECUTABLE_METHODS
 
 
+def test_full_fine_tuning_is_executable_and_chosen_when_it_is_the_right_call():
+    """Issue #66: the trainer now runs full fine-tuning, so an unpinned search
+    ranges over it -- and when the only card that can hold anything is one a
+    full fine-tune fits (the 4B model on an 80 GB H100), the predictor picks
+    full, because price never depends on method and the more capable method
+    that still fits is a strictly better answer."""
+    only_big_card = [
+        GpuAvailability("H100", price_per_hour=250.0, num_free_devices=1)
+    ]
+    result = plan(only_big_card)
+    assert result.method == "full"
+    assert "full" in selection.EXECUTABLE_METHODS
+
+
+def test_full_loses_to_qlora_when_a_cheaper_adapter_configuration_fits():
+    """Full fine-tuning is chosen when it is the right call, not always: on a
+    card where qlora fits, qlora is cheaper and wins -- the cheapest
+    configuration that fits is the rule, and full pays its price only when no
+    cheaper adapter fits."""
+    l4_and_h100 = [
+        GpuAvailability("L4", price_per_hour=41.31, num_free_devices=1),
+        GpuAvailability("H100", price_per_hour=250.0, num_free_devices=1),
+    ]
+    result = plan(l4_and_h100)
+    assert result.method == "qlora"
+    assert result.gpu_type == "L4"
+
+
+def test_the_lightest_method_is_the_one_a_refusal_names():
+    """A refusal with a card free names the lightest executable method's
+    arithmetic: if even the cheapest-to-fit method cannot fit, nothing can,
+    and naming full (the heaviest) would overstate what the user has to beat."""
+    assert selection.lightest_method(selection.EXECUTABLE_METHODS) == "qlora"
+    assert selection.lightest_method(("full", "lora", "qlora")) == "qlora"
+
+
 # --- currency travels with the price -----------------------------------------
 
 

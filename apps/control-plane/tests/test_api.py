@@ -427,7 +427,7 @@ def test_job_response_is_exactly_the_published_model(client, tmp_path):
     JobRecord.model_validate(body)
     assert set(body) == set(JobRecord.model_fields)
     # The stored artifact path is server state; it reaches no client.
-    assert "adapter_path" not in body
+    assert "artifact_path" not in body
 
 
 def test_created_and_fetched_jobs_publish_the_same_shape(client, tmp_path):
@@ -450,7 +450,7 @@ def test_job_list_response_is_exactly_the_published_model(client, tmp_path):
     body = client.get("/v1/jobs").json()
     parsed = JobList.model_validate(body)
     assert len(parsed.jobs) == 1
-    assert all("adapter_path" not in j for j in body["jobs"])
+    assert all("artifact_path" not in j for j in body["jobs"])
 
 
 def test_queued_job_has_no_artifact_yet(client, tmp_path):

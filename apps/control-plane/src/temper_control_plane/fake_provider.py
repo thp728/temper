@@ -387,7 +387,7 @@ class FakeProvider:
         upload = (spec or {}).get("artifact_upload")
         if not upload:
             return
-        if not (self._result or {}).get("adapter_path"):
+        if not (self._result or {}).get("artifact_path"):
             # No artifact was produced; there is nothing to write.
             return
         from . import storage
@@ -497,8 +497,8 @@ DEMO_LINES = (
 DEMO_RESULT = {
     "ok": True,
     "stage": "train",
-    "adapter_path": "run/adapter_model.safetensors",
-    "adapter_sha256": hashlib.sha256(DEMO_ADAPTER_BYTES).hexdigest(),
+    "artifact_path": "run/adapter_model.safetensors",
+    "artifact_sha256": hashlib.sha256(DEMO_ADAPTER_BYTES).hexdigest(),
     "adapter_config": {"r": 16, "lora_alpha": 32},
     # Issue #53: the recorded split, shaped exactly as the trainer records it
     # for a 12-row dataset under the default 5% hold-out -- the simulated
@@ -734,4 +734,44 @@ def completed_run() -> FakeProvider:
                 "bytes": b"ckpt-30",
             },
         ],
+    )
+
+
+# The bytes of a full fine-tune's artifact as the simulated machine uploads
+# them (issue #66): one whole-model archive, larger than any adapter. The
+# bytes are opaque to the fake -- it PUTs them to the scoped grant and reports
+# their checksum, exactly as the trainer PUTs its model.tar.gz.
+DEMO_FULL_MODEL_BYTES = b"full model archive: config + weight shards" * 4
+
+
+def completed_full_run() -> FakeProvider:
+    """The fake configured as a small successful full fine-tuning job, end to
+    end (issue #66).
+
+    The predictor only picks full fine-tuning when it is the cheapest
+    configuration that fits, so the availability here is an 80 GB H100 -- a
+    full fine-tune of the catalog 4B model fits one (predicted ~67 GB), while
+    the default single L4 cannot hold it. The canned result is a full model's
+    shape: one archive, no adapter config, its own peak.
+    """
+    from . import config
+
+    return SimulatedMachine(
+        lines=DEMO_LINES,
+        result={
+            "ok": True,
+            "stage": "train",
+            "artifact_path": "model.tar.gz",
+            "artifact_sha256": hashlib.sha256(
+                DEMO_FULL_MODEL_BYTES
+            ).hexdigest(),
+            "artifact_format": "tar.gz",
+            "artifact_members": ["config.json", "model.safetensors"],
+            "held_out_split": DEMO_RESULT["held_out_split"],
+            "peak_memory_gb": 67.0,
+            "template_probe": DEMO_RESULT["template_probe"],
+        },
+        adapter_bytes=DEMO_FULL_MODEL_BYTES,
+        availability=[GpuAvailability("H100", 250.0, 2)],
+        line_delay=config.FAKE_LINE_DELAY_S,
     )

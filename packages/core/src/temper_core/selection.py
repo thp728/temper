@@ -18,13 +18,14 @@ would be exactly the kind of preference list this ticket deletes -- and
 because price never depends on method, so at a tied price the more capable
 method that still fits is a strictly better answer, not a different one.
 
-Only QLoRA is executable today: `apps/trainer/entrypoint.py` hard-codes
-`adapter="qlora", load_in_4bit=True`, and multi-GPU sharding has only ever
-been proven at small scale (spike 6, `docs/adr/0028-...`). Teaching the
-trainer to run LoRA, full fine-tuning or more than one device is spec 005's
-"further notes" and spec 009's job. `select_hardware`'s `methods` parameter
-therefore defaults to the executable set alone; a caller building a quote
-that must describe (not run) the alternatives can pass a wider one.
+Only QLoRA and full fine-tuning are executable today (issue #66):
+`apps/trainer/entrypoint.py` runs `adapter="qlora", load_in_4bit=True` or a
+no-adapter full fine-tune from the job spec's `method`, and multi-GPU sharding
+has only ever been proven at small scale (spike 6, `docs/adr/0028-...`).
+Teaching the trainer to run LoRA or more than one device is spec 009's "further
+notes". `select_hardware`'s `methods` parameter therefore defaults to the
+executable set alone; a caller building a quote that must describe (not run)
+the alternatives can pass a wider one.
 """
 
 from __future__ import annotations
@@ -41,10 +42,27 @@ from .models import ModelFacts
 METHODS_BEST_FIRST: tuple[str, ...] = ("full", "lora", "qlora")
 
 # What the trainer can actually run today (see the module docstring). Product
-# code should not need to name "qlora" as a literal -- it reads this instead,
+# code should not need to name a method as a literal -- it reads this instead,
 # so the day spec 009 teaches the trainer another method there is exactly one
-# place that says so.
-EXECUTABLE_METHODS: tuple[str, ...] = ("qlora",)
+# place that says so. Best-first, like `METHODS_BEST_FIRST`: the search takes
+# the first executable method that fits at each price point, so the more
+# capable method wins a tied price.
+EXECUTABLE_METHODS: tuple[str, ...] = ("full", "qlora")
+
+
+def lightest_method(methods: Sequence[str]) -> str:
+    """The cheapest-to-fit method in `methods`, derived from the same weight
+    arithmetic the search prices with.
+
+    Full fine-tuning holds every weight at 2 bytes/param and trains every
+    parameter, so its footprint dominates an adapter's on every pool; the
+    lightest method is the one with the smallest per-param weight footprint,
+    and it is the last one a best-first search would prefer. A refusal with a
+    card free names it because if even the lightest executable method cannot
+    fit, nothing in the set can -- naming the heaviest would overstate what
+    the user has to beat.
+    """
+    return min(methods, key=lambda m: memory.WEIGHT_BYTES_PER_PARAM[m])
 
 
 @dataclass(frozen=True)
@@ -192,16 +210,23 @@ def _no_fitting_error(
     An unpinned search that still finds nothing gets a bare "nothing fits"
     only when no machine-capable device is free at all -- there was no single
     configuration to price. When a card *is* free but nothing fits, the
-    search's own arithmetic is named (the cheapest executable method at the
+    search's own arithmetic is named (the lightest executable method at the
     smallest device count against the largest free card): the configuration
     was described by the caller (issue #80's hyperparameter overrides), and a
-    bare refusal would not say which peak lost against which capacity.
+    bare refusal would not say which peak lost against which capacity. The
+    lightest method is named, not the first in search order, because if even
+    the cheapest-to-fit method cannot fit, nothing in the set can -- full
+    fine-tuning's heavier footprint would overstate what the user has to beat.
     """
     plain = NoFittingHardwareError(
         "No available GPU predicts a fit for this job, at any method or "
         "device count the provider currently has free."
     )
-    eff_method = method or (methods[0] if methods else EXECUTABLE_METHODS[0])
+    eff_method = (
+        method
+        if method is not None
+        else lightest_method(methods if methods else EXECUTABLE_METHODS)
+    )
     eff_count = device_count or 1
     peak = memory.predict_peak(
         facts,

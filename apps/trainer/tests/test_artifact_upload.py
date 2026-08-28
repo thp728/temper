@@ -103,7 +103,7 @@ def test_collect_artifacts_hashes_without_holding_the_file(
     (run / "adapter_config.json").write_text(json.dumps({"r": 16}))
     monkeypatch.setattr(entrypoint, "OUT_DIR", out)
 
-    info = entrypoint.collect_artifacts()
+    info = entrypoint.collect_artifacts("qlora")
 
-    assert info["adapter_sha256"] == hashlib.sha256(payload).hexdigest()
-    assert info["adapter_bytes"] == len(payload)
+    assert info["artifact_sha256"] == hashlib.sha256(payload).hexdigest()
+    assert info["artifact_bytes"] == len(payload)
