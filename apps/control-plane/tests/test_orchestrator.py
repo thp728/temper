@@ -2300,7 +2300,9 @@ def test_when_no_checkpoint_has_a_held_out_loss_the_last_is_the_recorded_fallbac
     assert "fallback" in best["reason"]
 
 
-def test_an_evicted_checkpoint_is_never_the_recorded_best(harness, monkeypatch):
+def test_an_evicted_checkpoint_is_never_the_recorded_best(
+    harness, monkeypatch
+):
     """Selection runs over what is retained, and the reason says how many were
     considered: a checkpoint evicted by retention (issue #37) is superseded,
     not a candidate, however good its loss."""

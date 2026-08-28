@@ -105,8 +105,77 @@ function ArtifactSection({ job }: { job: JobRecord }) {
   );
 }
 
-function FailedSection({ job }: { job: JobRecord }) {
+function CheckpointSection({ job }: { job: JobRecord }) {
+  // The result checkpoint is chosen by held-out loss and recorded on the run
+  // (issue #62), so the finished record states which one was chosen and why,
+  // and offers every retained checkpoint for download -- the user is never
+  // locked out of their own run's history. Only retained checkpoints are
+  // downloadable; a superseded or failed one is named but not offered.
+  const checkpoints = job.checkpoints ?? [];
+  if (checkpoints.length === 0) return null;
+  const best = job.best_checkpoint;
   return (
+    <section aria-labelledby="checkpoints-heading" className="space-y-3">
+      <div>
+        <h2 id="checkpoints-heading" className="text-lg font-semibold">
+          Checkpoints
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          The best checkpoint is chosen by held-out loss and the choice is
+          recorded on this run. Every other checkpoint stays downloadable.
+        </p>
+      </div>
+      {best && best.step != null && (
+        <div className="space-y-1 rounded-lg border bg-card p-4">
+          <p>
+            <strong>
+              Best checkpoint: step {best.step}
+              {best.held_out_loss != null && (
+                <> (held-out loss {best.held_out_loss})</>
+              )}
+            </strong>
+          </p>
+          <p className="text-sm text-muted-foreground">{best.reason}</p>
+        </div>
+      )}
+      <ul className="divide-y divide-border rounded-lg border bg-card">
+        {checkpoints.map((c) => (
+          <li
+            key={c.step}
+            className="flex flex-wrap items-center justify-between gap-3 px-4 py-2"
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Step {c.step}</span>
+              {c.selected && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  chosen result
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <span>
+                {c.held_out_loss != null
+                  ? `held-out loss ${c.held_out_loss}`
+                  : "no held-out loss recorded"}
+              </span>
+              {c.verified ? (
+                <Button variant="outline" size="sm" asChild>
+                  <a href={`/v1/jobs/${job.id}/checkpoints/${c.step}`}>
+                    Download
+                  </a>
+                </Button>
+              ) : (
+                <span className="text-xs">not retained</span>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function FailedSection({ job }: { job: JobRecord }) {  return (
     <Alert variant="destructive">
       <AlertTitle>Failed</AlertTitle>
       <AlertDescription>
@@ -398,6 +467,11 @@ export default function JobRecordView({
       {job.status === "complete" && <ArtifactSection job={job} />}
       {job.status === "failed" && <FailedSection job={job} />}
       {job.status === "cancelled" && <CancelledSection />}
+
+      {/* The recorded result checkpoint and every other retained one (issue
+          #62): shown whenever the run recorded checkpoints, on whichever
+          outcome -- a failed run's checkpoints are still its history. */}
+      <CheckpointSection job={job} />
 
       {job.quote && (
         // The quote the job launched under, frozen into the spec at launch

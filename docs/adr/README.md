@@ -89,6 +89,7 @@ repository becomes public at submission.
 | [0046](0046-the-trainer-image-is-built-by-the-pipeline-and-referenced-by-digest.md) | The trainer image is built by the pipeline and referenced by digest, never built on the machine | accepted | 2026-08-27 |
 | [0047](0047-imported-datasets-are-the-same-bytes-through-the-same-validation-path.md) | Imported datasets are the same bytes, through the same validation path as an upload | accepted | 2026-08-28 |
 | [0048](0048-the-held-out-split-is-the-platforms-and-rides-the-existing-event-stream.md) | The held-out split is the platform's, and held-out loss rides the existing event stream | accepted | 2026-08-28 |
+| [0049](0049-the-best-checkpoint-is-chosen-by-held-out-loss-and-the-choice-is-recorded.md) | The best checkpoint is chosen by held-out loss, and the choice is recorded on the run | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
