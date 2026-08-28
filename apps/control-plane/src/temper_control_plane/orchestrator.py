@@ -419,7 +419,7 @@ def _consume(job_id: str, lines) -> dict:
                             phase=data["phase"],
                             done=data.get("done"),
                             total=data.get("total"),
-                            layer=data.get("layer"),
+                            unit=data.get("unit"),
                         )
                     )
                     db.upsert_progress(

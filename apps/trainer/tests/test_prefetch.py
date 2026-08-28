@@ -13,9 +13,7 @@ on so a non-TTY cannot silence them.
 from entrypoint import prefetch_model
 
 
-def test_prefetch_downloads_the_base_model_before_training(
-    tmp_path, monkeypatch
-):
+def test_prefetch_downloads_the_base_model_before_training(monkeypatch):
     calls: dict = {}
 
     def fake_snapshot_download(**kwargs):
@@ -25,14 +23,12 @@ def test_prefetch_downloads_the_base_model_before_training(
     monkeypatch.setattr(
         "huggingface_hub.snapshot_download", fake_snapshot_download
     )
-    prefetch_model(
-        {"base_model": "Qwen/Qwen3-4B", "base_revision": "main"}, tmp_path
-    )
+    prefetch_model({"base_model": "Qwen/Qwen3-4B", "base_revision": "main"})
     assert calls["repo_id"] == "Qwen/Qwen3-4B"
     assert calls["revision"] == "main"
 
 
-def test_prefetch_forces_progress_bars_on(tmp_path, monkeypatch):
+def test_prefetch_forces_progress_bars_on(monkeypatch):
     """tqdm's default disables on a non-TTY, and the machine's output is
     piped -- the whole point is that piped output still reports progress."""
     received: dict = {}
@@ -44,13 +40,13 @@ def test_prefetch_forces_progress_bars_on(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "huggingface_hub.snapshot_download", fake_snapshot_download
     )
-    prefetch_model({"base_model": "Qwen/Qwen3-4B"}, tmp_path)
+    prefetch_model({"base_model": "Qwen/Qwen3-4B"})
     tqdm_class = received["tqdm_class"]
     assert tqdm_class is not None
     assert tqdm_class(disable=False) is not None
 
 
-def test_a_failed_prefetch_does_not_raise(tmp_path, monkeypatch):
+def test_a_failed_prefetch_does_not_raise(monkeypatch):
     """A prefetch that cannot run costs a progress signal, never the job:
     axolotl downloads the model as it always has."""
 
@@ -58,4 +54,4 @@ def test_a_failed_prefetch_does_not_raise(tmp_path, monkeypatch):
         raise RuntimeError("registry unreachable")
 
     monkeypatch.setattr("huggingface_hub.snapshot_download", boom)
-    prefetch_model({"base_model": "Qwen/Qwen3-4B"}, tmp_path)  # must not raise
+    prefetch_model({"base_model": "Qwen/Qwen3-4B"})  # must not raise

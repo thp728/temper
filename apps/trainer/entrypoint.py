@@ -509,7 +509,7 @@ def run_streaming(cmd: list[str]) -> tuple[int, list[str]]:
     return proc.wait(), list(tail)
 
 
-def prefetch_model(job: dict, out_dir: Path) -> None:
+def prefetch_model(job: dict) -> None:
     """Download the base model before training, reporting progress (issue #49).
 
     The model download is the phase that dominates a large job, and it must be
@@ -1237,7 +1237,7 @@ def main() -> int:
         # be a blank screen. Axolotl then resolves from the HF cache, so the
         # prefetch is not a second download, and a prefetch that cannot run
         # costs a progress signal, never the job.
-        prefetch_model(job, OUT_DIR)
+        prefetch_model(job)
 
         cmd = ["axolotl", "train", str(CONFIG)]
         log(f"running: {' '.join(cmd)}")

@@ -188,23 +188,24 @@ def test_ordinary_output_is_log_output():
 # promoting them is what lets the page finish, and retaining the raw lines as
 # collapsed detail is what keeps nothing discarded.
 #
-# **The model-download fixture is the genuinely captured one.** The bar below
-# is verbatim from a real run (the same shape test_events.py already carried),
-# huggingface_hub's tqdm with unit_scale: `model.safetensors: 10%|█ | 400M/4.00G
-# [00:05<00:45]`. The layer-pull fixtures follow docker's documented `docker
-# pull` output format -- layer-id-prefixed `Downloading`/`Extracting`/`Pull
-# complete` lines with a `done/total` byte pair -- because the repo holds no
-# captured pull transcript (spike 6 redirected the pull's output to a file and
-# never kept it); capturing one on a real pull is recorded as outstanding with
-# the ADR. Both formats interleave across layers and arrive in partial lines,
-# so the two failure-shaped cases below exist for both.
+# **The model-download fixture is the genuinely emitted shape.** The bar below
+# is the shape the suite already carried as what the framework actually emits
+# on a real run -- huggingface_hub's tqdm with unit_scale: `model.safetensors:
+# 10%|█ | 400M/4.00G [00:05<00:45]`. The layer-pull fixtures follow docker's
+# documented `docker pull` output format -- layer-id-prefixed
+# `Downloading`/`Extracting`/`Pull complete` lines with a `done/total` byte
+# pair -- because the repo holds no captured pull transcript (spike 6
+# redirected the pull's output to a file and never kept it); capturing one on a
+# real pull and checking the classifier against it line by line is recorded as
+# outstanding with the ADR. Both formats interleave and arrive in partial
+# lines, so the two failure-shaped cases below exist for both.
 
 
 def test_a_downloading_layer_line_becomes_image_pull_progress():
     line = "9b829b73a52f: Downloading [===============> ] 15.19MB/42.42MB"
     assert progress_event(line) == {
         "phase": PHASE_IMAGE_PULL,
-        "layer": "9b829b73a52f",
+        "unit": "9b829b73a52f",
         "done": 15.19e6,
         "total": 42.42e6,
     }
@@ -234,7 +235,7 @@ def test_layer_status_lines_without_bytes_are_promoted_too():
     ):
         data = progress_event(f"{layer}: {status}")
         assert data["phase"] == PHASE_IMAGE_PULL
-        assert data["layer"] == layer
+        assert data["unit"] == layer
         assert data.get("done") is None
         assert data.get("total") is None
 
@@ -264,6 +265,7 @@ def test_the_captured_model_download_bar_becomes_model_download_progress():
     line = "model.safetensors:  10%|█         | 400M/4.00G [00:05<00:45]"
     data = progress_event(line)
     assert data["phase"] == PHASE_MODEL_DOWNLOAD
+    assert data["unit"] == "model.safetensors"
     assert data["done"] == 400e6
     assert data["total"] == 4e9
 

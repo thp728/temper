@@ -24,7 +24,10 @@ records are built from:
 Image pull has one more rule: docker pulls layers in parallel, so no single
 line is the image's progress. Each line names one layer's done/total, and the
 phase's figures are the aggregate across every layer seen so far -- which is
-what "image pull: 57MB/130MB" means.
+what "image pull: 57MB/130MB" means. The model download follows the same rule:
+`snapshot_download` moves from file to file, each with its own bar, and a file
+that finishes keeps its bytes, so the phase's done only grows and the measured
+rate stays alive across files instead of resetting when the next one starts.
 
 Pure, with an injectable clock: no I/O, no framework imports, so it can be
 tested against real output directly and moved without moving what calls it.
@@ -43,8 +46,11 @@ PHASE_MODEL_DOWNLOAD = "model download"
 # A size as docker (`15.19MB`) and huggingface_hub's tqdm (`400M`) write one.
 # SI base (1000), the base both tools scale on; the decimal point is optional.
 # The suffix is `MB`, `M`, or `B` -- docker keeps the B, tqdm drops it, and a
-# bare number (a tiny file shown as `567/567`) is bytes.
-_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)((?:[kKMGTP]i?B|[kKMGTP]|B))?\s*$")
+# bare number (a tiny file shown as `567/567`) is bytes. The suffix grammar is
+# defined here and read by the classifier (`events.py`), so the two modules
+# cannot disagree about what a size looks like.
+SIZE_SUFFIX = r"(?:[kKMGTP]i?B|[kKMGTP]|B)?"
+_SIZE_RE = re.compile(rf"(\d+(?:\.\d+)?)({SIZE_SUFFIX})\s*$")
 
 _UNITS = {
     "": 1.0,
@@ -119,16 +125,17 @@ def eta_seconds(
 class ProgressReading:
     """One classified progress line, before measurement.
 
-    `layer` is set for image-pull lines -- docker pulls layers in parallel, so
-    the phase aggregates across layers. `done`/`total` are the line's own
-    figures and may be absent (a status line like `Pull complete` carries no
-    bytes).
+    `unit` names what the line is reporting progress on -- a docker layer for
+    image pull, a file for model download. Both pull/download in parallel or
+    sequence, so the phase aggregates across the units seen so far: no single
+    line is the phase's progress. `done`/`total` are the line's own figures and
+    may be absent (a status line like `Pull complete` carries no bytes).
     """
 
     phase: str
     done: float | None = None
     total: float | None = None
-    layer: str | None = None
+    unit: str | None = None
     ts: float | None = None
 
 
@@ -164,8 +171,9 @@ class ProgressTracker:
         self._prev_done: dict[str, float] = {}
         self._prev_ts: dict[str, float] = {}
         self._rate: dict[str, float] = {}
-        # Per-phase layer state (image pull) and plain state (model download).
-        self._layers: dict[
+        # Per-phase unit state (a docker layer, a downloaded file) and plain
+        # state for a phase that names no unit.
+        self._units: dict[
             str, dict[str, tuple[float | None, float | None]]
         ] = {}
         self._plain: dict[str, tuple[float | None, float | None]] = {}
@@ -188,20 +196,25 @@ class ProgressTracker:
     ) -> tuple[float | None, float | None]:
         """The phase's figures after this reading.
 
-        For image pull, the aggregate across every layer seen so far: a layer
-        that reported bytes keeps them, and the phase's done/total are the
-        sums. For a phase with no layers, the reading replaces the figures --
-        or keeps the previous ones when the line carried none (a status line
-        does not blank the proportion that was already there).
+        For a phase whose lines name a unit (a docker layer, a downloaded
+        file), the aggregate across every unit seen so far: a unit that
+        reported bytes keeps them, and the phase's done/total are the sums.
+        This is what makes "image pull: 57MB/130MB" mean something -- docker
+        pulls layers in parallel -- and it is what keeps the model download
+        alive as `snapshot_download` moves from one file to the next: a file
+        that finished keeps its bytes, so the phase's done only grows. For a
+        phase with no units, the reading replaces the figures -- or keeps the
+        previous ones when the line carried none (a status line does not blank
+        the proportion that was already there).
         """
-        if reading.layer is not None:
-            layers = self._layers.setdefault(reading.phase, {})
-            prev_done, prev_total = layers.get(reading.layer, (None, None))
-            # A layer's delivered bytes only grow -- docker reports a layer's
-            # done rising, then extracting, then complete -- so the max is the
+        if reading.unit is not None:
+            units = self._units.setdefault(reading.phase, {})
+            prev_done, prev_total = units.get(reading.unit, (None, None))
+            # A unit's delivered bytes only grow -- a layer rises, extracts,
+            # completes; a file's bar climbs to its size -- so the max is the
             # honest figure for how much of it has arrived. A status line
-            # (`Pull complete`) carries no bytes and must not wipe the layer's
-            # figure: it keeps whatever the layer had reached.
+            # (`Pull complete`) carries no bytes and must not wipe the unit's
+            # figure: it keeps whatever the unit had reached.
             if reading.done is None:
                 done = prev_done
             elif prev_done is None:
@@ -209,10 +222,10 @@ class ProgressTracker:
             else:
                 done = max(prev_done, reading.done)
             total = reading.total if reading.total is not None else prev_total
-            layers[reading.layer] = (done, total)
-            d_values = [d for d, _ in layers.values() if d is not None]
+            units[reading.unit] = (done, total)
+            d_values = [d for d, _ in units.values() if d is not None]
             done = sum(d_values) if d_values else None
-            totals = [t for _, t in layers.values() if t is not None]
+            totals = [t for _, t in units.values() if t is not None]
             total = sum(totals) if totals else None
             return done, total
         prev_done, prev_total = self._plain.get(reading.phase, (None, None))

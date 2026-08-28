@@ -146,7 +146,7 @@ def test_image_pull_sums_the_layers_it_has_seen():
             PHASE_IMAGE_PULL,
             done=15.19e6,
             total=42.42e6,
-            layer="9b829b73a52f",
+            unit="9b829b73a52f",
             ts=0.0,
         )
     )
@@ -155,7 +155,7 @@ def test_image_pull_sums_the_layers_it_has_seen():
             PHASE_IMAGE_PULL,
             done=8.5e6,
             total=25.54e6,
-            layer="1fe172e4850f",
+            unit="1fe172e4850f",
             ts=1.0,
         )
     )
@@ -170,7 +170,7 @@ def test_a_completed_layer_keeps_its_full_size_in_the_total():
             PHASE_IMAGE_PULL,
             done=42.42e6,
             total=42.42e6,
-            layer="9b829b73a52f",
+            unit="9b829b73a52f",
             ts=0.0,
         )
     )
@@ -179,7 +179,7 @@ def test_a_completed_layer_keeps_its_full_size_in_the_total():
             PHASE_IMAGE_PULL,
             done=15.19e6,
             total=42.42e6,
-            layer="1fe172e4850f",
+            unit="1fe172e4850f",
             ts=1.0,
         )
     )
@@ -198,7 +198,7 @@ def test_a_layer_that_reports_more_keeps_its_latest_figure():
             PHASE_IMAGE_PULL,
             done=15.19e6,
             total=42.42e6,
-            layer="9b829b73a52f",
+            unit="9b829b73a52f",
             ts=0.0,
         )
     )
@@ -207,7 +207,7 @@ def test_a_layer_that_reports_more_keeps_its_latest_figure():
             PHASE_IMAGE_PULL,
             done=28.1e6,
             total=42.42e6,
-            layer="9b829b73a52f",
+            unit="9b829b73a52f",
             ts=1.0,
         )
     )
@@ -221,7 +221,7 @@ def test_image_pull_rate_is_measured_on_the_aggregate_done():
             PHASE_IMAGE_PULL,
             done=15.19e6,
             total=42.42e6,
-            layer="9b829b73a52f",
+            unit="9b829b73a52f",
             ts=0.0,
         )
     )
@@ -230,7 +230,7 @@ def test_image_pull_rate_is_measured_on_the_aggregate_done():
             PHASE_IMAGE_PULL,
             done=8.5e6,
             total=25.54e6,
-            layer="1fe172e4850f",
+            unit="1fe172e4850f",
             ts=1.0,
         )
     )
@@ -239,7 +239,7 @@ def test_image_pull_rate_is_measured_on_the_aggregate_done():
             PHASE_IMAGE_PULL,
             done=28.1e6,
             total=42.42e6,
-            layer="9b829b73a52f",
+            unit="9b829b73a52f",
             ts=2.0,
         )
     )
@@ -256,7 +256,7 @@ def test_a_status_line_does_not_wipe_a_layers_figures():
             PHASE_IMAGE_PULL,
             done=35.2e6,
             total=42.42e6,
-            layer="9b829b73a52f",
+            unit="9b829b73a52f",
             ts=0.0,
         )
     )
@@ -265,12 +265,54 @@ def test_a_status_line_does_not_wipe_a_layers_figures():
             PHASE_IMAGE_PULL,
             done=17.2e6,
             total=25.54e6,
-            layer="1fe172e4850f",
+            unit="1fe172e4850f",
             ts=1.0,
         )
     )
     latest = tracker.update(
-        ProgressReading(PHASE_IMAGE_PULL, layer="9b829b73a52f", ts=2.0)
+        ProgressReading(PHASE_IMAGE_PULL, unit="9b829b73a52f", ts=2.0)
     )
     assert latest.done == pytest.approx(35.2e6 + 17.2e6)
     assert latest.total == pytest.approx(42.42e6 + 25.54e6)
+
+
+def test_model_download_stays_alive_across_files():
+    """`snapshot_download` moves from file to file, each with its own bar; a
+    finished file keeps its bytes in the phase's figures, so done only grows
+    and the measured rate survives the switch instead of resetting (a new
+    file's small done would otherwise read as a backward move)."""
+    tracker = ProgressTracker()
+    tracker.update(
+        ProgressReading(
+            PHASE_MODEL_DOWNLOAD,
+            done=400e6,
+            total=4e9,
+            unit="model.safetensors",
+            ts=0.0,
+        )
+    )
+    tracker.update(
+        ProgressReading(
+            PHASE_MODEL_DOWNLOAD,
+            done=4e9,
+            total=4e9,
+            unit="model.safetensors",
+            ts=40.0,
+        )
+    )
+    latest = tracker.update(
+        ProgressReading(
+            PHASE_MODEL_DOWNLOAD,
+            done=567,
+            total=567,
+            unit="config.json",
+            ts=41.0,
+        )
+    )
+    # The finished shard stays; the phase's done never goes backwards.
+    assert latest.done == pytest.approx(4e9 + 567)
+    assert latest.total == pytest.approx(4e9 + 567)
+    assert latest.rate == pytest.approx(
+        567.0
+    )  # the config file's live reading, not a frozen shard rate
+    assert latest.eta_s == 0.0  # done has reached the seen total

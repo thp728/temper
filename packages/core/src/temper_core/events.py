@@ -73,6 +73,7 @@ from typing import Any
 from temper_core.progress import (
     PHASE_IMAGE_PULL,
     PHASE_MODEL_DOWNLOAD,
+    SIZE_SUFFIX,
     parse_size,
 )
 
@@ -137,18 +138,19 @@ _LAYER_STATUS = (
 )
 _LAYER_LINE = re.compile(rf"^{_LAYER_ID}: ({_LAYER_STATUS})")
 # A done/total byte pair, as docker writes it after the bar: `15.19MB/42.42MB`.
-# Both halves must parse as sizes for the pair to be promoted.
+# Both halves must parse as sizes for the pair to be promoted. The suffix
+# grammar is `temper_core.progress.SIZE_SUFFIX`, read not retyped.
 _BYTE_PAIR = re.compile(
-    r"(?P<done>\d+(?:\.\d+)?(?:[kKMGTP]i?B|[kKMGTP]|B)?)/"
-    r"(?P<total>\d+(?:\.\d+)?(?:[kKMGTP]i?B|[kKMGTP]|B)?)"
+    rf"(?P<done>\d+(?:\.\d+)?{SIZE_SUFFIX})/(?P<total>\d+(?:\.\d+)?{SIZE_SUFFIX})"
 )
 # A tqdm download bar: `name.ext: 10%|█ | 400M/4.00G [00:05<00:45]`. The
 # description must contain a dot -- it is a file name, which is what separates
-# a download from a tokenization map.
+# a download from a tokenization map. The file name is the unit the phase
+# aggregates over: `snapshot_download` moves from file to file, each with its
+# own bar, and a finished file keeps its bytes in the phase's total.
 _MODEL_DOWNLOAD = re.compile(
-    r"^(?P<desc>[\w./\-]+\.[A-Za-z0-9]+):\s+\d+%\|(?P<bar>[^|]*)\|\s*"
-    r"(?P<done>\d+(?:\.\d+)?(?:[kKMGTP]i?B|[kKMGTP]|B)?)/"
-    r"(?P<total>\d+(?:\.\d+)?(?:[kKMGTP]i?B|[kKMGTP]|B)?)"
+    rf"^(?P<desc>[\w./\-]+\.[A-Za-z0-9]+):\s+\d+%\|(?P<bar>[^|]*)\|\s*"
+    rf"(?P<done>\d+(?:\.\d+)?{SIZE_SUFFIX})/(?P<total>\d+(?:\.\d+)?{SIZE_SUFFIX})"
 )
 
 
@@ -165,7 +167,7 @@ def _classify_progress(line: str) -> Event | None:
     if m:
         data: dict[str, Any] = {
             "phase": PHASE_IMAGE_PULL,
-            "layer": line[: line.index(":")],
+            "unit": line[: line.index(":")],
         }
         pair = _BYTE_PAIR.search(line)
         if pair:
@@ -183,7 +185,12 @@ def _classify_progress(line: str) -> Event | None:
             return Event(
                 PROGRESS,
                 line,
-                {"phase": PHASE_MODEL_DOWNLOAD, "done": done, "total": total},
+                {
+                    "phase": PHASE_MODEL_DOWNLOAD,
+                    "unit": m.group("desc"),
+                    "done": done,
+                    "total": total,
+                },
             )
     return None
 

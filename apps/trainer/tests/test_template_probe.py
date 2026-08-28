@@ -239,7 +239,7 @@ def _drive_export(tmp_path, monkeypatch, *, tokenizer, recorded_template=None):
     # Issue #49: the base-model prefetch is a network download; the export
     # path under test never reaches the network, so the prefetch is stubbed
     # the same way training itself is.
-    monkeypatch.setattr(ep, "prefetch_model", lambda job, out_dir: None)
+    monkeypatch.setattr(ep, "prefetch_model", lambda job: None)
     monkeypatch.setattr(
         ep,
         "collect_artifacts",
