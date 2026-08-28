@@ -628,20 +628,18 @@ class SimulatedMachine(FakeProvider):
         """Apply a fault spec -- the dict form of `simulated_failure_code` --
         to this machine before the run streams.
 
-        The vocabulary and the `simulated_` codes live in
-        `packages/contracts/fault-surface.json` (read through
+        The vocabulary, the codes and the parameters each fault accepts live
+        in `packages/contracts/fault-surface.json` (read through
         `temper_core.faults`), so the fake and the trainer cannot drift about
-        what a fault is called or what code a broken run carries. A name the
-        surface does not know is refused loudly rather than run under a fault
+        what a fault is called or what code a broken run carries. A spec the
+        validator rejects -- an unknown fault, an unknown parameter, a
+        malformed value -- is refused loudly rather than run under a fault
         nobody can explain.
         """
-        name = spec.get("name")
-        if not isinstance(name, str) or not fault_surface.is_known(name):
-            raise OrchestratorError(
-                "fault_unknown",
-                f"'{name}' is not a fault the surface knows; the job was "
-                "refused rather than run under a fault nobody can explain.",
-            )
+        problem = fault_surface.spec_error(spec)
+        if problem is not None:
+            raise OrchestratorError("fault_invalid", problem)
+        name = spec["name"]
         self.fault_applied = name
         if name == "machine_silent":
             # The narration line precedes the silence, so the history says
@@ -675,16 +673,12 @@ class SimulatedMachine(FakeProvider):
                 # The loss becomes meaningless, and says so in the stream.
                 "{'loss': nan, 'step': 20, 'epoch': 1.0}",
             ]
-            self._result = {
-                "ok": False,
-                "stage": "train",
-                "error_code": fault_surface.code_for(name),
-                "error": (
-                    "The training loss became meaningless (simulated "
-                    "fault); the run was stopped rather than allowed to burn "
-                    "its remaining duration."
-                ),
-            }
+            # The loss is the fault; what happens next is the recovery's
+            # job. A run whose loss has gone meaningless still runs out its
+            # duration until the divergence recovery (#36) stops it, so this
+            # run completes with a worthless result -- the honest shape of a
+            # diverged run, exactly what the real trainer produces when its
+            # learning rate is sabotaged.
         elif name == "worker_kill":
             self._lines = [self._narration(name), *DEMO_LINES]
             # The worker dies before any result document exists; `{}` (not
@@ -694,7 +688,7 @@ class SimulatedMachine(FakeProvider):
             # artifact, no result, only what had already left the machine.
             self._result = {}
             self._stop_without_result = True
-        else:  # pragma: no cover - guarded by is_known above
+        else:  # pragma: no cover - guarded by spec_error above
             raise AssertionError(f"unhandled fault {name!r}")
 
     def _narration(self, name: str) -> str:

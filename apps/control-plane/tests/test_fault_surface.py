@@ -31,10 +31,12 @@ from temper_core import faults as fault_surface
 
 ALL_FAULTS = fault_surface.names()
 # The six faults the surface must cover, and the terminal state each drives
-# the job to when it fires against the fake machine.
+# the job to when it fires against the fake machine. `divergence` completes
+# with a worthless result: the fault is the loss going meaningless, and what
+# happens next is the divergence recovery's (#36) job, not the fault's.
 EXPECTED_OUTCOMES = {
     "oom": ("failed", "simulated_oom"),
-    "divergence": ("failed", "simulated_divergence"),
+    "divergence": ("complete", None),
     "worker_kill": ("failed", "training_failed"),
     "machine_silent": ("failed", "gpu_stalled"),
     "destroy_refused": ("complete", None),
@@ -60,9 +62,17 @@ class Harness:
         self._tmp_path = tmp_path
         self.provider = None
 
-    def enable_surface(self) -> None:
-        """Switch the deliberate tier on for one test (see jobs.create's
-        guard); off by default is asserted by its own test."""
+    def enable_fake_tier(self) -> None:
+        """The zero-cost tier (TEMPER_FAKE_PROVIDER): the fake machine honours
+        every fault, so the surface can be exercised end to end."""
+        from temper_control_plane import config
+
+        self._monkeypatch.setattr(config, "FAKE_PROVIDER", True)
+
+    def enable_real_tier(self) -> None:
+        """The deliberate real-hardware tier (TEMPER_FAULT_SURFACE): only
+        trainer-side faults may be caused; provider-side faults are refused
+        (see config.fault_surface_refusal)."""
         from temper_control_plane import config
 
         self._monkeypatch.setattr(config, "FAULT_SURFACE", True)
@@ -152,7 +162,7 @@ def test_the_surface_is_off_by_default_and_refused_at_creation(harness):
 
 def test_an_unknown_fault_name_is_refused_at_creation(harness):
     """A fault nobody can explain is refused before anything is priced."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "definitely_not_a_fault"}}
     )
@@ -164,7 +174,7 @@ def test_an_unknown_fault_name_is_refused_at_creation(harness):
 def test_a_normal_job_without_a_fault_spec_is_untouched(harness):
     """Off by default means no fault behaviour leaks into ordinary runs: no
     fault event, no `simulated_` code, a normal completion."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     response, job_id = harness.create({})
     assert response.status_code == 201
     assert job_id
@@ -182,7 +192,7 @@ def test_every_fault_in_the_vocabulary_is_causable(harness, name):
     """The contract's own vocabulary is the coverage: every fault named there
     can be requested, and requesting it drives the job to the outcome the
     surface documents for it."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     spec = {"name": name}
     if name == "machine_silent":
         spec = {**spec, "after_line": 2}
@@ -214,7 +224,7 @@ def test_oom_records_the_fault_in_the_result_document(harness):
     """A trainer-side fault on the fake machine travels the ordinary result
     path, so the job's record carries the `simulated_` code -- the marker
     that makes the broken run identifiable."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "oom"}}
     )
@@ -227,24 +237,26 @@ def test_oom_records_the_fault_in_the_result_document(harness):
 
 
 def test_divergence_leaves_the_meaningless_loss_in_the_history(harness):
-    """Driving the loss to a meaningless value is the point of the fault; the
-    nan line is part of the run's history, beside the named fault."""
-    harness.enable_surface()
+    """Driving the loss to a meaningless value is the fault; what happens next
+    is the divergence recovery's (#36) job. So the run completes with a
+    worthless result, exactly as the sabotaged real trainer would, and the nan
+    line sits in the history beside the named fault."""
+    harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "divergence"}}
     )
     assert response.status_code == 201
     job = harness.job(job_id)
-    assert job["status"] == "failed"
-    assert job["error_code"] == "simulated_divergence"
+    assert job["status"] == "complete"
     assert any("loss': nan" in m for m in harness.messages(job_id))
+    assert fault_event(harness.messages(job_id), "divergence")
 
 
 def test_a_killed_worker_leaves_no_result_document(harness):
     """A worker killed mid-run produces no result.json -- the honest shape of
     an interruption, which a resumption (#60) exists to recover from. The
     fault is named even though the code is the ordinary training_failed."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "worker_kill"}}
     )
@@ -260,7 +272,7 @@ def test_a_refused_destroy_leaves_the_machine_reported_loudly(harness):
     """A destroy the provider refuses is retried, and a machine that survives
     teardown is reported loudly rather than silently forgotten -- the path a
     reconciler will close, made causable on demand."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "destroy_refused", "times": 99}}
     )
@@ -280,7 +292,7 @@ def test_an_orphan_machine_is_left_for_the_reconciler(harness):
     """A machine with no job that owns it is exactly what the reconciler
     (#61) exists to find; the fault leaves one in the provider's listing, and
     the job's own teardown never touches it."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "orphan"}}
     )
@@ -303,7 +315,7 @@ def test_the_fault_spec_is_part_of_the_frozen_job_record(harness):
     """The request is frozen onto the job row like every hyperparameter, so
     the record itself says what was asked for -- a reader never has to infer
     that a run was deliberately broken."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     spec = {"name": "oom"}
     response, job_id = harness.create({"simulated_failure_code": spec})
     assert response.status_code == 201
@@ -318,7 +330,7 @@ def test_the_fault_reaches_the_trainer_environment_only_when_on(harness):
     a fault that could not have been switched on never reaches a trainer; and
     a fault-spec job is refused outright when the surface is off (its own
     test), so the injection and the guard together are the safety property."""
-    harness.enable_surface()
+    harness.enable_fake_tier()
     _, job_id = harness.create(
         {"simulated_failure_code": {"name": "oom", "delay_s": 5}}
     )
@@ -334,30 +346,81 @@ def test_the_fault_reaches_the_trainer_environment_only_when_on(harness):
 # --- the seams' own guards ---------------------------------------------------
 
 
-def test_the_fake_refuses_an_unknown_fault_name():
+def test_the_fake_refuses_an_invalid_fault_spec():
     """The seam's defence in depth: even a fault spec that slipped past
     creation is refused by the machine rather than half-honoured."""
     from temper_core.errors import OrchestratorError
 
-    spec = json.dumps(
-        {
-            "job_id": "job_test",
-            "base_model": "Qwen/Qwen3-4B",
-            "base_revision": "0" * 40,
-            "hyperparameters": {
-                "simulated_failure_code": {"name": "not_a_fault"}
+    for bad in ({"name": "not_a_fault"}, {"name": "oom", "bogus": 1}):
+        spec = json.dumps(
+            {
+                "job_id": "job_test",
+                "base_model": "Qwen/Qwen3-4B",
+                "base_revision": "0" * 40,
+                "hyperparameters": {"simulated_failure_code": bad},
             },
-        },
-        indent=2,
+            indent=2,
+        )
+        script = (
+            b"set -u\ncat > /tmp/job/job.json <<'JOBSPEC'\n"
+            + spec.encode("utf-8")
+            + b"\nJOBSPEC\nsudo docker run ghcr.io/example/trainer@sha256:0\n"
+        )
+        with pytest.raises(OrchestratorError) as excinfo:
+            list(SimulatedMachine().stream(None, script))
+        assert excinfo.value.code == "fault_invalid"
+
+
+def test_an_unknown_fault_parameter_is_refused_at_creation(harness):
+    """A parameter a fault does not take is refused before anything is priced:
+    a fault spec the caller believes is in effect but is not is worse than a
+    refusal."""
+    harness.enable_fake_tier()
+    response, job_id = harness.create(
+        {"simulated_failure_code": {"name": "oom", "bogus": 1}}
     )
-    script = (
-        b"set -u\ncat > /tmp/job/job.json <<'JOBSPEC'\n"
-        + spec.encode("utf-8")
-        + b"\nJOBSPEC\nsudo docker run ghcr.io/example/trainer@sha256:0\n"
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "fault_invalid"
+    assert not job_id
+    assert "does not take parameter" in response.json()["detail"]["message"]
+
+
+def test_a_provider_side_fault_is_refused_on_the_real_tier(harness):
+    """On the deliberate real-hardware tier no provider honours a provider-side
+    fault, so it is refused rather than launched under a history that would
+    claim a deliberate break no machine will make -- the naming guarantee
+    must never fire the wrong way."""
+    harness.enable_real_tier()
+    for name in ("machine_silent", "orphan", "destroy_refused"):
+        response, job_id = harness.create(
+            {"simulated_failure_code": {"name": name}}
+        )
+        assert response.status_code == 400, name
+        assert response.json()["detail"]["code"] == "fault_not_causable", name
+        assert not job_id
+
+
+def test_a_trainer_side_fault_is_allowed_on_the_real_tier(harness):
+    """The deliberate real tier exists exactly for trainer-side faults: the
+    trainer genuinely makes them happen on hardware, and nothing is refused."""
+    harness.enable_real_tier()
+    response, job_id = harness.create(
+        {"simulated_failure_code": {"name": "oom"}}
     )
-    with pytest.raises(OrchestratorError) as excinfo:
-        list(SimulatedMachine().stream(None, script))
-    assert excinfo.value.code == "fault_unknown"
+    assert response.status_code == 201
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    assert job["error_code"] == "simulated_oom"
+
+
+def test_only_result_producing_faults_carry_a_simulated_code():
+    """The contract's codes are truthful: only the faults whose run carries
+    its own result document declare one. The others fail through the
+    platform's ordinary machinery and are named by the history instead."""
+    assert fault_surface.code_for("oom") == "simulated_oom"
+    assert fault_surface.code_for("divergence") == "simulated_divergence"
+    for name in ("worker_kill", "machine_silent", "orphan", "destroy_refused"):
+        assert fault_surface.code_for(name) is None
 
 
 def test_the_orchestrator_refuses_a_fault_job_when_the_surface_is_off(

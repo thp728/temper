@@ -49,10 +49,14 @@ cause is made by the fault surface.**
 
 - **Every injected fault is named in the run's history.** The orchestrator
   writes a launch event naming the fault; the machine's or trainer's stream
-  narrates it at the moment it fires; a run that produces a result carries a
-  `simulated_` code; and the fault spec is frozen into the job record. A
-  deliberately broken run can never be mistaken for a real one, which is what
-  makes a reviewer able to trust what they are watching.
+  narrates it at the moment it fires; a run that produces its own result
+  document carries a `simulated_` code (oom, divergence); and the fault spec
+  is frozen into the job record. A deliberately broken run can never be
+  mistaken for a real one, which is what makes a reviewer able to trust what
+  they are watching. The faults that fail through the platform's ordinary
+  machinery (a killed worker, a silent machine, a refused destroy) carry the
+  platform's ordinary codes, and the history is what names them; the
+  contract deliberately declares a code only where the run carries one.
 
 - **The vocabulary is data, defined once.** The six faults, their codes and
   which side makes each real live in
@@ -83,11 +87,17 @@ surface being safe to ship before its recoveries.
 **Simulating the recoveries' behaviour in the fake rather than the faults.**
 Rejected: the fake's job is to make the failure happen and let the run's own
 machinery act on it, so a recovery written later tests against the same fake
-and the same codes. The one place the fake does show the intended end state
-is `divergence`, where the machine narrates the meaningless loss and ends with
-the `simulated_divergence` code — the platform's target behaviour once #36
-lands — while the real trainer just makes the loss meaningless and lets #36
-act on it.
+and the same codes. Where a fault would pre-empt a recovery, the fake does not
+— `divergence` narrates the meaningless loss and lets the run complete with a
+worthless result, exactly as the sabotaged real trainer would, so the abort
+stays the divergence recovery's (#36) job on both tiers.
+
+**Allowing provider-side faults on the real tier, letting the run complete
+normally while its history claims a deliberate break.** Rejected: no real
+provider honours a provider-side fault, so the "Simulated fault injected"
+event would be a false claim — the naming guarantee firing the wrong way.
+Provider-side faults are refused on the real tier (`fault_not_causable`);
+only the fake tier can cause them.
 
 ## Consequences
 

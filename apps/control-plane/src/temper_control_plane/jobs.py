@@ -145,28 +145,13 @@ def create(
     # Issue #24: the fault surface is off by default, and "off" is enforced
     # here at the single creation path, not hoped for downstream. A fault spec
     # -- the dict form of `simulated_failure_code` -- can only be created when
-    # the deployment has deliberately switched the surface on (the fake
-    # provider for the zero-cost tier, or TEMPER_FAULT_SURFACE for the
-    # deliberate real-hardware tier). A surface that can be switched on by
-    # accident in front of a user is worse than none, and refusing here means
-    # no fault spec ever reaches a machine that must not fire one. The spec is
-    # also validated to name a real fault before anything is priced.
+    # the deployment has deliberately switched the surface on, and a spec that
+    # names an unknown fault or carries a parameter that fault does not take
+    # is refused before anything is priced: a fault spec the caller believes
+    # is in effect but is not is worse than a refusal. The policy (which
+    # switches permit which faults) is defined once in `config`.
     fault_spec = faults.from_hyperparameters(hyperparameters)
     if fault_spec is not None:
-        if not (config.FAKE_PROVIDER or config.FAULT_SURFACE):
-            raise HTTPException(
-                400,
-                {
-                    "code": "fault_surface_refused",
-                    "message": (
-                        "This job carries a fault spec, but the fault surface "
-                        "is off by default. It can only be switched on "
-                        "deliberately: set TEMPER_FAKE_PROVIDER for the "
-                        "zero-cost tier, or TEMPER_FAULT_SURFACE for the "
-                        "deliberate real-hardware tier. Nothing was launched."
-                    ),
-                },
-            )
         name = fault_spec.get("name")
         if not isinstance(name, str) or not faults.is_known(name):
             raise HTTPException(
@@ -180,6 +165,18 @@ def create(
                     ),
                 },
             )
+        problem = faults.spec_error(fault_spec)
+        if problem is not None:
+            raise HTTPException(
+                400,
+                {
+                    "code": "fault_invalid",
+                    "message": problem,
+                },
+            )
+        refusal = config.fault_surface_refusal(name)
+        if refusal is not None:
+            raise HTTPException(400, refusal)
 
     base_hp = hyperparams.effective(hyperparameters)
     # The frozen record is the user's request, coerced to the schema's type

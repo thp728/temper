@@ -187,32 +187,58 @@ def _fault_entry(name: str) -> dict:
     return entry
 
 
-def _fault_delay(spec: dict) -> float:
-    """A fault's `delay_s`, the chosen point at which it fires, validated.
+def _fault_spec_error(spec: dict) -> str | None:
+    """A reason this fault spec is invalid, or None when it is well-formed.
 
-    Refused loudly when it is not a positive number: a fault spec the caller
-    believes is in effect but is not is worse than a refusal.
+    The trainer cannot import `temper_core.faults` (ADR-0010), so it runs the
+    same validation the control plane runs, against the same contract data: an
+    unknown fault, an unknown parameter, or a malformed parameter is refused
+    loudly rather than half-honoured -- a fault spec the caller believes is in
+    effect but is not is worse than a refusal.
     """
-    raw = spec.get("delay_s", 60.0)
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        raise ValueError(
-            f"fault parameter 'delay_s' must be a number, got {raw!r}"
-        ) from None
-    if value <= 0:
-        raise ValueError(
-            f"fault parameter 'delay_s' must be positive, got {raw!r}"
+    name = spec.get("name")
+    entry = _FAULTS_BY_NAME.get(name) if isinstance(name, str) else None
+    if entry is None:
+        return f"'{name}' is not a fault the surface knows."
+    allowed = {*(entry.get("params") or []), "name"}
+    unknown = sorted(k for k in spec if k not in allowed)
+    if unknown:
+        return (
+            f"fault '{name}' does not take parameter(s) {unknown}; a "
+            "parameter the caller believes is in effect but is not is worse "
+            "than a refusal."
         )
-    return value
+    for key in ("after_line", "times", "machine_id"):
+        if key in spec:
+            try:
+                int(spec[key])
+            except (TypeError, ValueError):
+                return (
+                    f"fault parameter '{key}' must be a whole number, got "
+                    f"{spec[key]!r}"
+                )
+    if "delay_s" in spec:
+        try:
+            delay = float(spec["delay_s"])
+        except (TypeError, ValueError):
+            return (
+                f"fault parameter 'delay_s' must be a number, got "
+                f"{spec['delay_s']!r}"
+            )
+        if delay <= 0:
+            return (
+                f"fault parameter 'delay_s' must be positive, got "
+                f"{spec['delay_s']!r}"
+            )
+    return None
 
 
 def read_fault_spec(env_value: str | None) -> dict | None:
     """The fault spec from the environment, validated, or None when off.
 
     Off by default is a safety property: an unset or empty `TEMPER_FAULT_SPEC`
-    is the whole surface being off, and a value that is set but not a known
-    fault is refused loudly rather than half-honoured.
+    is the whole surface being off, and a value that is set but not a valid
+    fault spec is refused loudly rather than half-honoured.
     """
     if not env_value or not env_value.strip():
         return None
@@ -220,11 +246,11 @@ def read_fault_spec(env_value: str | None) -> dict | None:
         spec = json.loads(env_value)
     except json.JSONDecodeError as e:
         raise ValueError(f"{FAULT_ENV} is not JSON: {e}") from e
-    if not isinstance(spec, dict) or not isinstance(spec.get("name"), str):
+    if not isinstance(spec, dict):
         raise ValueError(f"{FAULT_ENV} must be an object with a 'name' string")
-    _fault_entry(spec["name"])
-    if spec["name"] in ("oom", "worker_kill"):
-        _fault_delay(spec)
+    problem = _fault_spec_error(spec)
+    if problem is not None:
+        raise ValueError(problem)
     return spec
 
 
@@ -242,7 +268,10 @@ def apply_fault(cfg: dict, spec: dict) -> None:
     """
     if spec["name"] != "divergence":
         return
-    cfg["learning_rate"] = float(cfg.get("learning_rate", 2e-4)) * 1e6
+    # The resolved spec always carries `learning_rate` (the trainer refuses a
+    # spec missing a required value rather than falling back), so it is read,
+    # not defaulted -- the trainer holds no defaults of its own.
+    cfg["learning_rate"] = float(cfg["learning_rate"]) * 1e6
 
 
 def schedule_fault(spec: dict) -> None:
@@ -257,9 +286,9 @@ def schedule_fault(spec: dict) -> None:
     """
     name = spec["name"]
     if name == "oom":
-        threading.Timer(_fault_delay(spec), _exhaust_device_memory).start()
+        threading.Timer(float(spec["delay_s"]), _exhaust_device_memory).start()
     elif name == "worker_kill":
-        threading.Timer(_fault_delay(spec), _kill_worker).start()
+        threading.Timer(float(spec["delay_s"]), _kill_worker).start()
 
 
 def _exhaust_device_memory() -> None:

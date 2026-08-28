@@ -79,18 +79,23 @@ def is_known(name: str) -> bool:
     return name in _FAULTS
 
 
-def code_for(name: str) -> str:
-    """The stable error code a run broken by `name` carries.
+def code_for(name: str) -> str | None:
+    """The stable error code a run broken by `name` carries, or None.
 
     Every injected fault is named in the run's history so a deliberately
-    broken run can never be mistaken for a real one; the `simulated_` prefix
-    on the code is the part of that naming that survives into the job's
-    terminal record.
+    broken run can never be mistaken for a real one; for the faults that
+    produce their own result document (oom, divergence) that naming includes
+    a `simulated_` code in the run's record. The other faults fail through
+    the platform's ordinary machinery -- the stall detector, a missing result
+    document, teardown -- so they carry the platform's ordinary codes and are
+    named by the history instead; their `code` is deliberately absent from
+    the contract.
     """
     entry = _FAULTS.get(name)
     if entry is None:
         raise ValueError(f"unknown simulated fault {name!r}")
-    return str(entry["code"])
+    code = entry.get("code")
+    return str(code) if code is not None else None
 
 
 def describe(name: str) -> str:
@@ -107,6 +112,60 @@ def side_of(name: str) -> str:
     if entry is None:
         raise ValueError(f"unknown simulated fault {name!r}")
     return str(entry["side"])
+
+
+def params_for(name: str) -> tuple[str, ...]:
+    """The parameter names `name` accepts, in the contract's order."""
+    entry = _FAULTS.get(name)
+    if entry is None:
+        raise ValueError(f"unknown simulated fault {name!r}")
+    return tuple(entry.get("params") or ())
+
+
+def spec_error(spec: dict[str, Any]) -> str | None:
+    """A reason this fault spec is invalid, or None when it is well-formed.
+
+    One validator for the create path and the provider seam: an unknown fault
+    name, an unknown parameter, or a malformed parameter is refused loudly
+    rather than half-honoured -- a fault spec the caller believes is in
+    effect but is not is worse than a refusal. The trainer runs the same
+    checks against the same contract data (it cannot import this module,
+    ADR-0010), so the two sides cannot drift about what a spec may carry.
+    """
+    name = spec.get("name")
+    if not isinstance(name, str) or not is_known(name):
+        return f"'{name}' is not a fault the surface knows."
+    allowed = {*params_for(name), "name"}
+    unknown = sorted(k for k in spec if k not in allowed)
+    if unknown:
+        return (
+            f"fault '{name}' does not take parameter(s) {unknown}; a "
+            "parameter the caller believes is in effect but is not is worse "
+            "than a refusal."
+        )
+    for key in ("after_line", "times", "machine_id"):
+        if key in spec:
+            try:
+                int(spec[key])
+            except (TypeError, ValueError):
+                return (
+                    f"fault parameter '{key}' must be a whole number, got "
+                    f"{spec[key]!r}"
+                )
+    if "delay_s" in spec:
+        try:
+            delay = float(spec["delay_s"])
+        except (TypeError, ValueError):
+            return (
+                f"fault parameter 'delay_s' must be a number, got "
+                f"{spec['delay_s']!r}"
+            )
+        if delay <= 0:
+            return (
+                f"fault parameter 'delay_s' must be positive, got "
+                f"{spec['delay_s']!r}"
+            )
+    return None
 
 
 def from_hyperparameters(

@@ -156,7 +156,7 @@ The checked-in configuration schema of the pinned trainer image, introspected fr
 _Avoid_: schema dump, config model, field list
 
 **Fault surface**:
-The part of the product that makes a failure happen on demand, so a recovery path can be proven rather than argued about: a reviewer turns on a fault and watches what happens. It is off by default, and a job carrying a fault spec is refused unless the deployment has switched the surface on deliberately. Provider-side faults are behaviour of the provider seam (only the fake provider honours them); trainer-side faults are an environment switch the trainer reads. Every injected fault is named in the job's own history and carries a `simulated_` code, so a deliberately broken run can never be mistaken for a real one.
+The part of the product that makes a failure happen on demand, so a recovery path can be proven rather than argued about: a reviewer turns on a fault and watches what happens. It is off by default, and a job carrying a fault spec is refused unless the deployment has switched the surface on deliberately. Provider-side faults are behaviour of the provider seam (only the fake provider honours them); trainer-side faults are an environment switch the trainer reads. Every injected fault is named in the job's own history, and a run that produces its own result document carries a `simulated_` code, so a deliberately broken run can never be mistaken for a real one.
 _Avoid_: fault injection framework, chaos, failure simulation
 
 **Fault spec**:

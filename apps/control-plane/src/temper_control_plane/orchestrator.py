@@ -881,20 +881,12 @@ def _attempt(
     # anything is provisioned. A job whose spec carries a fault is refused
     # here too (the create path already refused it; this is the belt for a
     # row that slipped past, and a guard that only lives on one side of a
-    # money path is a hope). When the surface is on, the injected fault is
+    # money path is a hope). The policy (which switches permit which faults)
+    # is the one in `config`. When the surface is on, the injected fault is
     # named in the run's own history, so a deliberately broken run can never
     # be mistaken for a real one.
     fault_spec = fault_surface.from_hyperparameters(job.get("hyperparameters"))
     if fault_spec is not None:
-        if not (config.FAKE_PROVIDER or config.FAULT_SURFACE):
-            raise OrchestratorError(
-                "fault_surface_refused",
-                "This job carries a fault spec, but the fault surface is off "
-                "by default. It can only be switched on deliberately, with "
-                "TEMPER_FAKE_PROVIDER (the zero-cost tier) or "
-                "TEMPER_FAULT_SURFACE (the deliberate real-hardware tier); "
-                "nothing was provisioned.",
-            )
         name = fault_spec.get("name")
         if not isinstance(name, str) or not fault_surface.is_known(name):
             raise OrchestratorError(
@@ -902,6 +894,12 @@ def _attempt(
                 f"'{name}' is not a fault the surface knows; the job was "
                 "refused rather than run under a fault nobody can explain.",
             )
+        problem = fault_surface.spec_error(fault_spec)
+        if problem is not None:
+            raise OrchestratorError("fault_invalid", problem)
+        refusal = config.fault_surface_refusal(name)
+        if refusal is not None:
+            raise OrchestratorError(refusal["code"], refusal["message"])
         db.add_event(
             job_id,
             "log",

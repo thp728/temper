@@ -49,7 +49,7 @@ def test_a_valid_fault_spec_is_parsed():
 
 
 def test_an_unknown_fault_name_is_refused_loudly():
-    with pytest.raises(ValueError, match="unknown simulated fault"):
+    with pytest.raises(ValueError, match="not a fault the surface knows"):
         entrypoint.read_fault_spec(json.dumps({"name": "not_a_fault"}))
 
 
@@ -58,6 +58,16 @@ def test_malformed_environment_is_refused_loudly():
         entrypoint.read_fault_spec("definitely not json")
     with pytest.raises(ValueError, match="must be an object"):
         entrypoint.read_fault_spec(json.dumps(["not", "a", "dict"]))
+
+
+def test_a_parameter_a_fault_does_not_take_is_refused_loudly():
+    """A fault spec the caller believes is in effect but is not is worse than
+    a refusal: divergence takes no `delay_s`, so asking for one must fail
+    rather than be silently dropped."""
+    with pytest.raises(ValueError, match="does not take parameter"):
+        entrypoint.read_fault_spec(
+            json.dumps({"name": "divergence", "delay_s": 5})
+        )
 
 
 def test_a_bad_delay_is_refused_loudly():
