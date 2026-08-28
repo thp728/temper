@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
 import LossChart from "@/components/LossChart";
 import PlateauNote from "@/components/PlateauNote";
+import ProgressRegion from "@/components/ProgressRegion";
 import { Button } from "@/components/ui/button";
 import {
   TERMINAL_STATUSES,
@@ -15,12 +16,23 @@ import {
 } from "@/lib/jobs/display";
 import { latestHeldOutLoss, lossSeries } from "@/lib/jobs/loss";
 import { heldOutPlateau } from "@/lib/jobs/plateau";
-import { jobStreamUrl, parseJobEvent } from "@/lib/jobs/stream";
+import { supersedeProgress } from "@/lib/jobs/progress";
+import {
+  jobStreamUrl,
+  parseJobEvent,
+  parseJobOutput,
+  parseJobProgress,
+} from "@/lib/jobs/stream";
 import {
   cancelJobV1JobsJobIdCancelPost,
   getJobV1JobsJobIdGet,
 } from "@/lib/api/generated/client";
-import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
+import type {
+  JobEvent,
+  JobOutputLine,
+  JobProgress,
+  JobRecord,
+} from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
 // The live job view (issue #39): the running half of `/jobs/:id`. The page
@@ -29,13 +41,19 @@ import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 // (#40/#77), so the finished view is never duplicated here.
 //
 // Everything live comes off one server-pushed stream over the durable event
-// log: output lines, metric events and state transitions as they are
-// recorded. The page renders the history the server already had, opens the
-// stream from its last event id, and appends whatever follows -- which is what
-// makes leaving and returning show continuous history rather than a view that
-// starts where the visitor rejoined. A dropped connection reconnects on its
-// own (EventSource replays the last id it received), and the stream ends only
-// at a terminal state, which is the page's cue to reload into the record.
+// log: output lines, metric events, per-phase progress and state transitions
+// as they are recorded. The page renders the history the server already had,
+// opens the stream from its last event id, and appends whatever follows --
+// which is what makes leaving and returning show continuous history rather
+// than a view that starts where the visitor rejoined. A dropped connection
+// reconnects on its own (EventSource replays the last id it received), and
+// the stream ends only at a terminal state, which is the page's cue to reload
+// into the record.
+//
+// Progress rides the same connection (issue #49): a `progress` snapshot is
+// replaced per phase, never appended, and a `output` line is deduplicated by
+// id, so the live view agrees with the durable history about the latest
+// figures and the retained raw lines.
 
 function Stat({
   label,
@@ -57,18 +75,30 @@ function Stat({
 export default function RunningJobView({
   job: initialJob,
   events: initialEvents,
+  progress: initialProgress = [],
+  output: initialOutput = [],
   datasetFilename,
   streamAfter,
   initialElapsedSeconds,
 }: {
   job: JobRecord;
   events: JobEvent[];
+  progress?: JobProgress[];
+  output?: JobOutputLine[];
   datasetFilename?: string;
   streamAfter: number;
   initialElapsedSeconds: number;
 }) {
   const [job, setJob] = useState(initialJob);
   const [events, setEvents] = useState(initialEvents);
+  // Seeded from the server so the first paint agrees with the server-rendered
+  // HTML, then replaced/updated by the stream's progress and output events.
+  const [progress, setProgress] = useState(initialProgress);
+  const [output, setOutput] = useState(initialOutput);
+  // Output lines are deduplicated by id: the stream re-sends the retained
+  // record to a reconnecting client, so an id already held is not appended
+  // twice.
+  const outputIds = useRef(new Set(initialOutput.map((o) => o.id)));
   // Seeded from the server so the first paint agrees with the server-rendered
   // HTML; the interval below takes over once mounted. Hydration must not see
   // a clock reading the client computed for itself.
@@ -138,8 +168,38 @@ export default function RunningJobView({
       if (!disposed) window.location.reload();
     };
 
+    // Progress supersedes per phase (issue #49): a snapshot replaces the
+    // phase's record, never appends to it. Output lines are retained raw
+    // lines, deduplicated by id, so the collapsed detail stays live without
+    // duplicating on reconnect.
+    const onProgress = (msg: Event) => {
+      let p: JobProgress;
+      try {
+        p = parseJobProgress((msg as MessageEvent).data);
+      } catch {
+        return;
+      }
+      if (disposed) return;
+      setProgress((prev) => supersedeProgress(prev, [p]));
+    };
+
+    const onOutput = (msg: Event) => {
+      let line: JobOutputLine;
+      try {
+        line = parseJobOutput((msg as MessageEvent).data);
+      } catch {
+        return;
+      }
+      if (disposed) return;
+      if (outputIds.current.has(line.id)) return;
+      outputIds.current.add(line.id);
+      setOutput((prev) => [...prev, line]);
+    };
+
     es.addEventListener("job", onEvent);
     es.addEventListener("end", onEnd);
+    es.addEventListener("progress", onProgress);
+    es.addEventListener("output", onOutput);
     return () => {
       disposed = true;
       es.close();
@@ -223,6 +283,13 @@ export default function RunningJobView({
           </Stat>
         </dl>
       </section>
+
+      {/* Progress is promoted from the output that was going to be thrown away
+          (issue #49): image pull and model download advance with a measured
+          rate and an estimate, and the raw lines are offered collapsed. It
+          sits directly under the status so the longest phases of a job are
+          never a blank screen. */}
+      <ProgressRegion progress={progress} output={output} />
 
       <section aria-labelledby="loss-chart-heading" className="space-y-2">
         <h2 id="loss-chart-heading" className="text-lg font-semibold">

@@ -2,7 +2,12 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RunningJobView from "@/components/RunningJobView";
-import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
+import type {
+  JobEvent,
+  JobOutputLine,
+  JobProgress,
+  JobRecord,
+} from "@/lib/api/generated/client";
 import { ApiError } from "@/lib/api/mutator";
 
 // The live view's wiring, pinned: what a user sees as a job runs, and what
@@ -86,12 +91,19 @@ function event(overrides: Partial<JobEvent> = {}): JobEvent {
 }
 
 function renderView(
-  overrides: { job?: JobRecord; events?: JobEvent[] } = {},
+  overrides: {
+    job?: JobRecord;
+    events?: JobEvent[];
+    progress?: JobProgress[];
+    output?: JobOutputLine[];
+  } = {},
 ) {
   return render(
     <RunningJobView
       job={overrides.job ?? job()}
       events={overrides.events ?? [event({ id: 1, kind: "state", message: "training" })]}
+      progress={overrides.progress ?? []}
+      output={overrides.output ?? []}
       datasetFilename="support-chats.jsonl"
       streamAfter={1}
       initialElapsedSeconds={65}
@@ -257,6 +269,109 @@ describe("RunningJobView", () => {
       ],
     });
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows a phase's progress with a measured rate from the snapshot", () => {
+    renderView({
+      progress: [
+        {
+          phase: "image pull",
+          done: 15190000,
+          total: 42420000,
+          rate: 8_000_000,
+          eta_s: 3,
+          ts: 1,
+          message: "9b829b73a52f: Downloading [==> ] 15.19MB/42.42MB",
+        },
+      ],
+    });
+
+    expect(screen.getByText("image pull")).toBeVisible();
+    const bar = screen.getByRole("progressbar", { name: "image pull" });
+    expect(bar).toHaveAttribute("aria-valuenow", "36");
+    expect(screen.getByText(/15\.2 MB of 42\.4 MB/)).toBeVisible();
+    expect(screen.getByText(/8\.0 MB\/s/)).toBeVisible();
+    expect(screen.getByText(/about 3s left/)).toBeVisible();
+  });
+
+  it("supersedes a phase's progress rather than accumulating it", async () => {
+    renderView();
+    stream().emit("progress", {
+      phase: "image pull",
+      done: 15190000,
+      total: 42420000,
+      rate: 8_000_000,
+      eta_s: 3,
+      ts: 1,
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("progressbar", { name: "image pull" }),
+      ).toHaveAttribute("aria-valuenow", "36"),
+    );
+    stream().emit("progress", {
+      phase: "image pull",
+      done: 42420000,
+      total: 42420000,
+      rate: 10_000_000,
+      eta_s: 0,
+      ts: 2,
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("progressbar", { name: "image pull" }),
+      ).toHaveAttribute("aria-valuenow", "100"),
+    );
+    expect(
+      screen.getAllByRole("progressbar", { name: "image pull" }),
+    ).toHaveLength(1);
+  });
+
+  it("offers the retained raw lines as collapsed detail", async () => {
+    renderView({
+      progress: [
+        { phase: "image pull", done: 42420000, total: 42420000, rate: 0, eta_s: 0, ts: 1 },
+      ],
+      output: [
+        { id: 1, phase: "image pull", line: "9b829b73a52f: Pulling fs layer" },
+        { id: 2, phase: "image pull", line: "9b829b73a52f: Pull complete" },
+      ],
+    });
+
+    const summary = screen.getByText("2 lines");
+    expect(summary).toBeVisible();
+    // Collapsed by default: the detail is offered, not broadcast.
+    const details = summary.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText(/Pull complete/)).not.toBeVisible();
+
+    await userEvent.click(summary);
+    expect(details).toHaveAttribute("open");
+    expect(screen.getByText(/Pull complete/)).toBeVisible();
+  });
+
+  it("appends streamed retained lines without duplicating on replay", async () => {
+    renderView({
+      progress: [
+        { phase: "image pull", done: 15190000, total: 42420000, rate: 8_000_000, eta_s: 3, ts: 1 },
+      ],
+      output: [{ id: 1, phase: "image pull", line: "a: Pulling fs layer" }],
+    });
+    stream().emit("output", {
+      id: 1,
+      phase: "image pull",
+      line: "a: Pulling fs layer",
+    });
+    stream().emit("output", {
+      id: 2,
+      phase: "image pull",
+      line: "a: Pull complete",
+    });
+    // The replayed id is deduplicated and the new line appended: the summary
+    // counts two lines, not three, and the new line is in the DOM (collapsed
+    // behind the detail's summary).
+    await waitFor(() => expect(screen.getByText("2 lines")).toBeVisible());
+    expect(screen.getByText(/Pull complete/)).toBeTruthy();
   });
 
   it("refetches the record on a state transition and updates the status", async () => {

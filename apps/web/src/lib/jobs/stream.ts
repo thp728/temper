@@ -1,8 +1,12 @@
-import type { JobEvent } from "@/lib/api/generated/client";
+import type {
+  JobEvent,
+  JobOutputLine,
+  JobProgress,
+} from "@/lib/api/generated/client";
 
 // The live channel for a running job. Transport-only, like mutator.ts: it
 // owns how the stream is addressed and parsed, and knows nothing about the
-// job domain beyond the JobEvent shape the contract publishes.
+// job domain beyond the shapes the contract publishes.
 //
 // The generated client cannot carry this -- an EventSource is not a fetch,
 // and `apiFetch` would try to JSON-parse the stream -- so the path lives here,
@@ -10,6 +14,11 @@ import type { JobEvent } from "@/lib/api/generated/client";
 // is the API's own (`GET /v1/jobs/{id}/stream`), published in the contract,
 // and the journeys exercise it end to end, so drift fails a test rather than
 // a page.
+//
+// The stream carries three event types (issue #49): `job` (the durable events,
+// replayable by `Last-Event-ID`), `progress` (the current per-phase snapshot,
+// replaced on the client, not appended) and `output` (newly retained raw
+// lines, deduplicated by id on reconnect).
 
 export function jobStreamUrl(jobId: string, after: number): string {
   return `/v1/jobs/${jobId}/stream?after=${after}`;
@@ -33,3 +42,40 @@ export function parseJobEvent(raw: string): JobEvent {
   }
   return parsed as JobEvent;
 }
+
+// A progress snapshot off the stream: refused unless it names a phase, so a
+// malformed snapshot is dropped rather than taken down the live view with it.
+export function parseJobProgress(raw: string): JobProgress {
+  const parsed: unknown = JSON.parse(raw);
+  const candidate = parsed as { phase?: unknown };
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    typeof candidate.phase !== "string"
+  ) {
+    throw new Error("the stream delivered something that is not progress");
+  }
+  return parsed as JobProgress;
+}
+
+// A retained raw line off the stream: refused unless it carries the id the
+// client deduplicates on.
+export function parseJobOutput(raw: string): JobOutputLine {
+  const parsed: unknown = JSON.parse(raw);
+  const candidate = parsed as {
+    id?: unknown;
+    phase?: unknown;
+    line?: unknown;
+  };
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    typeof candidate.id !== "number" ||
+    typeof candidate.phase !== "string" ||
+    typeof candidate.line !== "string"
+  ) {
+    throw new Error("the stream delivered something that is not job output");
+  }
+  return parsed as JobOutputLine;
+}
+

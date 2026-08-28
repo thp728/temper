@@ -74,6 +74,17 @@ test("a user comes back tomorrow, finds the job, and collects the artifact", asy
     page.getByRole("heading", { name: "Your artifact" }),
   ).toBeVisible();
 
+  // The finished record keeps how the run got there (issue #49): the pulls'
+  // progress with a measured rate, and the raw lines kept as collapsed detail
+  // rather than scattered into the log.
+  await expect(
+    page.getByRole("progressbar", { name: "image pull" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "model download" }),
+  ).toHaveAttribute("aria-valuenow", "100");
+  await expect(page.getByText(/MB\/s/).first()).toBeVisible();
+
   // What it produced can be downloaded, and is an archive when it lands.
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("link", { name: /Download the artifact/ }).click();
