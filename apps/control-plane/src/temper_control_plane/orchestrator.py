@@ -71,7 +71,7 @@ from . import config, db, storage
 from .chunks import ChunkReader, piped_chunks
 from .limits import RunLimits, guard
 from .models import new_models
-from .provider import Provider, new_provider
+from .provider import Provider, new_provider, normalize_status
 from .trainer_build import published_reference
 
 DATASET_TARBALL = "/tmp/dataset.tar.gz"
@@ -959,12 +959,7 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
             if match is None:
                 status = "ABSENT"
             else:
-                raw = getattr(match, "status", "running")
-                status = str(raw).lower() if raw else "running"
-                if "destroy" in status:
-                    status = "destroying"
-                else:
-                    status = "running"
+                status = normalize_status(getattr(match, "status", None))
 
             if status == "ABSENT":
                 consecutive_absent += 1

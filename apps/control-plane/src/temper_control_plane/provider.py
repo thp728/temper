@@ -103,6 +103,25 @@ def _stream_timeout() -> float:
     return config.MAX_JOB_DURATION_S + STREAM_BACKSTOP_MARGIN_S
 
 
+def normalize_status(raw: str | None) -> str:
+    """Map a provider's raw lifecycle string to the seam's vocabulary.
+
+    The seam only distinguishes `destroying` from `running`. Anything whose
+    raw value contains "destroy", "terminat" or "shut" (case-insensitive) is
+    `destroying`; everything else is `running`. One definition, read
+    everywhere, so the teardown and the reconciler cannot drift about whether
+    a `Destroying`, `terminating` or `shutting-down` status is a stray. The
+    caller treats absence (no machine in the listing) separately as `ABSENT`.
+    """
+
+    if raw is None:
+        return "running"
+    lowered = str(raw).lower()
+    if any(k in lowered for k in ("destroy", "terminat", "shut")):
+        return "destroying"
+    return "running"
+
+
 @dataclass(frozen=True)
 class Machine:
     """A GPU host provisioned for one job.
@@ -118,7 +137,8 @@ class Machine:
     destroying, then go absent for good. Treating `destroying` as gone
     is the mistake the confirmation rule exists to close, and the
     teardown and the reconciler must both treat it as not yet confirmed
-    rather than as a stray.
+    rather than as a stray. The value is always the normalized form
+    produced by `normalize_status`.
     """
 
     machine_id: int
@@ -538,15 +558,7 @@ class JarvisLabsProvider:
         machines: list[Machine] = []
         for inst in self._client.instances.list():
             raw = getattr(inst, "status", None) or getattr(inst, "state", None)
-            status = str(raw).lower() if raw else "running"
-            # Normalise provider spellings: "Destroying" and "destroying" are the
-            # same transitional state the confirmation rule must not count as
-            # absent (spec 010, C17). Anything not destroying is treated as
-            # running for the confirmation's purpose.
-            if "destroy" in status:
-                status = "destroying"
-            else:
-                status = "running"
+            status = normalize_status(str(raw) if raw else None)
             machines.append(Machine(machine_id=inst.machine_id, status=status))
         return machines
 

@@ -45,7 +45,7 @@ from temper_core.errors import OrchestratorError
 from temper_core.selection import GpuAvailability
 
 from .limits import RunLimits
-from .provider import Machine
+from .provider import Machine, normalize_status
 
 # Stage names, not method names: `push` and `fetch` are where a transfer --
 # streamed or otherwise -- can fail or pause.
@@ -461,12 +461,20 @@ class FakeProvider:
             out: list[Machine] = []
             for item in raw:
                 if isinstance(item, Machine):
-                    out.append(item)
+                    out.append(
+                        Machine(
+                            item.machine_id,
+                            handle=item.handle,
+                            status=normalize_status(item.status),
+                        )
+                    )
                 elif isinstance(item, int):
                     out.append(Machine(item, status="running"))
                 elif isinstance(item, tuple) and len(item) == 2:
                     mid, st = item
-                    out.append(Machine(int(mid), status=str(st)))
+                    out.append(
+                        Machine(int(mid), status=normalize_status(str(st)))
+                    )
                 else:
                     raise ValueError(f"bad list_sequence entry {item!r}")
             # Orphans are still appended unless the sequence already names them
