@@ -101,17 +101,29 @@ def trainable_params(facts: ModelFacts, lora_r: int) -> int:
     `k_proj`/`v_proj` use `num_key_value_heads`, not `num_attention_heads`,
     for their output width -- getting that wrong is the usual way this
     arithmetic goes quietly off by the GQA ratio.
+
+    For mixture-of-experts models the MLP intermediate size may be
+    `moe_intermediate_size` when the config publishes it; the trainable count
+    uses that size so a MoE with a distinct expert intermediate is not priced
+    on the dense intermediate by accident. The weight pool (`facts.params`)
+    already scales with total experts, so the trainable pool stays the adapter
+    size, not the replicated total.
     """
     q_out = facts.num_attention_heads * facts.head_dim
     kv_out = facts.num_key_value_heads * facts.head_dim
+    intermediate = (
+        facts.moe_intermediate_size
+        if facts.is_moe and facts.moe_intermediate_size is not None
+        else facts.intermediate_size
+    )
     per_layer = lora_r * (
         (facts.hidden_size + q_out)  # q_proj
         + (facts.hidden_size + kv_out)  # k_proj
         + (facts.hidden_size + kv_out)  # v_proj
         + (q_out + facts.hidden_size)  # o_proj
-        + (facts.hidden_size + facts.intermediate_size)  # gate_proj
-        + (facts.hidden_size + facts.intermediate_size)  # up_proj
-        + (facts.intermediate_size + facts.hidden_size)  # down_proj
+        + (facts.hidden_size + intermediate)  # gate_proj
+        + (facts.hidden_size + intermediate)  # up_proj
+        + (intermediate + facts.hidden_size)  # down_proj
     )
     return per_layer * facts.num_hidden_layers
 

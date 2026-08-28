@@ -56,8 +56,6 @@ _MOE_COUNT_KEYS = (
     "num_local_experts",
     "n_routed_experts",
     "n_group",
-    "num_experts_per_tok",
-    "num_experts_per_token",
 )
 
 _MOE_ACTIVE_KEYS = (
