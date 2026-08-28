@@ -450,7 +450,7 @@ def get_quote(dataset_id: str, base_model: str = catalog.DEFAULT_MODEL):
     (spec 005).
     """
     ds = jobs.usable_dataset(dataset_id)
-    m = admission.resolve(base_model)
+    m = admission.get(base_model)
     if m is None:
         raise HTTPException(
             400,
@@ -491,7 +491,7 @@ def recompute_quote(req: QuoteRequest):
     if refusals:
         raise HTTPException(400, refusals[0])
     ds = jobs.usable_dataset(req.dataset_id)
-    m = admission.resolve(req.base_model)
+    m = admission.get(req.base_model)
     if m is None:
         raise HTTPException(
             400,

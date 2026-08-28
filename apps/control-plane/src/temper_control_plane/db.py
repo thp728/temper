@@ -453,13 +453,10 @@ def list_datasets(limit: int = 50) -> list[dict]:
 # --------------------------------------------------------------------------
 
 
-def create_admitted_model(
-    repo: str, revision: str, probe: dict, model_id: str | None = None
-) -> str:
-    """Persist one admission. `model_id` lets the caller own the id; the
-    reference is unique, so re-probing the same pinned model returns its
-    existing row rather than a second one."""
-    model_id = model_id or new_id("m")
+def create_admitted_model(repo: str, revision: str, probe: dict) -> str:
+    """Persist one admission. The reference is unique, so re-probing the same
+    pinned model returns its existing row rather than a second one."""
+    model_id = new_id("m")
     with connect() as c:
         c.execute(
             "INSERT OR IGNORE INTO admitted_models "
@@ -479,15 +476,6 @@ def get_admitted_model(model_id: str) -> dict | None:
     with connect() as c:
         r = c.execute(
             "SELECT * FROM admitted_models WHERE id=?", (model_id,)
-        ).fetchone()
-    return _admitted_row(r)
-
-
-def get_admitted_model_by_reference(repo: str, revision: str) -> dict | None:
-    with connect() as c:
-        r = c.execute(
-            "SELECT * FROM admitted_models WHERE repo=? AND revision=?",
-            (repo, revision),
         ).fetchone()
     return _admitted_row(r)
 

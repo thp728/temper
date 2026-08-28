@@ -24,7 +24,13 @@ the reasons kept beside them):
   silent failure. Blocks (`missing_chat_template`).
 * **Padding differs from end-of-sequence.** A tokenizer whose pad token is the
   same as its EOS token, unmasked, teaches the model never to stop. Blocks
-  (`padding_collides_with_eos`).
+  (`padding_collides_with_eos`). "The tokenizer loads" is the seam's own
+  concern and every failure of it maps to a block here: a missing
+  `tokenizer_config.json` surfaces as no chat template (below), and a file
+  that cannot be resolved at all surfaces as `revision_unresolvable`. Nothing
+  deeper is checkable at admission -- instantiating the tokenizer is a
+  machine-side concern, and the padding/EOS distinction is the proxy that is
+  load-bearing for training correctness.
 * **The licence resolves.** A licence that cannot be resolved is shown as
   unknown rather than guessed -- a wrong licence is worse than a visibly
   missing one (the posture the models seam already takes). Warns

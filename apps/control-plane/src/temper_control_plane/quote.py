@@ -186,7 +186,7 @@ def quote_for_launch(
         ds = jobs.usable_dataset(dataset_id)
     except Exception:  # noqa: BLE001 - no quote, never a broken launch
         return None
-    m = admission.resolve(base_model)
+    m = admission.get(base_model)
     if m is None:
         return None
     return for_config(

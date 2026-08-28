@@ -99,7 +99,25 @@ def probe_and_admit(repo: str, revision: str) -> dict:
     return record
 
 
-def resolve(base_model: str) -> catalog.BaseModel | None:
+def lookup(base_model: str) -> tuple[catalog.BaseModel | None, dict | None]:
+    """The model a launch refers to and, for an admitted model, its stored
+    probe.
+
+    The probe is `None` for a catalog model (the tested default needs no probe)
+    and for an unknown id; a launch gate needs to know *which* so it can refuse
+    a blocked probe, and asking this once means the gate does not re-read the
+    row it was just materialised from.
+    """
+    m = catalog.get(base_model)
+    if m is not None:
+        return m, None
+    record = db.get_admitted_model(base_model)
+    if record is None:
+        return None, None
+    return _as_catalog_model(record), record.get("probe")
+
+
+def get(base_model: str) -> catalog.BaseModel | None:
     """The model a launch refers to, as a `catalog.BaseModel` -- whether it is
     a catalog entry or an admitted one.
 
@@ -108,10 +126,8 @@ def resolve(base_model: str) -> catalog.BaseModel | None:
     stored probe: the facts were resolved and snapshot at admission, and a
     pinned revision cannot change, so the materialisation is exact.
     """
-    m = catalog.get(base_model)
-    if m is not None:
-        return m
-    return _as_catalog_model(db.get_admitted_model(base_model))
+    model, _ = lookup(base_model)
+    return model
 
 
 def _as_catalog_model(record: dict | None) -> catalog.BaseModel | None:
