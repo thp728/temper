@@ -25,7 +25,7 @@ setup:
 # contract that has just been proven current. `e2e` is inside the gate
 # because Spec 007's rule is that the journeys run on every push; they cost
 # no hardware, which is what makes that affordable.
-check: fmt-check lint types contracts-check test web-install web-browsers web-client web-lint web-types web-test e2e
+check: fmt-check lint types contracts-check test web-install web-browsers web-client web-lint web-types web-test db-up e2e
 
 # Formatting, as a gate rather than as a fix.
 fmt-check:
@@ -43,6 +43,11 @@ types:
 
 # Hardware and credential tests are deselected here, and only here. Coverage
 # prints a number and gates nothing: a threshold would buy tests written for it.
+#
+# Needs Docker running: the persistence suite (issue #43) starts its own
+# throwaway PostgreSQL container per session rather than faking the database
+# in a spec whose entire content is *which* database. No `db-up` required --
+# the suite manages its own container's whole lifecycle.
 test:
     uv run pytest -m "not hardware" --cov=packages/core/src --cov=apps/control-plane/src
 
@@ -67,10 +72,26 @@ contracts-check: contracts
     git diff --exit-code packages/contracts/openapi.json
     git diff --exit-code packages/contracts/advanced-surface.json
 
-# The control plane alone, against local defaults, with reload. For the whole
-# stack -- control plane plus web shell -- in one command, use `just up`.
+# The control plane alone, against local defaults, with reload. Needs a
+# database reachable at the default address -- `just db-up` starts one. For
+# the whole stack -- database, control plane and web shell -- in one command,
+# use `just up`.
 dev:
     uv run uvicorn temper_control_plane.main:app --reload
+
+# --- the database (issue #43) ------------------------------------------------
+# A named, long-lived container rather than compose: `just dev`/`just e2e` run
+# the control plane directly on the host (not through `docker compose up`), so
+# they need a database already listening at the default address independent of
+# the compose stack's own postgres service.
+
+# Start (or reuse) a local PostgreSQL at the zero-configuration default
+# address, for `just dev` and `just e2e`.
+db-up:
+    docker run -d --name temper-db -p 5432:5432 -e POSTGRES_USER=temper -e POSTGRES_PASSWORD=temper -e POSTGRES_DB=temper postgres:16
+
+db-down:
+    docker rm -f temper-db
 
 # --- the whole stack (issue #29) --------------------------------------------
 # One command starts every service the product needs. Defaults to the

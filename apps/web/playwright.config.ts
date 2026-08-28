@@ -19,13 +19,26 @@ import { E2E_BACKEND_PORT, E2E_WEB_PORT } from "./src/lib/backend";
 // journeys additionally refuse to run unless /health says the fake is in
 // force.
 //
-// The control plane the journeys boot also gets a database of its own
-// (TEMPER_DB_PATH, never the developer's data/temper.db), and resets it at
-// startup (TEMPER_DB_RESET): a journey writes only where it is pointed, and a
-// run that was killed mid-job cannot leave an orphaned row that poisons the
-// next gate run's startup. The reset lives in the backend's own init rather
-// than here because this config is loaded more than once per run, and a wipe
-// at load time would delete the backend's database out from under it.
+// The control plane the journeys boot resets its database at startup
+// (TEMPER_DB_RESET): a run that was killed mid-job cannot leave an orphaned
+// row that poisons the next gate run's startup. The reset lives in the
+// backend's own init rather than here because this config is loaded more
+// than once per run, and a wipe at load time would delete the backend's
+// database out from under it.
+//
+// Issue #43: unlike the SQLite file this replaced, the journeys do not get a
+// database of their own for free -- creating one requires a live connection
+// to create it over, which `just db-up`'s single PostgreSQL container
+// provides but does not itself split into a per-purpose database. The
+// journeys point at that same container's default database
+// (TEMPER_DATABASE_URL), which `just dev` also uses: running `just e2e`
+// against a developer's own `just dev` session now resets that developer's
+// data, where the SQLite-era separate file could not. Recorded as a known
+// regression in isolation rather than hidden; the fix is a dedicated
+// journey database, which needs either an init script on the `db-up`
+// container or `db.py` gaining the ability to create one -- both outside
+// this file and outside issue #43's boundary (persistence's function
+// bodies, not deployment tooling).
 const webPort = Number(process.env.TEMPER_WEB_PORT ?? E2E_WEB_PORT);
 const backendPort = Number(
   process.env.TEMPER_BACKEND_PORT ?? E2E_BACKEND_PORT,
@@ -33,7 +46,9 @@ const backendPort = Number(
 const backendUrl =
   process.env.TEMPER_BACKEND_URL ?? `http://127.0.0.1:${backendPort}`;
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
-const e2eDbPath = path.join(repoRoot, "data", "temper-e2e.db");
+const e2eDatabaseUrl =
+  process.env.TEMPER_DATABASE_URL ??
+  "postgresql://temper:temper@localhost:5432/temper";
 const e2eObjectsPath = path.join(repoRoot, "data", "objects-e2e");
 
 export default defineConfig({
@@ -84,7 +99,7 @@ export default defineConfig({
         ...process.env,
         TEMPER_FAKE_PROVIDER: "1",
         TEMPER_FAKE_LINE_DELAY_S: "0.6",
-        TEMPER_DB_PATH: e2eDbPath,
+        TEMPER_DATABASE_URL: e2eDatabaseUrl,
         TEMPER_DB_RESET: "1",
         TEMPER_STORAGE_ROOT: e2eObjectsPath,
       },
