@@ -1,4 +1,4 @@
-# ADR-0049 — Progress is measured from the output that was going to be thrown away
+# ADR-0053 — Progress is measured from the output that was going to be thrown away
 
 - **Status:** accepted
 - **Date:** 2026-08-28
