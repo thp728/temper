@@ -136,6 +136,21 @@ class DatasetAccepted(BaseModel):
     status: str
 
 
+class DatasetImportRequest(BaseModel):
+    """A dataset to import by reference (issue #45): a public repository,
+    optionally narrowed to a configuration (subset) and a split.
+
+    The response is the same `DatasetAccepted` an upload answers with, and
+    validation runs through the identical path -- the reference is only a
+    different way for the bytes to arrive, never a shortcut for them. A
+    reference that cannot be fetched, or a split that resolves to nothing, is
+    refused up front with its reason."""
+
+    repo: str
+    config: str | None = None
+    split: str | None = None
+
+
 class ValidationProgress(BaseModel):
     """Where validation has got to while a dataset is `validating`.
 

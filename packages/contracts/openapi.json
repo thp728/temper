@@ -424,6 +424,42 @@
         "title": "DatasetAccepted",
         "type": "object"
       },
+      "DatasetImportRequest": {
+        "description": "A dataset to import by reference (issue #45): a public repository,\noptionally narrowed to a configuration (subset) and a split.\n\nThe response is the same `DatasetAccepted` an upload answers with, and\nvalidation runs through the identical path -- the reference is only a\ndifferent way for the bytes to arrive, never a shortcut for them. A\nreference that cannot be fetched, or a split that resolves to nothing, is\nrefused up front with its reason.",
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "split": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "title": "DatasetImportRequest",
+        "type": "object"
+      },
       "DatasetList": {
         "description": "The response to listing datasets.",
         "properties": {
@@ -2085,6 +2121,48 @@
           }
         },
         "summary": "Upload Dataset",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/v1/datasets/import": {
+      "post": {
+        "description": "Import a dataset by reference (issue #45): a public repository,\noptionally a configuration and a split, and Temper fetches it for you.\n\nThe reference is resolved before anything is stored, and a reference that\ncannot be fetched -- repository missing, configuration unnamed, split\nabsent, split empty -- is refused with its reason as a coded 400, never\nleft to fail mid-fetch. The rows are then streamed from the repository\ninto storage with the upload size ceiling enforced along the way, and the\ndataset validates through the *same* background path an upload uses --\nsame schema detection, same line-numbered errors, same thinking-mode\ndetection. Nothing gets a shortcut for arriving over a network, and an\nimported dataset that fails validation is stored with its report like any\nother.\n\nLike an upload, this answers 202 with the dataset's id while validation\nruns; progress and the report land on `GET /v1/datasets/{id}`. The\nhandler is a worker-pool `def` because the fetch-and-store leg is\nsynchronous and CPU/IO-bound (ADR-0006).",
+        "operationId": "import_dataset_v1_datasets_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Dataset",
         "tags": [
           "datasets"
         ]

@@ -112,6 +112,26 @@ def no_real_models(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_remote_datasets(monkeypatch):
+    """No test imports a public dataset over the network.
+
+    Like `no_real_models`, fetching a public dataset costs nothing and risks
+    no billing account, so this replaces only the one seam application code
+    calls through -- `remote_datasets.RESOLVER` -- with an empty fake that
+    refuses every reference as `repo_not_found`. A test that wants to
+    import something seeds the fake with its own references; a test that
+    forgets fails loudly instead of silently reaching the network.
+    """
+    from temper_control_plane import fake_remote_datasets, remote_datasets
+
+    monkeypatch.setattr(
+        remote_datasets,
+        "RESOLVER",
+        fake_remote_datasets.FakeRemoteDatasets({}),
+    )
+
+
+@pytest.fixture(autouse=True)
 def no_real_tokenizer(monkeypatch):
     """No test downloads or loads a real tokenizer over the network.
 

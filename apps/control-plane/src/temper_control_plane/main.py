@@ -34,12 +34,14 @@ from temper_control_plane import (
     models,
     orchestrator,
     quote,
+    remote_datasets,
     storage,
 )
 from temper_control_plane.contracts_models import (
     AdvancedSurface,
     Calibration,
     DatasetAccepted,
+    DatasetImportRequest,
     DatasetList,
     DatasetRecord,
     DecisionOverride,
@@ -228,6 +230,41 @@ def upload_dataset(request: Request, file: UploadFile = File(...)):
         request.headers.get("content-length"), file.filename or "", file.file
     )
     return {"id": ds_id, "filename": file.filename or "", "status": status}
+
+
+@app.post(
+    "/v1/datasets/import",
+    tags=["datasets"],
+    status_code=202,
+    response_model=DatasetAccepted,
+)
+def import_dataset(req: DatasetImportRequest):
+    """Import a dataset by reference (issue #45): a public repository,
+    optionally a configuration and a split, and Temper fetches it for you.
+
+    The reference is resolved before anything is stored, and a reference that
+    cannot be fetched -- repository missing, configuration unnamed, split
+    absent, split empty -- is refused with its reason as a coded 400, never
+    left to fail mid-fetch. The rows are then streamed from the repository
+    into storage with the upload size ceiling enforced along the way, and the
+    dataset validates through the *same* background path an upload uses --
+    same schema detection, same line-numbered errors, same thinking-mode
+    detection. Nothing gets a shortcut for arriving over a network, and an
+    imported dataset that fails validation is stored with its report like any
+    other.
+
+    Like an upload, this answers 202 with the dataset's id while validation
+    runs; progress and the report land on `GET /v1/datasets/{id}`. The
+    handler is a worker-pool `def` because the fetch-and-store leg is
+    synchronous and CPU/IO-bound (ADR-0006).
+    """
+    try:
+        ds_id, filename, status = datasets.import_dataset(
+            req.repo, req.config, req.split
+        )
+    except remote_datasets.RemoteDatasetError as e:
+        raise HTTPException(400, e.to_payload()) from e
+    return {"id": ds_id, "filename": filename, "status": status}
 
 
 @app.get(
