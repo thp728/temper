@@ -103,6 +103,47 @@
         "title": "ArtifactRecord",
         "type": "object"
       },
+      "BestCheckpoint": {
+        "description": "The run's recorded choice of result checkpoint (issue #62).\n\nStored once at terminal time and never recomputed: a user who returns a\nweek later sees the same answer even if retention evicts a checkpoint or\nthe selection rule is edited. `basis` names the rule that decided, and\n`reason` says it in words -- the \"why\" that is shown with the choice.",
+        "properties": {
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "held_out_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held Out Loss"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          }
+        },
+        "required": [
+          "basis",
+          "reason"
+        ],
+        "title": "BestCheckpoint",
+        "type": "object"
+      },
       "Body_upload_dataset_v1_datasets_post": {
         "properties": {
           "file": {
@@ -398,6 +439,68 @@
           "peak_memory"
         ],
         "title": "CatalogEntry",
+        "type": "object"
+      },
+      "CheckpointRecord": {
+        "description": "One checkpoint a job recorded, as the interface is allowed to see it.\n\nIssue #37's verified set, published without the storage addresses: `step`\nis the user-visible name a download is addressed by (the download route\nreads the job row's own record for the key), `slot` is the retention slot\nit landed in, and `held_out_loss` is the signal best-checkpoint selection\nreads. `selected` marks the checkpoint the run recorded as its result\n(issue #62); it is set from the stored choice at presentation, never a\nre-derivation of that choice.",
+        "properties": {
+          "held_out_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held Out Loss"
+          },
+          "loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss"
+          },
+          "selected": {
+            "default": false,
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot"
+          },
+          "step": {
+            "title": "Step",
+            "type": "integer"
+          },
+          "superseded": {
+            "default": false,
+            "title": "Superseded",
+            "type": "boolean"
+          },
+          "verified": {
+            "default": false,
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "step"
+        ],
+        "title": "CheckpointRecord",
         "type": "object"
       },
       "DatasetAccepted": {
@@ -896,7 +999,7 @@
         "type": "object"
       },
       "JobRecord": {
-        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead, and `artifact` -- its\ndeclared kind and members -- is published so the interface can name the\ndeliverable without ever touching where it lives.",
+        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead, and `artifact` -- its\ndeclared kind and members -- is published so the interface can name the\ndeliverable without ever touching where it lives. Checkpoints are\npublished the same way: `checkpoints` names each retained checkpoint by\nstep and loss, `best_checkpoint` is the run's recorded choice, and the\nbytes live behind the checkpoint download route.",
         "properties": {
           "actuals": {
             "anyOf": [
@@ -933,10 +1036,27 @@
             ],
             "title": "Base Revision"
           },
+          "best_checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BestCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "cancel_requested": {
             "default": false,
             "title": "Cancel Requested",
             "type": "boolean"
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/CheckpointRecord"
+            },
+            "title": "Checkpoints",
+            "type": "array"
           },
           "created_at": {
             "title": "Created At",
@@ -2432,6 +2552,56 @@
           }
         },
         "summary": "Cancel Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/checkpoints/{step}": {
+      "get": {
+        "description": "Download one retained checkpoint by its step.\n\nIssue #62: the best checkpoint is chosen and recorded on the run, but every\nother retained checkpoint stays downloadable -- a user is never locked out\nof their own run's history. The step, not the slot, is what the user sees\nand addresses; the storage key is the job row's own record, read here and\nnever published to the browser.\n\nA checkpoint that is not retained (failed, superseded, or never verified)\nrefuses with a stable code rather than a broken download: the bytes are\nnot there, and a download that looks like it succeeded is worse than one\nthat names its absence.",
+        "operationId": "download_checkpoint_v1_jobs__job_id__checkpoints__step__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step",
+            "required": true,
+            "schema": {
+              "title": "Step",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Checkpoint",
         "tags": [
           "jobs"
         ]

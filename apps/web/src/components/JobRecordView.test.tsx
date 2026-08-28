@@ -361,6 +361,89 @@ describe("JobRecordView", () => {
     expect(note).toHaveTextContent(/overfitting/i);
   });
 
+  it("states which checkpoint was chosen as the result and why, and offers the rest", () => {
+    // Issue #62: the choice is recorded on the run, so the finished record
+    // says which checkpoint won and why, flags it, and keeps every other
+    // retained checkpoint downloadable.
+    render(
+      <JobRecordView
+        job={job({
+          best_checkpoint: {
+            step: 20,
+            held_out_loss: 0.39,
+            basis: "best_held_out_loss",
+            reason:
+              "Step 20 has the lowest held-out loss (0.39) of 3 retained checkpoint(s).",
+          },
+          checkpoints: [
+            { step: 10, slot: 0, held_out_loss: 0.44, verified: true },
+            { step: 20, slot: 1, held_out_loss: 0.39, verified: true, selected: true },
+            { step: 30, slot: 2, held_out_loss: 0.52, verified: true },
+          ],
+        })}
+        events={[]}
+      />,
+    );
+
+    // The choice, in plain language, with its recorded reason.
+    expect(
+      screen.getByText("Best checkpoint: step 20 (held-out loss 0.39)"),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Step 20 has the lowest held-out loss (0.39) of 3 retained checkpoint(s).",
+      ),
+    ).toBeVisible();
+    // The chosen one is flagged; every retained one is downloadable.
+    expect(screen.getByText("chosen result")).toBeVisible();
+    const downloads = screen.getAllByRole("link", { name: "Download" });
+    expect(downloads).toHaveLength(3);
+    for (const [i, step] of [10, 20, 30].entries()) {
+      expect(downloads[i]).toHaveAttribute(
+        "href",
+        `/v1/jobs/job_abc123def456/checkpoints/${step}`,
+      );
+    }
+    expect(screen.getByText("held-out loss 0.44")).toBeVisible();
+    expect(screen.getByText("held-out loss 0.52")).toBeVisible();
+  });
+
+  it("names a checkpoint with no held-out loss, without a download that cannot succeed", () => {
+    // A checkpoint that never landed (not retained) is named but not offered:
+    // a download that cannot succeed is worse than none (issue #62's "any
+    // other checkpoint remains downloadable" holds for what is retained).
+    render(
+      <JobRecordView
+        job={job({
+          checkpoints: [
+            { step: 10, slot: 0, held_out_loss: 0.4, verified: true, selected: true },
+            { step: 20, slot: 1, verified: false, superseded: true },
+          ],
+          best_checkpoint: {
+            step: 10,
+            held_out_loss: 0.4,
+            basis: "best_held_out_loss",
+            reason: "Step 10 has the lowest held-out loss (0.4) of 1 retained checkpoint(s).",
+          },
+        })}
+        events={[]}
+      />,
+    );
+    expect(screen.getByText("Step 10")).toBeVisible();
+    expect(screen.getByText("Step 20")).toBeVisible();
+    expect(screen.getByText("not retained")).toBeVisible();
+    expect(screen.getByText("no held-out loss recorded")).toBeVisible();
+    // Exactly one download is offered: the retained one.
+    expect(screen.getAllByRole("link", { name: "Download" })).toHaveLength(1);
+  });
+
+  it("shows no checkpoint section when the run recorded none", () => {
+    render(<JobRecordView job={job()} events={[]} />);
+    expect(
+      screen.queryByRole("heading", { name: "Checkpoints" }),
+    ).toBeNull();
+  });
+
   it("renders without scripting once the job is terminal", () => {
     const { container } = render(<JobRecordView job={job()} events={[]} />);
     expect(container.querySelector("script")).toBeNull();

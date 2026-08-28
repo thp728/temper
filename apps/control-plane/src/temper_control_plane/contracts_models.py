@@ -510,6 +510,40 @@ class ArtifactRecord(BaseModel):
     loading: str
 
 
+class CheckpointRecord(BaseModel):
+    """One checkpoint a job recorded, as the interface is allowed to see it.
+
+    Issue #37's verified set, published without the storage addresses: `step`
+    is the user-visible name a download is addressed by (the download route
+    reads the job row's own record for the key), `slot` is the retention slot
+    it landed in, and `held_out_loss` is the signal best-checkpoint selection
+    reads. `selected` marks the checkpoint the run recorded as its result
+    (issue #62); it is set from the stored choice at presentation, never a
+    re-derivation of that choice."""
+
+    step: int
+    slot: int | None = None
+    loss: float | None = None
+    held_out_loss: float | None = None
+    verified: bool = False
+    superseded: bool = False
+    selected: bool = False
+
+
+class BestCheckpoint(BaseModel):
+    """The run's recorded choice of result checkpoint (issue #62).
+
+    Stored once at terminal time and never recomputed: a user who returns a
+    week later sees the same answer even if retention evicts a checkpoint or
+    the selection rule is edited. `basis` names the rule that decided, and
+    `reason` says it in words -- the "why" that is shown with the choice."""
+
+    step: int | None = None
+    held_out_loss: float | None = None
+    basis: str
+    reason: str
+
+
 class JobRecord(BaseModel):
     """A job and the record of what became of it, published typed.
 
@@ -518,7 +552,10 @@ class JobRecord(BaseModel):
     lives is the storage seam's business, not the browser's. The artifact
     travels through the download endpoint instead, and `artifact` -- its
     declared kind and members -- is published so the interface can name the
-    deliverable without ever touching where it lives."""
+    deliverable without ever touching where it lives. Checkpoints are
+    published the same way: `checkpoints` names each retained checkpoint by
+    step and loss, `best_checkpoint` is the run's recorded choice, and the
+    bytes live behind the checkpoint download route."""
 
     id: str
     dataset_id: str
@@ -546,6 +583,8 @@ class JobRecord(BaseModel):
     result: dict[str, Any] | None = None
     actuals: JobActuals | None = None
     artifact: ArtifactRecord | None = None
+    checkpoints: list[CheckpointRecord] = Field(default_factory=list)
+    best_checkpoint: BestCheckpoint | None = None
 
 
 class JobList(BaseModel):

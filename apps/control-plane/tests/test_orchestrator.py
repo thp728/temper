@@ -2199,3 +2199,166 @@ def test_a_failed_run_still_records_its_checkpoints(harness):
     assert by_step[10]["verified"] is True
     assert by_step[20]["verified"] is True
     assert by_step[10]["loss"] == 1.0 / 10
+
+
+# --- the result checkpoint is chosen by held-out loss (issue #62) ------------
+#
+# The checkpoint with the best held-out loss is selected as the result, the
+# choice is recorded on the run rather than re-derived at download time, and
+# every other retained checkpoint stays downloadable. The rule itself lives in
+# `temper_core.checkpoint`, tested without hardware; what is pinned here is the
+# control plane's half: that the choice is stored on the row at terminal time,
+# that the published record flags it, and that the download route serves any
+# retained checkpoint by step.
+
+
+def _held_out_payloads(*pairs: tuple[int, float]) -> list[dict]:
+    """Fake-machine checkpoint reports carrying held-out losses.
+
+    The last checkpoint is deliberately NOT the best for the common journey
+    (losses rising after step 20, the overfitting shape the feature exists to
+    catch), so a test can assert the choice beat the default-without-a-choice.
+    """
+    return [
+        {
+            "step": step,
+            "loss": 1.0 / step,
+            "held_out_loss": held,
+            "bytes": f"ckpt-{step}".encode(),
+        }
+        for step, held in pairs
+    ]
+
+
+def test_a_completed_job_records_its_best_checkpoint_by_held_out_loss(harness):
+    """The last checkpoint is NOT the best when held-out loss rose after it.
+    The run records the checkpoint with the lowest held-out loss, the reason,
+    and the published record flags that checkpoint as selected."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_held_out_payloads((10, 0.44), (20, 0.39), (30, 0.52)),
+    )
+    job_id = harness.run(provider)
+
+    assert harness.job(job_id)["status"] == "complete"
+    best = harness.stored(job_id)["best_checkpoint"]
+    assert best["step"] == 20
+    assert best["held_out_loss"] == 0.39
+    assert best["basis"] == "best_held_out_loss"
+    assert "Step 20" in best["reason"]
+
+    published = harness.job(job_id)
+    by_step = {c["step"]: c for c in published["checkpoints"]}
+    assert by_step[20]["selected"] is True
+    assert by_step[10]["selected"] is False
+    assert by_step[30]["selected"] is False
+    # The choice is legible in the run's own history, not only the record.
+    assert any(
+        "Best checkpoint by held-out loss: step 20" in m
+        for m in harness.messages(job_id)
+    )
+
+
+def test_a_tie_for_the_lowest_held_out_loss_goes_to_the_later_checkpoint(
+    harness,
+):
+    """A tie is a decision, not an accident: the later checkpoint wins because
+    it trained further while matching the best held-out loss, and the record
+    names both the tie and the rule that broke it."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_held_out_payloads((10, 0.5), (20, 0.3), (30, 0.3)),
+    )
+    job_id = harness.run(provider)
+
+    best = harness.stored(job_id)["best_checkpoint"]
+    assert best["step"] == 30
+    assert best["basis"] == "tie_latest"
+    assert "Step 20 tied" in best["reason"]
+
+
+def test_when_no_checkpoint_has_a_held_out_loss_the_last_is_the_recorded_fallback(
+    harness,
+):
+    """No signal at all: the most-trained checkpoint is named as a fallback and
+    the reason says it is a fallback, rather than a best silently claimed."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_checkpoint_payloads(10, 20, 30),
+    )
+    job_id = harness.run(provider)
+
+    best = harness.stored(job_id)["best_checkpoint"]
+    assert best["step"] == 30
+    assert best["basis"] == "fallback_last"
+    assert "fallback" in best["reason"]
+
+
+def test_an_evicted_checkpoint_is_never_the_recorded_best(
+    harness, monkeypatch
+):
+    """Selection runs over what is retained, and the reason says how many were
+    considered: a checkpoint evicted by retention (issue #37) is superseded,
+    not a candidate, however good its loss."""
+    from temper_control_plane import config
+
+    monkeypatch.setattr(config, "CHECKPOINT_RETENTION", 1)
+    # Step 10 has the best loss but only step 20 survives the ring.
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_held_out_payloads((10, 0.1), (20, 0.5)),
+    )
+    job_id = harness.run(provider)
+
+    best = harness.stored(job_id)["best_checkpoint"]
+    assert best["step"] == 20
+    assert "1 retained checkpoint" in best["reason"]
+
+
+def test_every_retained_checkpoint_is_downloadable_by_step(harness):
+    """Any other checkpoint remains downloadable: the download route serves the
+    stored object for a retained step, chosen or not, addressed by the step the
+    user sees."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=_held_out_payloads((10, 0.44), (20, 0.39), (30, 0.52)),
+    )
+    job_id = harness.run(provider)
+
+    for step in (10, 20, 30):
+        r = harness._client.get(f"/v1/jobs/{job_id}/checkpoints/{step}")
+        assert r.status_code == 200, r.text
+        assert r.headers["content-disposition"].endswith(
+            f'filename="checkpoint-{step}.tar"'
+        )
+        assert r.content == f"ckpt-{step}".encode()
+
+
+def test_downloading_a_step_that_is_not_retained_refuses_with_a_stable_code(
+    harness,
+):
+    """A step that never landed refuses with a stable code rather than a broken
+    download: the bytes are not there, and a download that looks like it
+    succeeded is worse than one that names its absence."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+        checkpoints=[{"step": 10, "loss": 1.5, "bytes": None}],
+    )
+    job_id = harness.run(provider)
+
+    r = harness._client.get(f"/v1/jobs/{job_id}/checkpoints/10")
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "checkpoint_unavailable"
+    assert r.json()["detail"]["step"] == 10

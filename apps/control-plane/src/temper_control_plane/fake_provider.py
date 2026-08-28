@@ -566,7 +566,14 @@ class SimulatedMachine(FakeProvider):
 
 
 def completed_run() -> FakeProvider:
-    """The fake configured as a small successful job, end to end."""
+    """The fake configured as a small successful job, end to end.
+
+    The reported checkpoints deliberately make the last one NOT the best:
+    held-out loss falls to step 20 and rises again by step 30, the overfitting
+    shape issue #62 exists to catch, so the journeys exercise the recorded
+    best-checkpoint choice (and a non-chosen checkpoint download) on a real
+    finished record.
+    """
     from . import config
 
     return SimulatedMachine(
@@ -574,4 +581,24 @@ def completed_run() -> FakeProvider:
         result=DEMO_RESULT,
         adapter_bytes=DEMO_ADAPTER_BYTES,
         line_delay=config.FAKE_LINE_DELAY_S,
+        checkpoints=[
+            {
+                "step": 10,
+                "loss": 0.41,
+                "held_out_loss": 0.44,
+                "bytes": b"ckpt-10",
+            },
+            {
+                "step": 20,
+                "loss": 0.35,
+                "held_out_loss": 0.39,
+                "bytes": b"ckpt-20",
+            },
+            {
+                "step": 30,
+                "loss": 0.31,
+                "held_out_loss": 0.52,
+                "bytes": b"ckpt-30",
+            },
+        ],
     )

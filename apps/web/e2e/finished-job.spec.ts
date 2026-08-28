@@ -87,6 +87,54 @@ test("a user comes back tomorrow, finds the job, and collects the artifact", asy
   expect(bytes.subarray(0, 2).toString()).toBe("PK");
 });
 
+test("a finished job shows which checkpoint was chosen and why, and keeps the rest downloadable", async ({
+  page,
+}) => {
+  // Issue #62: the best checkpoint is chosen by held-out loss and the choice
+  // is recorded on the run, so the finished record states it in plain
+  // language -- and a checkpoint that was NOT chosen still downloads, so a
+  // user is never locked out of their own run's history. The journey fake's
+  // checkpoints deliberately make the last one not the best.
+  const jobId = await launchFromTheShell(page);
+
+  await expect(
+    page.getByRole("heading", { name: "Checkpoints" }),
+  ).toBeVisible();
+  const checkpoints = page.getByRole("region", { name: "Checkpoints" });
+  // The chosen checkpoint and its recorded why (scoped to the section: the
+  // same sentence also appears in the output log's own event).
+  await expect(
+    checkpoints.getByText("Best checkpoint: step 20 (held-out loss 0.39)"),
+  ).toBeVisible();
+  await expect(
+    checkpoints.getByText(
+      "Step 20 has the lowest held-out loss (0.39) of 3 retained checkpoint(s).",
+    ),
+  ).toBeVisible();
+  await expect(checkpoints.getByText("chosen result")).toBeVisible();
+
+  // Every retained checkpoint is offered; the unchosen one downloads.
+  for (const step of [10, 20, 30]) {
+    await expect(
+      checkpoints.getByRole("link", { name: "Download" }).nth(step / 10 - 1),
+    ).toHaveAttribute(
+      "href",
+      `/v1/jobs/${jobId}/checkpoints/${step}`,
+    );
+  }
+  const downloadPromise = page.waitForEvent("download");
+  await checkpoints
+    .getByRole("link", { name: "Download" })
+    .first()
+    .click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("checkpoint-10.tar");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "temper-e2e-ckpt-"));
+  const target = path.join(dir, "ckpt.tar");
+  await download.saveAs(target);
+  expect((await fs.readFile(target)).length).toBeGreaterThan(0);
+});
+
 test("a finished job compares its prediction against what happened, and the aggregate shows it", async ({
   page,
 }) => {

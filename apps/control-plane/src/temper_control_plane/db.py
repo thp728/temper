@@ -133,7 +133,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- one record per slot, each carrying its step, its loss where one exists,
     -- and the key its bytes were verified at. Only verified checkpoints are
     -- recorded here; a partially written one is never presented as complete.
-    checkpoints_json TEXT
+    checkpoints_json TEXT,
+    -- The recorded choice of result checkpoint (issue #62): the step with
+    -- the best held-out loss and the reason, frozen once at terminal time.
+    -- Stored rather than re-derived, so a run's answer cannot change when
+    -- retention evicts a checkpoint or the selection rule is edited.
+    best_checkpoint_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -189,6 +194,7 @@ ADDED_COLUMNS = (
     ("jobs", "quote_json", "TEXT"),
     ("jobs", "overrides_json", "TEXT"),
     ("jobs", "checkpoints_json", "TEXT"),
+    ("jobs", "best_checkpoint_json", "TEXT"),
     ("jobs", "artifact_json", "TEXT"),
     ("datasets", "progress_json", "TEXT"),
     ("jobs", "actuals_json", "TEXT"),
@@ -513,6 +519,23 @@ def set_checkpoints(job_id: str, checkpoints: list[dict]) -> None:
         )
 
 
+def set_best_checkpoint(job_id: str, selection: dict) -> None:
+    """Record the run's chosen result checkpoint (issue #62).
+
+    Written once, at the same moment the verified checkpoints are recorded,
+    and never recomputed: the whole point of recording the choice is that a
+    later reader sees the same answer even if retention evicts a checkpoint
+    or the selection rule is edited. `selection` is the stored shape of
+    `temper_core.checkpoint.CheckpointSelection` -- the step, the basis and
+    the reason -- so the record carries its own why.
+    """
+    with connect() as c:
+        c.execute(
+            "UPDATE jobs SET best_checkpoint_json=? WHERE id=?",
+            (json.dumps(selection), job_id),
+        )
+
+
 def request_cancel(job_id: str, note: str = "Cancellation requested") -> str:
     """Ask a job to stop. Says what it found, and never raises for it.
 
@@ -669,24 +692,56 @@ def _with_artifact(job: dict | None) -> dict | None:
     return job
 
 
+def _with_best_checkpoint(job: dict | None) -> dict | None:
+    """Publish the run's recorded choice, flagging the chosen checkpoint.
+
+    The choice itself is stored once at terminal time (issue #62); this only
+    decorates the published record so the interface can highlight which
+    checkpoint the run stands by without re-selecting. Marking `selected`
+    from the stored `best_checkpoint.step` is presentation, never a
+    re-derivation of the choice: if the two ever disagreed, the stored choice
+    is the one the run answers with, and the flag follows it.
+    """
+    if job is None:
+        return None
+    if job.get("checkpoints") is None:
+        job["checkpoints"] = []
+    if job.get("best_checkpoint") is None:
+        return job
+    best = job["best_checkpoint"]
+    step = best.get("step") if isinstance(best, dict) else None
+    if step is not None:
+        for ckpt in job["checkpoints"]:
+            if isinstance(ckpt, dict) and ckpt.get("step") == step:
+                ckpt["selected"] = True
+    return job
+
+
 def get_job(job_id: str) -> dict | None:
     with connect() as c:
         r = c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-    return _with_artifact(
-        _with_warnings(
-            _row(
-                r,
-                {
-                    "hyperparams_json": "hyperparameters",
-                    "result_json": "result",
-                    "warnings_json": "warnings",
-                    "quote_json": "quote",
-                    "overrides_json": "overrides",
-                    "actuals_json": "actuals",
-                    "checkpoints_json": "checkpoints",
-                    "artifact_json": "artifact_record",
-                },
-                defaults={"overrides": [], "checkpoints": []},
+    return _with_best_checkpoint(
+        _with_artifact(
+            _with_warnings(
+                _row(
+                    r,
+                    {
+                        "hyperparams_json": "hyperparameters",
+                        "result_json": "result",
+                        "warnings_json": "warnings",
+                        "quote_json": "quote",
+                        "overrides_json": "overrides",
+                        "actuals_json": "actuals",
+                        "checkpoints_json": "checkpoints",
+                        "best_checkpoint_json": "best_checkpoint",
+                        "artifact_json": "artifact_record",
+                    },
+                    defaults={
+                        "overrides": [],
+                        "checkpoints": [],
+                        "best_checkpoint": None,
+                    },
+                )
             )
         )
     )
@@ -720,21 +775,28 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
             ).fetchall()
     return [
         _present(
-            _with_artifact(
-                _with_warnings(
-                    _row(
-                        r,
-                        {
-                            "hyperparams_json": "hyperparameters",
-                            "result_json": "result",
-                            "warnings_json": "warnings",
-                            "quote_json": "quote",
-                            "overrides_json": "overrides",
-                            "actuals_json": "actuals",
-                            "checkpoints_json": "checkpoints",
-                            "artifact_json": "artifact_record",
-                        },
-                        defaults={"overrides": [], "checkpoints": []},
+            _with_best_checkpoint(
+                _with_artifact(
+                    _with_warnings(
+                        _row(
+                            r,
+                            {
+                                "hyperparams_json": "hyperparameters",
+                                "result_json": "result",
+                                "warnings_json": "warnings",
+                                "quote_json": "quote",
+                                "overrides_json": "overrides",
+                                "actuals_json": "actuals",
+                                "checkpoints_json": "checkpoints",
+                                "best_checkpoint_json": "best_checkpoint",
+                                "artifact_json": "artifact_record",
+                            },
+                            defaults={
+                                "overrides": [],
+                                "checkpoints": [],
+                                "best_checkpoint": None,
+                            },
+                        )
                     )
                 )
             )
