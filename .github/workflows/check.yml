@@ -118,7 +118,11 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: bring up the stack
-        run: docker compose up -d --build
+        # --wait blocks until every service's own healthcheck passes, not just
+        # until the containers start. Without it the web is still booting Next
+        # when the proxy check below runs, and curl exits 56 on a published
+        # port that accepts the connection and answers nothing.
+        run: docker compose up -d --build --wait
 
       - name: poll /health until every dependency is ready
         run: |
