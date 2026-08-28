@@ -15,12 +15,12 @@ dataset (with a fingerprint and counts), which configuration including any
 overrides, the evaluation summary that says whether training worked, and which
 checkpoint the result came from.
 
-Nearly everything that answer needs already exists on the run record by the time
+Nearly everything that answer needs already exists on the job record by the time
 an artifact is verified. #32 makes the artifact declare its kind derived from
 the method (`temper_core.artifacts.kind_for`). #50 and #37 write artifacts and
 checkpoints through a scoped grant and verify by streaming back through a
 checksum; #59 records an export-time template probe result with the artifact.
-#62 records which checkpoint was chosen and why, stored on the run rather than
+#62 records which checkpoint was chosen and why, stored on the job rather than
 derived, which is exactly "the checkpoint the result came from". #53 holds the
 split after deduplication and the evaluation loss, which is the evaluation
 summary. #48 resolves model facts (including licence) through a seam, and #58
@@ -28,19 +28,17 @@ admits models from outside the catalog after a probe.
 
 The manifest's job is therefore to **assemble, not to gather**. The sentence
 that shaped the design is the one the issue quotes: "a provenance document that
-can drift from the run it describes is worse than none, because it will be
+can drift from the job it describes is worse than none, because it will be
 believed." A hand-written manifest, or a generated one that fills a missing
 field with `"unknown"`, will be believed and is therefore a liability.
 
 Two siblings land this wave and set the boundary: #36 (divergence stops early),
 #34 (teardown confirmed), #56 (finished page shows its outcome) and #65
-(mixture-of-experts labelled untested). None of those surfaces is touched here;
-if the manifest wants to record an "untested" label it reads it from the
-record rather than defining it, and expects to rebase when that field lands.
+(mixture-of-experts labelled untested). None of those surfaces is touched here.
 
 ## Decision
 
-**The artifact ships with a provenance manifest that is generated from the run
+**The artifact ships with a provenance manifest that is generated from the job
 record, fails on a missing required field, and is readable by a person.**
 
 ### What the manifest records, and where each field comes from
@@ -66,8 +64,13 @@ record, fails on a missing required field, and is readable by a person.**
   (`rows_in`, `rows_removed_duplicates`, `train_rows`, `held_out_rows`,
   `fraction`, `seed`) plus the validation report's counts (`row_count`,
   `usable_rows`) and the token count when the counting phase has landed.
-  The fingerprint is the split; the counts are the report. Both are recorded
-  facts, not recomputed.
+  The fingerprint's identity part is the dataset content hash when one is
+  recorded; no hash is recorded for datasets today (see outstanding gap
+  below), so until then the fingerprint is the split plus the dataset id and
+  counts. Two different files with the same counts and id therefore
+  fingerprint identically today, which is an honest outstanding gap rather
+  than a hidden one. When a hash is recorded (e.g.
+  `dataset.content_hash` / `sha256`) it is carried as `content_hash`.
 
 - **The full configuration including overrides** — `job.hyperparameters` as the
   effective configuration (defaults plus method-specific table and any
@@ -83,7 +86,7 @@ record, fails on a missing required field, and is readable by a person.**
 - **The checkpoint the result came from** — `job.best_checkpoint` as stored by
   #62 (`step`, `basis`, `reason`, `held_out_loss`). The choice is recorded
   once at terminal time and never re-derived; the manifest reads it, so a
-  retention eviction or a rule edit cannot move a run's answer.
+  retention eviction or a rule edit cannot move a job's answer.
 
 - **The artifact itself** — kind derived from `job.method` via
   `temper_core.artifacts.kind_for`, members from the stored `artifact_record`,
@@ -92,11 +95,12 @@ record, fails on a missing required field, and is readable by a person.**
   zip are the ground truth; the manifest's `artifact.members` is forced to
   match them.
 
-All of the above lives in `temper_core.manifest`: a pure module with no I/O,
-so the generation is tested without hardware as a table of job records and
-expected manifests. The one exception is the licence lookup through
-`temper_core.catalog`, which is a stable, versioned source, not a network
-call.
+All of the above lives in `temper_core.manifest`: a pure module with no I/O.
+The caller supplies `generated_at` so the module never reads the clock
+(ADR-0010: `packages/core` is pure), and the one exception to purity is the
+licence lookup through `temper_core.catalog`, which is a stable, versioned
+source, not a network call. Generation is therefore testable as a table of
+job records and expected manifests.
 
 ### Missing required field fails generation
 
@@ -104,7 +108,7 @@ call.
 No `"unknown"`, no empty string, no `null` standing in for a fact nobody
 recorded. The control plane's download path catches that failure and falls back
 to the minimal legacy manifest only for rows written before provenance existed
--- a provenance-capable run never reaches that branch. The failure is the
+-- a provenance-capable job never reaches that branch. The failure is the
 enforcement of the drift sentence: a manifest that invents a value will be
 believed.
 
@@ -132,16 +136,16 @@ the zip, so the provenance does not change the flat-memory guarantee.
 
 The Markdown contains the same facts as the JSON, in sentences and headings.
 A job that cannot be understood from its manifest has not been explained, and
-the platform's value is explaining runs. The JSON's pretty-printing is the
+the platform's value is explaining jobs. The JSON's pretty-printing is the
 second, smaller half of the same requirement: a reviewer who opens the JSON
 directly sees indented, sorted keys, not a single line.
 
 ## Alternatives considered
 
 **Hand-write the manifest on the machine or in the control plane's download
-handler.** Rejected: a hand-written document can drift from the run it
-describes and will be believed. The generation reads the run record whole,
-so the manifest says what the run says.
+handler.** Rejected: a hand-written document can drift from the job it
+describes and will be believed. The generation reads the job record whole,
+so the manifest says what the job says.
 
 **Produce `"unknown"` or `""` for a missing field so the zip still builds.**
 Rejected: the criterion "a missing required field fails generation rather
@@ -164,16 +168,11 @@ JSON file is a machine artifact that a person has to format before reading.
 Pretty-printing and a Markdown rendering are cheap and are what make the
 manifest a review surface.
 
-**Define the "untested" label inside the manifest module.** Rejected: #65
-owns that label; the manifest reads it from the job's stored probe result
-(`_admitted_probe` / `untested_label`) rather than defining it, so the two
-cannot disagree about what counts as untested. Expect a rebase when that
-field lands.
-
 **Add a new store for provenance or extend the database schema for it.**
-Rejected: provenance needs no new store. The run record already carries every
-field the manifest needs; adding a new table would be a second source of truth
-that could drift from the run it is meant to describe.
+Rejected: provenance needs no new store. The job record already carries every
+field the manifest needs except the dataset content hash (outstanding, see
+below); adding a new table would be a second source of truth that could drift
+from the job it is meant to describe.
 
 ## Consequences
 
@@ -189,9 +188,20 @@ that could drift from the run it is meant to describe.
 - Existing adapter/full-model download tests now assert both manifest files
   and the provenance fields; legacy rows that lack provenance hit the
   incomplete-manifest fallback in the download path.
-- The untested/MoE label, when present on the finished run, travels to the
-  manifest and the Markdown; until #65 lands the field is absent and the
-  manifest omits it without failing.
+- `generate()` is pure: the caller supplies `generated_at`, so the module
+  never reads the clock and is testable as a table. ADR-0010's pure rule
+  holds.
+
+## Outstanding gap
+
+Dataset content hash is not recorded anywhere today. The dataset's bytes are
+stored (and #50 verified artifacts via checksum) but the dataset itself is
+stored without a content hash (`dataset.content_hash` / `sha256` is absent
+from the dataset row). Until a hash is recorded, the "fingerprint" is the
+split plus the dataset id and counts, and two different files with the same
+counts and id would fingerprint identically. The manifest carries
+`content_hash` when present and omits it otherwise, rather than pretending
+counts are identity.
 
 ## Rollback
 

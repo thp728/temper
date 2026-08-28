@@ -1,11 +1,11 @@
-"""Provenance manifest: generated from the run record (issue #70).
+"""Provenance manifest: generated from the job record (issue #70).
 
 Spec 011 / issue #70. Nearly everything the manifest records already exists
-on the run record; the job is to assemble, not to gather. The manifest
+on the job record; the job is to assemble, not to gather. The manifest
 records base model and pinned revision, dataset fingerprint with counts, the
 full configuration including overrides, the evaluation summary, the checkpoint
 the result came from, and the licence obligations that propagate. It is
-generated from the run record rather than assembled by hand, ships with the
+generated from the job record rather than assembled by hand, ships with the
 artifact, fails loudly on a missing required field, and is readable by a
 person as well as a machine.
 """
@@ -21,6 +21,13 @@ from temper_core.manifest import (
     render_text,
     to_pretty_json,
 )
+
+# Caller-supplied timestamp so the pure generate never reads the clock.
+FIXED_TS = 1724330000.0
+
+
+def gen(job, dataset=None):
+    return generate(job, dataset, generated_at=FIXED_TS)
 
 
 def _valid_job(**overrides):
@@ -95,7 +102,7 @@ def _valid_dataset(**overrides):
 def test_manifest_records_base_model_and_pinned_revision():
     job = _valid_job()
     ds = _valid_dataset()
-    m = generate(job, ds)
+    m = gen(job, ds)
     # Base model and pinned revision travel together; the manifest must carry both.
     assert m["base_model"] == "qwen3-4b"
     assert m["base_revision"] == "1cfa9a7208912126459214e8b04321603b3df60c"
@@ -108,7 +115,7 @@ def test_manifest_records_base_model_and_pinned_revision():
 def test_manifest_records_dataset_fingerprint_with_counts():
     job = _valid_job()
     ds = _valid_dataset()
-    m = generate(job, ds)
+    m = gen(job, ds)
     # The held-out split is the fingerprint: dedup first, deterministic under seed.
     assert m["dataset"]["rows_in"] == 12
     assert m["dataset"]["train_rows"] == 11
@@ -125,7 +132,7 @@ def test_manifest_records_full_configuration_including_overrides():
         hyperparameters={"lora_r": 32, "learning_rate": 0.0001},
         overrides=[{"decision": "sequence length", "value": "2048"}],
     )
-    m = generate(job, _valid_dataset())
+    m = gen(job, _valid_dataset())
     assert m["configuration"]["hyperparameters"]["lora_r"] == 32
     assert m["configuration"]["overrides"][0]["decision"] == "sequence length"
     assert m["configuration"]["method"] == "qlora"
@@ -135,7 +142,7 @@ def test_manifest_records_full_configuration_including_overrides():
 
 def test_manifest_records_evaluation_summary_and_checkpoint_the_result_came_from():
     job = _valid_job()
-    m = generate(job, _valid_dataset())
+    m = gen(job, _valid_dataset())
     # Evaluation summary: the held-out split and the template probe.
     assert m["evaluation"]["held_out_split"]["held_out_rows"] == 1
     assert m["evaluation"]["template_probe"]["ok"] is True
@@ -149,7 +156,7 @@ def test_manifest_records_evaluation_summary_and_checkpoint_the_result_came_from
 
 def test_manifest_states_licence_obligations_explicitly():
     job = _valid_job()
-    m = generate(job, _valid_dataset())
+    m = gen(job, _valid_dataset())
     obligations = m["base_model_info"]["license_obligations"]
     # Apache-2.0 obligations are stated explicitly, not left to a reader to guess.
     assert "Apache-2.0" in obligations
@@ -175,13 +182,13 @@ def test_manifest_is_generated_from_the_run_record_rather_than_assembled_by_hand
             "held_out_loss": 0.3,
         }
     )
-    assert generate(job1, _valid_dataset())["checkpoint"]["step"] == 20
-    assert generate(job2, _valid_dataset())["checkpoint"]["step"] == 30
+    assert gen(job1, _valid_dataset())["checkpoint"]["step"] == 20
+    assert gen(job2, _valid_dataset())["checkpoint"]["step"] == 30
     # If a field can be supplied two ways, the recorded one wins: the job
     # carries a base_revision and the catalog carries the same; the job's
     # recorded revision is what the manifest publishes.
     job3 = _valid_job(base_revision="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
-    m3 = generate(job3, _valid_dataset())
+    m3 = gen(job3, _valid_dataset())
     assert m3["base_revision"] == "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
 
@@ -198,7 +205,7 @@ def test_manifest_includes_artifact_kind_and_loading():
         "bytes": 999,
         "sha256": "xyz",
     }
-    m = generate(job, _valid_dataset())
+    m = gen(job, _valid_dataset())
     assert m["artifact"]["kind"] == artifacts.ARTIFACT_KIND_FULL_MODEL
     assert (
         "full" in m["artifact"]["loading"].lower()
@@ -213,7 +220,7 @@ def test_a_missing_required_field_fails_rather_than_producing_a_placeholder():
     job = _valid_job()
     del job["base_revision"]
     with pytest.raises(MissingField) as exc:
-        generate(job, _valid_dataset())
+        gen(job, _valid_dataset())
     assert exc.value.field == "base_revision"
     assert "unknown" not in str(exc.value).lower()
 
@@ -221,20 +228,20 @@ def test_a_missing_required_field_fails_rather_than_producing_a_placeholder():
     job = _valid_job()
     del job["result"]["held_out_split"]
     with pytest.raises(MissingField) as exc:
-        generate(job, _valid_dataset())
+        gen(job, _valid_dataset())
     assert "held_out_split" in exc.value.field
 
     # best_checkpoint missing -> MissingField
     job = _valid_job()
     del job["best_checkpoint"]
     with pytest.raises(MissingField) as exc:
-        generate(job, _valid_dataset())
+        gen(job, _valid_dataset())
     assert "best_checkpoint" in exc.value.field
 
     # A field that is an empty string is as missing as one that is absent.
     job = _valid_job(base_revision="")
     with pytest.raises(MissingField) as exc:
-        generate(job, _valid_dataset())
+        gen(job, _valid_dataset())
     assert exc.value.field == "base_revision"
 
     # A placeholder "unknown" is refused, not accepted as a licence.
@@ -242,12 +249,12 @@ def test_a_missing_required_field_fails_rather_than_producing_a_placeholder():
     job["base_model"] = "unknown-model"
     # Force licence lookup to empty by using an unknown model id and no fallback
     with pytest.raises(MissingField) as exc:
-        generate(job, _valid_dataset())
+        gen(job, _valid_dataset())
     assert exc.value.field in ("license", "base_model_repo", "base_model")
 
 
 def test_manifest_is_readable_by_a_person_not_only_a_machine():
-    m = generate(_valid_job(), _valid_dataset())
+    m = gen(_valid_job(), _valid_dataset())
     text = render_text(m)
     # The Markdown contains headings a reviewer can skim, not just JSON.
     assert "# Provenance Manifest" in text
@@ -266,37 +273,3 @@ def test_manifest_is_readable_by_a_person_not_only_a_machine():
     assert '  "base_model"' in pretty or '"base_model"' in pretty
     # But the pretty JSON alone is not the human document: the Markdown is.
     assert len(text.splitlines()) > 30
-
-
-def test_manifest_reads_untested_label_from_the_record():
-    # Issue #65's untested label travels on the finished run; the manifest reads
-    # it rather than defining it, and expects to rebase when that field lands.
-    job = _valid_job(
-        untested_label="untested", untested_reason="MoE architecture"
-    )
-    m = generate(job, _valid_dataset())
-    assert m["base_model_info"]["untested_label"] == "untested"
-    assert m["base_model_info"]["untested_reason"] == "MoE architecture"
-    text = render_text(m)
-    assert "untested" in text.lower()
-
-
-def test_moe_flag_from_probe_travels_to_manifest():
-    job = _valid_job()
-    job["_admitted_is_moe"] = True
-    job["_admitted_probe"] = {
-        "is_moe": True,
-        "findings": [
-            {
-                "code": "untested_architecture",
-                "severity": "warn",
-                "message": "mixture-of-experts is untested here",
-            }
-        ],
-    }
-    m = generate(job, _valid_dataset())
-    assert m["base_model_info"]["is_moe"] is True
-    assert m["base_model_info"]["untested_label"] == "untested"
-    assert (
-        "mixture-of-experts" in m["base_model_info"]["untested_reason"].lower()
-    )

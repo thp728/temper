@@ -1,4 +1,4 @@
-"""Provenance manifest: generated from the run record, never hand-written.
+"""Provenance manifest: generated from the job record, never hand-written.
 
 Spec 011 / issue #70. The artifact ships with no record of what produced it,
 and the base model's licence obligations flow through to whatever the user does
@@ -7,41 +7,36 @@ at which pinned revision, which dataset (with counts), which configuration
 including any overrides, the evaluation summary, the checkpoint the result came
 from, and the licence obligations that propagate.
 
-A provenance document that can drift from the run it describes is worse than
+A provenance document that can drift from the job it describes is worse than
 none, because it will be believed. Every field the manifest carries is therefore
-derived from what the run recorded, never hand-typed, and where a field can be
+derived from what the job recorded, never hand-typed, and where a field can be
 supplied two ways the recorded one wins. A missing required field fails
 generation rather than producing a placeholder: no "unknown", no empty string,
 no null standing in for a fact nobody recorded.
 
 The module is pure: no I/O, no framework imports, one seam read (`catalog`)
-only where the licence lookup is a stable, versioned source. That keeps
-manifest generation testable without a database and without hardware, and done
-means the same as every other `temper_core` pure module: given a run record,
-the manifest contains every required field and no placeholder.
+only where the licence lookup is a stable, versioned source, and the caller
+supplies the generation timestamp so the module never reads the clock. That
+keeps manifest generation testable without a database and without hardware, and
+done means the same as every other `temper_core` pure module: given a job
+record, the manifest contains every required field and no placeholder.
 
 Human readability is a requirement, not a nicety: the manifest is what a
 reviewer reads to decide whether training worked, so the JSON is pretty-printed
 and `render_text` produces a Markdown document that states each section in
 sentences as well as keys.
-
-Issue #65's "untested" label (mixture-of-experts / unknown architecture)
-travels on the finished run's stored probe result, and if the manifest records
-such a label it reads it from the record rather than defining it. Expect to
-rebase when that field lands.
 """
 
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 from . import artifacts, catalog
 
 
 class MissingField(ValueError):
-    """A required provenance field is absent from the run record.
+    """A required provenance field is absent from the job record.
 
     Raised rather than guessed: a missing field is not "unknown", it is a
     defect, and the artifact is not shipped with a manifest that lies about it.
@@ -232,6 +227,15 @@ def _dataset_fingerprint(
     counts. Where both exist, the dataset's own counts are cross-checked rather
     than silently preferred -- a mismatch is a drift, and drift is the failure
     the manifest exists to prevent.
+
+    The fingerprint's identity part is the dataset content hash when one is
+    recorded. No hash is recorded for datasets today (see ADR-0054 outstanding
+    gap); the dataset's bytes are stored (and #50 verified artifacts via
+    checksum) but the dataset itself is stored without a content hash. Until a
+    hash is recorded, the fingerprint is dataset id + counts + split, and two
+    different files with the same counts and id would fingerprint identically.
+    When a hash is recorded (e.g. dataset["content_hash"] or
+    dataset["sha256"]) it is carried as ``content_hash``.
     """
     _require_dict(held_out_split, "held_out_split")
     for field in (
@@ -290,6 +294,19 @@ def _dataset_fingerprint(
         )
         if token_dist is not None:
             fingerprint["token_distribution"] = token_dist
+        # Content hash, when recorded. No hash is recorded for datasets today
+        # (ADR-0054 outstanding gap); if one were present it would be the
+        # identity. Look for the common keys rather than assuming one.
+        content_hash = None
+        for key in ("content_hash", "sha256", "dataset_sha256", "object_hash"):
+            if isinstance(dataset.get(key), str) and dataset[key].strip():
+                content_hash = dataset[key]
+                break
+            if isinstance(report.get(key), str) and report[key].strip():
+                content_hash = report[key]
+                break
+        if content_hash:
+            fingerprint["content_hash"] = content_hash
 
     return fingerprint
 
@@ -322,16 +339,20 @@ def _evaluation_summary(
 def generate(
     job: dict[str, Any],
     dataset: dict[str, Any] | None = None,
+    *,
+    generated_at: float | None = None,
 ) -> dict[str, Any]:
     """Generate the provenance manifest for `job`.
 
-    ``job`` is the run record as returned by ``db.get_job``: a dict carrying
+    ``job`` is the job record as returned by ``db.get_job``: a dict carrying
     ``id``, ``base_model``, ``base_revision``, ``hyperparameters``,
     ``overrides``, ``result`` (with ``held_out_split`` and ``template_probe``),
     ``best_checkpoint``, ``artifact_record`` and ``method``. ``dataset`` is the
     dataset row as returned by ``db.get_dataset`` (or None when unavailable in
-    a test harness). Every required field is validated and a MissingField is
-    raised naming the field rather than producing a placeholder.
+    a test harness). ``generated_at`` is the generation timestamp supplied by
+    the caller so this pure module never reads the clock. Every required field
+    is validated and a MissingField is raised naming the field rather than
+    producing a placeholder.
 
     If a field can be supplied two ways, the recorded value on ``job`` wins.
     For example ``job["_admitted_license"]`` (stashed by the download path)
@@ -342,6 +363,9 @@ def generate(
     via ``render_text``. The dict contains no placeholders: a missing required
     field raises rather than yielding ``"unknown"``.
     """
+    # The caller supplies the timestamp so this pure module never reads the
+    # clock (ADR-0010: packages/core is pure with no I/O).
+    _require(generated_at, "generated_at")
     # --- provenance -----------------------------------------------------
     job_id = _require(job.get("id"), "job_id")
     created_at = job.get("created_at")
@@ -433,7 +457,7 @@ def generate(
     }
     # The seed is part of the configuration: the split and the training are
     # deterministic under it, so a manifest without it cannot be reproduced.
-    # The trainer pins it to 42, but the manifest records what the run recorded,
+    # The trainer pins it to 42, but the manifest records what the job recorded,
     # so it reads it from held_out_split.seed rather than retyping 42.
     configuration["seed"] = held_out_split["seed"]
 
@@ -522,7 +546,7 @@ def generate(
     }
     manifest: dict[str, Any] = {
         "version": 1,
-        "generated_at": time.time(),
+        "generated_at": generated_at,
         "job": {
             "id": str(job_id),
             "created_at": created_at,
@@ -557,43 +581,6 @@ def generate(
         "bytes": artifact_bytes,
         "loading": loading,
     }
-
-    # Carry the untested/MoE label if the job's stored probe or model facts
-    # recorded it. Issue #65's label travels on the finished run; the manifest
-    # reads it rather than defining it.
-    probe_for_label = job.get("_admitted_probe") or job.get("probe") or {}
-    # The admitted probe may be nested under "probe" on the admitted model row;
-    # the job may also carry a flat "is_moe" flag if the control plane stashed it.
-    is_moe = job.get("_admitted_is_moe")
-    if is_moe is None and isinstance(probe_for_label, dict):
-        is_moe = probe_for_label.get("is_moe")
-        if is_moe is None and isinstance(probe_for_label.get("summary"), dict):
-            is_moe = probe_for_label["summary"].get("is_moe")
-    if isinstance(is_moe, bool) and is_moe:
-        manifest["base_model_info"]["is_moe"] = True
-        manifest["base_model_info"]["untested_label"] = "untested"
-        # The probe's untested finding, when present, carries the product
-        # reason for the label.
-        findings = (
-            probe_for_label.get("findings")
-            if isinstance(probe_for_label, dict)
-            else None
-        )
-        if isinstance(findings, list):
-            for f in findings:
-                if isinstance(f, dict) and f.get("code") in (
-                    "untested_architecture",
-                ):
-                    manifest["base_model_info"]["untested_reason"] = f.get(
-                        "message"
-                    )
-                    break
-    # Also look for an explicit untested label already on the job (for tests
-    # simulating #65 without a full probe). Recorded wins.
-    if job.get("untested_label"):
-        manifest["base_model_info"]["untested_label"] = job["untested_label"]
-    if job.get("untested_reason"):
-        manifest["base_model_info"]["untested_reason"] = job["untested_reason"]
 
     return manifest
 
@@ -746,7 +733,7 @@ def render_text(manifest: dict[str, Any]) -> str:
 
     w("\n---\n")
     w(
-        "*This manifest was generated from the run record, not hand-written. "
+        "*This manifest was generated from the job record, not hand-written. "
         "If a field is missing the generation fails rather than emitting a placeholder.*\n"
     )
     # Machine-readable appendix: the full JSON, pretty-printed.

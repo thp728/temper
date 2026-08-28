@@ -942,7 +942,7 @@ def download_artifact(job_id: str):
         if stream is not None:
             member_streams.append((name, stream))
 
-    # The provenance manifest (issue #70): generated from the run record,
+    # The provenance manifest (issue #70): generated from the job record,
     # never hand-written, it records base model and pinned revision, dataset
     # fingerprint with counts, the full configuration including overrides,
     # the evaluation summary, the checkpoint the result came from, and the
@@ -956,7 +956,9 @@ def download_artifact(job_id: str):
     except Exception:
         dataset_row = None
     try:
-        provenance = provenance_manifest.generate(job, dataset_row)
+        provenance = provenance_manifest.generate(
+            job, dataset_row, generated_at=time.time()
+        )
         # The streamed members' names are the ground truth for what the zip
         # contains; the provenance's artifact.members is forced to match them
         # so the manifest cannot drift from the bytes it describes.
