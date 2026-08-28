@@ -45,7 +45,7 @@ from temper_core.errors import OrchestratorError
 from temper_core.selection import GpuAvailability
 
 from .limits import RunLimits
-from .provider import Machine
+from .provider import Machine, normalize_status
 
 # Stage names, not method names: `push` and `fetch` are where a transfer --
 # streamed or otherwise -- can fail or pause.
@@ -153,6 +153,16 @@ class FakeProvider:
         pause_at_line: int | None = None,
         availability: Sequence[GpuAvailability] = DEFAULT_AVAILABILITY,
         currency: str = DEFAULT_CURRENCY,
+        # Issue #34: the provider's listing is eventually consistent. After a
+        # destroy the machine can read absent, then reappear as `destroying`,
+        # then go absent for good. `list_sequence` lets a test script the
+        # exact ids (or Machines) returned per `list_machines` call, and
+        # `destroying_for` makes the fake report `destroying` for N calls
+        # after a successful destroy before becoming absent — the two
+        # mechanisms that let the confirmation rule be exercised without
+        # hardware.
+        list_sequence: Sequence[Sequence[object]] | None = None,
+        destroying_for: int = 0,
     ) -> None:
         if fail_at is not None and fail_at not in STAGES:
             raise ValueError(f"unknown stage {fail_at!r}")
@@ -206,6 +216,16 @@ class FakeProvider:
         self.pushed: list[tuple[str, bytes]] = []
         self.script: bytes | None = None
         self.closed = False
+
+        # Issue #34: eventual-consistency scaffolding.
+        self._list_sequence: list[list[object]] | None = (
+            [list(seq) for seq in list_sequence]
+            if list_sequence is not None
+            else None
+        )
+        self._destroying_for = int(destroying_for)
+        self._list_calls = 0
+        self._destroyed_at_call: int | None = None
 
     # -- protocol -----------------------------------------------------------
 
@@ -413,16 +433,99 @@ class FakeProvider:
         if self.destroy_attempts <= self._destroy_failures:
             raise RuntimeError("provider refused the destroy call")
         self.destroyed = True
+        if self._destroyed_at_call is None:
+            self._destroyed_at_call = self._list_calls
+
+    def _list_machines_inner(self) -> list[Machine]:
+        """The actual machines the provider bills, with lifecycle status.
+
+        A destroyed machine can still be reported as `destroying` for a
+        configurable number of listings before becoming absent — the
+        eventual-consistency window the confirmation rule must survive
+        (spec 010, spike/teardown.py C17). A scripted `list_sequence`
+        overrides everything, so a test can make the provider read absent
+        then reappear as destroying.
+        """
+        # Scripted sequence wins, so a test can exercise the exact
+        # absent -> destroying -> absent shape without timing.
+        if self._list_sequence is not None:
+            idx = (
+                self._list_calls - 1
+            )  # _list_calls is 1-based after increment
+            if 0 <= idx < len(self._list_sequence):
+                raw = self._list_sequence[idx]
+            elif self._list_sequence:
+                raw = self._list_sequence[-1]
+            else:
+                raw = []
+            out: list[Machine] = []
+            for item in raw:
+                if isinstance(item, Machine):
+                    out.append(
+                        Machine(
+                            item.machine_id,
+                            handle=item.handle,
+                            status=normalize_status(item.status),
+                        )
+                    )
+                elif isinstance(item, int):
+                    out.append(Machine(item, status="running"))
+                elif isinstance(item, tuple) and len(item) == 2:
+                    mid, st = item
+                    out.append(
+                        Machine(int(mid), status=normalize_status(str(st)))
+                    )
+                else:
+                    raise ValueError(f"bad list_sequence entry {item!r}")
+            # Orphans are still appended unless the sequence already names them
+            # — a sequence that wants to hide orphans can just include them
+            # explicitly, and one that wants to show them does not need to.
+            return out
+
+        ids: list[int] = []
+        statuses: dict[int, str] = {}
+
+        # Primary job machine
+        listed = not self.destroyed or self._stays_listed
+        if listed:
+            # After a successful destroy, report destroying for a window
+            # before going absent.
+            if (
+                self.destroyed
+                and not self._stays_listed
+                and self._destroyed_at_call is not None
+                and self._destroying_for > 0
+            ):
+                since = self._list_calls - self._destroyed_at_call
+                if 0 < since <= self._destroying_for:
+                    ids.append(MACHINE_ID)
+                    statuses[MACHINE_ID] = "destroying"
+                elif since > self._destroying_for:
+                    pass  # absent for good
+                else:
+                    ids.append(MACHINE_ID)
+                    statuses[MACHINE_ID] = "running"
+            else:
+                ids.append(MACHINE_ID)
+                statuses[MACHINE_ID] = "running"
+
+        # Orphans are always running and never destroying — they are the
+        # reconciler's (#61) fixture, not the teardown's.
+        for oid in self._orphan_ids:
+            if oid not in ids:
+                ids.append(oid)
+                statuses[oid] = "running"
+
+        return [Machine(mid, status=statuses[mid]) for mid in ids]
+
+    def list_machines(self) -> list[Machine]:
+        self.calls.append("list_machines")
+        self.calls.append("list_machine_ids")
+        self._list_calls += 1
+        return self._list_machines_inner()
 
     def list_machine_ids(self) -> list[int]:
-        self.calls.append("list_machine_ids")
-        listed = not self.destroyed or self._stays_listed
-        ids = [MACHINE_ID] if listed else []
-        # Issue #24: the `orphan` fault leaves a machine in the listing that
-        # no job ever created or owns -- exactly what the reconciler (#61)
-        # exists to find. It is never in any job's `machines` list, so no
-        # teardown touches it.
-        return ids + list(self._orphan_ids)
+        return [m.machine_id for m in self.list_machines()]
 
     def close(self) -> None:
         self.closed = True
