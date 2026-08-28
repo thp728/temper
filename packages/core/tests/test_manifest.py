@@ -273,3 +273,79 @@ def test_manifest_is_readable_by_a_person_not_only_a_machine():
     assert '  "base_model"' in pretty or '"base_model"' in pretty
     # But the pretty JSON alone is not the human document: the Markdown is.
     assert len(text.splitlines()) > 30
+
+
+# --- delivery formats (issue #74) --------------------------------------------
+
+
+def _job_with_delivery(**overrides):
+    """A complete job whose `delivery` list records one produced format."""
+    job = _valid_job()
+    job["delivery"] = [
+        {
+            "format": "merged",
+            "kind": "merged_model",
+            "members": [
+                {
+                    "name": "model.safetensors",
+                    "key": "artifacts/job_test123/model.safetensors",
+                }
+            ],
+            "bytes": 2222,
+            "sha256": "deadbeef",
+        }
+    ]
+    job.update(overrides)
+    return job
+
+
+def test_manifest_describes_a_delivery_format_from_its_own_record():
+    """The manifest for a delivery-format download describes that format's
+    verified record -- the same generator, not a second, parallel description
+    of the artifact (ADR-0054 / issue #74)."""
+    job = _job_with_delivery()
+    m = generate(
+        job, _valid_dataset(), generated_at=FIXED_TS, delivery_format="merged"
+    )
+    assert m["artifact"]["kind"] == "merged_model"
+    assert m["artifact"]["members"] == ["model.safetensors"]
+    assert m["artifact"]["bytes"] == 2222
+    assert m["artifact"]["sha256"] == "deadbeef"
+    # Loading instruction is the merged model's, not the adapter's.
+    assert "merged" in m["artifact"]["loading"].lower()
+    # Top-level aliases follow the format's kind too.
+    assert m["kind"] == "merged_model"
+
+
+def test_the_canonical_manifest_still_describes_the_canonical_artifact():
+    """Without a delivery_format, generation describes the canonical artifact
+    exactly as before -- the delivery parameter is an addition, not a change."""
+    m = gen(_valid_job(), _valid_dataset())
+    assert m["artifact"]["kind"] == "adapter"
+    assert m["kind"] == "adapter"
+
+
+def test_a_delivery_format_without_a_record_is_a_missing_field():
+    """The same rule as every manifest field: a format whose record is absent
+    fails generation rather than producing a placeholder."""
+    job = _valid_job()
+    with pytest.raises(MissingField) as exc:
+        generate(
+            job,
+            _valid_dataset(),
+            generated_at=FIXED_TS,
+            delivery_format="merged",
+        )
+    assert "delivery" in exc.value.field
+
+
+def test_an_unknown_delivery_format_is_refused():
+    from temper_core.delivery import UnknownDeliveryFormat
+
+    with pytest.raises(UnknownDeliveryFormat):
+        generate(
+            _job_with_delivery(),
+            _valid_dataset(),
+            generated_at=FIXED_TS,
+            delivery_format="nonsense",
+        )

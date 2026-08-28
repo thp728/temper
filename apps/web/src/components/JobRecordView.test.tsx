@@ -131,6 +131,60 @@ describe("JobRecordView", () => {
     expect(screen.getByText(/adapter_config\.json/)).toBeVisible();
   });
 
+  it("offers each produced delivery format with its purpose (issue #74)", () => {
+    render(
+      <JobRecordView
+        job={job({
+          artifact: {
+            kind: "adapter",
+            members: ["adapter_model.safetensors"],
+            bytes: 132,
+            loading: "A PEFT adapter over the base model.",
+          },
+          delivery_formats: [
+            {
+              format: "merged",
+              kind: "merged_model",
+              what_for:
+                "The base model with your trained change built into its full weights — serve it directly.",
+              members: ["merged.tar.gz"],
+              loading: "A complete model; load it directly.",
+            },
+            {
+              format: "quantised",
+              kind: "quantised_local",
+              what_for:
+                "A compact local-inference version of the merged model — run it on your own machine.",
+              members: ["quantised.gguf"],
+              loading: "A local-inference format for llama.cpp.",
+            },
+          ],
+        })}
+        events={[]}
+      />,
+    );
+    // Each format is offered by what it is for, in plain language, with a
+    // per-format download that carries the `format` query parameter.
+    expect(screen.getByText("merged")).toBeVisible();
+    expect(screen.getByText(/serve it directly/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Download merged" })).toHaveAttribute(
+      "href",
+      "/v1/jobs/job_abc123def456/artifact?format=merged",
+    );
+    expect(screen.getByText("quantised")).toBeVisible();
+    expect(screen.getByText(/run it on your own machine/)).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Download quantised" }),
+    ).toHaveAttribute(
+      "href",
+      "/v1/jobs/job_abc123def456/artifact?format=quantised",
+    );
+    // The canonical artifact download is still offered.
+    expect(
+      screen.getByRole("link", { name: /Download the artifact/ }),
+    ).toHaveAttribute("href", "/v1/jobs/job_abc123def456/artifact");
+  });
+
   it("names the artifact by its declared kind", () => {
     render(
       <JobRecordView

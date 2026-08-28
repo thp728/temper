@@ -99,6 +99,7 @@ repository becomes public at submission.
 | [0056](0056-a-mixture-of-experts-model-is-usable-and-labelled-untested.md) | A mixture-of-experts model is usable and labelled untested — supersedes 0050, stating that the mechanics reasoning was sound and the consequence was not | accepted | 2026-08-28 |
 | [0057](0057-teardown-is-confirmed-across-consecutive-observations.md) | Teardown is confirmed across consecutive observations | accepted | 2026-08-28 |
 | [0058](0058-the-finished-job-s-event-history-is-paginated-and-disclosed.md) | The finished job's event history is paginated and disclosed | accepted | 2026-08-28 |
+| [0059](0059-delivery-formats-flow-through-the-artifact-manifest.md) | Delivery formats are produced off the correctly merged model and flow through the artifact manifest | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from . import artifacts, catalog
+from . import artifacts, catalog, delivery
 
 
 class MissingField(ValueError):
@@ -336,11 +336,34 @@ def _evaluation_summary(
     return summary
 
 
+def _delivery_record(
+    job: dict[str, Any], delivery_format: str
+) -> dict[str, Any]:
+    """The job's stored, verified record for one delivery format.
+
+    Reads the `delivery` list the control plane records at packaging time (one
+    entry per produced format, each carrying members, bytes and sha256 as
+    verified). A missing record is a missing field, never a placeholder -- the
+    same rule that governs every other manifest field.
+    """
+    entries = job.get("delivery")
+    if not isinstance(entries, list):
+        raise MissingField("delivery", "the job records no delivery formats")
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("format") == delivery_format:
+            return entry
+    raise MissingField(
+        f"delivery.{delivery_format}",
+        f"the job records no verified delivery record for {delivery_format!r}",
+    )
+
+
 def generate(
     job: dict[str, Any],
     dataset: dict[str, Any] | None = None,
     *,
     generated_at: float | None = None,
+    delivery_format: str | None = None,
 ) -> dict[str, Any]:
     """Generate the provenance manifest for `job`.
 
@@ -353,6 +376,12 @@ def generate(
     the caller so this pure module never reads the clock. Every required field
     is validated and a MissingField is raised naming the field rather than
     producing a placeholder.
+
+    ``delivery_format`` (issue #74) selects which artifact the manifest
+    describes: the canonical artifact by default, or one delivery format's
+    verified record (``merged``, ``quantised``) read from the job's ``delivery``
+    list. The same generator produces either, so ADR-0054's "manifest derived
+    from the artifact" guarantee holds per format rather than being duplicated.
 
     If a field can be supplied two ways, the recorded value on ``job`` wins.
     For example ``job["_admitted_license"]`` (stashed by the download path)
@@ -526,6 +555,31 @@ def generate(
             )
     _require(members, "artifact.members")
     loading = artifacts.loading_instructions(kind)
+
+    # --- delivery format (issue #74) -------------------------------------
+    # When the manifest describes a delivery format rather than the canonical
+    # artifact, the artifact section is that format's own verified record --
+    # read from the job's `delivery` list, never transcribed. One generator,
+    # parameterised by which format's record it describes: this is ADR-0054's
+    # "manifest derived from the artifact" guarantee kept per format, not a
+    # second, parallel description of an artifact.
+    if delivery_format is not None:
+        delivery.require_known(delivery_format)
+        kind = delivery.kind_for(delivery_format)
+        record = _delivery_record(job, delivery_format)
+        members = [
+            str(m.get("name"))
+            for m in record.get("members", [])
+            if isinstance(m, dict) and m.get("name")
+        ]
+        if not members:
+            raise MissingField(
+                f"delivery.{delivery_format}.members",
+                "the delivery record has no member names",
+            )
+        artifact_bytes = record.get("bytes")
+        artifact_sha256 = record.get("sha256")
+        loading = artifacts.loading_instructions(kind)
 
     # --- evaluation summary (#53, #62, #59) -------------------------------
     evaluation = _evaluation_summary(held_out_split, best_checkpoint, result)

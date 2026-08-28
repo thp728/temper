@@ -1,0 +1,23 @@
+{
+  "_comment": "The delivery-format vocabulary (issue #74 / ADR-0059). One definition of the forms an artifact may be delivered in: the trained result as it is, a merged single-file model for serving, and a quantised local-inference format for running on your own machine. The control plane (through temper_core.delivery) and the trainer image both read this file, so the two sides cannot drift about what a format is called, what kind it maps to, what it is for, or which conversion produces it. A value two components must agree on is defined once and read, never retyped. `conversion` is null for the as-trained format (no conversion step) and names the step that produces the others; the order property that quantisation must follow a full-precision merge is enforced by temper_core.delivery.production_steps, not by this data alone.",
+  "formats": [
+    {
+      "id": "adapter",
+      "kind": "adapter",
+      "conversion": null,
+      "what_for": "The trained change on its own - the canonical artifact, small and easy to move. Apply it to the base model with PEFT, or load it where you already serve the base."
+    },
+    {
+      "id": "merged",
+      "kind": "merged_model",
+      "conversion": "merge",
+      "what_for": "The base model with the trained change built into its full weights at full precision - one self-contained model you can serve directly, without composing pieces at load time."
+    },
+    {
+      "id": "quantised",
+      "kind": "quantised_local",
+      "conversion": "quantise",
+      "what_for": "A compact local-inference version of the merged model - the 'run it on your own machine' format, smaller than the merged model, loaded by a local runtime such as llama.cpp."
+    }
+  ]
+}

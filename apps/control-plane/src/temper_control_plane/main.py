@@ -60,6 +60,7 @@ from temper_core import (
     artifacts,
     calibration,
     catalog,
+    delivery,
     feasibility,
     gpus,
     hyperparams,
@@ -338,6 +339,11 @@ class JobRequest(BaseModel):
     base_model: str = Field(default=catalog.DEFAULT_MODEL)
     hyperparameters: dict = Field(default_factory=dict)
     overrides: list[DecisionOverride] = Field(default_factory=list)
+    # Issue #74: the delivery formats this launch asks for (beyond the
+    # canonical artifact): "merged" for a single-file serving model, "quantised"
+    # for a local-inference format. Validated against the one delivery
+    # vocabulary at creation.
+    delivery: list[str] = Field(default_factory=list)
 
 
 def _override_list(
@@ -397,6 +403,7 @@ def create_job(req: JobRequest):
                 override_list,
             ),
             overrides_list=override_list,
+            delivery_request=req.delivery,
         )
     except (quote.QuoteRefused, overrides.OverrideError) as e:
         raise _refuse(e) from e
@@ -929,28 +936,69 @@ def _zip_chunks(members: list[tuple[str, Iterator[bytes]]]) -> Iterator[bytes]:
 
 
 @app.get("/v1/jobs/{job_id}/artifact", tags=["jobs"])
-def download_artifact(job_id: str):
+def download_artifact(job_id: str, format: str | None = None):
     job = db.get_job(job_id)
     if not job:
         raise HTTPException(404, "No such job.")
-    members = db.artifact_members(job)
-    if not members:
-        raise HTTPException(
-            409,
-            {
-                "code": "no_artifact",
-                "message": f"Job is '{job['status']}'; no artifact is available yet.",
-            },
-        )
+
+    # Issue #74: the default download is the canonical artifact; a `format`
+    # query selects one produced delivery format (merged, quantised). The
+    # members resolve through the job row's own record in both cases -- the
+    # address written at packaging time is the one read at download time -- so
+    # this path serves any format without special-casing the bytes.
+    delivery_format = None
+    if format is not None:
+        try:
+            delivery.require_known(format)
+        except delivery.UnknownDeliveryFormat:
+            raise HTTPException(
+                404,
+                {
+                    "code": "unknown_delivery_format",
+                    "message": (
+                        f"'{format}' is not a delivery format this platform "
+                        "offers. Download the artifact without a format for "
+                        "the canonical one, or name merged or quantised."
+                    ),
+                },
+            ) from None
+        delivery_format = format
+        members = db.delivery_format_members(job, format)
+        if not members:
+            raise HTTPException(
+                404,
+                {
+                    "code": "format_unavailable",
+                    "message": (
+                        f"This job did not produce a verified '{format}' "
+                        "format (it was not requested, or its verification "
+                        "failed). The job's record says which formats it "
+                        "produced."
+                    ),
+                    "format": format,
+                },
+            )
+    else:
+        members = db.canonical_artifact_members(job)
+        if not members:
+            raise HTTPException(
+                409,
+                {
+                    "code": "no_artifact",
+                    "message": (
+                        f"Job is '{job['status']}'; no artifact is available "
+                        "yet."
+                    ),
+                },
+            )
 
     # Zipped, because an artifact is a set of stored objects -- which objects,
     # and how many, is the artifact record's business, not this endpoint's: the
     # members were recorded at packaging time, and this path serves any kind
-    # (adapter, fully trained model, ...) by streaming whatever the record
-    # names, without special-casing. A row written before the record existed is
-    # described by the canonical adapter pair, so a legacy download behaves
-    # exactly as it always did. `artifact_members` is the one resolution both
-    # this path and teardown read.
+    # (adapter, fully trained model, a delivery format, ...) by streaming
+    # whatever the record names, without special-casing. A row written before
+    # the record existed is described by the canonical adapter pair, so a
+    # legacy download behaves exactly as it always did.
     kind = artifacts.kind_for(job.get("method"))
     record = job.get("artifact_record")
     declared_bytes = record.get("bytes") if record else None
@@ -999,7 +1047,10 @@ def download_artifact(job_id: str):
         dataset_row = None
     try:
         provenance = provenance_manifest.generate(
-            job, dataset_row, generated_at=time.time()
+            job,
+            dataset_row,
+            generated_at=time.time(),
+            delivery_format=delivery_format,
         )
         # The streamed members' names are the ground truth for what the zip
         # contains; the provenance's artifact.members is forced to match them
@@ -1028,6 +1079,13 @@ def download_artifact(job_id: str):
         # break an artifact that predates the provenance requirement.
         # The minimal manifest is kept as a fallback only for those legacy
         # rows -- a provenance-capable run never reaches this branch.
+        if delivery_format is not None:
+            try:
+                kind = delivery.kind_for(delivery_format)
+            except delivery.UnknownDeliveryFormat:  # pragma: no cover
+                kind = artifacts.kind_for(job.get("method"))
+        else:
+            kind = artifacts.kind_for(job.get("method"))
         fell_back = {
             "kind": kind,
             "base_model": job.get("base_model"),
@@ -1057,7 +1115,7 @@ def download_artifact(job_id: str):
         media_type="application/zip",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="{job_id}-artifact.zip"'
+                f'attachment; filename="{job_id}-{delivery_format or "artifact"}.zip"'
             )
         },
     )

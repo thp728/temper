@@ -35,11 +35,13 @@ from __future__ import annotations
 ARTIFACT_KIND_ADAPTER = "adapter"
 ARTIFACT_KIND_FULL_MODEL = "full_model"
 ARTIFACT_KIND_MERGED_MODEL = "merged_model"
+ARTIFACT_KIND_QUANTISED_LOCAL = "quantised_local"
 
 ARTIFACT_KINDS: tuple[str, ...] = (
     ARTIFACT_KIND_ADAPTER,
     ARTIFACT_KIND_FULL_MODEL,
     ARTIFACT_KIND_MERGED_MODEL,
+    ARTIFACT_KIND_QUANTISED_LOCAL,
 )
 
 # method -> the kind of artifact that method produces. QLoRA and LoRA both
@@ -128,6 +130,11 @@ LOADING_INSTRUCTIONS: dict[str, str] = {
         "Load the unzipped folder directly with "
         "AutoModelForCausalLM.from_pretrained(<unzipped folder>), like any "
         "complete model."
+    ),
+    ARTIFACT_KIND_QUANTISED_LOCAL: (
+        "A quantised local-inference format of the merged model. Load it with "
+        "a local runtime that reads the format, such as llama.cpp; no base "
+        "model or adapter step is needed."
     ),
 }
 

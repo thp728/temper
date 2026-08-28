@@ -118,6 +118,17 @@ def checkpoint_keys(job_id: str, count: int) -> list[str]:
     return [checkpoint_key(job_id, slot) for slot in range(count)]
 
 
+def delivery_key(job_id: str, format_id: str, name: str) -> str:
+    """The key one produced delivery format's file is stored under (issue #74).
+
+    Delivery formats are distinct objects from the canonical artifact, stored
+    under `artifacts/{job}/{format}/{name}` so the machine writes each through
+    its own one-key grant and the download path reads each by the job row's own
+    record -- never by re-deriving an address.
+    """
+    return artifact_key(job_id, f"{format_id}/{name}")
+
+
 class ObjectNotFound(KeyError):
     """No object lives at this key. Raised by `get`, never by `delete`."""
 

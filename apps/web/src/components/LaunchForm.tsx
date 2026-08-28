@@ -70,6 +70,11 @@ export default function LaunchForm({
     Record<string, string>
   >({});
   const [planRefusal, setPlanRefusal] = useState<OverrideRefusal | null>(null);
+  // Issue #74: the delivery formats this launch asks for, beyond the canonical
+  // artifact. The user opts into a merged single-file model and/or a quantised
+  // local format; each is stated by what it is for, not by its internals. The
+  // request is frozen into the job at launch.
+  const [delivery, setDelivery] = useState<string[]>([]);
   // Starts loading: the effect fetches the default model's quote on mount.
   const [quoteLoading, setQuoteLoading] = useState(true);
   // The last set of overrides the server accepted, so a refused change can be
@@ -187,6 +192,7 @@ export default function LaunchForm({
         base_model: chosen,
         hyperparameters,
         overrides,
+        delivery,
       });
       setStatus("Job launched. Opening it…");
       router.push(`/jobs/${job.id}`);
@@ -403,6 +409,67 @@ export default function LaunchForm({
           onChange={handleHyperparametersChange}
         />
       )}
+
+      {/* The delivery formats this launch asks for (issue #74): the canonical
+          artifact always, plus optional merged/quantised forms produced on the
+          machine at export time. Each is offered by what it is for, in plain
+          language -- a user chooses a format without knowing what a merge or a
+          quantisation is. The choice is frozen into the job at launch. */}
+      <fieldset className="space-y-3">
+        <legend className="text-lg font-semibold">
+          What you get back
+        </legend>
+        <p className="text-sm text-muted-foreground">
+          Every job returns the trained artifact. You can also ask for a merged
+          single-file model (to serve it directly) and a quantised local format
+          (to run it on your own machine). These are produced on the machine
+          while it is warm, and each is verified before it ships.
+        </p>
+        <div className="space-y-2">
+          <Label className="flex items-start gap-3 rounded-lg border p-3">
+            <Input
+              type="checkbox"
+              checked={delivery.includes("merged")}
+              onChange={(e) =>
+                setDelivery(
+                  e.target.checked
+                    ? [...new Set([...delivery, "merged"])]
+                    : delivery.filter((d) => d !== "merged"),
+                )
+              }
+              className="mt-1 size-4"
+            />
+            <span className="text-sm">
+              <span className="block font-medium">Merged model</span>
+              <span className="text-muted-foreground">
+                The base model with your trained change built into its full
+                weights — one self-contained model you can serve directly.
+              </span>
+            </span>
+          </Label>
+          <Label className="flex items-start gap-3 rounded-lg border p-3">
+            <Input
+              type="checkbox"
+              checked={delivery.includes("quantised")}
+              onChange={(e) =>
+                setDelivery(
+                  e.target.checked
+                    ? [...new Set([...delivery, "quantised"])]
+                    : delivery.filter((d) => d !== "quantised"),
+                )
+              }
+              className="mt-1 size-4"
+            />
+            <span className="text-sm">
+              <span className="block font-medium">Quantised local format</span>
+              <span className="text-muted-foreground">
+                A compact local-inference version of the merged model — the
+                “run it on your own machine” format.
+              </span>
+            </span>
+          </Label>
+        </div>
+      </fieldset>
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={busy} size="lg">

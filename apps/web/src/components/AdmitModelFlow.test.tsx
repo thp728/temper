@@ -263,6 +263,7 @@ describe("admitted models on the launch screen (issue #58)", () => {
         base_model: "m_imported",
         hyperparameters: {},
         overrides: [],
+        delivery: [],
       }),
     );
   });

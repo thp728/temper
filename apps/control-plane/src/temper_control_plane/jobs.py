@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from temper_control_plane import admission, config, db, orchestrator
 from temper_core import (
+    delivery,
     divergence,
     faults,
     feasibility,
@@ -61,6 +62,7 @@ def create(
     hyperparameters: dict,
     quote: dict | None = None,
     overrides_list: Sequence[overrides.Override] | None = None,
+    delivery_request: list[str] | None = None,
 ) -> str:
     """Validate the request, freeze the spec and launch. Returns the job id.
 
@@ -85,6 +87,13 @@ def create(
     row beside the hyperparameters -- a run says what it actually used, and
     the orchestrator re-provisions against them rather than silently falling
     back to the predictor's pick.
+
+    `delivery_request` (issue #74) is the set of delivery formats the launch
+    asked for (the canonical artifact plus optional merged/quantised forms).
+    It is validated against the one delivery vocabulary and frozen onto the
+    job row like the hyperparameters, so a finished run says what it was
+    asked to produce. The `adapter` (as-trained) format needs no request; an
+    unknown format is refused loudly rather than silently dropped.
 
     Raises HTTPException with a stable code for every refusal, whichever
     surface it arrived on.
@@ -235,6 +244,32 @@ def create(
     )
     warnings = [warn] if warn else []
 
+    # Issue #74: the delivery request -- which formats the launch asked for.
+    # Validated against the one delivery vocabulary and frozen onto the job
+    # row like the hyperparameters, so a run says what it was asked to
+    # produce. An unknown format is refused loudly rather than silently
+    # dropped; `adapter` (the as-trained artifact) is always produced and
+    # needs no request, but requesting it is harmless.
+    frozen_delivery: list[str] = []
+    if delivery_request:
+        for fmt in delivery_request:
+            try:
+                delivery.require_known(fmt)
+            except delivery.UnknownDeliveryFormat:
+                raise HTTPException(
+                    400,
+                    {
+                        "code": "unknown_delivery_format",
+                        "message": (
+                            f"'{fmt}' is not a delivery format this platform "
+                            "offers. Ask for the canonical artifact, a merged "
+                            "model, or a quantised local format."
+                        ),
+                        "format": fmt,
+                    },
+                ) from None
+        frozen_delivery = list(delivery_request)
+
     # Issue #65: the mixture-of-experts label travels with the job so a
     # finished run says what it was trained on. A catalog model is dense
     # (neither MoE nor untested); an admitted model's probe snapshot carries
@@ -250,6 +285,7 @@ def create(
         quote=quote,
         overrides=frozen_overrides,
         is_moe=is_moe,
+        delivery_request=frozen_delivery,
     )
     if warn:
         db.add_event(
