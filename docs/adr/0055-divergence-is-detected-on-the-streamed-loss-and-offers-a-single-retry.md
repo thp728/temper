@@ -1,4 +1,4 @@
-# ADR-0054 — Divergence is detected on the streamed loss and offers a single retry as a choice
+# ADR-0055 — Divergence is detected on the streamed loss and offers a single retry as a choice
 
 - **Status:** accepted
 - **Date:** 2026-08-28
