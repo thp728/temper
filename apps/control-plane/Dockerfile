@@ -32,12 +32,14 @@ RUN uv sync --frozen --no-dev --package temper-control-plane
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# The stack's persistent data lives under /data, mounted as a named volume by
-# compose.yaml so stopping and restarting preserves it. Overridden here rather
-# than baked into defaults so the image itself still starts with nothing
-# configured and the volume is the only thing pointing at /data.
-ENV TEMPER_DB_PATH=/data/temper.db \
-    TEMPER_STORAGE_ROOT=/data/objects
+# The object store's persistent data lives under /data, mounted as a named
+# volume by compose.yaml so stopping and restarting preserves it. Overridden
+# here rather than baked into defaults so the image itself still starts with
+# nothing configured and the volume is the only thing pointing at /data.
+# The database (issue #43) is a server, not a path under here -- compose.yaml
+# points TEMPER_DATABASE_URL at its own postgres service explicitly, which is
+# the compose network's own concern, not this image's.
+ENV TEMPER_STORAGE_ROOT=/data/objects
 
 EXPOSE 8000
 

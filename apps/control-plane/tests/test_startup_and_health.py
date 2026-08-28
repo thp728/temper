@@ -18,6 +18,20 @@ it honest rather than asserted:
   `TEMPER_FAKE_PROVIDER` changes which provider answers and nothing else in
   the health surface, and a default start lands on the real tier with the
   fault surface off (the safe mode, ADR-0051/ADR-0062).
+
+**A finding from issue #43, load-bearing for the first criterion above.**
+SQLite needed no running process to satisfy "starts with nothing configured":
+the file simply existed or was created. PostgreSQL is a client-server system,
+and there is no server-less default for it -- "nothing configured" can no
+longer mean "no external process required," only "no `TEMPER_*`/`JL_*`
+override required, given a database reachable at the documented default
+address." `DEFAULT_DATABASE_URL` names that address
+(`postgresql://temper:temper@localhost:5432/temper`, the same one
+`compose.yaml`'s `postgres` service and `just db-up` bind to); this test now
+stands one up at exactly that address before spawning the scrubbed-environment
+subprocess, which is what makes the claim it asserts -- that the default
+resolves to something real and reachable, not just that it prints a string --
+still true rather than merely restated.
 """
 
 from __future__ import annotations
@@ -30,23 +44,21 @@ import sys
 import textwrap
 from pathlib import Path
 
+import psycopg
 import pytest
 
 
 def _remove_runtime_data(root: Path, existed_before: set[str]) -> None:
     """Remove exactly what a default boot wrote into `/data/`.
 
-    The default boot creates the SQLite file (plus WAL side files) and the
-    filesystem object root, and nothing else. Only the names that were not
-    present before this test ran are removed, so a developer's own database or
-    object store is never touched.
+    The default boot creates the filesystem object root and nothing else
+    now that the database is a server rather than a file under here.
+    Only the names that were not present before this test ran are removed,
+    so a developer's own object store is never touched.
     """
     data = root / "data"
     if not data.exists():
         return
-    for name in ("temper.db", "temper.db-wal", "temper.db-shm"):
-        if name not in existed_before:
-            (data / name).unlink(missing_ok=True)
     objects = data / "objects"
     if objects.is_dir() and "objects" not in existed_before:
         shutil.rmtree(objects, ignore_errors=True)
@@ -67,7 +79,7 @@ def test_the_system_starts_with_no_configuration_and_no_secrets():
     app that resolves to the documented defaults and refuses fault specs (the
     safe mode) -- is what is asserted.
     """
-    from temper_control_plane import config
+    from temper_control_plane import config, migrations
 
     if (config.REPO_ROOT / ".env").exists() or (
         config.REPO_ROOT / "spike" / ".env"
@@ -100,7 +112,7 @@ def test_the_system_starts_with_no_configuration_and_no_secrets():
                     'fake_provider': c.FAKE_PROVIDER,
                     'fault_surface': c.FAULT_SURFACE,
                     'storage_backend': c.STORAGE_BACKEND,
-                    'db_path': str(c.DB_PATH),
+                    'database_url': c.DATABASE_URL,
                 },
             }))
         """
@@ -114,16 +126,42 @@ def test_the_system_starts_with_no_configuration_and_no_secrets():
     existed_before = (
         {p.name for p in data.iterdir()} if data.exists() else set()
     )
+
+    # Stand up a real server at exactly the documented zero-configuration
+    # address, since a client-server database has no server-less default the
+    # way the SQLite file did (see the module docstring's finding). Bound to
+    # the fixed default port rather than testcontainers' usual random one,
+    # on purpose: this proves the *default* is reachable, not merely that
+    # some database somewhere is.
+    from testcontainers.community.postgres import PostgresContainer
+
+    os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+    container = PostgresContainer(
+        "postgres:16",
+        username="temper",
+        password="temper",  # noqa: S106 - throwaway container, torn down below
+        dbname="temper",
+        port=5432,
+    ).with_bind_ports(5432, 5432)
+    container.start()
     try:
-        proc = subprocess.run(
-            [sys.executable, "-c", program],
-            capture_output=True,
-            text=True,
-            env=env,
-            cwd=config.REPO_ROOT,
-        )
+        with psycopg.connect(
+            container.get_connection_url(driver=None)
+        ) as conn:
+            migrations.migrate_up(conn)
+
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", program],
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=config.REPO_ROOT,
+            )
+        finally:
+            _remove_runtime_data(config.REPO_ROOT, existed_before)
     finally:
-        _remove_runtime_data(config.REPO_ROOT, existed_before)
+        container.stop()
 
     assert proc.returncode == 0, proc.stderr
     report = json.loads(proc.stdout.strip().splitlines()[-1])
@@ -145,6 +183,7 @@ def test_the_system_starts_with_no_configuration_and_no_secrets():
     assert report["defaults"]["fake_provider"] is False
     assert report["defaults"]["fault_surface"] is False
     assert report["defaults"]["storage_backend"] == "filesystem"
+    assert report["defaults"]["database_url"] == config.DEFAULT_DATABASE_URL
     assert health["provider"] == "real"
     assert report["fault_refusal_code"] == "fault_surface_refused"
 
@@ -174,7 +213,7 @@ def test_a_no_configuration_start_resolves_to_the_documented_defaults(
     assert bare.fault_surface is False
     assert bare.storage_backend == config.DEFAULT_STORAGE_BACKEND
     assert bare.storage_root == config.DEFAULT_STORAGE_ROOT
-    assert bare.db_path == config.DEFAULT_DB_PATH
+    assert bare.database_url == config.DEFAULT_DATABASE_URL
     assert bare.db_reset is False
     assert bare.s3_bucket is None
     assert bare.s3_endpoint_url is None
@@ -199,7 +238,7 @@ def test_the_settings_bundle_is_consistent_with_the_module_names():
     assert config.settings.fault_surface == config.FAULT_SURFACE
     assert config.settings.storage_backend == config.STORAGE_BACKEND
     assert config.settings.storage_root == config.STORAGE_ROOT
-    assert config.settings.db_path == config.DB_PATH
+    assert config.settings.database_url == config.DATABASE_URL
     assert config.settings.db_reset == config.DB_RESET
     assert config.settings.s3_bucket == config.S3_BUCKET
     assert config.settings.s3_endpoint_url == config.S3_ENDPOINT_URL
@@ -226,15 +265,26 @@ def test_health_reports_each_dependency_separately(client):
 
 
 def test_a_broken_database_is_reported_as_a_broken_database(
-    client, tmp_path, monkeypatch
+    client, monkeypatch
 ):
-    """Point the database at an unwritable location: the app still answers
-    (a dead process answers nothing) and names the database, not itself."""
+    """Point the database at an address nothing answers on: the app still
+    answers (a dead process answers nothing) and names the database, not
+    itself.
+
+    **A finding from issue #43.** The SQLite version of this test pointed
+    `DB_PATH` at a location that could not be created -- a filesystem
+    failure, because the database *was* a file. A connection string has no
+    equivalent "unwritable path"; what breaks a client-server database is an
+    address nothing answers on, so that is what this now simulates. The
+    failure kind reported (`OperationalError`, not `NotADirectoryError`) is
+    a real, visible consequence of the migration, not an incidental
+    rewording.
+    """
     from temper_control_plane import db
 
-    blocker = tmp_path / "not-a-directory"
-    blocker.write_text("occupied")
-    monkeypatch.setattr(db, "DB_PATH", blocker / "t.db")
+    monkeypatch.setattr(
+        db, "DATABASE_URL", "postgresql://nobody:nobody@127.0.0.1:1/nothing"
+    )
 
     response = client.get("/health")
     assert response.status_code == 503
@@ -273,21 +323,22 @@ def test_a_broken_object_store_is_reported_as_a_broken_store(
 # --- stopping and restarting preserves data ----------------------------------
 
 
-def test_stopping_and_restarting_preserves_data(tmp_path, monkeypatch):
-    """One boot writes; a second boot over the same paths reads it all back.
+def test_stopping_and_restarting_preserves_data(
+    isolated, tmp_path, monkeypatch
+):
+    """One boot writes; a second boot over the same database and paths
+    reads it all back.
 
     The restart is a second application boot (fresh lifespan, fresh storage
-    instance) against the same database file and object root -- which is
-    exactly the seam a container restart crosses.
+    instance) against the same database and object root -- which is exactly
+    the seam a container restart crosses. `isolated` points both at this
+    test's own throwaway database and directory for its whole duration, so
+    "the same paths" now means the same database too, not a SQLite file
+    reopened.
     """
     from fastapi.testclient import TestClient
 
     from temper_control_plane import db, main, storage
-
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "temper.db")
-    monkeypatch.setattr(
-        storage, "STORE", storage.FilesystemStorage(root=tmp_path / "objects")
-    )
 
     def upload(client, path: Path) -> str:
         with open(path, "rb") as f:

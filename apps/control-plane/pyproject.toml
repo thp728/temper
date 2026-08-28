@@ -20,6 +20,11 @@ dependencies = [
     # lives here, beside the other things that touch Hugging Face, not in
     # `temper_core`'s zero-dependency package.
     "tokenizers>=0.21",
+    # The relational store (issue #43). The binary build vendors libpq so a
+    # fresh clone needs no system Postgres client library. Pool is required,
+    # not optional: measured at 63 separate connections for one orchestrator
+    # test before pooling landed (db.py's own comment explains why).
+    "psycopg[binary,pool]>=3.2",
 ]
 
 [tool.uv.sources]

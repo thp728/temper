@@ -2,8 +2,9 @@
 #
 #     docker compose up          (or `just up`)
 #
-# Two services: the control plane (the API) and the web shell (the interface).
-# The worker app is empty by design (ADR-0010 reserves it for orchestration,
+# Three services: PostgreSQL (issue #43's relational store), the control
+# plane (the API) and the web shell (the interface). The worker app is empty
+# by design (ADR-0010 reserves it for orchestration,
 # issue #51) and joins this file when it ships something to run.
 #
 # **The mode.** The control plane defaults to the zero-cost tier
@@ -14,15 +15,18 @@
 # TEMPER_FAKE_PROVIDER=0 (or delete the line) and put JL_API_KEY in `.env`
 # (mounted below, optional). Nothing else differs between the modes.
 #
-# **Data survives a restart.** SQLite and the object store live under /data,
-# which is a named volume: `docker compose down && docker compose up` keeps
-# everything. The volume is project-scoped, so sibling worktrees running the
-# same stack on one machine never share it.
+# **Data survives a restart.** PostgreSQL's own data directory and the object
+# store live on named volumes: `docker compose down && docker compose up`
+# keeps everything. The volumes are project-scoped, so sibling worktrees
+# running the same stack on one machine never share them.
 #
-# **Health.** Each service declares a healthcheck; the web waits for the
-# control plane to report every dependency ready. The control plane's own
-# /health reports the database and the object store separately, so a broken
-# dependency is distinguishable from a broken application.
+# **Health.** Each service declares a healthcheck; the control plane waits
+# for Postgres to report ready before it starts (issue #43: a relational
+# store replaces the local SQLite file, so there is now a real dependency to
+# wait on rather than a file that is simply there or not), and the web waits
+# for the control plane to report every dependency ready in turn. The control
+# plane's own /health reports the database and the object store separately,
+# so a broken dependency is distinguishable from a broken application.
 #
 # Ports default to this issue's range (5780 web / 5781 backend) and are
 # overridable with TEMPER_WEB_PORT / TEMPER_BACKEND_PORT -- the same variables
@@ -36,21 +40,48 @@
 x-backend-url: &backend-url http://control-plane:8000
 
 services:
+  # The relational store (issue #43). Its own healthcheck is what
+  # `depends_on: condition: service_healthy` below waits on -- the control
+  # plane must never start against a database that is still initializing,
+  # which `pg_isready` is the documented way to ask.
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: temper
+      POSTGRES_PASSWORD: temper
+      POSTGRES_DB: temper
+    volumes:
+      - temper-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temper -d temper"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   control-plane:
     build:
       context: .
       dockerfile: apps/control-plane/Dockerfile
     environment:
       TEMPER_FAKE_PROVIDER: "1"
+      # The compose network's own hostname for the service above, not
+      # localhost: config.py's zero-configuration default points at
+      # localhost:5432 for a bare local run (`just db-up`), which is not
+      # reachable from inside this container.
+      TEMPER_DATABASE_URL: postgresql://temper:temper@postgres:5432/temper
     # An optional .env at the repo root supplies JL_API_KEY (and any TEMPER_*
     # override) for real compute; nothing is required for the zero-cost tier.
     env_file:
       - path: .env
         required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${TEMPER_BACKEND_PORT:-5781}:8000"
     volumes:
-      - temper-data:/data
+      - temper-objects:/data
     healthcheck:
       # 200 means every dependency is ready; a broken database or object
       # store answers 503 (urllib raises), so the container is reported
@@ -90,4 +121,5 @@ services:
       start_period: 10s
 
 volumes:
-  temper-data:
+  temper-postgres:
+  temper-objects:

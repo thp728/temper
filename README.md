@@ -29,7 +29,7 @@ build.
 - **An inference endpoint.** The delivered artifact is the trained adapter or model, not a served endpoint.
 - **Imports from Hugging Face.** Models come from a curated, pinned catalog of two; datasets are uploaded files.
 - **Streaming validation.** Measured at flat +4 MB memory from 1 GB to 20 GB, but not built — so uploads stay capped (see below).
-- **The Phase B stack.** Postgres, Temporal, Redis and MinIO are specified ([docs/specs/](docs/specs/)) and not built. What runs today is one FastAPI process, SQLite, and a thread per job — with the domain logic already extracted into `packages/core` so the migration is a seam-by-seam swap, not a rewrite. The application shell ([Spec 007](docs/specs/007-the-application-shell.md)) *is* built: a Next.js app whose client is generated from the API contract, replacing the Phase A server-rendered pages.
+- **The rest of the Phase B stack.** Temporal, Redis and MinIO are specified ([docs/specs/](docs/specs/)) and not built. Persistence moved to PostgreSQL, behind the same functions and with real versioned migrations ([issue #43](docs/adr/0064-the-relational-store-moves-behind-the-existing-seam.md)); everything else still runs as one FastAPI process and a thread per job — with the domain logic already extracted into `packages/core` so the migration is a seam-by-seam swap, not a rewrite. The application shell ([Spec 007](docs/specs/007-the-application-shell.md)) *is* built: a Next.js app whose client is generated from the API contract, replacing the Phase A server-rendered pages.
 
 - **Method:** supervised fine-tuning, chosen by the predictor and overridable — **QLoRA** (NF4 double-quant base, bf16 compute, rank 16, α=32, **all linear layers**; the adapter ships fp32, which is what `prepare_model_for_kbit_training` does and is why a 4B adapter is 132 MB rather than ~66 MB) or **full fine-tuning** (issue #66: every weight trained in bf16, its own lower learning rate, the whole model delivered as one archive). The predictor picks the cheapest configuration that fits and prefers the more capable method at a tied price, with the reasoning against the alternative shown.
 - **Models:** curated and pinned — `Qwen/Qwen3-4B`, `Qwen/Qwen3-8B`
@@ -53,7 +53,7 @@ flowchart LR
 
     subgraph cp["Control plane — apps/control-plane (one FastAPI process)"]
         V["Validate<br/>packages/core, pure functions,<br/>off the event loop"] --> RPT["Line-numbered report;<br/>invalid refused with a stable code"]
-        DB[("SQLite<br/>datasets · jobs · events")]
+        DB[("PostgreSQL<br/>datasets · jobs · events")]
         O["Orchestrator thread:<br/>provision → bootstrap → train →<br/>collect → destroy"]
     end
 
