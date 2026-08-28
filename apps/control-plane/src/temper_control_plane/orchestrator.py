@@ -53,6 +53,7 @@ from temper_core import (
     actuals,
     artifacts,
     catalog,
+    checkpoint,
     disk,
     events,
     hyperparams,
@@ -709,6 +710,32 @@ def _collect_checkpoints(job_id: str, result: dict) -> list[dict]:
     return sorted(records, key=lambda r: r.get("step", -1))
 
 
+def _record_best_checkpoint(job_id: str, records: list[dict]) -> None:
+    """Choose the run's result checkpoint by held-out loss, and store the choice.
+
+    Issue #62. The choice is recorded once, at the moment the verified
+    checkpoints are recorded, and never recomputed: the whole point is that a
+    run's answer cannot change later -- retention evicting a checkpoint or the
+    selection rule being edited must not move a choice that was already made.
+    Selection runs over the retained, verified checkpoints only: a checkpoint
+    whose bytes are not in storage is not something a run can stand behind.
+    Runs on both terminal outcomes record one -- a failed run's checkpoints are
+    still its recovery material, and naming which one is best is as useful to a
+    resumption as to a delivered result.
+    """
+    verified = [c for c in records if c.get("verified") is True]
+    chosen = checkpoint.select_best_checkpoint(verified)
+    db.set_best_checkpoint(job_id, chosen.to_dict())
+    if chosen.step is not None:
+        db.add_event(
+            job_id,
+            "log",
+            f"Best checkpoint by held-out loss: step {chosen.step}"
+            f"{f' ({chosen.held_out_loss})' if chosen.held_out_loss is not None else ''}."
+            f" {chosen.reason}",
+        )
+
+
 def _discard_if_cancelled(job_id: str, check) -> None:
     """Throw away an artifact that arrived after the user asked to stop.
 
@@ -989,7 +1016,9 @@ def _attempt(
         # reports failure, so a later resumption can find what survived the
         # machine. The outcome is unchanged -- this run produced no adapter --
         # but its checkpoints are no longer orphaned bytes in the store.
-        db.set_checkpoints(job_id, _collect_checkpoints(job_id, result))
+        failed_checkpoints = _collect_checkpoints(job_id, result)
+        db.set_checkpoints(job_id, failed_checkpoints)
+        _record_best_checkpoint(job_id, failed_checkpoints)
         # The result document names its own failure where it can. A stage that
         # failed before training started is not a training failure, and telling
         # a user otherwise sends them to read the wrong logs.
@@ -1009,6 +1038,10 @@ def _attempt(
     artifact = _collect_artifact(job_id, result, plan.method)
     checkpoints = _collect_checkpoints(job_id, result)
     db.set_checkpoints(job_id, checkpoints)
+    # The choice is recorded beside the verified checkpoints, not derived at
+    # download time (issue #62): a run's answer must not move under retention
+    # or a rule edit, so the chosen step and its reason are frozen here.
+    _record_best_checkpoint(job_id, checkpoints)
     _discard_if_cancelled(job_id, cancelled)
     fields: dict = {
         "result_json": result,

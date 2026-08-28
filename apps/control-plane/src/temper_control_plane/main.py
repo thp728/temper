@@ -863,6 +863,70 @@ def download_artifact(job_id: str):
     )
 
 
+@app.get("/v1/jobs/{job_id}/checkpoints/{step}", tags=["jobs"])
+def download_checkpoint(job_id: str, step: int):
+    """Download one retained checkpoint by its step.
+
+    Issue #62: the best checkpoint is chosen and recorded on the run, but every
+    other retained checkpoint stays downloadable -- a user is never locked out
+    of their own run's history. The step, not the slot, is what the user sees
+    and addresses; the storage key is the job row's own record, read here and
+    never published to the browser.
+
+    A checkpoint that is not retained (failed, superseded, or never verified)
+    refuses with a stable code rather than a broken download: the bytes are
+    not there, and a download that looks like it succeeded is worse than one
+    that names its absence.
+    """
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "No such job.")
+    record = next(
+        (
+            c
+            for c in job.get("checkpoints", [])
+            if c.get("step") == step and isinstance(c, dict)
+        ),
+        None,
+    )
+    if (
+        not record
+        or record.get("verified") is not True
+        or not record.get("key")
+    ):
+        raise HTTPException(
+            404,
+            {
+                "code": "checkpoint_unavailable",
+                "message": f"Checkpoint at step {step} is not retained for "
+                "download (it was never verified, or retention has since "
+                "superseded it).",
+                "step": step,
+            },
+        )
+    stream = _open_member(record["key"])
+    if stream is None:
+        raise HTTPException(
+            409,
+            {
+                "code": "checkpoint_missing",
+                "message": f"Checkpoint at step {step} is recorded but its "
+                "stored object is gone. The job's event log says what "
+                "happened to it.",
+                "step": step,
+            },
+        )
+    return StreamingResponse(
+        stream,
+        media_type="application/x-tar",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="checkpoint-{step}.tar"'
+            )
+        },
+    )
+
+
 @app.get("/health", tags=["ops"])
 def health():
     # Which provider implementation a launch would use. The browser journeys
