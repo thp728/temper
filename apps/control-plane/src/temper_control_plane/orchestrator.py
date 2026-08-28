@@ -59,6 +59,7 @@ from temper_core import (
     events,
     hyperparams,
     overrides,
+    progress,
     selection,
 )
 from temper_core import faults as fault_surface
@@ -375,10 +376,19 @@ def _consume(job_id: str, lines) -> dict:
 
     Everything before the marker is the job's output and is classified: a line
     carrying step, loss or epoch becomes a `metric` event with those numbers in
-    structured fields, and everything else becomes a `log` event. Classifying
+    structured fields, a layer-pull or model-download line becomes a `progress`
+    record (issue #49), and everything else becomes a `log` event. Classifying
     here rather than when the log is read is what makes a chart possible later
     without re-parsing prose — by then the job is over and the format the line
     was written in is whatever the framework happened to use that day.
+
+    Progress is promoted, not filtered (issue #49): a progress line updates the
+    phase's record — one superseding row per phase, with the rate measured live
+    between readings — and the raw line is retained as the job's collapsed
+    detail, so the hundreds of lines a pull produces never flood the event log
+    and nothing is discarded. The events table therefore holds no progress
+    rows; the log/metric/state/error history is what stays small enough for a
+    finished page to render to its end.
 
     Everything after the marker is the trainer's result document, which is
     machinery rather than output and is not logged as such.
@@ -390,6 +400,7 @@ def _consume(job_id: str, lines) -> dict:
     """
     result_lines: list[str] = []
     seen_marker = False
+    tracker = progress.ProgressTracker()
     for line in lines:
         text = line.strip()
         if not seen_marker:
@@ -401,9 +412,31 @@ def _consume(job_id: str, lines) -> dict:
                 # closing brace, and a metric would be dropped for being a
                 # partial line that the transport, not the framework, cut.
                 event = events.classify(text)
-                db.add_event(
-                    job_id, event.kind, event.message[:500], event.data
-                )
+                if event.kind == events.PROGRESS:
+                    data = event.data or {}
+                    record = tracker.update(
+                        progress.ProgressReading(
+                            phase=data["phase"],
+                            done=data.get("done"),
+                            total=data.get("total"),
+                            layer=data.get("layer"),
+                        )
+                    )
+                    db.upsert_progress(
+                        job_id,
+                        record.phase,
+                        record.done,
+                        record.total,
+                        record.rate,
+                        record.eta_s,
+                        record.ts,
+                        text,
+                    )
+                    db.append_output(job_id, record.phase, text)
+                else:
+                    db.add_event(
+                        job_id, event.kind, event.message[:500], event.data
+                    )
         else:
             result_lines.append(line)
 

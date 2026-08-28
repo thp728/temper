@@ -245,3 +245,32 @@ def test_image_pull_rate_is_measured_on_the_aggregate_done():
     )
     moved = (28.1e6 + 8.5e6) - (15.19e6 + 8.5e6)
     assert latest.rate == pytest.approx(moved / 1.0)
+
+
+def test_a_status_line_does_not_wipe_a_layers_figures():
+    """`Pull complete` carries no bytes; the layer keeps what it had reached,
+    and the phase's aggregate survives the status-only lines that follow."""
+    tracker = ProgressTracker()
+    tracker.update(
+        ProgressReading(
+            PHASE_IMAGE_PULL,
+            done=35.2e6,
+            total=42.42e6,
+            layer="9b829b73a52f",
+            ts=0.0,
+        )
+    )
+    tracker.update(
+        ProgressReading(
+            PHASE_IMAGE_PULL,
+            done=17.2e6,
+            total=25.54e6,
+            layer="1fe172e4850f",
+            ts=1.0,
+        )
+    )
+    latest = tracker.update(
+        ProgressReading(PHASE_IMAGE_PULL, layer="9b829b73a52f", ts=2.0)
+    )
+    assert latest.done == pytest.approx(35.2e6 + 17.2e6)
+    assert latest.total == pytest.approx(42.42e6 + 25.54e6)

@@ -162,6 +162,34 @@ CREATE TABLE IF NOT EXISTS admitted_models (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id, id);
+
+-- Issue #49: progress is promoted, not filtered. The events table above holds
+-- log/metric/state/error only; the layer-pull and model-download lines that
+-- used to flood it now live here, one superseding row per phase.
+CREATE TABLE IF NOT EXISTS job_progress (
+    job_id  TEXT NOT NULL REFERENCES jobs(id),
+    phase   TEXT NOT NULL,
+    done    REAL,             -- bytes so far (None: a status line carried none)
+    total   REAL,             -- bytes expected (None until the first total)
+    rate    REAL,             -- measured bytes/second, live (None before 2nd reading)
+    eta_s   REAL,             -- estimated seconds remaining from the live rate
+    ts      REAL NOT NULL,    -- when this superseding reading landed
+    message TEXT,             -- the latest raw line that produced it
+    PRIMARY KEY (job_id, phase)
+);
+
+-- The raw lines that were promoted, retained whole so nothing is discarded:
+-- the job's own output record, offered as collapsed detail per phase. Not
+-- events -- they were never emitted as such, which is what stops the finished
+-- page from truncating -- but kept, so "we keep the whole log" stays true.
+CREATE TABLE IF NOT EXISTS job_output (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id  TEXT NOT NULL REFERENCES jobs(id),
+    phase   TEXT NOT NULL,
+    line    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_output_job ON job_output(job_id, id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 """
 
@@ -678,6 +706,74 @@ def _append_event(conn, job_id, kind, message, data=None) -> None:
             json.dumps(data) if data is not None else None,
         ),
     )
+
+
+# --------------------------------------------------------------------------
+# progress (issue #49): one superseding row per phase, and the raw lines that
+# were promoted, retained whole
+# --------------------------------------------------------------------------
+
+
+def upsert_progress(
+    job_id: str,
+    phase: str,
+    done: float | None,
+    total: float | None,
+    rate: float | None,
+    eta_s: float | None,
+    ts: float,
+    message: str | None,
+) -> None:
+    """Record the phase's current progress, replacing any previous record.
+
+    Progress supersedes rather than accumulates: this is the one row per phase
+    the interface renders, so the hundreds of lines a pull produces never
+    become hundreds of rows. The raw lines themselves are retained separately
+    by `append_output`; this row is the summary that replaces itself.
+    """
+    with connect() as c:
+        c.execute(
+            "INSERT INTO job_progress (job_id, phase, done, total, rate, "
+            "eta_s, ts, message) VALUES (?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(job_id, phase) DO UPDATE SET "
+            "done=excluded.done, total=excluded.total, rate=excluded.rate, "
+            "eta_s=excluded.eta_s, ts=excluded.ts, message=excluded.message",
+            (job_id, phase, done, total, rate, eta_s, ts, message),
+        )
+
+
+def append_output(job_id: str, phase: str, line: str) -> None:
+    """Retain one promoted raw line on the job's output record.
+
+    The line was promoted into progress and deliberately not emitted as an
+    event; keeping it here is what makes "nothing is discarded" true. The
+    interface offers these as collapsed detail per phase.
+    """
+    with connect() as c:
+        c.execute(
+            "INSERT INTO job_output (job_id, phase, line) VALUES (?,?,?)",
+            (job_id, phase, line),
+        )
+
+
+def get_progress(job_id: str) -> list[dict]:
+    """The job's per-phase progress records, superseded latest."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM job_progress WHERE job_id=? ORDER BY phase",
+            (job_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_output(job_id: str) -> list[dict]:
+    """The job's retained promoted lines, in the order they were written."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM job_output WHERE job_id=? ORDER BY id",
+            (job_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def _with_warnings(job: dict | None) -> dict | None:

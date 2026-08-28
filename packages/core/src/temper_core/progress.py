@@ -196,19 +196,22 @@ class ProgressTracker:
         """
         if reading.layer is not None:
             layers = self._layers.setdefault(reading.phase, {})
-            prev_done, total = layers.get(reading.layer, (None, reading.total))
+            prev_done, prev_total = layers.get(reading.layer, (None, None))
             # A layer's delivered bytes only grow -- docker reports a layer's
             # done rising, then extracting, then complete -- so the max is the
-            # honest figure for how much of it has arrived.
-            done = (
-                reading.done
-                if reading.done is None
-                else max(d for d in (prev_done, reading.done) if d is not None)
-            )
-            if reading.total is not None:
-                total = reading.total
+            # honest figure for how much of it has arrived. A status line
+            # (`Pull complete`) carries no bytes and must not wipe the layer's
+            # figure: it keeps whatever the layer had reached.
+            if reading.done is None:
+                done = prev_done
+            elif prev_done is None:
+                done = reading.done
+            else:
+                done = max(prev_done, reading.done)
+            total = reading.total if reading.total is not None else prev_total
             layers[reading.layer] = (done, total)
-            done = sum(d for d, _ in layers.values() if d is not None)
+            d_values = [d for d, _ in layers.values() if d is not None]
+            done = sum(d_values) if d_values else None
             totals = [t for _, t in layers.values() if t is not None]
             total = sum(totals) if totals else None
             return done, total

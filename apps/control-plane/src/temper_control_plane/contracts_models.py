@@ -658,6 +658,40 @@ class JobList(BaseModel):
     jobs: list[JobRecord]
 
 
+class JobProgress(BaseModel):
+    """One phase's current progress, the latest superseding the previous
+    (issue #49).
+
+    `done`/`total` are bytes (image pull aggregates across the layers docker
+    pulls in parallel; model download is the single file). `rate` is measured
+    live between consecutive readings, in bytes per second, and `eta_s` is the
+    seconds remaining derived from it -- so the estimate corrects itself when
+    actual throughput differs from whatever came before. `message` is the
+    latest raw line that produced the record, so the summary still carries the
+    concrete line it came from."""
+
+    phase: str
+    done: float | None = None
+    total: float | None = None
+    rate: float | None = None
+    eta_s: float | None = None
+    ts: float
+    message: str | None = None
+
+
+class JobOutputLine(BaseModel):
+    """One promoted raw line, retained on the job's output record (issue #49).
+
+    The line became a progress record and was deliberately not emitted as an
+    event; keeping it here is what makes "nothing is discarded" true. `phase`
+    is the phase it was promoted into, so the interface can offer the lines as
+    collapsed detail per phase."""
+
+    id: int
+    phase: str
+    line: str
+
+
 class JobEvent(BaseModel):
     """One entry in a job's durable history.
 
@@ -676,13 +710,19 @@ class JobEvent(BaseModel):
 
 
 class EventPage(BaseModel):
-    """A page of history with the last id served.
+    """A job's durable history: the events, the current per-phase progress, and
+    the retained raw lines that were promoted into it (issue #49).
 
-    `after` is what the client holds; `last_id` is where this page reaches,
-    so a polling client resumes instead of re-reading or skipping."""
+    `after` is what the client holds; `last_id` is where this page reaches, so
+    a polling client resumes instead of re-reading or skipping. `progress` is
+    the whole per-phase snapshot (it supersedes, so it is small by
+    construction); `output` is the whole retained record of promoted lines --
+    the collapsed detail that keeps "we keep everything" true."""
 
     events: list[JobEvent]
     last_id: int
+    progress: list[JobProgress] = Field(default_factory=list)
+    output: list[JobOutputLine] = Field(default_factory=list)
 
 
 class CalibrationMetric(BaseModel):

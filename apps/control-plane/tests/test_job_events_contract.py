@@ -62,7 +62,12 @@ def test_the_event_page_is_published_typed(client, finished_job_id):
     body = client.get(f"/v1/jobs/{finished_job_id}/events")
     assert body.status_code == 200
     page = body.json()
-    assert set(page.keys()) == {"events", "last_id"}
+    # The history page also carries the job's progress (issue #49): the
+    # current per-phase snapshot and the retained raw lines that were promoted
+    # into it. Both are part of the durable history the interface renders.
+    assert set(page.keys()) == {"events", "last_id", "progress", "output"}
+    assert page["progress"] == []
+    assert page["output"] == []
     assert page["events"]
     for event in page["events"]:
         assert set(event.keys()) == {
