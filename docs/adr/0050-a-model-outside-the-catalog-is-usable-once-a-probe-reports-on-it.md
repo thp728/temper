@@ -1,4 +1,4 @@
-# ADR-0049 — A model outside the catalog is usable once a probe reports on it
+# ADR-0050 — A model outside the catalog is usable once a probe reports on it
 
 - **Status:** accepted
 - **Date:** 2026-08-28

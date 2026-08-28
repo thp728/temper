@@ -90,7 +90,7 @@ repository becomes public at submission.
 | [0047](0047-imported-datasets-are-the-same-bytes-through-the-same-validation-path.md) | Imported datasets are the same bytes, through the same validation path as an upload | accepted | 2026-08-28 |
 | [0048](0048-the-held-out-split-is-the-platforms-and-rides-the-existing-event-stream.md) | The held-out split is the platform's, and held-out loss rides the existing event stream | accepted | 2026-08-28 |
 | [0049](0049-the-best-checkpoint-is-chosen-by-held-out-loss-and-the-choice-is-recorded.md) | The best checkpoint is chosen by held-out loss, and the choice is recorded on the run | accepted | 2026-08-28 |
-| [0049](0049-a-model-outside-the-catalog-is-usable-once-a-probe-reports-on-it.md) | A model outside the catalog is usable once a probe reports on it, and the probe reads the predictor's own facts | accepted | 2026-08-28 |
+| [0050](0050-a-model-outside-the-catalog-is-usable-once-a-probe-reports-on-it.md) | A model outside the catalog is usable once a probe reports on it, and the probe reads the predictor's own facts | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
