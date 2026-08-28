@@ -16,7 +16,6 @@ from fastapi import HTTPException
 
 from temper_control_plane import admission, config, db, orchestrator
 from temper_core import (
-    catalog,
     faults,
     feasibility,
     hyperparams,

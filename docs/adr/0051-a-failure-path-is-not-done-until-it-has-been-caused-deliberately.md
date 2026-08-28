@@ -1,4 +1,4 @@
-# ADR-0049 — A failure path is not done until it has been caused deliberately
+# ADR-0051 — A failure path is not done until it has been caused deliberately
 
 - **Status:** accepted
 - **Date:** 2026-08-28
