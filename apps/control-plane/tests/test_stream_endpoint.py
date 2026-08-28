@@ -99,11 +99,21 @@ def _stream_body(client, url, **kwargs):
 
 
 def _payloads(text):
-    return [
-        json.loads(line[6:])
-        for line in text.splitlines()
-        if line.startswith("data: ")
-    ]
+    """The job-event payloads in an SSE body.
+
+    The stream also carries progress snapshots (issue #49) as their own
+    `event: progress` blocks; only `event: job` payloads are events, so the
+    two are told apart by the block's event type rather than by the `data:`
+    prefix alone.
+    """
+    out = []
+    current = None
+    for line in text.splitlines():
+        if line.startswith("event: "):
+            current = line[7:].strip()
+        elif line.startswith("data: ") and current == "job":
+            out.append(json.loads(line[6:]))
+    return out
 
 
 def _ids(text):

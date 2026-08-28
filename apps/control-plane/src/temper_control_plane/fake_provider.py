@@ -481,6 +481,22 @@ PUBLISHED_IMAGE_REFERENCE = (
 DEMO_LINES = (
     "[00:00:00] building trainer image",
     "[00:00:02] image built in 2s",
+    # Issue #49: the machine's pull and download output is the progress data.
+    # The simulated machine emits docker's pull shape (layers pulled in
+    # parallel, each its own done/total) and huggingface_hub's download bars,
+    # and the control plane promotes them into per-phase progress -- so the
+    # journeys watch image pull and model download advance with a measured
+    # rate, exactly the phases a large real job is dominated by.
+    "9b829b73a52f: Pulling fs layer",
+    "9b829b73a52f: Downloading [===============> ] 15.19MB/42.42MB",
+    "1fe172e4850f: Downloading [======>            ]  8.5MB/25.54MB",
+    "9b829b73a52f: Downloading [==================> ] 28.1MB/42.42MB",
+    "9b829b73a52f: Extracting [========================> ] 35.2MB/42.42MB",
+    "9b829b73a52f: Pull complete",
+    "1fe172e4850f: Pull complete",
+    "model.safetensors:  10%|█         | 400M/4.00G [00:05<00:45]",
+    "model.safetensors:  60%|██████    | 2.4G/4.00G [00:30<00:20]",
+    "model.safetensors: 100%|██████████| 4.00G/4.00G [00:40<00:00]",
     # Issue #53: the trainer holds out a portion of the dataset at startup and
     # says so; the simulated machine narrates the same way so the running view
     # shows the split alongside the output that follows it.

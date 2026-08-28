@@ -66,8 +66,6 @@ def test_the_event_page_is_published_typed(client, finished_job_id):
     # current per-phase snapshot and the retained raw lines that were promoted
     # into it. Both are part of the durable history the interface renders.
     assert set(page.keys()) == {"events", "last_id", "progress", "output"}
-    assert page["progress"] == []
-    assert page["output"] == []
     assert page["events"]
     for event in page["events"]:
         assert set(event.keys()) == {
@@ -86,6 +84,16 @@ def test_the_event_page_is_published_typed(client, finished_job_id):
     metric = next(e for e in page["events"] if e["kind"] == "metric")
     assert isinstance(metric["data"]["loss"], (int, float))
     assert page["last_id"] == page["events"][-1]["id"]
+
+    # The journey fake emits pull and download output, so a completed job's
+    # progress page carries both phases and their retained raw lines.
+    phases = {p["phase"] for p in page["progress"]}
+    assert {"image pull", "model download"} <= phases
+    assert page["output"], "the promoted raw lines are retained, not discarded"
+    assert {"phase", "done", "total", "rate", "eta_s", "ts", "message"} <= set(
+        page["progress"][0]
+    )
+    assert set(page["output"][0]) == {"id", "phase", "line"}
 
 
 def test_after_resumes_from_where_the_client_stopped(client, finished_job_id):
