@@ -328,7 +328,7 @@ class FakeProvider:
         for line in json.dumps(self._result).splitlines():
             yield line
 
-    def _write_checkpoints(self, spec) -> None:
+    def _write_checkpoints(self, spec) -> list[dict]:
         """The machine's half of issue #37, simulated: put each reported
         checkpoint to its slot, then report the set in result.json.
 
@@ -337,6 +337,9 @@ class FakeProvider:
         (`redeem`); the object-store backend's half is proven by the storage
         tier separately. The reported checksum is the true one unless the
         entry overrides it, so a test can make a corrupt upload on purpose.
+
+        Returns the records it wrote, so `request_checkpoint` (issue #46) can
+        hand the control plane the manifest of an emergency save.
         """
         grants = ((spec or {}).get("checkpoint_grants")) or []
         records = []
@@ -403,6 +406,7 @@ class FakeProvider:
         if records and self._result is not None:
             self._result = {**self._result, "checkpoints": records}
         self._enter("checkpoint_upload")
+        return records
 
     def _write_artifact(self, spec) -> None:
         """The machine's half of ADR-0009, simulated: put the artifact to the
@@ -496,6 +500,28 @@ class FakeProvider:
         self.destroyed = True
         if self._destroyed_at_call is None:
             self._destroyed_at_call = self._list_calls
+
+    def request_checkpoint(
+        self, machine: Machine, job_id: str
+    ) -> list[dict] | None:
+        """The spend ceiling's emergency checkpoint (issue #46), simulated.
+
+        A responsive machine saves the checkpoints it has produced -- writing
+        them to their slots exactly as it would at a normal end, so the
+        control plane's verification streams real bytes back -- and reports
+        the manifest. A silent machine (the `machine_silent` fault, which is
+        the unresponsive case the ceiling exists for) reports None: the
+        ceiling's checkpoint is best-effort by construction, and a wedged
+        machine cannot be asked to save.
+        """
+        self.calls.append("request_checkpoint")
+        if self._silent_after is not None:
+            return None
+        if self.script is None:
+            return None
+        spec = _job_spec_from_script(self.script)
+        records = self._write_checkpoints(spec)
+        return records if records else None
 
     def _list_machines_inner(self) -> list[Machine]:
         """The actual machines the provider bills, with lifecycle status.

@@ -72,9 +72,14 @@ from temper_core.models import Models
 
 from . import config, db, storage
 from .chunks import ChunkReader, piped_chunks
-from .limits import RunLimits, guard
+from .limits import BUDGET_EXHAUSTED_CODE, RunLimits, guard
 from .models import new_models
-from .provider import Provider, new_provider, normalize_status
+from .provider import (
+    Provider,
+    container_name,
+    new_provider,
+    normalize_status,
+)
 from .trainer_build import published_reference
 
 DATASET_TARBALL = "/tmp/dataset.tar.gz"
@@ -122,6 +127,29 @@ DESTROY_RETRY_DELAY_S = 5
 TEARDOWN_CONFIRM_SAMPLES = 3
 TEARDOWN_CONFIRM_INTERVAL_S = 1.0
 TEARDOWN_CONFIRM_TIMEOUT_S = 30.0
+
+# The spend ceiling: the most a single job may cost, in the account currency's
+# minor unit (paise for INR). Enforced by the control plane from elapsed time
+# and the job's frozen price (issue #46), never by the training process itself
+# -- a process that has stopped responding cannot enforce its own limit.
+#
+# The derivation is on record, the way ADR-0036 records 21.6 MB/s x 60 s, and
+# each half of it is labelled measured or judgment:
+#
+# * The most a *legitimate* job can cost is bounded by the duration ceiling
+#   (ADR-0002, 24h) and the most expensive card the platform has measured:
+#   H200 at Rs 378.27/hr (reference-technical-architecture.md, measured
+#   2026-08-17). 24h x Rs 378.27/hr is about Rs 9,078.
+# * The ceiling is Rs 10,000 -- roughly 10% above that worst legitimate cost,
+#   so it cannot fire on a legitimate run. A spend ceiling that fires on a
+#   legitimate run is a bug, not a safety net.
+# * Rs 10,000 is 20% of the account's Rs 50,000 grant (AGENTS.md): a runaway
+#   is stopped before it can consume a fifth of the account.
+#
+# The figure is therefore derived from two inherited facts (the adopted 24h
+# duration ceiling and the measured H200 rate) and one judgment (the 20% of
+# grant). If the catalog or the rates move, this is the number to revisit.
+SPEND_CEILING_MINOR = 10_000 * 100  # Rs 10,000 in paise
 
 # The environment variable the trainer reads its fault from (issue #24).
 # Trainer-side faults are an environment switch, by the spec's constraint; the
@@ -401,7 +429,12 @@ say "running training"
 # `fault_env` (issue #24) carries the job's fault spec into the trainer's
 # environment when the surface is switched on, and nothing otherwise: a fault
 # the surface could not have switched on never reaches the trainer.
+# The container is named after the job (issue #46) so the spend ceiling's
+# emergency checkpoint can signal it by name: `request_checkpoint` sends
+# SIGTERM to the job's container and the trainer converts that into a final
+# save + report.
 sudo docker run --rm --gpus all \\
+  --name {container_name(job["id"])} \\
   -v /tmp/job:/job:ro -v /tmp/out:/out -e HF_HOME=/out/hf \\
   -e PYTHONUNBUFFERED=1 \\
 {fault_env}  {reference} 1>&2 || say "TRAINER EXITED NONZERO"
@@ -1050,6 +1083,70 @@ def _discard_if_cancelled(job_id: str, check) -> None:
         raise
 
 
+def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
+    """Save what a spend-ceiling stop can save: the machine's own checkpoints.
+
+    Issue #46's ordered shutdown is checkpoint, terminate, destroy. The
+    checkpoint half is issue #37's point — the machine writes checkpoints off
+    itself as it trains — so the control plane asks it to report them
+    (`request_checkpoint`), records what it can verify, and lets the
+    held-out-loss selection (ADR-0049) see the result: a checkpoint written at
+    the ceiling must be visible to that selection, not stored somewhere it
+    cannot see.
+
+    Best-effort and bounded, and **failure-isolated**: this runs in the middle
+    of the budget_exhausted handling, so nothing it does may prevent the job
+    reaching its terminal state. A machine that does not answer — it is, after
+    all, the machine that has gone wrong — records nothing and the shutdown
+    proceeds regardless: an unresponsive trainer cannot be asked to save, and
+    the record says so rather than claiming a checkpoint it does not have. A
+    recording step that itself fails (a malformed manifest, a storage error)
+    is logged and the shutdown proceeds; the terminal reason is
+    budget_exhausted either way.
+    """
+    db.add_event(
+        job_id,
+        "log",
+        "Spend ceiling reached — requesting an emergency checkpoint before "
+        "shutdown",
+    )
+    manifest = None
+    try:
+        manifest = provider.request_checkpoint(machine, job_id)
+    except Exception as e:  # noqa: BLE001 - a failed request must not block the shutdown
+        db.add_event(
+            job_id,
+            "error",
+            f"Could not request an emergency checkpoint: {e}",
+        )
+    reported = manifest if isinstance(manifest, list) else []
+    if not reported:
+        db.add_event(
+            job_id,
+            "log",
+            "No checkpoints were saved at the ceiling — the machine reported "
+            "none",
+        )
+        return
+    try:
+        records = _collect_checkpoints(job_id, {"checkpoints": reported})
+        db.set_checkpoints(job_id, records)
+        _record_best_checkpoint(job_id, records)
+        verified = sum(1 for r in records if r.get("verified") is True)
+        db.add_event(
+            job_id,
+            "log",
+            f"{verified} checkpoint(s) saved and verified at the spend "
+            "ceiling",
+        )
+    except Exception as e:  # noqa: BLE001 - a recording failure must not block the shutdown
+        db.add_event(
+            job_id,
+            "error",
+            f"Could not record the emergency checkpoint: {e}",
+        )
+
+
 def _teardown(provider: Provider, job_id: str, machine) -> None:
     """Destroy the machine, then confirm it independently.
 
@@ -1325,6 +1422,15 @@ def _attempt(
         )
     except selection.NoFittingHardwareError as e:
         raise OrchestratorError("provider_capacity_unavailable", str(e)) from e
+    # Issue #46: the plan chose the machine, so the price it will bill at is
+    # now known -- and only now can the spend ceiling become a deadline. The
+    # ceiling is a cost, and a cost is enforced against the job's own frozen
+    # rate, not against a fixed number of minutes: an expensive machine is
+    # stopped sooner than a cheap one at the same ceiling. `with_spend`
+    # refuses an unenforceable combination before anything is provisioned.
+    limits = limits.with_spend(
+        SPEND_CEILING_MINOR, plan.price_per_hour, plan.currency
+    )
     try:
         disk_plan = disk.required_disk(
             facts,
@@ -1383,8 +1489,12 @@ def _attempt(
 
     # Checked between stages as well as inside the stream: the guard below can
     # only notice the ceiling while lines are arriving, and everything above
-    # this line happened before any line existed.
+    # this line happened before any line existed. The spend ceiling (issue
+    # #46) is checked beside the duration ceiling at the same boundaries, so a
+    # machine that costs more than the cap while the control plane is still
+    # setting it up is stopped like any other runaway.
     limits.check_duration()
+    limits.check_spend()
     cancelled()
 
     db.set_state(job_id, "training", "Pulling image and training")
@@ -1912,6 +2022,14 @@ def run_job(
                     )
                     outcome = _memory_surface(job_id, attempts)
                     break
+                if e.code == BUDGET_EXHAUSTED_CODE and machines:
+                    # Issue #46's ordered shutdown: checkpoint, terminate,
+                    # destroy. The checkpoint runs here, inside the handler and
+                    # before the `finally` destroys the machine, so reaching the
+                    # ceiling does not also destroy the work -- what the machine
+                    # already wrote off itself (issue #37) is recorded and
+                    # selected while it can still be.
+                    _emergency_checkpoint(provider, machines[0], job_id)
                 _record_attempt(
                     job_id,
                     attempts,

@@ -126,6 +126,104 @@ def test_an_error_from_the_source_reaches_the_caller():
         list(guard(explodes(), simulated_limits(step=1.0)))
 
 
+# --- the spend ceiling (issue #46) -------------------------------------------
+#
+# The spend ceiling is a third control beside the stall and the duration
+# ceiling, and it is measured the same way the other two are: from the clock,
+# in the control plane, never from anything the trainer reports. A job that
+# passes the ceiling fails with budget_exhausted, distinguishable from a stall
+# and from an over-long run.
+
+
+def _spend_limits(
+    step=300.0, ceiling_minor=100, price_per_hour=41.31, **kwargs
+):
+    return replace(
+        simulated_limits(step=step, **kwargs),
+        spend_ceiling_minor=ceiling_minor,
+        price_per_hour=price_per_hour,
+        currency="INR",
+    )
+
+
+def test_the_guard_stops_a_job_that_exceeds_the_spend_ceiling():
+    """The ceiling is enforced on the same read of the clock as the duration
+    ceiling, so it fires on the control plane's own measurement of elapsed
+    time times the frozen price -- not on anything the source reports."""
+    source = iter(["a", "b", "c", "d"])
+    with pytest.raises(OrchestratorError) as e:
+        list(guard(source, _spend_limits()))
+
+    assert e.value.code == "budget_exhausted"
+    assert "spend ceiling" in str(e.value)
+    assert "INR" in str(e.value)
+
+
+def test_a_job_under_the_spend_ceiling_is_untouched():
+    source = iter(["a", "b", "c", "d"])
+    out = list(
+        guard(source, _spend_limits(ceiling_minor=1_000_000, step=60.0))
+    )
+    assert out == ["a", "b", "c", "d"]
+
+
+def test_the_spend_ceiling_fires_before_the_stall_on_a_silent_source():
+    """The point of enforcing spend outside the training process: a source
+    that stops producing output (a wedged trainer) is still billed for, and
+    the money ceiling catches it before the stall detector has any reason to.
+    The stall budget is far beyond anything this test reaches, so the only
+    thing that can have stopped it is the ceiling."""
+    release = threading.Event()
+
+    def goes_quiet():
+        yield "training started"
+        release.wait(30)  # never set: the ceiling must fire first
+
+    with pytest.raises(OrchestratorError) as e:
+        list(
+            guard(
+                goes_quiet(),
+                _spend_limits(step=60.0, stall=90000.0),
+            )
+        )
+    assert e.value.code == "budget_exhausted"
+    release.set()
+
+
+def test_the_spend_deadline_shrinks_as_the_machines_price_rises():
+    """The ceiling is a cost, so the same ceiling is exhausted sooner on an
+    expensive machine than a cheap one: the deadline is derived from the job's
+    own frozen price, not from a fixed number of minutes."""
+    cheap = _spend_limits(price_per_hour=41.31, ceiling_minor=1000)
+    dear = _spend_limits(price_per_hour=250.0, ceiling_minor=1000)
+    assert cheap.spend_deadline > dear.spend_deadline
+
+
+def test_with_spend_refuses_an_unenforceable_combination():
+    """A ceiling that cannot fire is worse than none: an unknown currency, a
+    non-positive rate or a non-positive ceiling is refused loudly before
+    anything is provisioned."""
+    limits = simulated_limits(step=1.0)
+    with pytest.raises(OrchestratorError) as e:
+        limits.with_spend(100, 41.31, "BTC")
+    assert e.value.code == "budget_unconfigurable"
+    with pytest.raises(OrchestratorError):
+        limits.with_spend(100, 0, "INR")
+    with pytest.raises(OrchestratorError):
+        limits.with_spend(0, 41.31, "INR")
+
+
+def test_the_spend_ceiling_is_off_until_with_spend_configures_it():
+    """The default RunLimits has no spend ceiling: every existing caller is
+    unchanged, and check_spend is a no-op until the orchestrator freezes the
+    price after provisioning."""
+    from temper_control_plane.limits import RunLimits
+
+    limits = RunLimits(stall_timeout_s=900.0, max_duration_s=86400.0).start()
+    limits.check_spend()  # must not raise
+    assert limits.spend_ceiling_minor is None
+
+
 # --- the limits are configuration, and a misconfiguration is refused --------
 
 

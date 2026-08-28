@@ -43,12 +43,14 @@ in memory.
 from __future__ import annotations
 
 import io
+import json
 import shlex
 import subprocess
 import tempfile
 import threading
 import time
 from collections.abc import Iterable, Iterator, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -58,6 +60,13 @@ from temper_core.selection import GpuAvailability
 SSH_READY_TIMEOUT_S = 300
 PUSH_TIMEOUT_S = 180
 FETCH_TIMEOUT_S = 600
+
+# How long the spend-ceiling's emergency checkpoint (issue #46) will wait for
+# a machine that has been asked to save a final checkpoint to actually report
+# it. Bounded so that an unresponsive machine cannot hold up the shutdown it
+# exists to stop: the ceiling stop proceeds without a final checkpoint rather
+# than waiting on the very machine that has gone wrong.
+EMERGENCY_CHECKPOINT_TIMEOUT_S = 30.0
 
 # How much one streamed fetch hands the caller per step. Bounded, not tuned:
 # the tests assert memory stays flat as payloads grow, not that a particular
@@ -84,6 +93,19 @@ def push_command(dest: str) -> str:
 def fetch_command(path: str) -> str:
     """The wire command that streams `path` back."""
     return f"{FETCH_PREFIX}{path}"
+
+
+def container_name(job_id: str) -> str:
+    """The container's name for one job, defined once and read twice.
+
+    The remote script names the container it runs with this (issue #46) and
+    the spend ceiling's emergency checkpoint signals it with the same name —
+    a value two components must agree on is defined once and read, never
+    retyped. If the two drifted, the emergency checkpoint would silently
+    signal nothing and a machine that could have saved its checkpoints would
+    be destroyed with them.
+    """
+    return f"temper-{job_id}"
 
 
 # The backstop for a stream that never ends, and deliberately *above* the
@@ -196,6 +218,19 @@ class Provider(Protocol):
         present and still billing, not a stray to be counted or collected
         twice. A provider that lists absent-then-destroying-then-absent
         is the reason confirmation requires consecutive absences.
+        """
+
+    def request_checkpoint(
+        self, machine: Machine, job_id: str
+    ) -> list[dict] | None:
+        """Ask the machine to save a final checkpoint and report what it wrote.
+
+        The spend-ceiling's emergency checkpoint (issue #46): the control
+        plane asks the machine to wrap up, and the machine answers with the
+        checkpoint manifest — the shape `result.json`'s `checkpoints` carries,
+        one record per checkpoint with its step, slot, loss and checksum — or
+        None when it has nothing to report. Best-effort and bounded: a machine
+        that does not respond returns None rather than blocking the shutdown.
         """
 
     def list_machine_ids(self) -> list[int]:
@@ -553,6 +588,51 @@ class JarvisLabsProvider:
 
     def destroy(self, machine_id: int) -> None:
         self._client.instances.destroy(machine_id)
+
+    def request_checkpoint(
+        self, machine: Machine, job_id: str
+    ) -> list[dict] | None:
+        """The spend-ceiling's emergency checkpoint (issue #46), real machine.
+
+        The trainer is asked to finalize gracefully — a SIGTERM to the named
+        container, which the trainer converts into "save a final checkpoint
+        and write result.json" — and this then polls result.json for the
+        manifest it reports. Bounded by `EMERGENCY_CHECKPOINT_TIMEOUT_S`: a
+        machine that never answers (the machine that has gone wrong) returns
+        None and the ceiling stop proceeds without a final checkpoint rather
+        than waiting on the very thing it exists to stop.
+
+        The manifest is parsed from result.json's own `checkpoints` field, the
+        same shape the control plane verifies and selects over, so what this
+        returns is exactly what the trainer reported.
+        """
+        container = container_name(job_id)
+        with suppress(Exception):  # the signal is best-effort
+            for _line in self.stream(
+                machine,
+                f"sudo docker kill --signal=SIGTERM {container} "
+                "2>/dev/null || true\n".encode(),
+            ):
+                pass
+        deadline = time.time() + EMERGENCY_CHECKPOINT_TIMEOUT_S
+        while time.time() < deadline:
+            try:
+                data = b"".join(
+                    self.fetch_stream(machine, "/tmp/out/result.json")
+                )
+            except Exception:  # noqa: BLE001 - a machine mid-write may not answer
+                data = b""
+            if data:
+                try:
+                    parsed = json.loads(data.decode("utf-8", "replace"))
+                except (ValueError, UnicodeDecodeError):
+                    parsed = None
+                if isinstance(parsed, dict):
+                    ckpts = parsed.get("checkpoints")
+                    if isinstance(ckpts, list):
+                        return ckpts
+            time.sleep(1.0)
+        return None
 
     def list_machines(self) -> Sequence[Machine]:
         machines: list[Machine] = []
