@@ -255,17 +255,31 @@ def _check_memory(
     """The predicted-memory line: the product's own peak arithmetic at the
     default configuration, against the cards this platform can provision.
 
-    Only the executable method (qlora) is considered: admission happens before
-    any configuration is chosen, and qlora is the only method a launch can run
-    today. The smallest card that holds the peak is named, so the listing can
-    say "needs at least an L4" the way the catalog does.
+    This is a **floor**, not a prediction of what a launch will choose.
+    Admission happens before any configuration is chosen, so the honest thing
+    to report is the least a model can be run on: the lightest executable
+    method's peak, and the smallest card that holds it, so the listing can say
+    "needs at least an L4" the way the catalog does.
+
+    It is therefore the *minimum* across `EXECUTABLE_METHODS`, not the first of
+    them. When this was written qlora was the only executable method and
+    `EXECUTABLE_METHODS[0]` said the same thing; issue #66 added full
+    fine-tuning at the front of that tuple, which silently turned the floor
+    into the most demanding method and advertised an A100 for models that run
+    on an L4.
     """
-    peak = memory.predict_peak(
-        facts,
-        method=selection.EXECUTABLE_METHODS[0],
-        lora_r=lora_r,
-        sequence_len=sequence_len,
-        micro_batch_size=micro_batch_size,
+    peak = min(
+        (
+            memory.predict_peak(
+                facts,
+                method=method,
+                lora_r=lora_r,
+                sequence_len=sequence_len,
+                micro_batch_size=micro_batch_size,
+            )
+            for method in selection.EXECUTABLE_METHODS
+        ),
+        key=lambda p: p.total_gb,
     )
     for card in sorted(gpus.CAPACITY_GB, key=lambda c: gpus.CAPACITY_GB[c]):
         capacity = gpus.CAPACITY_GB[card]

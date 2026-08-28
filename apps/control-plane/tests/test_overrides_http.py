@@ -368,8 +368,8 @@ def test_provisioning_honours_a_frozen_hardware_override(
         result={
             "ok": True,
             "stage": "train",
-            "adapter_path": "run/adapter_model.safetensors",
-            "adapter_sha256": "abc",
+            "artifact_path": "run/adapter_model.safetensors",
+            "artifact_sha256": "abc",
             "adapter_config": {"r": 16, "lora_alpha": 32},
         },
     )

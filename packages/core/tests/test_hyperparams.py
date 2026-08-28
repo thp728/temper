@@ -53,6 +53,41 @@ def test_rslora_is_inferred_from_the_rank():
     assert hyperparams.effective({"lora_r": 32})["lora_use_rslora"] is True
 
 
+def test_method_specific_defaults_apply_when_the_method_is_named():
+    """The learning rate and related settings key off the selected method
+    (issue #66): a full fine-tune updates every weight and trains at a lower
+    learning rate than a QLoRA adapter does, and the difference lives in the
+    one contract both the resolver and the trainer read -- never a constant
+    read by both with a branch at the use site (ADR-0010)."""
+    full = hyperparams.effective({}, method="full")
+    qlora = hyperparams.effective({}, method="qlora")
+    assert full["learning_rate"] != qlora["learning_rate"]
+    assert full["learning_rate"] < qlora["learning_rate"]
+    # The method-agnostic surface (which is what a caller with no method yet
+    # reads) is the adapter footing, and the shared settings are untouched by
+    # the method.
+    assert hyperparams.effective({})["learning_rate"] == qlora["learning_rate"]
+    assert full["sequence_len"] == qlora["sequence_len"] == 2048
+    assert full["micro_batch_size"] == qlora["micro_batch_size"]
+
+
+def test_a_user_override_beats_the_method_default():
+    """The user's own number is applied last: a method default is a default,
+    and an explicit override always wins over it."""
+    eff = hyperparams.effective({"learning_rate": 3e-4}, method="full")
+    assert eff["learning_rate"] == 3e-4
+
+
+def test_the_resolver_exposes_the_method_specific_table():
+    """The per-method table is data, read like the defaults: a caller (the
+    trainer's required-key guard, a test) reads it through the module rather
+    than re-spelling a second table somewhere else."""
+    assert (
+        hyperparams.BY_METHOD["full"]["learning_rate"]
+        == hyperparams.effective({}, method="full")["learning_rate"]
+    )
+
+
 def test_locked_settings_ignore_overrides():
     """Correctness settings are default-locked: an override outside
     ALLOWED_OVERRIDES never reaches the spec the page shows."""

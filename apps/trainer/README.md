@@ -1,6 +1,6 @@
 # Trainer Image
 
-The pinned training container. Job spec in, adapter out.
+The pinned training container. Job spec in, artifact out.
 
 This directory holds the Dockerfile and the entrypoint. `thinking.py` is not here: it lives in `packages/core` because the control plane validates thinking mode with the same module this image runs, and a second copy beside the entrypoint would be the hand-mirrored definition [ADR-0010](../../docs/adr/0010-the-repository-is-laid-out-as-apps-and-packages.md) forbids. The build context is therefore assembled rather than pointed at — `TRAINER_SOURCES` in the orchestrator is the list, `just image` builds from it locally, and a real job ships the same files as one tar.
 
@@ -38,9 +38,32 @@ Changing either is a deliberate act that re-runs the GPU smoke test. Our layer a
 | `/job/job.json` | in | job spec — see [job.example.json](job.example.json) |
 | `/job/dataset.jsonl` | in | one JSON object per line |
 | `/out/config.yaml` | out | the rendered Axolotl config, for auditability |
-| `/out/run/` | out | checkpoints and the adapter |
+| `/out/run/` | out | checkpoints, and the final adapter or trained model |
+| `/out/model.tar.gz` | out | a full fine-tune's whole-model artifact, one streamed archive (issue #66) |
 | `/out/result.json` | out | **always written, including on failure** — see the boundary below |
 | `/out/train.log` | out | full training output — also relayed to the container's stdout as it is produced |
+
+## Two methods (issue #66)
+
+The job spec's `method` selects the training shape: `qlora` (the adapter the
+platform shipped with, NF4 double-quant) or `full` (a whole-model fine-tune).
+The control plane chooses the method at provisioning and writes it into the
+spec beside the method-resolved hyperparameters — a full job's spec carries
+its own (lower) learning rate, resolved from the one defaults contract
+(`packages/contracts/trainer-defaults.json`, its `by_method` table) rather
+than recomputed here.
+
+- `qlora` renders an adapter config (`adapter`, `load_in_4bit`, the LoRA
+  keys) and collects the adapter pair as the artifact.
+- `full` renders no adapter config and trains every weight in bf16; its
+  artifact is the trained model directory, tarred on the machine into
+  `model.tar.gz` (streamed, never held whole) and uploaded through the same
+  scoped grant an adapter uses. The control plane verifies the archive's
+  checksum exactly as it does an adapter's, and the download serves it with a
+  manifest declaring the `full_model` kind.
+
+A spec with no `method` reads as `qlora`, the only method that ever ran
+before the key existed.
 
 ## The machine may write its own artifact (ADR-0009)
 
@@ -171,10 +194,10 @@ Same image, driven by `api/orchestrator.py` rather than a spike script. **L4, 33
 | Build from pinned digest | **87s** — pull throughput varies; 183s on 08-18 |
 | `axolotl train`, 64 rows × 3 epochs | 161.4s, 23 steps, exit 0 |
 | Checkpoints written | `checkpoint-8`, `checkpoint-16`, `checkpoint-23` |
-| Adapter shipped | `adapter_source: "final"`, 132.2 MB, verified by SHA-256 end to end |
+| Adapter shipped | `artifact_source: "final"`, 132.2 MB, verified by SHA-256 end to end |
 | Thinking mode | detected `false` from the data, not configured |
 
-⚠️ **`collect_artifacts()` picked the wrong adapter until this run.** `sorted(rglob(...))[-1]` sorts lexicographically, so `checkpoint-8` sorted last of those three — and every `run/checkpoint-N/…` sorts after `run/adapter_model.safetensors` anyway. It would have shipped **step 8 of 23** as the finished model, silently, with a valid hash. Selection is explicit now and `result.json` records which via `adapter_source`. **A hash check proves the bytes arrived intact; it says nothing about whether they were the right bytes.**
+⚠️ **`collect_artifacts()` picked the wrong adapter until this run.** `sorted(rglob(...))[-1]` sorts lexicographically, so `checkpoint-8` sorted last of those three — and every `run/checkpoint-N/…` sorts after `run/adapter_model.safetensors` anyway. It would have shipped **step 8 of 23** as the finished model, silently, with a valid hash. Selection is explicit now and `result.json` records which via `artifact_source` (named `adapter_source` before issue #66). **A hash check proves the bytes arrived intact; it says nothing about whether they were the right bytes.**
 
 ## Still open
 
@@ -183,6 +206,6 @@ Same image, driven by `api/orchestrator.py` rather than a spike script. **L4, 33
 - **`chat_template: tokenizer_default` ran without error, but nothing asserts it resolved to the *right* template.** The export-time probe from report A §4.2 — re-tokenise a fixed conversation through both the training template and the artifact's, assert identical ids — is the check, and it is not written yet.
 - **`sample_packing`** stays off pending a per-model varlen-attention check.
 - **Not pushed to GHCR.** The image builds per-VM today. Pushing needs a token and belongs in CI. At 87–183s per run it is also the largest remaining slice of cold start.
-- **No assertion that the shipped adapter matches the run's final step.** `adapter_source` records the choice but nothing cross-checks it against the trainer's last step — that is the check that would have caught the selection bug above, and it is not written.
+- **No assertion that the shipped adapter matches the run's final step.** `artifact_source` records the choice but nothing cross-checks it against the trainer's last step — that is the check that would have caught the selection bug above, and it is not written.
 - ~~**Training output never leaves the container.**~~ ✅ **Closed 2026-08-21.** The entrypoint now relays `axolotl`'s output to the container's stdout line by line as it is produced, and the machine no longer parks it in a file — so it reaches the control plane during the run. `/out/train.log` is still written as the copy that survives on the machine if the stream breaks. Splitting on `\r` as well as `\n` is load-bearing: tqdm redraws a progress bar without ever sending a newline, and a reader that waits for one sees nothing for the whole bar. See [ADR-0001](../docs/adr/0001-event-channel-over-ssh-stdout.md).
 - **The loss is in the stream but not yet structured.** Lines carrying step, loss and epoch arrive as ordinary log events; promoting them to metric events is issue #5, and the loss curve is Phase B.

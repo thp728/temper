@@ -170,6 +170,90 @@ def test_the_quote_carries_each_decision_with_its_reason(client, tmp_path):
     assert q["decisions"][2]["chosen"] == "1"
 
 
+def test_the_predictor_chooses_full_fine_tuning_when_it_is_the_right_call(
+    client, tmp_path, monkeypatch
+):
+    """Issue #66: when the cheapest configuration that fits is a full
+    fine-tune (only an 80 GB H100 is free, and the 4B model fits it as a full
+    fine-tune), the predictor chooses it -- and the reasoning against the
+    adapter alternative carries what that alternative would have cost."""
+    from temper_control_plane import quote as quote_mod
+    from temper_core.selection import GpuAvailability
+
+    provider = FakeProvider(availability=[GpuAvailability("H100", 250.0, 2)])
+    monkeypatch.setattr(quote_mod, "QUOTE_PROVIDER", provider)
+    ds = valid_dataset(client, tmp_path)
+    q = quote(client, ds, "qwen3-4b")
+    method = next(d for d in q["decisions"] if d["decision"] == "method")
+    assert method["chosen"] == "full"
+    qlora = next(a for a in method["alternatives"] if a["value"] == "qlora")
+    assert "GB" in qlora["cost"]  # the adapter's own footprint, as its price
+
+
+def test_overriding_to_full_is_honoured_when_it_fits(
+    client, tmp_path, monkeypatch
+):
+    """Selectable (issue #66): overriding the method to full is honoured when
+    a card that holds a full fine-tune is free, marked overridden, and the
+    rest recomputes around it -- the same memory arithmetic that refuses it on
+    an L4 now admits it on an H100."""
+    from temper_control_plane import quote as quote_mod
+    from temper_core.selection import GpuAvailability
+
+    provider = FakeProvider(availability=[GpuAvailability("H100", 250.0, 2)])
+    monkeypatch.setattr(quote_mod, "QUOTE_PROVIDER", provider)
+    ds = valid_dataset(client, tmp_path)
+    r = client.post(
+        "/v1/quotes",
+        json={
+            "dataset_id": ds,
+            "base_model": "qwen3-4b",
+            "overrides": [{"decision": "method", "value": "full"}],
+        },
+    )
+    assert r.status_code == 200
+    q = r.json()
+    method = next(d for d in q["decisions"] if d["decision"] == "method")
+    assert method["chosen"] == "full"
+    assert method["overridden"] is True
+    assert q["decisions"][1]["chosen"] == "H100"
+
+
+def test_the_quote_keys_its_spec_off_the_selected_method(
+    client, tmp_path, monkeypatch
+):
+    """Issue #66: the spec the quote's own arithmetic is computed on keys off
+    the method the plan chose -- a full fine-tune's learning rate in the
+    quote's hyperparameters, not the adapter's -- so the frozen quote
+    describes the same configuration the trainer will run."""
+    from temper_control_plane import quote as quote_mod
+    from temper_core import hyperparams
+    from temper_core.selection import GpuAvailability
+
+    provider = FakeProvider(availability=[GpuAvailability("H100", 250.0, 2)])
+    monkeypatch.setattr(quote_mod, "QUOTE_PROVIDER", provider)
+    captured = {}
+
+    def spy(
+        facts, *, hyperparameters, plan, disk_plan, overridden=frozenset()
+    ):
+        captured["learning_rate"] = hyperparameters["learning_rate"]
+        captured["method"] = plan.method
+        return ()
+
+    monkeypatch.setattr(quote_mod.decisions, "decide", spy)
+    ds = valid_dataset(client, tmp_path)
+    r = client.post(
+        "/v1/quotes", json={"dataset_id": ds, "base_model": "qwen3-4b"}
+    )
+    assert r.status_code == 200
+    assert captured["method"] == "full"
+    assert (
+        captured["learning_rate"]
+        == hyperparams.effective({}, method="full")["learning_rate"]
+    )
+
+
 def test_launching_freezes_the_decisions_with_the_quote(client, tmp_path):
     """The same explanation is available after the job has finished: the
     reasons are frozen into the job spec beside the quote, not regenerated on

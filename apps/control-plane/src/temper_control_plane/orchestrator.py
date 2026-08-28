@@ -47,6 +47,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import suppress
+from pathlib import Path
 from typing import BinaryIO, NamedTuple
 
 from temper_core import (
@@ -226,6 +227,7 @@ def _remote_script(
     model: catalog.BaseModel,
     enable_thinking: bool,
     reference: str,
+    method: str,
     artifact_grant: storage.WriteGrant | None = None,
     checkpoint_grants: list[storage.WriteGrant] | None = None,
 ) -> bytes:
@@ -272,12 +274,19 @@ def _remote_script(
     # resolves nothing, so this is the one place a value is chosen and the
     # only copy the machine ever sees. What lands in the job record's
     # `hyperparameters` field stays the user's request; what reaches the
-    # trainer is the resolver's answer to it.
+    # trainer is the resolver's answer to it -- resolved against the method
+    # the plan chose (issue #66), so a full fine-tune's learning rate is the
+    # full fine-tune's, not the adapter's. The method itself rides in the
+    # spec so the trainer builds the matching config and collects the matching
+    # artifact; a value two components must agree on is written once and read.
     job_spec = {
         "job_id": job["id"],
         "base_model": model.repo,
         "base_revision": revision,
-        "hyperparameters": hyperparams.effective(job["hyperparameters"] or {}),
+        "method": method,
+        "hyperparameters": hyperparams.effective(
+            job["hyperparameters"] or {}, method=method
+        ),
     }
     if artifact_grant is not None:
         job_spec["artifact_upload"] = {
@@ -477,11 +486,11 @@ def _collect_artifact(
     the machine: the control plane owns the artifact's identity (ADR-0009 point
     5), so it decides both the key and what sits beside it.
     """
-    if not result.get("adapter_path"):
+    if not result.get("artifact_path"):
         return None
 
     weights_key = storage.artifact_key(job_id, storage.ADAPTER_WEIGHTS_NAME)
-    want = result.get("adapter_sha256")
+    want = result.get("artifact_sha256")
     if not want:
         # A result that names an artifact but carries no checksum cannot be
         # verified at all -- refused rather than delivered uncheckable.
@@ -530,16 +539,23 @@ def _collect_artifact(
         )
     db.add_event(job_id, "log", f"Artifact verified, {received / 1e6:.1f} MB")
 
-    # A bare .safetensors is not a loadable adapter: PEFT needs
-    # adapter_config.json beside it to know the rank, alpha and target modules.
-    # Shipping only the weights would have handed the user a file that looks
-    # like the deliverable and cannot be used. The config is already inside
-    # result.json, so this costs no extra transfer.
+    # The member's arcname is the artifact's own file name -- the adapter's
+    # `adapter_model.safetensors`, or a full fine-tune's `model.tar.gz`
+    # (issue #66) -- so what the user extracts is named by what it is. The
+    # storage key is the same one object the machine wrote through its grant
+    # (ADR-0009); the record pairs the honest name with the key.
     members: list[dict] = [
-        {"name": storage.ADAPTER_WEIGHTS_NAME, "key": weights_key}
+        {"name": Path(result["artifact_path"]).name, "key": weights_key}
     ]
     adapter_config = result.get("adapter_config")
     if adapter_config:
+        # A bare .safetensors is not a loadable adapter: PEFT needs
+        # adapter_config.json beside it to know the rank, alpha and target
+        # modules. Shipping only the weights would have handed the user a file
+        # that looks like the deliverable and cannot be used. The config is
+        # already inside result.json, so this costs no extra transfer. A full
+        # model carries its own config inside the archive, so there is no
+        # second member to store.
         config_key = storage.artifact_key(job_id, storage.ADAPTER_CONFIG_NAME)
         storage.STORE.put(
             config_key,
@@ -551,9 +567,8 @@ def _collect_artifact(
     else:
         db.add_event(
             job_id,
-            "error",
-            "No adapter_config.json in the run result; the downloaded "
-            "artifact will not load without one.",
+            "log",
+            "Artifact is its own complete model (no separate adapter config).",
         )
     return {
         "kind": artifacts.kind_for(method),
@@ -1054,6 +1069,7 @@ def _attempt(
         model,
         enable_thinking,
         reference,
+        plan.method,
         artifact_grant=grant,
         checkpoint_grants=checkpoint_grants,
     )

@@ -298,11 +298,12 @@ def resolve(
 def executable(method: str, device_count: int) -> bool:
     """Whether the trainer can run this configuration today.
 
-    QLoRA alone is executable (`selection.EXECUTABLE_METHODS`); multi-GPU
-    sharding has never shipped (spike 6), so more than one device is spec
-    009's territory even where the method itself would run. Separated from
-    feasibility on purpose: `executable` names what can be *run*, and
-    `selection`/`memory` name what can *fit*.
+    QLoRA and full fine-tuning are executable single-device
+    (`selection.EXECUTABLE_METHODS`); multi-GPU sharding has never shipped
+    (spike 6), so more than one device is spec 009's territory even where the
+    method itself would run. Separated from feasibility on purpose:
+    `executable` names what can be *run*, and `selection`/`memory` name what
+    can *fit*.
     """
     return method in selection.EXECUTABLE_METHODS and device_count == 1
 
@@ -317,8 +318,15 @@ def executable_names() -> str:
 
 
 def executable_default() -> str:
-    """The method a job with no method override runs: the executable one."""
-    return selection.EXECUTABLE_METHODS[0]
+    """The method a launch gate names for a job with no method override.
+
+    A job without a method override is picked by the predictor at
+    provisioning, so there is no single default method to name; when only a
+    device count was overridden the gate still has to say which method that
+    count applies to, and the honest choice is the lightest executable one --
+    the configuration closest to what such a job would actually run.
+    """
+    return selection.lightest_method(selection.EXECUTABLE_METHODS)
 
 
 def options_for(decision: str) -> list[str] | None:

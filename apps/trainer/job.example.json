@@ -4,7 +4,10 @@
   "base_revision": "1cfa9a7208912126459214e8b04321603b3df60c",
   "messages_field": "messages",
 
-  "_comment_hyperparameters": "The COMPLETE resolved set. The control plane resolves every hyperparameter before launch (issue #83): defaults, alpha recomputed from rank when rank moves alone, rsLoRA inferred at rank >= 32. This trainer resolves nothing -- it applies exactly what it is given. A standalone job must supply every required key itself; a missing key fails with error_code spec_incomplete naming the keys, never a silent fallback. An unknown key is echoed back in result.json under rejected_overrides and not applied.",
+  "_comment_method": "The training method the control plane selected at provisioning (issue #66): 'qlora' or 'full'. The trainer builds the matching config (adapter vs no adapter) and collects the matching artifact (adapter pair vs whole-model archive). A spec without it reads as qlora, the only method that ever ran before the key existed. A 'full' spec arrives with the method-resolved hyperparameters (its own learning rate).",
+  "method": "qlora",
+
+  "_comment_hyperparameters": "The COMPLETE resolved set. The control plane resolves every hyperparameter before launch (issue #83): defaults, alpha recomputed from rank when rank moves alone, rsLoRA inferred at rank >= 32, and -- for a 'full' method spec -- the method's own values (its lower learning rate, issue #66). This trainer resolves nothing -- it applies exactly what it is given. A standalone job must supply every required key itself; a missing key fails with error_code spec_incomplete naming the keys, never a silent fallback. An unknown key is echoed back in result.json under rejected_overrides and not applied.",
   "hyperparameters": {
     "lora_r": 16,
     "lora_alpha": 32,

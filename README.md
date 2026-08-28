@@ -1,6 +1,6 @@
 # Temper
 
-A fine-tuning platform. Upload a dataset, pick a base model, get a trained adapter you can actually use.
+A fine-tuning platform. Upload a dataset, pick a base model, get a trained artifact you can actually use.
 
 > You don't reforge steel to change its properties — you temper it. Controlled, and the base material survives.
 > That is QLoRA: the base weights stay frozen, a small adapter carries the change. Full fine-tuning is reforging.
@@ -9,12 +9,12 @@ Built as a take-home for [JarvisLabs.ai](https://jarvislabs.ai), August 2026, an
 
 ## What it does
 
-Fine-tunes open-weight LLMs on user-supplied instruction data, on real GPUs, end to end — dataset in, adapter out.
+Fine-tunes open-weight LLMs on user-supplied instruction data, on real GPUs, end to end — dataset in, artifact out.
 
 **The whole journey runs from a browser**, in the application shell in
 [`apps/web`](apps/web/): upload and validate a dataset, choose a base model,
 review the plan, watch the run as it provisions and trains over a server-pushed
-event stream, and download the adapter — with the machine destroyed afterwards
+event stream, and download the artifact — with the machine destroyed afterwards
 and confirmed gone. The shell's client is generated from the API's published
 contract, and it is the only interface: the earlier server-rendered pages were
 deleted when the last screen was ported (Spec 007). The same journey is
@@ -26,12 +26,12 @@ build.
 
 - **Auth and billing**, which the brief sanctions cutting. Everything else is meant to be complete.
 - **A pre-run cost quote.** A creation-time *warning* exists when a dataset plainly cannot finish inside the job ceiling; an actual price quote does not, and no code path reads an invoice.
-- **An inference endpoint.** The delivered artifact is the adapter, not a served model.
+- **An inference endpoint.** The delivered artifact is the trained adapter or model, not a served endpoint.
 - **Imports from Hugging Face.** Models come from a curated, pinned catalog of two; datasets are uploaded files.
 - **Streaming validation.** Measured at flat +4 MB memory from 1 GB to 20 GB, but not built — so uploads stay capped (see below).
 - **The Phase B stack.** Postgres, Temporal, Redis and MinIO are specified ([docs/specs/](docs/specs/)) and not built. What runs today is one FastAPI process, SQLite, and a thread per job — with the domain logic already extracted into `packages/core` so the migration is a seam-by-seam swap, not a rewrite. The application shell ([Spec 007](docs/specs/007-the-application-shell.md)) *is* built: a Next.js app whose client is generated from the API contract, replacing the Phase A server-rendered pages.
 
-- **Method:** supervised fine-tuning via QLoRA — NF4 double-quant base, bf16 compute, rank 16, α=32, **all linear layers**. Adapter weights save as **fp32**, which is what `prepare_model_for_kbit_training` does and is why the artifact is 132 MB rather than ~66 MB
+- **Method:** supervised fine-tuning, chosen by the predictor and overridable — **QLoRA** (NF4 double-quant base, bf16 compute, rank 16, α=32, **all linear layers**; the adapter ships fp32, which is what `prepare_model_for_kbit_training` does and is why a 4B adapter is 132 MB rather than ~66 MB) or **full fine-tuning** (issue #66: every weight trained in bf16, its own lower learning rate, the whole model delivered as one archive). The predictor picks the cheapest configuration that fits and prefers the more capable method at a tied price, with the reasoning against the alternative shown.
 - **Models:** curated and pinned — `Qwen/Qwen3-4B`, `Qwen/Qwen3-8B`
 - **Compute:** JarvisLabs VMs, provisioned and destroyed per job
 - **Trainer:** Axolotl in a digest-pinned container
@@ -48,7 +48,7 @@ flowchart LR
         U["Upload JSONL"]
         J["Create job<br/>(spec frozen, warning attached)"]
         W["Job view: durable history<br/>+ server-pushed event stream"]
-        D["Download adapter zip"]
+        D["Download artifact zip"]
     end
 
     subgraph cp["Control plane — apps/control-plane (one FastAPI process)"]
@@ -69,7 +69,7 @@ flowchart LR
     O -->|"state transition + event appended<br/>in one transaction"| DB
     W -->|"poll /v1/jobs/{id}/events,<br/>stream /v1/jobs/{id}/stream"| DB
     C -->|"result.json — always written,<br/>pass or fail"| O
-    O -->|"fetch adapter bytes,<br/>sha256-checked against result"| CP2["data/artifacts/&lt;job&gt;/"]
+    O -->|"verify machine-written artifact<br/>bytes, sha256-checked against result"| CP2["data/artifacts/&lt;job&gt;/"]
     O -->|"destroy, then confirm by<br/>listing machines"| machine
     CP2 --> D
 ```

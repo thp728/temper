@@ -116,9 +116,11 @@ LOADING_INSTRUCTIONS: dict[str, str] = {
         "records the rank, alpha and target modules."
     ),
     ARTIFACT_KIND_FULL_MODEL: (
-        "A fully fine-tuned model: complete weights and configuration. Load "
-        "the unzipped folder directly with "
-        "AutoModelForCausalLM.from_pretrained(<unzipped folder>); no base "
+        "A fully fine-tuned model: complete weights and configuration, "
+        "shipped as one archive (model.tar.gz). Extract the download, then "
+        "extract model.tar.gz -- it contains a single model/ folder -- and "
+        "load that folder directly with "
+        "AutoModelForCausalLM.from_pretrained(<the model folder>); no base "
         "model or adapter step is needed."
     ),
     ARTIFACT_KIND_MERGED_MODEL: (

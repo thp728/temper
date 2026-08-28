@@ -24,12 +24,14 @@ facts -- the same numbers that decided whether the chosen card fits -- so an
 alternative costs exactly what the predictor would have priced it at. Prices
 travel with the account's currency, never assumed.
 
-**Assumption, labelled:** the precision decision's chosen value ("nf4 (4-bit)")
-and its NF4 arithmetic assume the executable method (qlora today, per
-`selection.EXECUTABLE_METHODS`). This module is only called from the quote
-path, which selects from that set, so the assumption cannot silently bite; the
-day the trainer runs a second method, this decision grows a second honest
-answer rather than a wrong one.
+**Assumption, labelled:** the precision decision's chosen value ("nf4 (4-bit)"
+or "bf16 (no quantisation)") comes from `overrides.METHOD_PRECISION`, keyed by
+the plan's method, and its NF4 arithmetic is qlora's own 0.5 bytes/param pool
+regardless of the chosen method. This module is only called from the quote
+path, which selects from `selection.EXECUTABLE_METHODS` (qlora and full
+fine-tuning today, issue #66), so the assumption cannot silently bite; the day
+the trainer runs a third method, this decision grows a third honest answer
+rather than a wrong one.
 """
 
 from __future__ import annotations
@@ -108,6 +110,40 @@ def _price(price_per_hour: float, currency: str) -> str:
     return f"{currency} {price_per_hour:.2f}/hr"
 
 
+def _sharding_reason(method: str, device_count: int) -> str:
+    """What extra devices do to a method's footprint, stated honestly.
+
+    Full fine-tuning's FSDP FULL_SHARD divides weights, gradients and
+    optimizer state evenly across ranks (`temper_core.memory.predict_peak`,
+    and spike 6 proved the mechanism on 2× L4) -- but the loss collapses to
+    zero with a `nan` grad_norm, the numerics were never validated, and
+    multi-device execution is not shipped, so more than one device is refused
+    at launch regardless of what the arithmetic says it would fit. Adapters
+    (qlora, lora) have never run sharded at all: their trainable set is tiny,
+    so extra cards replicate the same per-device footprint rather than
+    shrinking it, and only add interconnect overhead and cost.
+    """
+    if method == "full" and device_count > 1:
+        return (
+            "sharding a full fine-tune divides its weights, gradients and "
+            "optimizer state across devices, so more devices shrink the "
+            "per-device footprint -- but multi-device execution is not "
+            "shipped (the numerics were never validated), so a launch of "
+            "more than one device is refused"
+        )
+    if method == "full":
+        return (
+            "a full fine-tune's footprint shards across devices, which is "
+            "real arithmetic but not shipped -- one card is what the trainer "
+            "executes today"
+        )
+    return (
+        f"{method} has never run sharded, so extra cards replicate the same "
+        f"per-device footprint rather than shrinking it, and only add "
+        f"interconnect overhead and cost"
+    )
+
+
 def decide(
     facts: ModelFacts,
     *,
@@ -155,8 +191,11 @@ def decide(
     # --- method ------------------------------------------------------------
     # The alternatives are the other methods the user could have trained with,
     # each costing in memory -- the reason the chosen method wins. Price never
-    # depends on method, so a method that loses here loses on capability
-    # (spec 009 teaches the trainer the rest), not on price.
+    # depends on method, so a method that loses here loses on capability or on
+    # footprint, not on price: qlora and full are both executable (issue #66),
+    # so a full fine-tune that loses loses because it could not fit the chosen
+    # card, and an adapter that loses loses because the more capable method
+    # that still fits is a strictly better answer at the same price.
     method_alternatives = []
     for m, label in (
         ("full", "full fine-tune"),
@@ -180,13 +219,16 @@ def decide(
         if m == "full":
             if headroom_m >= 0:
                 constraint_m = (
-                    "fits, but the trainer does not execute a full "
-                    "fine-tune yet (spec 009)"
+                    f"fits the {plan.gpu_type} too, but the search picks the "
+                    f"cheapest configuration that fits, and {plan.method} fit "
+                    f"on a cheaper card"
                 )
             else:
                 constraint_m = (
-                    f"beyond the {_gb(capacity)} {plan.gpu_type}, and not "
-                    f"executable today even where a bigger card would hold it"
+                    f"beyond the {_gb(capacity)} {plan.gpu_type} -- a full "
+                    f"fine-tune rewrites every weight and needs a bigger card "
+                    f"(or sharding, which is not shipped), the price of the "
+                    f"more capable method"
                 )
         elif m == "lora":
             constraint_m = (
@@ -195,26 +237,34 @@ def decide(
             )
         else:  # qlora
             constraint_m = (
-                f"the trainer executes it today -- NF4 at "
-                f"{memory.WEIGHT_BYTES_PER_PARAM['qlora']:.1f} bytes/param is "
-                f"the cheapest footprint that fits"
+                f"the trainer executes it at the cheapest footprint -- NF4 at "
+                f"{memory.WEIGHT_BYTES_PER_PARAM['qlora']:.1f} bytes/param -- "
+                f"but at the same price the search prefers the more capable "
+                f"method that fits"
             )
         method_alternatives.append(
             DecisionAlternative(label, cost_m, constraint_m)
         )
     if "method" in overridden:
-        method_constraint = (
-            f"you chose {plan.method}. The trainer executes only "
-            f"{overrides.executable_names()} today (spec 009), so a launch of "
-            f"this override will be refused until it teaches the rest; price "
-            f"never depends on method"
-        )
+        if plan.method == "lora":
+            method_constraint = (
+                f"you chose {plan.method}. The trainer executes only "
+                f"{overrides.executable_names()} today (spec 009), so a "
+                f"launch of this override will be refused until it teaches "
+                f"the rest; price never depends on method"
+            )
+        else:
+            method_constraint = (
+                f"you chose {plan.method}, and the trainer can run it today; "
+                f"price never depends on method, so the choice is yours"
+            )
     else:
         method_constraint = (
             f"the trainer can execute {plan.method} today, and selection picks "
             f"the cheapest executable method that fits; price never depends "
-            f"on method, so a method that loses here loses on capability "
-            f"(spec 009 teaches the trainer the rest), not on price"
+            f"on method, so a method that loses here loses on footprint (full "
+            f"fine-tuning rewrites every weight; an adapter is cheaper to "
+            f"fit), not on price"
         )
 
     # --- hardware ----------------------------------------------------------
@@ -274,10 +324,7 @@ def decide(
         DecisionAlternative(
             value=f"{alt.device_count} × {plan.gpu_type}",
             cost=_price(alt.price_per_hour, plan.currency),
-            constraint=(
-                f"{plan.method} has never run sharded, so the extra cards "
-                f"replicate the same footprint rather than shrinking it"
-            ),
+            constraint=_sharding_reason(plan.method, plan.device_count),
         )
         for alt in other_counts[:2]
     ]
@@ -290,28 +337,22 @@ def decide(
                     plan.price_per_hour / plan.device_count, plan.currency
                 ),
                 constraint=(
-                    f"the predictor would choose one card: {plan.method} has "
-                    f"never run sharded, so the extra cards only add "
-                    f"interconnect overhead and cost"
+                    f"the predictor would choose one card: "
+                    f"{_sharding_reason(plan.method, 1)}"
                 ),
             ),
         )
     if "device count" in overridden:
         device_constraint = (
             f"you chose {plan.device_count} × {plan.gpu_type}. One {plan.gpu_type} "
-            f"holds the predicted peak of {_gb(plan.peak.total_gb)}; "
-            f"{plan.method} has never run sharded, so extra cards do not "
-            f"shrink the per-device footprint, and a launch of more than one "
-            f"device is spec 009's territory"
+            f"holds the predicted peak of {_gb(plan.peak.total_gb)}. "
+            f"{_sharding_reason(plan.method, plan.device_count)}"
         )
     else:
         device_constraint = (
             f"one {plan.gpu_type} holds the predicted peak of "
-            f"{_gb(plan.peak.total_gb)}. {plan.method} has never run sharded, "
-            f"so extra cards do not shrink the per-device footprint -- they "
-            f"only add interconnect overhead and cost, and a configuration "
-            f"that asks for hardware the job does not need is worse than a "
-            f"slower one"
+            f"{_gb(plan.peak.total_gb)}. "
+            f"{_sharding_reason(plan.method, 1)}"
         )
 
     # --- disk --------------------------------------------------------------

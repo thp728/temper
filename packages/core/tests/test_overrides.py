@@ -196,10 +196,19 @@ def test_an_inconsistent_method_and_precision_pair_is_refused():
 
 def test_only_what_the_trainer_runs_today_is_executable():
     assert overrides.executable("qlora", 1) is True
+    assert overrides.executable("full", 1) is True  # taught as of issue #66
     assert overrides.executable("lora", 1) is False  # not taught yet
-    assert overrides.executable("full", 1) is False
     assert overrides.executable("qlora", 2) is False  # multi-GPU never shipped
+    assert overrides.executable("full", 2) is False
     assert overrides.executable("lora", 2) is False
+
+
+def test_the_default_method_is_the_lightest_executable_one():
+    """A job with no method override is picked by the predictor, so the
+    'default' the launch gate names when only a device count was overridden is
+    the lightest executable method -- the configuration closest to what such a
+    job would actually run, never full (the heaviest)."""
+    assert overrides.executable_default() == "qlora"
 
 
 def test_executable_is_defined_once_not_retyped():
