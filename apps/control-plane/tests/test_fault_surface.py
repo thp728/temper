@@ -31,12 +31,15 @@ from temper_core import faults as fault_surface
 
 ALL_FAULTS = fault_surface.names()
 # The six faults the surface must cover, and the terminal state each drives
-# the job to when it fires against the fake machine. `divergence` completes
-# with a worthless result: the fault is the loss going meaningless, and what
-# happens next is the divergence recovery's (#36) job, not the fault's.
+# the job to when it fires against the fake machine. `oom` fails with its own
+# simulated code; `divergence` is the trainer-side fault that drives loss to a
+# meaningless value -- before #36 it completed with a worthless result so the
+# recovery could be demonstrated rather than reasoned about, but after #36 the
+# detector aborts it with training_diverged (the fault is the cause, the abort
+# is the recovery).
 EXPECTED_OUTCOMES = {
     "oom": ("failed", "simulated_oom"),
-    "divergence": ("complete", None),
+    "divergence": ("failed", "training_diverged"),
     "worker_kill": ("failed", "training_failed"),
     "machine_silent": ("failed", "gpu_stalled"),
     "destroy_refused": ("complete", None),
@@ -238,16 +241,17 @@ def test_oom_records_the_fault_in_the_result_document(harness):
 
 def test_divergence_leaves_the_meaningless_loss_in_the_history(harness):
     """Driving the loss to a meaningless value is the fault; what happens next
-    is the divergence recovery's (#36) job. So the run completes with a
-    worthless result, exactly as the sabotaged real trainer would, and the nan
-    line sits in the history beside the named fault."""
+    is the divergence recovery's (#36) job. The fault drives loss to NaN and
+    the detector aborts with training_diverged, so the nan line sits in the
+    history beside the named fault and the job is failed with the plain cause."""
     harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "divergence"}}
     )
     assert response.status_code == 201
     job = harness.job(job_id)
-    assert job["status"] == "complete"
+    assert job["status"] == "failed"
+    assert job["error_code"] == "training_diverged"
     assert any("loss': nan" in m for m in harness.messages(job_id))
     assert fault_event(harness.messages(job_id), "divergence")
 

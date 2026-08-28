@@ -56,6 +56,7 @@ from temper_core import (
     catalog,
     checkpoint,
     disk,
+    divergence,
     events,
     hyperparams,
     overrides,
@@ -390,6 +391,17 @@ def _consume(job_id: str, lines) -> dict:
     rows; the log/metric/state/error history is what stays small enough for a
     finished page to render to its end.
 
+    Divergence is detected on the measurements the platform already streams
+    (issue #36): training loss as `metric` events and a non-finite loss line
+    that the classifier keeps as `log`. A NaN/Inf loss or a loss that exceeds
+    ``multiplier * trailing-average(window)`` for ``consecutive`` steps aborts
+    with a plain cause and a stable code; instability short of divergence
+    (the same exceedance for ``warning_consecutive`` steps) is surfaced as a
+    warning rather than an abort, exactly as the acceptance criteria require.
+    The thresholds are read from ``config`` (derived in
+    ``temper_core.divergence`` and ``config`` beside them, the way ADR-0036's
+    dataset ceiling records 21.6 MB/s times 60 seconds).
+
     Everything after the marker is the trainer's result document, which is
     machinery rather than output and is not logged as such.
 
@@ -401,6 +413,12 @@ def _consume(job_id: str, lines) -> dict:
     result_lines: list[str] = []
     seen_marker = False
     tracker = progress.ProgressTracker()
+    detector = divergence.DivergenceDetector(
+        multiplier=config.DIVERGENCE_MULTIPLIER,
+        window=config.DIVERGENCE_WINDOW,
+        consecutive=config.DIVERGENCE_CONSECUTIVE,
+        warning_consecutive=config.WARNING_CONSECUTIVE,
+    )
     for line in lines:
         text = line.strip()
         if not seen_marker:
@@ -437,6 +455,48 @@ def _consume(job_id: str, lines) -> dict:
                     db.add_event(
                         job_id, event.kind, event.message[:500], event.data
                     )
+                    # Divergence detection uses the measurements the platform
+                    # already streams (issue #36), rather than adding a second
+                    # measurement path. Two signals: a finite loss in a metric
+                    # event, and a non-finite loss that the classifier kept as
+                    # a log line (events.py deliberately does not promote NaN).
+                    loss_value: float | None = None
+                    if event.kind == events.METRIC and event.data is not None:
+                        raw = event.data.get("loss")
+                        if isinstance(raw, (int, float)) and not isinstance(
+                            raw, bool
+                        ):
+                            loss_value = float(raw)
+                    # A non-finite loss line is immediate divergence even though
+                    # it never became a metric -- the same loss the metric
+                    # detector would have seen if it had been finite. This is
+                    # how the fault-surface's ``divergence`` fault trips the
+                    # detector against the fake provider (it emits "{'loss': nan}").
+                    if loss_value is not None:
+                        result = detector.observe(loss_value)
+                        if result.status == "diverged":
+                            raise OrchestratorError(
+                                result.code or divergence.DIVERGED_CODE,
+                                result.message or divergence.DIVERGED_MESSAGE,
+                            )
+                        if result.status == "warning":
+                            db.add_event(
+                                job_id,
+                                "log",
+                                result.message
+                                or divergence.INSTABILITY_MESSAGE,
+                                {
+                                    "code": result.code
+                                    or divergence.INSTABILITY_CODE,
+                                    "warning": True,
+                                    "consecutive": result.consecutive,
+                                },
+                            )
+                    elif divergence.is_non_finite_loss_line(text):
+                        raise OrchestratorError(
+                            divergence.DIVERGED_CODE,
+                            divergence.DIVERGED_MESSAGE,
+                        )
         else:
             result_lines.append(line)
 

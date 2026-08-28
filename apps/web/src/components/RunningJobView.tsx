@@ -7,6 +7,7 @@ import FocusHeading from "@/components/FocusHeading";
 import LossChart from "@/components/LossChart";
 import PlateauNote from "@/components/PlateauNote";
 import ProgressRegion from "@/components/ProgressRegion";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   TERMINAL_STATUSES,
@@ -290,6 +291,26 @@ export default function RunningJobView({
           sits directly under the status so the longest phases of a job are
           never a blank screen. */}
       <ProgressRegion progress={progress} output={output} />
+
+      {(() => {
+        const instability = events.find(
+          (e) => e.data && (e.data["code"] === "training_instability" || e.data["warning"] === true),
+        );
+        if (!instability) return null;
+        return (
+          <Alert>
+            <AlertTitle>Training instability</AlertTitle>
+            <AlertDescription>
+              <p>
+                Loss is spiking well above its recent average. This is shown as
+                a warning rather than an abort — it may be early divergence.
+                Consider lowering the learning rate if it continues.
+              </p>
+              <p className="text-xs text-muted-foreground">{instability.message}</p>
+            </AlertDescription>
+          </Alert>
+        );
+      })()}
 
       <section aria-labelledby="loss-chart-heading" className="space-y-2">
         <h2 id="loss-chart-heading" className="text-lg font-semibold">

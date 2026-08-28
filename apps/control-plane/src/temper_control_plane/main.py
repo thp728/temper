@@ -596,6 +596,31 @@ def cancel_job(job_id: str):
     }
 
 
+@app.post(
+    "/v1/jobs/{job_id}/retry",
+    tags=["jobs"],
+    response_model=JobRecord,
+    status_code=201,
+)
+def retry_job(job_id: str):
+    """Create a single retry at half the learning rate, offered as a choice.
+
+    Issue #36: a diverging run usually means the data or the rate is wrong, and
+    repeating it is rarely the answer. Repeating it automatically would be the
+    easy thing to test; offering a single reduced-rate retry as a choice is the
+    honest one. This endpoint is the choice: a diverged job (failed with
+    ``training_diverged``) can be retried once at half its learning rate, and
+    the new job carries ``retry_from`` so the history can name what came from
+    what. A job that already has a retry child, or that did not diverge, is
+    refused with a stable code rather than silently creating a second retry.
+    """
+    new_job_id = jobs.retry_diverged_job(job_id)
+    job = db.get_job(new_job_id)
+    if job is None:
+        raise HTTPException(404, "No such job.")
+    return job
+
+
 @app.get("/v1/jobs/{job_id}/events", tags=["jobs"], response_model=EventPage)
 def get_events(job_id: str, after: int = 0):
     """Durable event log. `after` is the last event id the client holds.

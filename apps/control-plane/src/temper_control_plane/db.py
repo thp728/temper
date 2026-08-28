@@ -138,7 +138,14 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- the best held-out loss and the reason, frozen once at terminal time.
     -- Stored rather than re-derived, so a run's answer cannot change when
     -- retention evicts a checkpoint or the selection rule is edited.
-    best_checkpoint_json TEXT
+    best_checkpoint_json TEXT,
+    -- The job this one retries, if any (issue #36): a diverging run offers a
+    -- single retry at half the learning rate as a choice, not an automatic
+    -- rerun, because a diverging run usually means the data or the rate is
+    -- wrong and repeating it is rarely the answer. The link is stored so the
+    -- single-retry offer can be offered once and the history can name what
+    -- came from what.
+    retry_from TEXT REFERENCES jobs(id)
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -241,6 +248,7 @@ ADDED_COLUMNS = (
     ("datasets", "token_count", "INTEGER"),
     ("datasets", "token_stats_json", "TEXT"),
     ("datasets", "counting_progress_json", "TEXT"),
+    ("jobs", "retry_from", "TEXT REFERENCES jobs(id)"),
 )
 
 
@@ -535,14 +543,15 @@ def create_job(
     base_revision: str | None = None,
     quote: dict | None = None,
     overrides: list | None = None,
+    retry_from: str | None = None,
 ) -> str:
     job_id = new_id("job")
     with connect() as c:
         c.execute(
             "INSERT INTO jobs (id, dataset_id, base_model, base_revision, "
             "hyperparams_json, status, warnings_json, quote_json, "
-            "overrides_json, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "overrides_json, retry_from, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 job_id,
                 dataset_id,
@@ -553,11 +562,21 @@ def create_job(
                 json.dumps(warnings) if warnings else None,
                 json.dumps(quote) if quote else None,
                 json.dumps(overrides) if overrides else None,
+                retry_from,
                 time.time(),
             ),
         )
         _append_event(c, job_id, "state", "queued")
     return job_id
+
+
+def has_retry(job_id: str) -> bool:
+    """Whether a job already has a retry child (issue #36 single-retry offer)."""
+    with connect() as c:
+        row = c.execute(
+            "SELECT id FROM jobs WHERE retry_from=? LIMIT 1", (job_id,)
+        ).fetchone()
+    return row is not None
 
 
 def set_state(

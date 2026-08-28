@@ -352,6 +352,89 @@ def _count(name: str, default: int) -> int:
     return value
 
 
+# --- divergence detection (issue #36) -----------------------------------------
+# Thresholds that make a training run "diverged" or "unstable", published in
+# `docs/research-reports/report-b.md` Section 5.7 and Section 6 rather than
+# invented here -- the way ADR-0036's dataset ceiling records 21.6 MB/s times
+# 60 seconds. A threshold with no derivation is a magic number with a comment.
+#
+# * **DIVERGENCE_MULTIPLIER = 2.0** -- the factor a loss must exceed its
+#   trailing average by to count as diverging. Report-b: "loss increases >2x
+#   its trailing 50-step average". 2.0 is the published factor, not a choice
+#   made here.
+# * **DIVERGENCE_WINDOW = 50** -- the trailing steps the average is taken
+#   over. Report-b: "trailing 50-step average". 50 is what makes loss >2x
+#   meaningful: a shorter window is noise, a longer one is slow.
+# * **DIVERGENCE_CONSECUTIVE = 20** -- consecutive exceedances that make the
+#   run diverged. Report-b: "for >20 consecutive steps". 20 is what separates
+#   a spike from a sustained climb; the report's divergence detector and its
+#   health-badge warn threshold both name 20.
+# * **WARNING_CONSECUTIVE = 5** -- instability short of divergence is the
+#   *same* exceedance seen for fewer steps than a divergence. 5 is one quarter
+#   of the 20-step divergence, early enough to warn while the user can still
+#   act, late enough that a single spike is not a warning. The research names
+#   the divergence (20) and the instability signal (grad_norm >100); this
+#   warning reads the same loss exceedance for 5 steps because grad_norm is
+#   not streamed today and the criterion says detection "uses the measurements
+#   the platform already streams".
+# * **NaN / Inf is immediate divergence** -- Report-b: "loss becomes NaN/Inf
+#   (immediate abort -- unrecoverable without rollback)". The sophisticated
+#   recovery (roll back 100 steps and skip the batch, PaLM/OPT) is a v2
+#   feature; v1 aborts and surfaces "training diverged -- try a lower learning
+#   rate".
+#
+# All four are configuration (TEMPER_DIVERGENCE_*), so a deployment can tune
+# them without a code change and any threshold's origin stays beside it rather
+# than hidden in prose.
+def _positive_float(name: str, default: float) -> float:
+    """A positive float from the environment, or its default.
+
+    Same contract as `_seconds`: read once at import, and a value that cannot
+    be honoured stops the process rather than falling back silently.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name}={raw!r} is not a number. It configures a divergence "
+            f"threshold, so it is refused rather than ignored."
+        ) from None
+    if value <= 0:
+        raise ValueError(
+            f"{name}={raw!r} must be greater than zero. A non-positive "
+            f"divergence threshold would never fire or would fire always."
+        )
+    return value
+
+
+def _positive_int(name: str, default: int) -> int:
+    """A positive integer from the environment, or its default."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name}={raw!r} is not a whole number. It configures a divergence "
+            f"threshold, so it is refused rather than ignored."
+        ) from None
+    if value < 1:
+        raise ValueError(
+            f"{name}={raw!r} must be at least 1. A divergence window or count "
+            f"below one is not a window."
+        )
+    return value
+
+
+DIVERGENCE_MULTIPLIER = _positive_float("TEMPER_DIVERGENCE_MULTIPLIER", 2.0)
+DIVERGENCE_WINDOW = _positive_int("TEMPER_DIVERGENCE_WINDOW", 50)
+DIVERGENCE_CONSECUTIVE = _positive_int("TEMPER_DIVERGENCE_CONSECUTIVE", 20)
+WARNING_CONSECUTIVE = _positive_int("TEMPER_WARNING_CONSECUTIVE", 5)
+
 # --- checkpoint retention ----------------------------------------------------
 # How many checkpoints one job may keep in object storage at once, and hence
 # how many scoped write grants the control plane mints for a job. Bounded by
