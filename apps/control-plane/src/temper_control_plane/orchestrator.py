@@ -1017,7 +1017,9 @@ def _attempt(
         )
 
     dataset = db.require_dataset(job["dataset_id"])
-    model = catalog.get(job["base_model"]) or catalog.get(
+    from . import admission as _admission
+
+    model = _admission.get(job["base_model"]) or catalog.get(
         catalog.DEFAULT_MODEL
     )
     if model is None:
@@ -1025,7 +1027,7 @@ def _attempt(
         # re-read that outlives its guard fails by name on a money path.
         raise OrchestratorError(
             "unknown_model",
-            f"Model '{job['base_model']}' is not in the catalog.",
+            f"Model '{job['base_model']}' is not in the catalog or admitted models.",
         )
     enable_thinking = bool(dataset.get("enable_thinking"))
     revision = job.get("base_revision") or model.revision

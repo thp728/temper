@@ -33,7 +33,11 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from temper_core.models import ModelFacts, Models
+from temper_core.models import (
+    DEFAULT_MOE_NUM_EXPERTS,
+    ModelFacts,
+    Models,
+)
 
 _TIMEOUT_S = 10
 
@@ -45,6 +49,34 @@ _API_URL = "https://huggingface.co/api/models/{repo}/revision/{revision}"
 # `is_moe` -- a MoE config with zero experts is not a shape any real repo
 # publishes.
 _MOE_KEYS = ("num_experts", "num_local_experts", "n_routed_experts")
+
+# The same keys, in priority order, for reading the expert count when `is_moe`
+# is true -- the resolver must surface **total** expert count for the memory
+# predictor (ADR-0056), not active per-token. The value is whatever the repo
+# publishes; when none is published the MoE count defaults to 8 in the domain
+# so the total is visibly larger than the dense equivalent.
+_MOE_COUNT_KEYS = (
+    "num_experts",
+    "num_local_experts",
+    "n_routed_experts",
+    "n_group",
+)
+
+_MOE_ACTIVE_KEYS = (
+    "num_experts_per_tok",
+    "num_experts_per_token",
+    "moe_topk",
+    "top_k",
+    "num_selected_experts",
+    "n_activated_experts",
+)
+
+_MOE_INTERMEDIATE_KEYS = (
+    "moe_intermediate_size",
+    "moe_intermediate",
+    "expert_intermediate_size",
+    "experts_intermediate_size",
+)
 
 
 def _get_json(url: str) -> dict[str, Any] | None:
@@ -121,6 +153,33 @@ def _resolve_facts(repo: str, revision: str) -> ModelFacts:
     pad = _token_text(tokenizer_config.get("pad_token"))
     eos = _token_text(tokenizer_config.get("eos_token"))
 
+    is_moe = any(config.get(k) for k in _MOE_KEYS)
+    num_experts = 0
+    num_experts_per_tok: int | None = None
+    moe_intermediate_size: int | None = None
+    if is_moe:
+        for k in _MOE_COUNT_KEYS:
+            v = config.get(k)
+            if isinstance(v, int) and v > 0:
+                num_experts = v
+                break
+        # When the config signals MoE but carries no count, the domain
+        # defaults to :data:`temper_core.models.DEFAULT_MOE_NUM_EXPERTS` so
+        # the total is visibly larger than dense -- see `ModelFacts.params`.
+        # Defined once in the domain and read here, never retyped.
+        if num_experts == 0:
+            num_experts = DEFAULT_MOE_NUM_EXPERTS
+        for k in _MOE_ACTIVE_KEYS:
+            v = config.get(k)
+            if isinstance(v, int) and v > 0:
+                num_experts_per_tok = v
+                break
+        for k in _MOE_INTERMEDIATE_KEYS:
+            v = config.get(k)
+            if isinstance(v, int) and v > 0:
+                moe_intermediate_size = v
+                break
+
     return ModelFacts(
         architecture=config.get("model_type", "unknown"),
         hidden_size=config["hidden_size"],
@@ -136,7 +195,7 @@ def _resolve_facts(repo: str, revision: str) -> ModelFacts:
         intermediate_size=config["intermediate_size"],
         vocab_size=config["vocab_size"],
         tie_word_embeddings=bool(config.get("tie_word_embeddings", False)),
-        is_moe=any(config.get(k) for k in _MOE_KEYS),
+        is_moe=is_moe,
         has_chat_template="chat_template" in tokenizer_config,
         # Absence reads as "not distinct" rather than "unknown": a
         # tokenizer with no declared pad token commonly reuses EOS for
@@ -144,6 +203,9 @@ def _resolve_facts(repo: str, revision: str) -> ModelFacts:
         pad_eos_distinct=bool(pad) and bool(eos) and pad != eos,
         context_length=config.get("max_position_embeddings", 0),
         license=_license(repo, revision),
+        num_experts=num_experts,
+        num_experts_per_tok=num_experts_per_tok,
+        moe_intermediate_size=moe_intermediate_size,
     )
 
 

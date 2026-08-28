@@ -145,7 +145,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- wrong and repeating it is rarely the answer. The link is stored so the
     -- single-retry offer can be offered once and the history can name what
     -- came from what.
-    retry_from TEXT REFERENCES jobs(id)
+    retry_from TEXT REFERENCES jobs(id),
+    -- Whether the model is a mixture-of-experts -- frozen at creation
+    -- (issue #65): the label travels with the job so a finished run says
+    -- what it was trained on, even after the admission record changes.
+    -- A finished job's page shows its own outcome, but the model it was
+    -- trained on is part of that outcome (spec 009).
+    is_moe      INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -249,6 +255,7 @@ ADDED_COLUMNS = (
     ("datasets", "token_stats_json", "TEXT"),
     ("datasets", "counting_progress_json", "TEXT"),
     ("jobs", "retry_from", "TEXT REFERENCES jobs(id)"),
+    ("jobs", "is_moe", "INTEGER"),
 )
 
 
@@ -544,14 +551,15 @@ def create_job(
     quote: dict | None = None,
     overrides: list | None = None,
     retry_from: str | None = None,
+    is_moe: bool | None = None,
 ) -> str:
     job_id = new_id("job")
     with connect() as c:
         c.execute(
             "INSERT INTO jobs (id, dataset_id, base_model, base_revision, "
             "hyperparams_json, status, warnings_json, quote_json, "
-            "overrides_json, retry_from, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "overrides_json, retry_from, is_moe, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 job_id,
                 dataset_id,
@@ -563,6 +571,7 @@ def create_job(
                 json.dumps(quote) if quote else None,
                 json.dumps(overrides) if overrides else None,
                 retry_from,
+                int(is_moe) if is_moe is not None else None,
                 time.time(),
             ),
         )
@@ -802,6 +811,24 @@ def _with_warnings(job: dict | None) -> dict | None:
     return job
 
 
+def _with_is_moe(job: dict | None) -> dict | None:
+    """Normalise the `is_moe` column for API publication.
+
+    SQLite stores booleans as 0/1 integers and legacy rows carry NULL.
+    The API publishes `is_moe` as a boolean when known and null otherwise,
+    so the stored integer is converted and an absent value stays absent.
+    Frozen at creation (issue #65): the label travels with the job so a
+    finished run says what it was trained on.
+    """
+    if job is not None and "is_moe" in job:
+        val = job.get("is_moe")
+        if val is None:
+            job["is_moe"] = None
+        else:
+            job["is_moe"] = bool(val)
+    return job
+
+
 def artifact_members(job: dict) -> list[tuple[str, str]]:
     """The `(arcname, storage key)` pairs one job's artifact consists of.
 
@@ -895,25 +922,27 @@ def get_job(job_id: str) -> dict | None:
         r = c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
     return _with_best_checkpoint(
         _with_artifact(
-            _with_warnings(
-                _row(
-                    r,
-                    {
-                        "hyperparams_json": "hyperparameters",
-                        "result_json": "result",
-                        "warnings_json": "warnings",
-                        "quote_json": "quote",
-                        "overrides_json": "overrides",
-                        "actuals_json": "actuals",
-                        "checkpoints_json": "checkpoints",
-                        "best_checkpoint_json": "best_checkpoint",
-                        "artifact_json": "artifact_record",
-                    },
-                    defaults={
-                        "overrides": [],
-                        "checkpoints": [],
-                        "best_checkpoint": None,
-                    },
+            _with_is_moe(
+                _with_warnings(
+                    _row(
+                        r,
+                        {
+                            "hyperparams_json": "hyperparameters",
+                            "result_json": "result",
+                            "warnings_json": "warnings",
+                            "quote_json": "quote",
+                            "overrides_json": "overrides",
+                            "actuals_json": "actuals",
+                            "checkpoints_json": "checkpoints",
+                            "best_checkpoint_json": "best_checkpoint",
+                            "artifact_json": "artifact_record",
+                        },
+                        defaults={
+                            "overrides": [],
+                            "checkpoints": [],
+                            "best_checkpoint": None,
+                        },
+                    )
                 )
             )
         )
@@ -950,25 +979,27 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
         _present(
             _with_best_checkpoint(
                 _with_artifact(
-                    _with_warnings(
-                        _row(
-                            r,
-                            {
-                                "hyperparams_json": "hyperparameters",
-                                "result_json": "result",
-                                "warnings_json": "warnings",
-                                "quote_json": "quote",
-                                "overrides_json": "overrides",
-                                "actuals_json": "actuals",
-                                "checkpoints_json": "checkpoints",
-                                "best_checkpoint_json": "best_checkpoint",
-                                "artifact_json": "artifact_record",
-                            },
-                            defaults={
-                                "overrides": [],
-                                "checkpoints": [],
-                                "best_checkpoint": None,
-                            },
+                    _with_is_moe(
+                        _with_warnings(
+                            _row(
+                                r,
+                                {
+                                    "hyperparams_json": "hyperparameters",
+                                    "result_json": "result",
+                                    "warnings_json": "warnings",
+                                    "quote_json": "quote",
+                                    "overrides_json": "overrides",
+                                    "actuals_json": "actuals",
+                                    "checkpoints_json": "checkpoints",
+                                    "best_checkpoint_json": "best_checkpoint",
+                                    "artifact_json": "artifact_record",
+                                },
+                                defaults={
+                                    "overrides": [],
+                                    "checkpoints": [],
+                                    "best_checkpoint": None,
+                                },
+                            )
                         )
                     )
                 )
@@ -1005,16 +1036,18 @@ def active_jobs() -> list[dict]:
     return [
         _present(
             _with_artifact(
-                _with_warnings(
-                    _row(
-                        r,
-                        {
-                            "hyperparams_json": "hyperparameters",
-                            "quote_json": "quote",
-                            "overrides_json": "overrides",
-                            "actuals_json": "actuals",
-                        },
-                        defaults={"overrides": []},
+                _with_is_moe(
+                    _with_warnings(
+                        _row(
+                            r,
+                            {
+                                "hyperparams_json": "hyperparameters",
+                                "quote_json": "quote",
+                                "overrides_json": "overrides",
+                                "actuals_json": "actuals",
+                            },
+                            defaults={"overrides": []},
+                        )
                     )
                 )
             )

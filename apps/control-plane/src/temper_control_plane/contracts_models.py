@@ -656,6 +656,10 @@ class JobRecord(BaseModel):
     checkpoints: list[CheckpointRecord] = Field(default_factory=list)
     best_checkpoint: BestCheckpoint | None = None
     retry_from: str | None = None
+    # Whether the model is a mixture-of-experts -- frozen at creation
+    # (issue #65): the label travels with the job so a finished run says
+    # what it was trained on, untested here rather than refused.
+    is_moe: bool | None = None
 
 
 class JobList(BaseModel):

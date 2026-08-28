@@ -444,6 +444,20 @@ export default function JobRecordView({
           · base model <code>{job.base_model}</code>
           {job.base_revision && <>@<code>{shortRevision(job.base_revision)}</code></>}
         </p>
+        {job.is_moe && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-medium text-amber-900">
+              Mixture-of-experts — untested here
+            </p>
+            <p className="mt-1 text-sm text-amber-800">
+              This model is a mixture-of-experts architecture, which is untested
+              here: expert routing changes LoRA target-module selection, memory
+              scales with total rather than active parameters, and routing
+              interacts poorly with small-batch adapters. It is usable and
+              labelled untested — curation is a default, not a boundary.
+            </p>
+          </div>
+        )}
       </div>
 
       <section aria-labelledby="status-heading">
