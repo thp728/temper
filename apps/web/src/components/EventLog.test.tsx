@@ -67,6 +67,6 @@ describe("EventLog", () => {
     expect(screen.getByTestId("event-disclosure")).toHaveTextContent("Showing 3 of 3 events");
     expect(screen.getByRole("log")).toHaveTextContent("log 3");
     expect(screen.queryByRole("button", { name: /Load more/ })).toBeNull();
-    expect(getEventsV1JobsJobIdEventsGet).toHaveBeenCalledWith("job_abc", { after: 2 });
+    expect(getEventsV1JobsJobIdEventsGet).toHaveBeenCalledWith("job_abc", { after: 2, limit: 500 });
   });
 });

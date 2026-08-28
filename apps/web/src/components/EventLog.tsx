@@ -35,6 +35,7 @@ export default function EventLog({
     try {
       const page = await getEventsV1JobsJobIdEventsGet(jobId, {
         after: lastId,
+        limit: 500,
       });
       // The page is the next oldest-first window; append in order so the
       // history stays chronological. `total` travels on every page, so keep it
