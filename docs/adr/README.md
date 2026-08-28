@@ -95,6 +95,7 @@ repository becomes public at submission.
 | [0052](0052-full-fine-tuning-is-a-second-method-through-the-existing-seams.md) | Full fine-tuning is a second method through the existing seams | accepted | 2026-08-28 |
 | [0053](0053-progress-is-measured-from-the-output-that-was-going-to-be-thrown-away.md) | Progress is measured from the output that was going to be thrown away | accepted | 2026-08-28 |
 | [0054](0054-every-artifact-ships-with-a-generated-provenance-manifest.md) | Every artifact ships with a generated provenance manifest | accepted | 2026-08-28 |
+| [0055](0055-divergence-is-detected-on-the-streamed-loss-and-offers-a-single-retry.md) | Divergence is detected on the streamed loss and offers a single retry as a choice | accepted | 2026-08-28 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

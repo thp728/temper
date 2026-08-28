@@ -7,6 +7,7 @@ import PlateauNote from "@/components/PlateauNote";
 import ProgressRegion from "@/components/ProgressRegion";
 import QuoteView from "@/components/QuoteView";
 import { Button } from "@/components/ui/button";
+import DivergenceRetry from "@/components/DivergenceRetry";
 import {
   TERMINAL_STATUSES,
   epochNow,
@@ -181,20 +182,41 @@ function CheckpointSection({ job }: { job: JobRecord }) {
   );
 }
 
-function FailedSection({ job }: { job: JobRecord }) {
+function FailedSection({ job, events }: { job: JobRecord; events: JobEvent[] }) {
   return (
     <Alert variant="destructive">
       <AlertTitle>Failed</AlertTitle>
-      <AlertDescription>
+      <AlertDescription className="space-y-3">
         {/* The stable code survives every rendering decision: it is what a
             search, a bug report or a support question can be pinned to. */}
         <p>
           <code className="rounded bg-muted px-1">{job.error_code}</code>
         </p>
-        {failureExplanation(job.error_code) && (
-          <p>{failureExplanation(job.error_code)}</p>
-        )}
+        {failureExplanation(job.error_code) && <p>{failureExplanation(job.error_code)}</p>}
         {job.error_message && <p>{job.error_message}</p>}
+        <DivergenceRetry job={job} />
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function InstabilityBanner({ events }: { events: JobEvent[] }) {
+  const warnings = events.filter(
+    (e) => e.data && (e.data["code"] === "training_instability" || e.data["warning"] === true),
+  );
+  if (warnings.length === 0) return null;
+  return (
+    <Alert>
+      <AlertTitle>Training instability</AlertTitle>
+      <AlertDescription>
+        <p>
+          Loss is spiking well above its recent average. This is shown as a
+          warning rather than an abort — it may be early divergence. Consider
+          lowering the learning rate if it continues.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {warnings[warnings.length - 1]?.message}
+        </p>
       </AlertDescription>
     </Alert>
   );
@@ -483,7 +505,11 @@ export default function JobRecordView({
       )}
 
       {job.status === "complete" && <ArtifactSection job={job} />}
-      {job.status === "failed" && <FailedSection job={job} />}
+      {job.status === "failed" && <FailedSection job={job} events={events} />}
+      {/* Instability is a warning rather than an abort (issue #36): the
+          same exceedance that would become a divergence after 20 steps is
+          surfaced at 5 steps as a banner that does not stop the run. */}
+      <InstabilityBanner events={events} />
       {job.status === "cancelled" && <CancelledSection />}
 
       {/* The recorded result checkpoint and every other retained one (issue

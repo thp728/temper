@@ -1144,7 +1144,7 @@
         "type": "object"
       },
       "JobRecord": {
-        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead, and `artifact` -- its\ndeclared kind and members -- is published so the interface can name the\ndeliverable without ever touching where it lives. Checkpoints are\npublished the same way: `checkpoints` names each retained checkpoint by\nstep and loss, `best_checkpoint` is the run's recorded choice, and the\nbytes live behind the checkpoint download route.",
+        "description": "A job and the record of what became of it, published typed.\n\nLike `DatasetRecord` for stored rows, this deliberately does not publish\nthe artifact's storage address (`artifact_key`): where a stored object\nlives is the storage seam's business, not the browser's. The artifact\ntravels through the download endpoint instead, and `artifact` -- its\ndeclared kind and members -- is published so the interface can name the\ndeliverable without ever touching where it lives. Checkpoints are\npublished the same way: `checkpoints` names each retained checkpoint by\nstep and loss, `best_checkpoint` is the run's recorded choice, and the\nbytes live behind the checkpoint download route.\n\n``retry_from`` (issue #36) links a diverged job's single retry at half\nthe learning rate to the job it retries -- the history can name what came\nfrom what, and the single-retry offer can be offered once.",
         "properties": {
           "actuals": {
             "anyOf": [
@@ -1365,6 +1365,17 @@
               }
             ],
             "title": "Result"
+          },
+          "retry_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry From"
           },
           "started_at": {
             "anyOf": [
@@ -3010,6 +3021,49 @@
           }
         },
         "summary": "Get Events",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/retry": {
+      "post": {
+        "description": "Create a single retry at half the learning rate, offered as a choice.\n\nIssue #36: a diverging run usually means the data or the rate is wrong, and\nrepeating it is rarely the answer. Repeating it automatically would be the\neasy thing to test; offering a single reduced-rate retry as a choice is the\nhonest one. This endpoint is the choice: a diverged job (failed with\n``training_diverged``) can be retried once at half its learning rate, and\nthe new job carries ``retry_from`` so the history can name what came from\nwhat. A job that already has a retry child, or that did not diverge, is\nrefused with a stable code rather than silently creating a second retry.",
+        "operationId": "retry_job_v1_jobs__job_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Job",
         "tags": [
           "jobs"
         ]

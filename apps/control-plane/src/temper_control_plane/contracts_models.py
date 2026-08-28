@@ -620,7 +620,12 @@ class JobRecord(BaseModel):
     deliverable without ever touching where it lives. Checkpoints are
     published the same way: `checkpoints` names each retained checkpoint by
     step and loss, `best_checkpoint` is the run's recorded choice, and the
-    bytes live behind the checkpoint download route."""
+    bytes live behind the checkpoint download route.
+
+    ``retry_from`` (issue #36) links a diverged job's single retry at half
+    the learning rate to the job it retries -- the history can name what came
+    from what, and the single-retry offer can be offered once.
+    """
 
     id: str
     dataset_id: str
@@ -650,6 +655,7 @@ class JobRecord(BaseModel):
     artifact: ArtifactRecord | None = None
     checkpoints: list[CheckpointRecord] = Field(default_factory=list)
     best_checkpoint: BestCheckpoint | None = None
+    retry_from: str | None = None
 
 
 class JobList(BaseModel):

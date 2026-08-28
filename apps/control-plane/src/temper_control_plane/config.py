@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from temper_core import hyperparams
+from temper_core import divergence, hyperparams
 
 
 def _repo_root() -> Path:
@@ -351,6 +351,69 @@ def _count(name: str, default: int) -> int:
         )
     return value
 
+
+# --- divergence detection (issue #36) -----------------------------------------
+# The numbers live in `temper_core.divergence` with the report-b derivation
+# beside them (the way ADR-0036 records 21.6 MB/s times 60 s). This module
+# reads them as defaults and keeps the TEMPER_DIVERGENCE_* overrides.
+# A value two components must agree on is defined once and read, never
+# retyped (AGENTS.md line 47, ADR-0010).
+def _positive_float(name: str, default: float) -> float:
+    """A positive float from the environment, or its default.
+
+    Same contract as `_seconds`: read once at import, and a value that cannot
+    be honoured stops the process rather than falling back silently.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name}={raw!r} is not a number. It configures a divergence "
+            f"threshold, so it is refused rather than ignored."
+        ) from None
+    if value <= 0:
+        raise ValueError(
+            f"{name}={raw!r} must be greater than zero. A non-positive "
+            f"divergence threshold would never fire or would fire always."
+        )
+    return value
+
+
+def _positive_int(name: str, default: int) -> int:
+    """A positive integer from the environment, or its default."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name}={raw!r} is not a whole number. It configures a divergence "
+            f"threshold, so it is refused rather than ignored."
+        ) from None
+    if value < 1:
+        raise ValueError(
+            f"{name}={raw!r} must be at least 1. A divergence window or count "
+            f"below one is not a window."
+        )
+    return value
+
+
+DIVERGENCE_MULTIPLIER = _positive_float(
+    "TEMPER_DIVERGENCE_MULTIPLIER", divergence.DIVERGENCE_MULTIPLIER
+)
+DIVERGENCE_WINDOW = _positive_int(
+    "TEMPER_DIVERGENCE_WINDOW", divergence.DIVERGENCE_WINDOW
+)
+DIVERGENCE_CONSECUTIVE = _positive_int(
+    "TEMPER_DIVERGENCE_CONSECUTIVE", divergence.DIVERGENCE_CONSECUTIVE
+)
+WARNING_CONSECUTIVE = _positive_int(
+    "TEMPER_WARNING_CONSECUTIVE", divergence.WARNING_CONSECUTIVE
+)
 
 # --- checkpoint retention ----------------------------------------------------
 # How many checkpoints one job may keep in object storage at once, and hence

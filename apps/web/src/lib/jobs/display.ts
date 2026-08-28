@@ -99,6 +99,10 @@ const EXPLANATIONS: Record<string, string> = {
     "The job was stopped by a safety limit: it produced no output for longer than the stall timeout allows.",
   gpu_max_duration_exceeded:
     "The job was stopped by a safety limit: it ran past the maximum duration a single job may use.",
+  training_diverged:
+    "Training diverged — the loss became meaningless (NaN or exploding) and the run was stopped early so you are not billed for hours that cannot produce anything. Try a lower learning rate or check your data. A single retry at half the learning rate is available as a choice.",
+  training_instability:
+    "Training instability detected — loss is spiking well above its recent average. This may be early divergence; the run is continuing, but the signal is worth watching and a lower learning rate may help if it continues.",
 };
 
 export function failureExplanation(code: string | null | undefined): string | null {
