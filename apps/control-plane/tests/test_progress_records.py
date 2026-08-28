@@ -262,7 +262,8 @@ def test_the_stream_pushes_the_progress_snapshot(client, monkeypatch):
                 break
 
     text = "\n".join(seen)
-    # The snapshot arrived on the open stream, naming the phase that was
-    # working while the job was paused.
+    # The snapshot and the retained raw lines arrived on the open stream,
+    # naming the phase that was working while the job was paused.
     assert "event: progress" in text
     assert PHASE_IMAGE_PULL in text
+    assert "event: output" in text
