@@ -26,6 +26,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from temper_control_plane import (
+    admission,
     chunks,
     config,
     datasets,
@@ -38,6 +39,7 @@ from temper_control_plane import (
     storage,
 )
 from temper_control_plane.contracts_models import (
+    AdmittedModel,
     AdvancedSurface,
     Calibration,
     DatasetAccepted,
@@ -169,20 +171,57 @@ app = FastAPI(
 
 @app.get("/v1/models", tags=["catalog"], response_model=ModelCatalog)
 def list_models():
-    """The curated base-model catalog.
+    """The base-model choices: the curated catalog plus any admitted models.
 
-    An allow-list, not a limitation: detection of an arbitrary architecture is
-    easy, but *support* means testing its chat template, tokenizer quirks and
-    packing compatibility. This list is a promise about what has been tested.
+    The catalog is an allow-list and a promise about what has been tested, not
+    a limitation (issue #58): a model outside it becomes usable once it has
+    passed a compatibility probe, and `admitted` carries each probed model
+    with its result -- verdict and findings -- shown, not merely enforced. The
+    curated entries stay the recommended, tested path.
 
-    Each entry's `peak_memory` is computed fresh through the `models` seam
-    (spec 005) rather than read from a stored figure -- see
+    Each catalog entry's `peak_memory` is computed fresh through the `models`
+    seam (spec 005) rather than read from a stored figure -- see
     `_catalog_entry`.
     """
     return {
         "models": [_catalog_entry(m) for m in catalog.CATALOG.values()],
+        "admitted": admission.listing(),
         "default": catalog.DEFAULT_MODEL,
     }
+
+
+class ModelProbeRequest(BaseModel):
+    repo: str
+    revision: str
+
+
+@app.post(
+    "/v1/models/probe",
+    tags=["catalog"],
+    status_code=201,
+    response_model=AdmittedModel,
+)
+def probe_model(req: ModelProbeRequest):
+    """Admit a model from outside the catalog by probing it (issue #58).
+
+    Resolves the pinned reference through the same `models` seam the
+    predictor reads, runs the compatibility probe over the resolved facts, and
+    persists the result -- verdict and findings -- so the user is shown what
+    they are taking on before a job can be created against it. Re-probing the
+    same pinned reference is idempotent: the existing record is returned, not
+    a second one.
+
+    A reference that is not a pinned revision is refused up front with
+    `unpinned_revision`. A pinned reference that fails the probe is still
+    admitted -- as a blocked record, persisted and shown -- and the launch
+    path refuses it with its blocking findings rather than launching into a
+    model that cannot be formatted.
+    """
+    try:
+        record = admission.probe_and_admit(req.repo, req.revision)
+    except admission.AdmissionError as e:
+        raise HTTPException(400, e.to_payload()) from e
+    return record
 
 
 @app.get("/v1/surface", tags=["surface"], response_model=AdvancedSurface)
@@ -411,14 +450,15 @@ def get_quote(dataset_id: str, base_model: str = catalog.DEFAULT_MODEL):
     (spec 005).
     """
     ds = jobs.usable_dataset(dataset_id)
-    m = catalog.get(base_model)
+    m = admission.resolve(base_model)
     if m is None:
         raise HTTPException(
             400,
             {
                 "code": "unknown_model",
-                "message": f"'{base_model}' is not in the catalog.",
-                "available": [m["id"] for m in catalog.listing()],
+                "message": f"'{base_model}' is not in the catalog and has not "
+                "been admitted by a probe.",
+                "available": admission.available_ids(),
             },
         )
     return _quote_for(ds, m, {})
@@ -451,14 +491,15 @@ def recompute_quote(req: QuoteRequest):
     if refusals:
         raise HTTPException(400, refusals[0])
     ds = jobs.usable_dataset(req.dataset_id)
-    m = catalog.get(req.base_model)
+    m = admission.resolve(req.base_model)
     if m is None:
         raise HTTPException(
             400,
             {
                 "code": "unknown_model",
-                "message": f"'{req.base_model}' is not in the catalog.",
-                "available": [m["id"] for m in catalog.listing()],
+                "message": f"'{req.base_model}' is not in the catalog and has "
+                "not been admitted by a probe.",
+                "available": admission.available_ids(),
             },
         )
     try:
