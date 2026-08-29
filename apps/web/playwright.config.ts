@@ -51,10 +51,27 @@ const e2eDatabaseUrl =
   "postgresql://temper:temper@localhost:5432/temper";
 const e2eObjectsPath = path.join(repoRoot, "data", "objects-e2e");
 
+// Issue #51: a single worker claims and drives jobs strictly one at a time
+// (that is the point of the row-level claim). The journeys can launch jobs
+// from as many parallel Playwright test processes as `workers` allows, so
+// one temper_worker becomes a serial bottleneck the launch-then-watch tests
+// time out against -- proven by running it: one worker cleared roughly a job
+// every 12s, and several journeys' 30s waits for `complete` were still
+// `queued` when they gave up. Several worker processes claiming from the
+// same table (exactly the concurrent-claim property `test_worker_claim.py`
+// proves at the database level) is both the fix and a more realistic
+// demonstration of "starting more than one worker is possible and safe"
+// than a single instance is. Pinned to Playwright's own `workers` below,
+// rather than guessed independently, so test parallelism can never
+// outrun worker capacity on a machine with a different core count than
+// whichever one this comment was measured on.
+const E2E_WORKER_COUNT = 6;
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
   forbidOnly: !!process.env.CI,
+  workers: E2E_WORKER_COUNT,
   use: {
     baseURL: `http://127.0.0.1:${webPort}`,
     trace: "retain-on-failure",
@@ -104,16 +121,18 @@ export default defineConfig({
         TEMPER_STORAGE_ROOT: e2eObjectsPath,
       },
     },
-    {
-      // Issue #51: orchestration now lives in the worker, not in the
-      // control plane. The backend above just inserts the row; this
-      // worker claims ``queued`` jobs with ``SELECT ... FOR UPDATE SKIP
-      // LOCKED`` and drives them. Without it a journey's launch would
-      // stay queued forever. No URL to wait for -- the worker is not
-      // HTTP, so it starts after the backend is healthy and stays up
-      // for the suite's duration.
-      // The package, not the submodule -- see compose.yaml's worker service
-      // for why `temper_worker.worker` silently does nothing.
+    // Issue #51: orchestration now lives in the worker, not in the control
+    // plane. The backend above just inserts the row; each of these claims
+    // ``queued`` jobs with ``SELECT ... FOR UPDATE SKIP LOCKED`` and drives
+    // them. Without at least one, a journey's launch would stay queued
+    // forever; `E2E_WORKER_COUNT` of them is what keeps up with the
+    // journeys' own parallelism (see its comment above). None of the
+    // ``url``-bearing entries above wait on these, and the array's entries
+    // start in order, so by the time any of these spawn the backend has
+    // already finished migrating -- these only ever call `migrate_up`
+    // (idempotent), never `TEMPER_DB_RESET`, so N of them starting at once
+    // never race each other over the schema.
+    ...Array.from({ length: E2E_WORKER_COUNT }, () => ({
       command: `uv run python -m temper_worker`,
       cwd: "../..",
       reuseExistingServer: false,
@@ -123,9 +142,8 @@ export default defineConfig({
         TEMPER_FAKE_PROVIDER: "1",
         TEMPER_FAKE_LINE_DELAY_S: "0.6",
         TEMPER_DATABASE_URL: e2eDatabaseUrl,
-        TEMPER_DB_RESET: "1",
         TEMPER_STORAGE_ROOT: e2eObjectsPath,
       },
-    },
+    })),
   ],
 });
