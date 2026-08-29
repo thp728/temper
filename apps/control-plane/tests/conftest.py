@@ -218,6 +218,25 @@ def no_leaked_counting_threads():
 
 
 @pytest.fixture(autouse=True)
+def no_leaked_serving_timers():
+    """Cancel any serving endpoint timer before the test's database is torn down.
+
+    The endpoint's idle/max timers outlive the test that created them and
+    would try to write to a row that the `isolated` fixture has already
+    dropped (ForeignKeyViolation). Cancelling here keeps the timer inside
+    its own test, which is the honest version of the isolation the fixture
+    promises (issue #78: the endpoint stops itself via a timer).
+    """
+    yield
+    try:
+        from temper_control_plane import serving as serving_mod
+
+        serving_mod.cancel_all_timers()
+    except Exception:  # noqa: S110
+        pass
+
+
+@pytest.fixture(autouse=True)
 def no_real_quote_provider(monkeypatch):
     """Quotes are priced against a fake provider and fake model facts, like
     everything else that could reach the account or the network.

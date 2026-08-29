@@ -1140,3 +1140,134 @@ def _present(row: dict | None) -> dict:
     if row is None:
         raise ValueError("a listed row came back missing")
     return row
+
+
+# --------------------------------------------------------------------------
+# serving endpoints (issue #78): temporary authenticated endpoints
+# --------------------------------------------------------------------------
+
+ENDPOINT_STATUSES = ("running", "stopped", "expired")
+ENDPOINT_ACTIVE = "running"
+
+
+def create_endpoint(
+    endpoint_id: str,
+    job_id: str,
+    api_key_hash: str,
+    api_key_prefix: str,
+    created_at: float,
+    expires_at: float,
+    max_expires_at: float,
+    machine_id: int | None = None,
+    price_per_hour: float | None = None,
+    currency: str | None = None,
+) -> None:
+    """Insert one endpoint row. The key is stored hashed, never plaintext."""
+    with connect() as c:
+        c.execute(
+            "INSERT INTO endpoints (id, job_id, status, api_key_hash, api_key_prefix, "
+            "created_at, expires_at, last_used_at, max_expires_at, machine_id, "
+            "price_per_hour, currency) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                endpoint_id,
+                job_id,
+                ENDPOINT_ACTIVE,
+                api_key_hash,
+                api_key_prefix,
+                created_at,
+                expires_at,
+                created_at,
+                max_expires_at,
+                machine_id,
+                price_per_hour,
+                currency,
+            ),
+        )
+
+
+def get_endpoint(endpoint_id: str) -> dict | None:
+    with connect() as c:
+        r = c.execute(
+            "SELECT * FROM endpoints WHERE id=%s", (endpoint_id,)
+        ).fetchone()
+    if r is None:
+        return None
+    return dict(r)
+
+
+def get_endpoint_by_job(
+    job_id: str, status: str | None = ENDPOINT_ACTIVE
+) -> dict | None:
+    """The job's active endpoint, if any. One active endpoint per job."""
+    with connect() as c:
+        if status is None:
+            r = c.execute(
+                "SELECT * FROM endpoints WHERE job_id=%s ORDER BY created_at DESC LIMIT 1",
+                (job_id,),
+            ).fetchone()
+        else:
+            r = c.execute(
+                "SELECT * FROM endpoints WHERE job_id=%s AND status=%s "
+                "ORDER BY created_at DESC LIMIT 1",
+                (job_id, status),
+            ).fetchone()
+    if r is None:
+        return None
+    return dict(r)
+
+
+def list_endpoints(
+    job_id: str | None = None, status: str | None = None
+) -> list[dict]:
+    with connect() as c:
+        q = "SELECT * FROM endpoints WHERE 1=1"
+        params: list = []
+        if job_id is not None:
+            q += " AND job_id=%s"
+            params.append(job_id)
+        if status is not None:
+            q += " AND status=%s"
+            params.append(status)
+        q += " ORDER BY created_at DESC"
+        rows = c.execute(q, tuple(params)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def active_endpoints() -> list[dict]:
+    """All running endpoints. Used at startup to re-arm timers and at sweep."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM endpoints WHERE status=%s", (ENDPOINT_ACTIVE,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def touch_endpoint(
+    endpoint_id: str, now: float, new_expires_at: float
+) -> None:
+    """Extend an endpoint's idle expiry after a successful use."""
+    with connect() as c:
+        c.execute(
+            "UPDATE endpoints SET last_used_at=%s, expires_at=%s WHERE id=%s",
+            (now, new_expires_at, endpoint_id),
+        )
+
+
+def set_endpoint_status(
+    endpoint_id: str,
+    status: str,
+    stopped_at: float | None = None,
+    stop_reason: str | None = None,
+) -> None:
+    if status not in ENDPOINT_STATUSES:
+        raise ValueError(f"unknown endpoint status {status!r}")
+    with connect() as c:
+        c.execute(
+            "UPDATE endpoints SET status=%s, stopped_at=%s, stop_reason=%s WHERE id=%s",
+            (status, stopped_at, stop_reason, endpoint_id),
+        )
+
+
+def delete_endpoint(endpoint_id: str) -> None:
+    with connect() as c:
+        c.execute("DELETE FROM endpoints WHERE id=%s", (endpoint_id,))

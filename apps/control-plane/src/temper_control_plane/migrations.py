@@ -248,9 +248,60 @@ def _down_0002(cur: psycopg.Cursor) -> None:
     cur.execute("DROP TABLE quotes")
 
 
+def _up_0003(cur: psycopg.Cursor) -> None:
+    """Temporary authenticated endpoints (spec 011 / issue #78).
+
+    One row per endpoint. The endpoint is the billed, warm machine the
+    comparison and the "try it" story run on; it carries an expiry from the
+    moment it starts, extends on use, and stops itself -- the forgotten warm
+    machine is the loudest complaint against the commercial baseline, so
+    stopping itself is the feature, not a convenience (ADR-0065).
+
+    Keys are stored hashed (SHA-256 hex), never plaintext: a leak of the
+    store is not a leak of the keys. The prefix is stored alongside for
+    display (which key without revealing it).
+
+    `max_expires_at` is the hard ceiling: even a busy endpoint dies there,
+    so traffic cannot keep a machine alive forever. `expires_at` is the idle
+    grace that extends on use. Both are doubles (epoch seconds) like every
+    other timestamp in this schema.
+
+    The table is the source of truth the expiry timer reads; the timers
+    themselves live in the process (see `serving.py`). A process restart
+    re-reads this table and re-arms timers for any still-running endpoints,
+    or stops those already past their deadline -- an endpoint that survives
+    a restart without a timer is an endpoint that never stops.
+    """
+    cur.execute("""
+        CREATE TABLE endpoints (
+            id              TEXT PRIMARY KEY,
+            job_id          TEXT NOT NULL REFERENCES jobs(id),
+            status          TEXT NOT NULL,
+            api_key_hash    TEXT NOT NULL,
+            api_key_prefix  TEXT NOT NULL,
+            created_at      DOUBLE PRECISION NOT NULL,
+            expires_at      DOUBLE PRECISION NOT NULL,
+            last_used_at    DOUBLE PRECISION NOT NULL,
+            max_expires_at  DOUBLE PRECISION NOT NULL,
+            machine_id      INTEGER,
+            price_per_hour  DOUBLE PRECISION,
+            currency        TEXT,
+            stopped_at      DOUBLE PRECISION,
+            stop_reason     TEXT
+        )
+    """)
+    cur.execute("CREATE INDEX idx_endpoints_job ON endpoints(job_id)")
+    cur.execute("CREATE INDEX idx_endpoints_status ON endpoints(status)")
+
+
+def _down_0003(cur: psycopg.Cursor) -> None:
+    cur.execute("DROP TABLE endpoints")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     ("0001_baseline", _up_0001, _down_0001),
     ("0002_phase_b_tables", _up_0002, _down_0002),
+    ("0003_serving_endpoints", _up_0003, _down_0003),
 )
 
 

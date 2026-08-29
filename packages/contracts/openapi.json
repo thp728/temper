@@ -1043,6 +1043,302 @@
         "title": "DeliveryFormatRecord",
         "type": "object"
       },
+      "EndpointCreated": {
+        "description": "The creation response: the endpoint plus the plaintext key, once.",
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "api_key_prefix": {
+            "title": "Api Key Prefix",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "idle_timeout_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idle Timeout S"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "title": "Last Used At",
+            "type": "number"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "max_expires_at": {
+            "title": "Max Expires At",
+            "type": "number"
+          },
+          "max_lifetime_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Lifetime S"
+          },
+          "price_per_hour": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Per Hour"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "status",
+          "api_key_prefix",
+          "created_at",
+          "expires_at",
+          "max_expires_at",
+          "last_used_at",
+          "api_key"
+        ],
+        "title": "EndpointCreated",
+        "type": "object"
+      },
+      "EndpointPreview": {
+        "description": "What starting an endpoint would cost and when it would stop, before it starts.\n\nThe hourly cost is the job's frozen price (the rate the job was\nprovisioned at) and the stop times are now + idle and now + max, both\ndomain constants (temper_core.serving). The preview is what the\ninterface shows before the user confirms the start, so there is no\nsurprise about the bill or the lifetime (spec 011: \"the hourly cost and\nthe stop time are shown before it starts\").",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          },
+          "idle_timeout_s": {
+            "title": "Idle Timeout S",
+            "type": "number"
+          },
+          "max_expires_at": {
+            "title": "Max Expires At",
+            "type": "number"
+          },
+          "max_lifetime_s": {
+            "title": "Max Lifetime S",
+            "type": "number"
+          },
+          "price_per_hour": {
+            "title": "Price Per Hour",
+            "type": "number"
+          }
+        },
+        "required": [
+          "price_per_hour",
+          "currency",
+          "idle_timeout_s",
+          "max_lifetime_s",
+          "expires_at",
+          "max_expires_at"
+        ],
+        "title": "EndpointPreview",
+        "type": "object"
+      },
+      "EndpointRecord": {
+        "description": "A temporary authenticated endpoint (issue #78).\n\nThe key itself is never published: the creation response carries the\nplaintext once, and every later read carries only the display prefix.\nA key that can be read back out of the store is a finding. The\nendpoint carries its own expiry from the moment it starts, extends on\nuse, and stops itself via a timer -- the forgotten warm machine is the\nloudest complaint against the commercial baseline, so stopping itself\nis the feature.",
+        "properties": {
+          "api_key_prefix": {
+            "title": "Api Key Prefix",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "idle_timeout_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idle Timeout S"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "title": "Last Used At",
+            "type": "number"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "max_expires_at": {
+            "title": "Max Expires At",
+            "type": "number"
+          },
+          "max_lifetime_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Lifetime S"
+          },
+          "price_per_hour": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Per Hour"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "status",
+          "api_key_prefix",
+          "created_at",
+          "expires_at",
+          "max_expires_at",
+          "last_used_at"
+        ],
+        "title": "EndpointRecord",
+        "type": "object"
+      },
       "EventPage": {
         "description": "A job's durable history: the events, the current per-phase progress, and\nthe retained raw lines that were promoted into it (issue #49).\n\n`after` is what the client holds; `last_id` is where this page reaches, so\na polling client resumes instead of re-reading or skipping. `progress` is\nthe whole per-phase snapshot (it supersedes, so it is small by\nconstruction); `output` is the whole retained record of promoted lines --\nthe collapsed detail that keeps \"we keep everything\" true.\n\n`total` is the job's event count regardless of the paging window\n(issue #56): where a limit still applies the interface says what it is\nshowing and of how many, and a silent truncation becomes a stated one.\n`total` travels even when the page is not truncated, so the same shape\nanswers \"how many did this run produce?\" without a second request.",
         "properties": {
@@ -1129,6 +1425,44 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InferRequest": {
+        "description": "One prompt for the served model.",
+        "properties": {
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "title": "InferRequest",
+        "type": "object"
+      },
+      "InferResponse": {
+        "description": "The model's completion, plus the refreshed expiry.",
+        "properties": {
+          "completion": {
+            "title": "Completion",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          },
+          "max_expires_at": {
+            "title": "Max Expires At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "completion",
+          "expires_at",
+          "max_expires_at"
+        ],
+        "title": "InferResponse",
         "type": "object"
       },
       "JobActuals": {
@@ -3270,6 +3604,259 @@
           }
         },
         "summary": "Download Checkpoint",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/endpoint": {
+      "delete": {
+        "description": "Stop the job's active endpoint immediately, via confirmed teardown.",
+        "operationId": "delete_endpoint_v1_jobs__job_id__endpoint_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndpointRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Endpoint",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "get": {
+        "description": "The job's active endpoint, if any. The key hash is never returned.",
+        "operationId": "get_endpoint_v1_jobs__job_id__endpoint_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndpointRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Endpoint",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "description": "Start a temporary authenticated endpoint for a finished job.\n\nThe endpoint requires a key (returned once, stored hashed), carries its\nown expiry from the moment it starts, extends on use, and stops itself\nvia a timer -- the forgotten warm machine is the loudest complaint\nagainst the commercial baseline, so stopping itself is the feature.\nReachability from outside is verified before the key is handed out: the\nplatform's firewall does not filter published container ports the way it\nappears to, which is why the trainer publishes nothing and why anything\nthat does publish is checked from outside (spec 011). The verification\noriginates on the control plane (outside the machine), never on the\nmachine itself, so a `curl localhost` on the machine cannot pass it.",
+        "operationId": "create_endpoint_v1_jobs__job_id__endpoint_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndpointCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Endpoint",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/endpoint/infer": {
+      "post": {
+        "description": "Answer a prompt via the job's active endpoint. Requires the endpoint's key.\n\nThe key is verified against the stored hash (constant-time), the expiry\nis checked and extended on success (capped by the max), and a completion\nis returned. A busy endpoint that is kept alive by traffic still dies at\nthe max, because the extension is capped. The generation itself is a\nstub in the fake tier; on real hardware it would reach the machine over\nSSH and run the model there.",
+        "operationId": "infer_endpoint_v1_jobs__job_id__endpoint_infer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Infer Endpoint",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/endpoint/preview": {
+      "get": {
+        "description": "What starting an endpoint would cost and when it would stop, before it starts.\n\nThe hourly cost is the job's frozen price and the stop times are now +\nidle and now + max, both domain constants (temper_core.serving). The\npreview is what the interface shows before the user confirms the start,\nso there is no surprise about the bill or the lifetime (spec 011: \"the\nhourly cost and the stop time are shown before it starts\").",
+        "operationId": "endpoint_preview_v1_jobs__job_id__endpoint_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndpointPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Endpoint Preview",
         "tags": [
           "jobs"
         ]
