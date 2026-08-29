@@ -74,12 +74,12 @@ class Harness:
         models = models or fake_models.catalog_models()
         # Issue #51: the request path no longer starts threads. The control
         # plane just inserts the row; the worker claims it. Tests that want
-        # a finished job drive it directly rather than relying on a thread
-        # the request path would have started -- proving the seam holds by
-        # not calling ``launch`` at all. ``launch`` remains for the threaded
-        # form below, but the inline form bypasses it entirely.
+        # a finished job drive it directly, synchronously, on the calling
+        # thread -- proving the seam holds by never starting a thread at all.
         job_id = self._create(hyperparameters)
-        orchestrator.run_job(job_id, provider=provider, limits=limits, models=models)
+        orchestrator.run_job(
+            job_id, provider=provider, limits=limits, models=models
+        )
         return job_id
 
     def run_on_a_thread(

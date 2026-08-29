@@ -433,3 +433,50 @@ def test_worker_claim_and_run_is_idempotent_via_api(tmp_path, monkeypatch):
         assert client.get(f"/v1/jobs/{job_id}").json()["status"] == "complete"
         # A third worker still finds nothing.
         assert run_once() is False
+
+
+def test_run_once_marks_a_job_failed_if_driving_it_raises_unexpectedly(
+    isolated, tmp_path, monkeypatch
+):
+    """``run_job`` already records a failure on the row before it raises for
+    every failure it knows about; this covers the failure it does not --
+    an exception escaping ``run_job`` itself must not leave the claimed job
+    stuck in a non-terminal state with no worker ever coming back to it."""
+
+    from temper_control_plane import main, orchestrator
+    from temper_worker.worker import run_once
+
+    with TestClient(main.app) as client:
+        job_id = _queued_job_via_api(client, tmp_path)
+
+        def boom(job_id_inner, provider=None, limits=None, models=None):
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr(orchestrator, "run_job", boom)
+
+        assert run_once() is True
+        job = client.get(f"/v1/jobs/{job_id}").json()
+        assert job["status"] == "failed"
+        assert job["error_code"] == "internal_error"
+
+
+def test_run_forever_stops_promptly_when_nothing_is_queued(
+    isolated, monkeypatch
+):
+    """The polling loop must not block ``stop`` from being noticed -- an
+    idle worker that cannot be told to shut down would need a hard kill on
+    every deploy."""
+
+    import threading
+    import time as time_mod
+
+    from temper_worker import worker
+
+    monkeypatch.setattr(worker, "WORKER_POLL_INTERVAL_S", 0.05)
+    stop = threading.Event()
+    t = threading.Thread(target=worker.run_forever, args=(stop,), daemon=True)
+    t.start()
+    time_mod.sleep(0.15)
+    stop.set()
+    t.join(timeout=2.0)
+    assert not t.is_alive()

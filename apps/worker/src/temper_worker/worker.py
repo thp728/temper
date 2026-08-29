@@ -76,7 +76,10 @@ def run_once() -> bool:
         # mark it failed rather than leave it stuck provisioning forever.
         try:
             current = db.get_job(job_id)
-            if current is not None and current["status"] not in db.TERMINAL_STATES:
+            if (
+                current is not None
+                and current["status"] not in db.TERMINAL_STATES
+            ):
                 db.set_state(
                     job_id,
                     "failed",

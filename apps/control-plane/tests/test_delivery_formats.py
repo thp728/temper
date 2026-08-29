@@ -138,7 +138,10 @@ def test_verified_delivery_formats_are_recorded_and_published(
 
     _set_published_reference(monkeypatch)
     job = _job_request(
-        client, tmp_path, delivery=["merged", "quantised"], provider=completed_run()
+        client,
+        tmp_path,
+        delivery=["merged", "quantised"],
+        provider=completed_run(),
     )
 
     rec = _wait_terminal(client, job["id"])
@@ -172,7 +175,10 @@ def test_each_delivery_format_downloads_with_a_manifest_describing_itself(
 
     _set_published_reference(monkeypatch)
     job = _job_request(
-        client, tmp_path, delivery=["merged", "quantised"], provider=completed_run()
+        client,
+        tmp_path,
+        delivery=["merged", "quantised"],
+        provider=completed_run(),
     )
     _wait_terminal(client, job["id"])
 
@@ -295,7 +301,10 @@ def test_a_corrupt_delivery_format_is_recorded_as_unverified(
 
     _set_published_reference(monkeypatch)
     job = _job_request(
-        client, tmp_path, delivery=["merged"], provider=_corrupt_delivery_provider()
+        client,
+        tmp_path,
+        delivery=["merged"],
+        provider=_corrupt_delivery_provider(),
     )
     _wait_terminal(client, job["id"])
 

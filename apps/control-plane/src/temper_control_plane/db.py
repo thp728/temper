@@ -1085,7 +1085,9 @@ def claim_next_job() -> dict | None:
         ).fetchone()
         if row is None:
             return None
-        _append_event(c, row["id"], "state", "provisioning", {"state": "provisioning"})
+        _append_event(
+            c, row["id"], "state", "provisioning", {"state": "provisioning"}
+        )
         job = _row(
             row,
             {
@@ -1112,9 +1114,7 @@ def claim_next_job() -> dict | None:
             },
         )
         return _with_best_checkpoint(
-            _with_artifact(
-                _with_is_moe(_with_warnings(_with_comparison(job)))
-            )
+            _with_artifact(_with_is_moe(_with_warnings(_with_comparison(job))))
         )
 
 
