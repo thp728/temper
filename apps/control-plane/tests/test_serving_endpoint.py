@@ -394,3 +394,42 @@ def test_keys_are_stored_hashed_never_plaintext(client, tmp_path, monkeypatch):
     assert "api_key" not in body
     # The DB row never contains the plaintext
     assert created["api_key"] not in str(ep.values())
+
+
+def test_unparsable_handle_does_not_get_a_key(client, tmp_path, monkeypatch):
+    """A handle whose grammar cannot be parsed must not get a key (fail-closed).
+
+    _parse_host previously returned None for three cases (empty, fake://,
+    unrecognised) and verify_not_reachable treated all three as "no public
+    host, pass". Empty and fake:// are genuinely safe (the fake publishes
+    nothing, which is the trainer's own mitigation). An unrecognised
+    grammar is not safe to shrug at: if a provider's handle format ever
+    changes, silently passing would issue a key for a machine nobody
+    verified. This test proves the fix fails closed.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _fake_provider(monkeypatch)
+    from temper_control_plane.provider import Machine
+
+    # Make create return a machine whose handle matches no known grammar:
+    # non-empty, not fake://, and containing no '@'.
+    orig_create = provider.create
+
+    def bad_create(gpu_type, num_gpus, storage_gb, name):
+        m = orig_create(gpu_type, num_gpus, storage_gb, name)
+        return Machine(
+            machine_id=m.machine_id, handle="unparsable-handle-no-at-sign"
+        )
+
+    monkeypatch.setattr(provider, "create", bad_create)
+    r = client.post(f"/v1/jobs/{job_id}/endpoint")
+    # Must refuse to issue a key, with a stable code and a message naming
+    # the handle grammar it could not read.
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert detail["code"] == "endpoint_verification_failed"
+    assert "handle does not contain" in detail["message"]
+    assert "expected grammar" in detail["message"]
+    # No endpoint was persisted and the machine was destroyed (no orphan).
+    assert db.get_endpoint_by_job(job_id) is None
+    assert provider.destroyed is True or provider.destroy_attempts >= 1

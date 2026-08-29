@@ -94,9 +94,20 @@ def _parse_host(handle: str) -> str | None:
 
     The handle is the opaque string `provider.create` returned -- for the
     real provider an `ssh ... user@host -p ...` command, for the fake a
-    `fake://...` URL. A handle that does not look like an SSH command has
-    no host to check, so reachability verification is vacuous (and passes)
-    -- there is no public port to be reachable.
+    `fake://...` URL. Two distinct "no host" cases exist and must not be
+    conflated:
+
+    * No host by construction -- an empty handle or a `fake://` URL. The
+      fake publishes nothing, which is the trainer's own mitigation, so
+      there is no public port to be reachable and verification passes
+      vacuously.
+
+    * Expected a host and could not parse one -- a non-empty, non-fake
+      handle that does not contain the `user@host` grammar this parser
+      recognises. This is not safe to shrug at: if a provider's handle
+      format ever changes, or a second provider returns a differently
+      shaped handle, silently passing would issue a key for a machine
+      nobody verified. This case fails closed (raises).
     """
     if not handle:
         return None
@@ -108,18 +119,21 @@ def _parse_host(handle: str) -> str | None:
     # Real handles contain user@host. Extract host between @ and next space.
     # The handle is whatever `create` returned; quoting is its grammar
     # (provider._ssh uses shlex), but the host itself is unquoted.
-    try:
-        # handle like "ssh -p 2222 user@1.2.3.4" or "user@1.2.3.4 -p 2222"
-        # Find the token containing '@'.
-        for token in handle.split():
-            if "@" in token:
-                host = token.split("@", 1)[1]
-                # Strip possible :port or trailing punctuation.
-                host = host.strip().split(":")[0].split(",")[0]
-                return host or None
-    except Exception:  # noqa: S110
-        return None
-    return None
+    for token in handle.split():
+        if "@" in token:
+            host = token.split("@", 1)[1]
+            # Strip possible :port or trailing punctuation.
+            host = host.strip().split(":")[0].split(",")[0]
+            if host:
+                return host
+            break
+    # Non-empty, non-fake handle that should have contained user@host but
+    # didn't -- fail closed, with a stable code and a message naming the
+    # handle grammar it could not read (the fix the review asks for).
+    raise ValueError(
+        f"handle does not contain '@' (expected grammar 'ssh ... user@host ...' "
+        f"or 'fake://...'); got {handle!r}"
+    )
 
 
 def verify_not_reachable(machine: Machine) -> bool:
