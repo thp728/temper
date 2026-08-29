@@ -6,10 +6,11 @@
 name = "temper-worker"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["temper-core"]
+dependencies = ["temper-core", "temper-control-plane"]
 
 [tool.uv.sources]
 temper-core = { workspace = true }
+temper-control-plane = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

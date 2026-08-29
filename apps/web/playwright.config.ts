@@ -104,5 +104,26 @@ export default defineConfig({
         TEMPER_STORAGE_ROOT: e2eObjectsPath,
       },
     },
+    {
+      // Issue #51: orchestration now lives in the worker, not in the
+      // control plane. The backend above just inserts the row; this
+      // worker claims ``queued`` jobs with ``SELECT ... FOR UPDATE SKIP
+      // LOCKED`` and drives them. Without it a journey's launch would
+      // stay queued forever. No URL to wait for -- the worker is not
+      // HTTP, so it starts after the backend is healthy and stays up
+      // for the suite's duration.
+      command: `uv run python -m temper_worker.worker`,
+      cwd: "../..",
+      reuseExistingServer: false,
+      timeout: 180_000,
+      env: {
+        ...process.env,
+        TEMPER_FAKE_PROVIDER: "1",
+        TEMPER_FAKE_LINE_DELAY_S: "0.6",
+        TEMPER_DATABASE_URL: e2eDatabaseUrl,
+        TEMPER_DB_RESET: "1",
+        TEMPER_STORAGE_ROOT: e2eObjectsPath,
+      },
+    },
   ],
 });

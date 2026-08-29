@@ -77,17 +77,14 @@ class Harness:
     def run(self, provider, hyperparameters=None, limits=None) -> str:
         from temper_control_plane import fake_models, orchestrator
 
-        self._monkeypatch.setattr(
-            orchestrator,
-            "launch",
-            lambda job_id: orchestrator.run_job(
-                job_id,
-                provider=provider,
-                limits=limits,
-                models=fake_models.catalog_models(),
-            ),
+        models = fake_models.catalog_models()
+        # Issue #51: the request path no longer starts threads. Drive
+        # the job directly as the worker would.
+        job_id = self._create(hyperparameters)
+        orchestrator.run_job(
+            job_id, provider=provider, limits=limits, models=models
         )
-        return self._create(hyperparameters)
+        return job_id
 
     def _create(self, hyperparameters=None) -> str:
         path = self._tmp_path / "d.jsonl"

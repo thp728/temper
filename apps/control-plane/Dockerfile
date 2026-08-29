@@ -28,7 +28,7 @@ COPY packages/core packages/core
 COPY packages/contracts packages/contracts
 COPY spike spike
 
-RUN uv sync --frozen --no-dev --package temper-control-plane
+RUN uv sync --frozen --no-dev --package temper-control-plane --package temper-worker
 
 ENV PATH="/app/.venv/bin:$PATH"
 

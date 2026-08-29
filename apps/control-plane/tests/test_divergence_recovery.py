@@ -63,14 +63,14 @@ class Harness:
         from temper_control_plane import fake_models, orchestrator
 
         models = models or fake_models.catalog_models()
-        self._monkeypatch.setattr(
-            orchestrator,
-            "launch",
-            lambda job_id: orchestrator.run_job(
-                job_id, provider=provider, limits=limits, models=models
-            ),
+        # Issue #51: the request path no longer starts threads. Drive
+        # the job directly as the worker would, rather than relying on
+        # ``launch`` being called by ``POST /v1/jobs``.
+        job_id = self._create(hyperparameters)
+        orchestrator.run_job(
+            job_id, provider=provider, limits=limits, models=models
         )
-        return self._create(hyperparameters)
+        return job_id
 
     def _create(self, hyperparameters=None) -> str:
         path = self._tmp_path / "d.jsonl"
@@ -207,14 +207,7 @@ def test_the_fault_surface_divergence_trips_the_detector(harness, monkeypatch):
     )
 
     # We need to create the job with the fault spec while FAKE_PROVIDER is on.
-    # Harness.run replaces launch; we do it manually.
-    harness._monkeypatch.setattr(
-        orchestrator,
-        "launch",
-        lambda job_id: orchestrator.run_job(
-            job_id, provider=provider, models=fake_models.catalog_models()
-        ),
-    )
+    # Issue #51: creation no longer starts a job; drive it explicitly.
     path = harness._tmp_path / "fault.jsonl"
     path.write_text(
         "\n".join(json.dumps(chat(f"q{i}", f"a{i}")) for i in range(12)),
@@ -236,7 +229,10 @@ def test_the_fault_surface_divergence_trips_the_detector(harness, monkeypatch):
     )
     assert r.status_code == 201, r.text
     job_id = r.json()["id"]
-    # Run is synchronous in test harness via run_job, so job is terminal now.
+    orchestrator.run_job(
+        job_id, provider=provider, models=fake_models.catalog_models()
+    )
+    # Run is synchronous, so job is terminal now.
     job = harness.job(job_id)
     assert job["status"] == "failed"
     assert job["error_code"] == DIVERGED_CODE

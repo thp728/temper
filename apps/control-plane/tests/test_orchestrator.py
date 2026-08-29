@@ -64,6 +64,7 @@ class Harness:
         self._client = client
         self._monkeypatch = monkeypatch
         self._tmp_path = tmp_path
+        self._threads: list = []
 
     def run(
         self, provider, hyperparameters=None, limits=None, models=None
@@ -71,16 +72,15 @@ class Harness:
         from temper_control_plane import fake_models, orchestrator
 
         models = models or fake_models.catalog_models()
-        # Run inline rather than on a thread: the job is the system under test,
-        # so the test should observe its finished state rather than race it.
-        self._monkeypatch.setattr(
-            orchestrator,
-            "launch",
-            lambda job_id: orchestrator.run_job(
-                job_id, provider=provider, limits=limits, models=models
-            ),
-        )
-        return self._create(hyperparameters)
+        # Issue #51: the request path no longer starts threads. The control
+        # plane just inserts the row; the worker claims it. Tests that want
+        # a finished job drive it directly rather than relying on a thread
+        # the request path would have started -- proving the seam holds by
+        # not calling ``launch`` at all. ``launch`` remains for the threaded
+        # form below, but the inline form bypasses it entirely.
+        job_id = self._create(hyperparameters)
+        orchestrator.run_job(job_id, provider=provider, limits=limits, models=models)
+        return job_id
 
     def run_on_a_thread(
         self, provider, hyperparameters=None, limits=None, models=None
@@ -92,26 +92,51 @@ class Harness:
         that appeared while it was working, unless the test reads mid-flight.
         It is also the only form in which a job can be cancelled at all — a
         request that cancels one has to arrive while it is running.
+
+        Issue #51: the request path no longer starts threads, so this harness
+        starts its own thread explicitly via ``orchestrator.run_job`` rather
+        than relying on ``launch`` being called by ``POST /v1/jobs``. The
+        thread is tracked so the fixture can join it before the test's
+        database is torn down -- the long-standing race where the thread
+        outlives the test and writes to a dropped database. After #51 the
+        harness is still needed for mid-flight reads, but the race is now
+        bounded by an explicit join rather than a daemon thread left to
+        outlive the test.
         """
+
+        import threading
+
         from temper_control_plane import fake_models, orchestrator
 
         models = models or fake_models.catalog_models()
-        on_a_thread = orchestrator.launch  # before it is replaced below
-        self._monkeypatch.setattr(
-            orchestrator,
-            "launch",
-            lambda job_id: on_a_thread(
-                job_id, provider=provider, limits=limits, models=models
-            ),
+
+        job_id = self._create(hyperparameters)
+
+        t = threading.Thread(
+            target=orchestrator.run_job,
+            args=(job_id, provider, limits, models),
+            daemon=True,
+            name=f"job-{job_id[:8]}",
         )
-        return self._create(hyperparameters)
+        t.start()
+        self._threads.append(t)
+        return job_id
 
     def queued_job(self) -> str:
         """A job created and never started, as one is between the two."""
-        from temper_control_plane import orchestrator
 
-        self._monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
         return self._create()
+
+    def join_threads(self, timeout: float = 5.0) -> None:
+        """Join any threads started by ``run_on_a_thread``.
+
+        Called by the fixture teardown so a thread never outlives the test's
+        database. A timeout keeps a wedged job from hanging the suite.
+        """
+
+        for t in list(self._threads):
+            t.join(timeout=timeout)
+        self._threads.clear()
 
     def _create(self, hyperparameters=None) -> str:
         path = self._tmp_path / "d.jsonl"
@@ -245,7 +270,14 @@ def harness(isolated, tmp_path, monkeypatch):
     )
 
     with TestClient(main.app) as c:
-        yield Harness(c, monkeypatch, tmp_path)
+        h = Harness(c, monkeypatch, tmp_path)
+        yield h
+        # Issue #51: ``run_on_a_thread`` starts a real thread that would
+        # otherwise outlive the test and write to the torn-down database
+        # (the long-standing race noted in the issue). Join here so the
+        # harness is either obsolete (no thread was started) or the race is
+        # bounded and the test's teardown owns the thread's lifetime.
+        h.join_threads()
 
 
 def index_of(events, predicate) -> int:
@@ -806,16 +838,16 @@ def upload_raw(harness, data: bytes, name="d.jsonl") -> str:
 def launch_dataset(harness, provider, dataset_id) -> str:
     from temper_control_plane import fake_models, orchestrator
 
-    harness._monkeypatch.setattr(
-        orchestrator,
-        "launch",
-        lambda job_id: orchestrator.run_job(
-            job_id, provider=provider, models=fake_models.catalog_models()
-        ),
-    )
     r = harness._client.post("/v1/jobs", json={"dataset_id": dataset_id})
     assert r.status_code == 201, r.text
-    return r.json()["id"]
+    job_id = r.json()["id"]
+    # Issue #51: the request path no longer starts a job. The test drives
+    # the job directly, as the worker would, rather than relying on a
+    # thread the request path would have started.
+    orchestrator.run_job(
+        job_id, provider=provider, models=fake_models.catalog_models()
+    )
+    return job_id
 
 
 def pushed_dataset_bytes(provider) -> bytes:
@@ -1212,7 +1244,6 @@ def test_missing_credentials_fail_the_job_before_anything_is_provisioned(
     from temper_control_plane import config, orchestrator
 
     monkeypatch.setattr(config, "provider_credentials_present", lambda: False)
-    monkeypatch.setattr(orchestrator, "launch", orchestrator.run_job)
 
     path = harness._tmp_path / "creds.jsonl"
     path.write_text(
@@ -1227,6 +1258,10 @@ def test_missing_credentials_fail_the_job_before_anything_is_provisioned(
     job_id = harness._client.post("/v1/jobs", json={"dataset_id": ds}).json()[
         "id"
     ]
+    # Issue #51: the request path no longer starts a job, so drive it
+    # directly as the worker would -- the missing-credentials path is
+    # still the orchestrator's, not the request's.
+    orchestrator.run_job(job_id)
 
     job = harness.job(job_id)
     assert job["status"] == "failed"

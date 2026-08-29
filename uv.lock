@@ -2214,11 +2214,15 @@ name = "temper-worker"
 version = "0.1.0"
 source = { editable = "apps/worker" }
 dependencies = [
+    { name = "temper-control-plane" },
     { name = "temper-core" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "temper-core", editable = "packages/core" }]
+requires-dist = [
+    { name = "temper-control-plane", editable = "apps/control-plane" },
+    { name = "temper-core", editable = "packages/core" },
+]
 
 [[package]]
 name = "testcontainers"
