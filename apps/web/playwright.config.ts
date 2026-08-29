@@ -112,7 +112,9 @@ export default defineConfig({
       // stay queued forever. No URL to wait for -- the worker is not
       // HTTP, so it starts after the backend is healthy and stays up
       // for the suite's duration.
-      command: `uv run python -m temper_worker.worker`,
+      // The package, not the submodule -- see compose.yaml's worker service
+      // for why `temper_worker.worker` silently does nothing.
+      command: `uv run python -m temper_worker`,
       cwd: "../..",
       reuseExistingServer: false,
       timeout: 180_000,

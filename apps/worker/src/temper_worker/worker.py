@@ -113,7 +113,12 @@ def run_forever(stop: threading.Event | None = None) -> None:
 
 
 def main() -> None:
-    """Entry point for ``python -m temper_worker.worker`` and Docker."""
+    """Entry point for ``python -m temper_worker`` (``__main__.py``) and
+    Docker. Also runnable directly as ``python -m temper_worker.worker`` via
+    the guard below -- both names are correct on purpose after the first one
+    got typo'd into ``compose.yaml`` and ``playwright.config.ts``, where a
+    silent exit(0) went unnoticed by every unit test and was only caught by
+    the e2e journeys leaving every launched job ``queued`` forever."""
 
     logging.basicConfig(
         level=logging.INFO,
@@ -134,3 +139,7 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("worker stopping on interrupt")
         stop.set()
+
+
+if __name__ == "__main__":
+    main()

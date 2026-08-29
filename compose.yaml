@@ -101,7 +101,14 @@ services:
     build:
       context: .
       dockerfile: apps/control-plane/Dockerfile
-    command: ["python", "-m", "temper_worker.worker"]
+    # The package, not the submodule: `python -m temper_worker` runs
+    # `__main__.py`, which calls `worker.main()`. `python -m
+    # temper_worker.worker` runs worker.py as `__main__` with no
+    # `if __name__ == "__main__"` guard in that file -- it imports the
+    # module, defines the functions, and exits 0 having done nothing. Found
+    # by the e2e journeys leaving every launched job `queued` forever; no
+    # unit test calls this command line.
+    command: ["python", "-m", "temper_worker"]
     environment:
       TEMPER_FAKE_PROVIDER: "1"
       TEMPER_DATABASE_URL: postgresql://temper:temper@postgres:5432/temper
