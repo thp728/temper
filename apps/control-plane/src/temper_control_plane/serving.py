@@ -55,19 +55,27 @@ from . import db
 from .provider import Machine, Provider, new_provider
 
 # How often the sweep thread looks for expired endpoints when not driven
-# by per-endpoint timers. Short in production (seconds), not minutes: an
-# orphaned GPU bills until someone notices, and this is the exact failure
-# the issue is about. The per-endpoint timers are the primary mechanism;
-# the sweep is the belt for a missed timer or a restart.
+# by per-endpoint timers. Domain constant with derivation, not a
+# deployment setting (ADR-0062): 5 seconds is tuning, not contract --
+# short in production (seconds), not minutes: an orphaned GPU bills until
+# someone notices, and this is the exact failure the issue is about. The
+# per-endpoint timers are the primary mechanism; the sweep is the belt
+# for a missed timer or a restart. A value two components must agree on
+# (the sweep interval the tests and the production sweep share) is defined
+# once here, never retyped (ADR-0010).
 SWEEP_INTERVAL_S = 5.0
 
 # Inference is proxied through the control plane rather than via a
 # published container port: the machine's inference server (when real)
 # listens on 127.0.0.1 only, and the control plane reaches it over SSH.
 # Direct reachability from outside must therefore fail -- that is what
-# `verify_not_reachable` checks. The port number is the one a real
-# inference server would listen on; the check tries to connect to it on
-# the machine's public host and expects failure.
+# `verify_not_reachable` checks. Domain constant with derivation, not a
+# deployment setting (ADR-0062): 8000 is the conventional inference port
+# a local server would listen on, and the same number the verification
+# and the machine's server must agree on, so it is defined once here and
+# read by both sides rather than retyped (ADR-0010). The port number is
+# the one a real inference server would listen on; the check tries to
+# connect to it on the machine's public host and expects failure.
 INFERENCE_PORT = 8000
 
 # Timers, keyed by endpoint id. One idle timer and one max-lifetime timer

@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   createEndpointV1JobsJobIdEndpointPost,
   deleteEndpointV1JobsJobIdEndpointDelete,
+  endpointPreviewV1JobsJobIdEndpointPreviewGet,
   getEndpointV1JobsJobIdEndpointGet,
   inferEndpointV1JobsJobIdEndpointInferPost,
 } from "@/lib/api/generated/client";
@@ -71,13 +72,9 @@ export default function EndpointSection({
 
   async function fetchPreview() {
     try {
-      const res = await fetch(`/v1/jobs/${jobId}/endpoint/preview`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail?.message ?? `preview failed ${res.status}`);
-      }
-      const data = (await res.json()) as EndpointPreview;
-      setPreview(data);
+      const res = await endpointPreviewV1JobsJobIdEndpointPreviewGet(jobId);
+      const data = (res as unknown as { data?: unknown }).data ?? (res as unknown as EndpointPreview);
+      setPreview(data as EndpointPreview);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     }

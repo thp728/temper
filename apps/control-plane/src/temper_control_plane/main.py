@@ -1249,7 +1249,9 @@ def endpoint_preview(job_id: str):
     """
     job = db.get_job(job_id)
     if not job:
-        raise HTTPException(404, "No such job.")
+        raise HTTPException(
+            404, {"code": "job_not_found", "message": "No such job."}
+        )
     if job.get("status") != "complete":
         raise HTTPException(
             409,
@@ -1301,7 +1303,9 @@ def create_endpoint(job_id: str):
             else 400
         )
         if e.code == "job_not_found":
-            raise HTTPException(404, "No such job.") from e
+            raise HTTPException(
+                404, {"code": "job_not_found", "message": "No such job."}
+            ) from e
         raise HTTPException(status, {"code": e.code, "message": str(e)}) from e
 
 
@@ -1311,7 +1315,9 @@ def create_endpoint(job_id: str):
 def get_endpoint(job_id: str):
     """The job's active endpoint, if any. The key hash is never returned."""
     if not db.get_job(job_id):
-        raise HTTPException(404, "No such job.")
+        raise HTTPException(
+            404, {"code": "job_not_found", "message": "No such job."}
+        )
     from temper_control_plane import serving as serving_mod
 
     ep = serving_mod.get_endpoint(job_id)
@@ -1338,7 +1344,9 @@ def get_endpoint(job_id: str):
 def delete_endpoint(job_id: str):
     """Stop the job's active endpoint immediately, via confirmed teardown."""
     if not db.get_job(job_id):
-        raise HTTPException(404, "No such job.")
+        raise HTTPException(
+            404, {"code": "job_not_found", "message": "No such job."}
+        )
     from temper_control_plane import serving as serving_mod
     from temper_core.errors import OrchestratorError
 
@@ -1378,7 +1386,9 @@ def infer_endpoint(
     SSH and run the model there.
     """
     if not db.get_job(job_id):
-        raise HTTPException(404, "No such job.")
+        raise HTTPException(
+            404, {"code": "job_not_found", "message": "No such job."}
+        )
     # Accept either X-API-Key or Authorization: Bearer <key>
     key = x_api_key
     if not key and authorization:
