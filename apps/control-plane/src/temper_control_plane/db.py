@@ -1047,43 +1047,6 @@ def get_events(job_id: str, after_id: int = 0, limit: int = 500) -> list[dict]:
     return out
 
 
-def active_jobs() -> list[dict]:
-    """Non-terminal jobs. Used at startup to spot runs orphaned by a restart."""
-    with connect() as c:
-        q = ",".join(["%s"] * len(TERMINAL_STATES))
-        rows = c.execute(
-            f"SELECT * FROM jobs WHERE status NOT IN ({q})",
-            tuple(TERMINAL_STATES),
-        ).fetchall()
-    return [
-        _present(
-            _with_artifact(
-                _with_is_moe(
-                    _with_warnings(
-                        _row(
-                            r,
-                            {
-                                "hyperparams_json": "hyperparameters",
-                                "warnings_json": "warnings",
-                                "quote_json": "quote",
-                                "overrides_json": "overrides",
-                                "actuals_json": "actuals",
-                                "attempts_json": "attempts",
-                            },
-                            defaults={
-                                "overrides": [],
-                                "attempts": [],
-                                "warnings": [],
-                            },
-                        )
-                    )
-                )
-            )
-        )
-        for r in rows
-    ]
-
-
 def claim_next_job() -> dict | None:
     """Atomically claim one queued job for a worker.
 

@@ -58,29 +58,31 @@ def _wait_terminal(client, job_id: str, timeout: float = 10.0) -> dict:
     raise AssertionError(f"job {job_id} did not reach a terminal state")
 
 
-def _job_request(client, tmp_path, **extra):
+def _job_request(client, tmp_path, provider=None, **extra):
+    """Post a job, and drive it to a terminal state against `provider` if
+    given -- the request path only inserts a `queued` row (issue #51), so a
+    test that wants the job to actually run drives it itself, the way the
+    worker would."""
     ds = _valid_dataset(client, tmp_path)
     body = {"dataset_id": ds, **extra}
     r = client.post("/v1/jobs", json=body)
     assert r.status_code == 201, r.text
-    return r.json()
+    job = r.json()
+    if provider is not None:
+        from temper_control_plane import orchestrator as orch
+
+        orch.run_job(job["id"], provider=provider)
+    return job
 
 
-def _launch_via_fake(monkeypatch, provider):
-    """Drive real `run_job` against the given provider (the simulated machine).
-
-    The `client` fixture stubs `orchestrator.launch` to a no-op so no test can
-    provision a real machine; a test that wants a job to actually run replaces
-    it with `run_job` against a fake provider. Must be set up before the job is
-    created, because creation calls `launch`.
-    """
+def _set_published_reference(monkeypatch):
+    """The checked-in image contract starts unpublished; a test that drives
+    `run_job` against the fake provider needs a reference so the
+    pull-by-digest path is exercised rather than the refusal."""
     from temper_control_plane import orchestrator as orch
 
     monkeypatch.setattr(
         orch, "published_reference", lambda: "ghcr.io/x/y@sha256:0000"
-    )
-    monkeypatch.setattr(
-        orch, "launch", lambda job_id: orch.run_job(job_id, provider=provider)
     )
 
 
@@ -134,8 +136,10 @@ def test_verified_delivery_formats_are_recorded_and_published(
     from temper_control_plane import db
     from temper_control_plane.fake_provider import completed_run
 
-    _launch_via_fake(monkeypatch, completed_run())
-    job = _job_request(client, tmp_path, delivery=["merged", "quantised"])
+    _set_published_reference(monkeypatch)
+    job = _job_request(
+        client, tmp_path, delivery=["merged", "quantised"], provider=completed_run()
+    )
 
     rec = _wait_terminal(client, job["id"])
     assert rec["status"] == "complete"
@@ -166,8 +170,10 @@ def test_each_delivery_format_downloads_with_a_manifest_describing_itself(
     generator ADR-0054 ships for the canonical artifact, not a parallel one."""
     from temper_control_plane.fake_provider import completed_run
 
-    _launch_via_fake(monkeypatch, completed_run())
-    job = _job_request(client, tmp_path, delivery=["merged", "quantised"])
+    _set_published_reference(monkeypatch)
+    job = _job_request(
+        client, tmp_path, delivery=["merged", "quantised"], provider=completed_run()
+    )
     _wait_terminal(client, job["id"])
 
     r = client.get(
@@ -208,8 +214,10 @@ def test_the_default_download_still_serves_the_canonical_artifact(
     artifact -- the delivery addition changes nothing for existing flows."""
     from temper_control_plane.fake_provider import completed_run
 
-    _launch_via_fake(monkeypatch, completed_run())
-    job = _job_request(client, tmp_path, delivery=["merged"])
+    _set_published_reference(monkeypatch)
+    job = _job_request(
+        client, tmp_path, delivery=["merged"], provider=completed_run()
+    )
     _wait_terminal(client, job["id"])
 
     r = client.get(f"/v1/jobs/{job['id']}/artifact")
@@ -285,8 +293,10 @@ def test_a_corrupt_delivery_format_is_recorded_as_unverified(
     rather than served -- the same rule that governs the canonical artifact."""
     from temper_control_plane import db
 
-    _launch_via_fake(monkeypatch, _corrupt_delivery_provider())
-    job = _job_request(client, tmp_path, delivery=["merged"])
+    _set_published_reference(monkeypatch)
+    job = _job_request(
+        client, tmp_path, delivery=["merged"], provider=_corrupt_delivery_provider()
+    )
     _wait_terminal(client, job["id"])
 
     stored = db.get_job(job["id"])

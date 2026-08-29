@@ -119,16 +119,8 @@ def test_launching_with_the_key_yields_a_failed_job_record(
 
     wait_validated(client, ds_id)  # the job needs the finished report
 
-    def start(job_id):
-        from temper_control_plane import fake_models
+    from temper_control_plane import fake_models
 
-        orchestrator.run_job(
-            job_id,
-            provider=completed_run(),
-            models=fake_models.catalog_models(),
-        )
-
-    monkeypatch.setattr(orchestrator, "launch", start)
     r = client.post(
         "/v1/jobs",
         json={
@@ -137,7 +129,15 @@ def test_launching_with_the_key_yields_a_failed_job_record(
         },
     )
     assert r.status_code == 201, r.text
-    record = r.json()
+    job_id = r.json()["id"]
+    # The request path only inserts a `queued` row (issue #51); drive it
+    # directly, the way the worker would.
+    orchestrator.run_job(
+        job_id,
+        provider=completed_run(),
+        models=fake_models.catalog_models(),
+    )
+    record = client.get(f"/v1/jobs/{job_id}").json()
     assert record["status"] == "failed"
     assert record["error_code"] == "gpu_stalled"
     assert record["error_message"]

@@ -48,8 +48,8 @@ def _valid_dataset(client, tmp_path):
 def _complete_job(client, tmp_path, monkeypatch):
     """Create a job and mark it complete with a fake price, without provisioning a real machine.
 
-    The endpoint requires a complete job. The `client` fixture stubs
-    orchestrator.launch, so a job stays queued unless we drive it. For
+    The endpoint requires a complete job. Posting through the API only
+    inserts a `queued` row (issue #51); nothing drives it further, so for
     serving tests we just mark the job complete directly in the DB, with
     the fields a real orchestrator would have set.
     """

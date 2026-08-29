@@ -117,7 +117,16 @@ services:
       - temper-objects:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep -q '[t]emper_worker'"]
+      # `python:3.12-slim` carries no `ps` (no procps package), so a
+      # process-table check isn't available; `db.ping()` checks the
+      # dependency that actually matters -- a worker that cannot reach the
+      # database cannot claim anything, which is a truer liveness signal
+      # than "a process with this name exists" would be anyway.
+      test:
+        - CMD
+        - python
+        - -c
+        - "from temper_control_plane import db; db.ping()"
       interval: 10s
       timeout: 3s
       retries: 3

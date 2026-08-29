@@ -56,10 +56,7 @@ def isolated(tmp_path, monkeypatch, _postgres_template):
     directory. Nothing a test does may reach the checkout's real data/ tree
     or another test's rows.
 
-    Fixtures that need the app add their TestClient on top of this one. This
-    deliberately does NOT neuter `orchestrator.launch`: the orchestrator
-    tests swap it for a driver they control, including the real threaded
-    one, and a stub here would be what they captured.
+    Fixtures that need the app add their TestClient on top of this one.
     """
     from temper_control_plane import db, storage
 
@@ -81,10 +78,12 @@ def isolated(tmp_path, monkeypatch, _postgres_template):
 
 @pytest.fixture()
 def client(isolated, monkeypatch):
-    # Never launch a real VM from a test.
+    # Posting a job through this client only ever inserts a `queued` row
+    # (issue #51): the request path does not start a thread or reach a
+    # provider, so there is nothing here to neuter. A test that wants a job
+    # driven calls `orchestrator.run_job` itself, the way the worker would.
     from temper_control_plane import fake_provider, orchestrator
 
-    monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
     # The checked-in image contract starts unpublished; tests that drive a
     # real `run_job` (e.g. the simulated-machine journeys) inject a reference
     # so the pull-by-digest path is exercised rather than the refusal.

@@ -39,9 +39,10 @@ def _chat_rows(n):
     ]
 
 
-def _upload_and_create(client):
-    """A job created through the API, launched the way the caller's
-    `orchestrator.launch` monkeypatch decides."""
+def _upload_and_create(client, driver=None):
+    """A job created through the API. The request path only inserts a
+    `queued` row (issue #51); if `driver` is given, it is called with the
+    job id right after creation, the way the worker would drive it."""
     r = client.post(
         "/v1/datasets",
         files={
@@ -60,21 +61,20 @@ def _upload_and_create(client):
     wait_validated(client, ds_id)
     r = client.post("/v1/jobs", json={"dataset_id": ds_id})
     assert r.status_code == 201, r.text
-    return r.json()["id"]
+    job_id = r.json()["id"]
+    if driver is not None:
+        driver(job_id)
+    return job_id
 
 
-def _finish_launches(client, monkeypatch):
-    """Launch every job synchronously to completion on the canned fake."""
+def _run_to_completion(job_id):
+    """Drive a job synchronously to completion on the canned fake."""
     from temper_control_plane import fake_models, orchestrator
 
-    monkeypatch.setattr(
-        orchestrator,
-        "launch",
-        lambda job_id: orchestrator.run_job(
-            job_id,
-            provider=completed_run(),
-            models=fake_models.catalog_models(),
-        ),
+    orchestrator.run_job(
+        job_id,
+        provider=completed_run(),
+        models=fake_models.catalog_models(),
     )
 
 
@@ -123,9 +123,8 @@ def _ids(text):
 
 
 @pytest.fixture()
-def finished_job_id(client, monkeypatch):
-    _finish_launches(client, monkeypatch)
-    job_id = _upload_and_create(client)
+def finished_job_id(client):
+    job_id = _upload_and_create(client, driver=_run_to_completion)
     _wait_terminal(client, job_id)
     return job_id
 
@@ -196,16 +195,21 @@ def test_the_stream_carries_live_events_and_ends_at_terminal(
         pause_at_line=2,
     )
 
+    threads: list[threading.Thread] = []
+
     def start(job_id):
-        threading.Thread(
+        t = threading.Thread(
             target=orchestrator.run_job,
             args=(job_id, provider, None, fake_models.catalog_models()),
             daemon=True,
             name=f"job-{job_id[:8]}",
-        ).start()
+        )
+        t.start()
+        threads.append(t)
 
-    monkeypatch.setattr(orchestrator, "launch", start)
-    job_id = _upload_and_create(client)
+    # The request path only inserts a `queued` row (issue #51); start the
+    # job on a thread directly, the way the worker would.
+    job_id = _upload_and_create(client, driver=start)
     assert provider.wait_until_paused(), "the job never reached its pause"
 
     # The stream is read on the main thread, line by line, and the pause is
@@ -233,3 +237,5 @@ def test_the_stream_carries_live_events_and_ends_at_terminal(
     # The stream delivered the whole history, ending at the terminal event.
     page = client.get(f"/v1/jobs/{job_id}/events").json()
     assert _ids("\n".join(seen)) == [e["id"] for e in page["events"]]
+    for t in threads:
+        t.join(timeout=5.0)

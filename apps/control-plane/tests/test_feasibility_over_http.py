@@ -19,11 +19,11 @@ from temper_control_plane import config
 
 
 @pytest.fixture()
-def client(isolated, monkeypatch):
+def client(isolated):
+    # Posting a job here only inserts a `queued` row (issue #51); nothing
+    # runs it, so there is no thread or provider to neuter.
+    from temper_control_plane import main
 
-    from temper_control_plane import main, orchestrator
-
-    monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
     with TestClient(main.app) as c:
         yield c
 

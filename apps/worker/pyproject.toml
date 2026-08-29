@@ -1,7 +1,6 @@
-# Reserved by ADR-0010 so that issue #51 has a name to move orchestration into
-# rather than inventing one. Empty on purpose: an empty directory would not
-# survive git, and a directory invented later would not match what the ADR and
-# sixty tickets already call it.
+# Reserved by ADR-0010 so that issue #51 had a name to move orchestration
+# into rather than inventing one. Now the process that claims queued jobs
+# and drives them through the unchanged orchestrator (ADR-0066).
 [project]
 name = "temper-worker"
 version = "0.1.0"

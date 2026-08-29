@@ -15,7 +15,6 @@ from collections.abc import Sequence
 from fastapi import HTTPException
 
 from temper_control_plane import admission, config, db
-from temper_control_plane import orchestrator as _orch
 from temper_core import (
     delivery,
     divergence,
@@ -25,15 +24,6 @@ from temper_core import (
     overrides,
     surface,
 )
-
-# The original thread starter, captured so tests that monkeypatch ``launch``
-# to drive jobs inline (the pre-#51 pattern) still work without making the
-# production request path start threads. Production ``launch`` is the thread
-# starter; tests replace it with a lambda that calls ``run_job`` with a
-# fake provider. If ``launch`` has been monkeypatched away from the original,
-# call the test's replacement so the job is driven, but never call the
-# original thread starter from the request path.
-_ORIGINAL_LAUNCH = _orch.launch
 
 
 def usable_dataset(dataset_id: str) -> dict:
@@ -304,20 +294,13 @@ def create(
             warn["message"],
             {k: v for k, v in warn.items() if k != "message"},
         )
-    # The request path no longer starts threads (issue #51). The worker
-    # claims ``queued`` jobs with ``SELECT ... FOR UPDATE SKIP LOCKED`` and
-    # drives them; the control plane just inserts the row. ``orchestrator.launch``
-    # remains for tests that want to drive a job inline, but the production
-    # request path does not call it. For backwards compatibility with tests
-    # that monkeypatch ``launch`` to a helper that drives the job with a fake
-    # provider (the pre-#51 pattern), call the monkeypatched replacement if
-    # it is not the original thread starter -- this keeps those tests green
-    # without making the production path start threads.
-    if _orch.launch is not _ORIGINAL_LAUNCH:
-        try:
-            _orch.launch(job_id)
-        except Exception:  # noqa: S110 - test helper may raise, but job is already created
-            pass
+    # The request path no longer starts threads (issue #51): it inserts the
+    # ``queued`` row and returns. A separate worker process claims it with
+    # ``SELECT ... FOR UPDATE SKIP LOCKED`` and drives it through
+    # ``orchestrator.run_job``, unchanged. Nothing here calls into the
+    # orchestrator at all -- not even conditionally -- because a request
+    # path that starts a thread under some condition is still a request path
+    # that starts threads.
     return job_id
 
 
@@ -438,10 +421,4 @@ def retry_diverged_job(job_id: str) -> str:
     )
     # Like ``create`` above, the retry job is just inserted as ``queued``;
     # the worker claims it. No thread is started on the request path.
-    # See the ``_ORIGINAL_LAUNCH`` check above for the test-compatibility shim.
-    if _orch.launch is not _ORIGINAL_LAUNCH:
-        try:
-            _orch.launch(new_job_id)
-        except Exception:  # noqa: S110 - test helper may raise, but job is already created
-            pass
     return new_job_id
