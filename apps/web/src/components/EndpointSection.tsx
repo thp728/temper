@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ApiError } from "@/lib/api/mutator";
 import {
   createEndpointV1JobsJobIdEndpointPost,
   deleteEndpointV1JobsJobIdEndpointDelete,
@@ -60,12 +61,16 @@ export default function EndpointSection({
         setEndpoint(res as unknown as EndpointRecord);
       }
     } catch (e: unknown) {
-      // 404 means no endpoint yet -- not an error
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("404") || msg.includes("endpoint_not_found")) {
+      // 404 endpoint_not_found means no endpoint yet -- the ordinary state
+      // of every job nobody has served yet, not an error to show the user.
+      // Read the stable code/status structurally, never by substring-matching
+      // a human message that can be reworded without anyone realising control
+      // flow depended on it.
+      if (e instanceof ApiError && (e.code === "endpoint_not_found" || e.status === 404)) {
         setEndpoint(null);
+        setError(null);
       } else {
-        setError(msg);
+        setError(e instanceof Error ? e.message : String(e));
       }
     }
   }
@@ -106,17 +111,10 @@ export default function EndpointSection({
       setEndpoint(createdData as unknown as EndpointRecord);
       setCompletion(null);
     } catch (e: unknown) {
-      const msg =
-        e instanceof Error ? e.message : (e as { detail?: { message?: string } })?.detail?.message ?? String(e);
-      // Try to extract API error
-      const apiErrRaw =
-        (e as unknown as { response?: { data?: { detail?: unknown } }; detail?: unknown })?.response?.data?.detail ??
-        (e as unknown as { detail?: unknown })?.detail;
-      const apiErr = apiErrRaw as { code?: string; message?: string } | undefined;
-      if (apiErr) {
-        setError(`${apiErr.code ?? "error"}: ${apiErr.message ?? JSON.stringify(apiErr)}`);
+      if (e instanceof ApiError) {
+        setError(`${e.code}: ${e.message}`);
       } else {
-        setError(msg);
+        setError(e instanceof Error ? e.message : String(e));
       }
     } finally {
       setLoading(false);
@@ -174,12 +172,8 @@ export default function EndpointSection({
       // refresh expiry after use
       await fetchEndpoint();
     } catch (e: unknown) {
-      const apiErrRaw =
-        (e as unknown as { response?: { data?: { detail?: unknown } }; detail?: unknown })?.response?.data?.detail ??
-        (e as unknown as { detail?: unknown })?.detail;
-      const apiErr = apiErrRaw as { code?: string; message?: string } | undefined;
-      if (apiErr) {
-        setError(`${apiErr.code ?? "error"}: ${apiErr.message ?? JSON.stringify(apiErr)}`);
+      if (e instanceof ApiError) {
+        setError(`${e.code}: ${e.message}`);
       } else {
         setError(e instanceof Error ? e.message : String(e));
       }

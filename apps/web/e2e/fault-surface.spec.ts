@@ -94,7 +94,7 @@ test("an oom fault is watched through the memory recovery it proves", async ({
   // The user is told a recovery happened and what changed -- and the
   // deliberately broken first attempt keeps the fault's `simulated_oom` code,
   // so the marker that makes the break identifiable survives the recovery.
-  const alert = page.getByRole("main").getByRole("alert");
+  const alert = page.getByTestId("memory-recovery");
   await expect(alert).toContainText("Memory recovery");
   await expect(alert).toContainText(/effective batch/);
   await expect(alert).toContainText("simulated_oom");
