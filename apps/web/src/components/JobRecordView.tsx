@@ -9,6 +9,7 @@ import ProgressRegion from "@/components/ProgressRegion";
 import QuoteView from "@/components/QuoteView";
 import { Button } from "@/components/ui/button";
 import DivergenceRetry from "@/components/DivergenceRetry";
+import EndpointSection from "@/components/EndpointSection";
 import MemoryRecovery from "@/components/MemoryRecovery";
 import {
   TERMINAL_STATUSES,
@@ -663,6 +664,14 @@ export default function JobRecordView({
           settings recorded. Shown whenever the run recorded one; a failed
           comparison is stated with its reason, never as a failed job. */}
       <SideBySideSection job={job} />
+
+      {/* Temporary authenticated endpoint (issue #78): try the tuned model
+          without downloading anything. The endpoint requires a key (stored
+          hashed), carries its own expiry from the moment it starts, extends
+          on use, and stops itself via a timer -- the forgotten warm machine
+          is the loudest complaint against the commercial baseline, so
+          stopping itself is the feature. */}
+      <EndpointSection jobId={job.id} jobStatus={job.status} />
 
       {job.quote && (
         // The quote the job launched under, frozen into the spec at launch

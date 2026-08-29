@@ -21,7 +21,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from typing import BinaryIO
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -47,7 +47,12 @@ from temper_control_plane.contracts_models import (
     DatasetList,
     DatasetRecord,
     DecisionOverride,
+    EndpointCreated,
+    EndpointPreview,
+    EndpointRecord,
     EventPage,
+    InferRequest,
+    InferResponse,
     JobList,
     JobRecord,
     JobSpecPreview,
@@ -159,7 +164,29 @@ async def lifespan(_app: FastAPI):
             "created may still exist -- check the "
             "provider console.",
         )
-    yield
+    # Endpoints that outlive their usefulness are the top complaint against
+    # the commercial baseline -- the training is cheap and the forgotten warm
+    # machine is the bill -- so stopping itself is the feature (ADR-0065).
+    # An endpoint that survives a restart without a timer is an endpoint
+    # that never stops, so re-arm timers for any still-running endpoints,
+    # or stop those already past their deadline. The sweep thread then
+    # keeps the expiry visible without anyone asking.
+    try:
+        from temper_control_plane import serving as serving_mod
+
+        serving_mod.rearm_after_restart()
+        serving_mod.start_sweep_thread()
+    except Exception:  # noqa: S110
+        pass
+    try:
+        yield
+    finally:
+        try:
+            from temper_control_plane import serving as serving_mod2
+
+            serving_mod2.stop_sweep_thread()
+        except Exception:  # noqa: S110
+            pass
 
 
 app = FastAPI(
@@ -1059,7 +1086,7 @@ def download_artifact(job_id: str, format: str | None = None):
     dataset_row = None
     try:
         dataset_row = db.get_dataset(job["dataset_id"])
-    except Exception:
+    except Exception:  # noqa: S110
         dataset_row = None
     try:
         provenance = provenance_manifest.generate(
@@ -1201,6 +1228,196 @@ def download_checkpoint(job_id: str, step: int):
     )
 
 
+# ---------------------------------------------------------------------------
+# serving endpoints (issue #78): temporary authenticated endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/v1/jobs/{job_id}/endpoint/preview",
+    tags=["jobs"],
+    response_model=EndpointPreview,
+)
+def endpoint_preview(job_id: str):
+    """What starting an endpoint would cost and when it would stop, before it starts.
+
+    The hourly cost is the job's frozen price and the stop times are now +
+    idle and now + max, both domain constants (temper_core.serving). The
+    preview is what the interface shows before the user confirms the start,
+    so there is no surprise about the bill or the lifetime (spec 011: "the
+    hourly cost and the stop time are shown before it starts").
+    """
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "No such job.")
+    if job.get("status") != "complete":
+        raise HTTPException(
+            409,
+            {
+                "code": "job_not_complete",
+                "message": f"Job is '{job.get('status')}'; only a complete job can be served.",
+            },
+        )
+    from temper_control_plane import serving as serving_mod
+
+    return serving_mod.preview_for_job(job)
+
+
+@app.post(
+    "/v1/jobs/{job_id}/endpoint",
+    tags=["jobs"],
+    response_model=EndpointCreated,
+    status_code=201,
+)
+def create_endpoint(job_id: str):
+    """Start a temporary authenticated endpoint for a finished job.
+
+    The endpoint requires a key (returned once, stored hashed), carries its
+    own expiry from the moment it starts, extends on use, and stops itself
+    via a timer -- the forgotten warm machine is the loudest complaint
+    against the commercial baseline, so stopping itself is the feature.
+    Reachability from outside is verified before the key is handed out: the
+    platform's firewall does not filter published container ports the way it
+    appears to, which is why the trainer publishes nothing and why anything
+    that does publish is checked from outside (spec 011). The verification
+    originates on the control plane (outside the machine), never on the
+    machine itself, so a `curl localhost` on the machine cannot pass it.
+    """
+    from temper_control_plane import serving as serving_mod
+    from temper_core.errors import OrchestratorError
+
+    try:
+        return serving_mod.start_endpoint(job_id)
+    except OrchestratorError as e:
+        status = (
+            409
+            if e.code
+            in (
+                "endpoint_not_complete",
+                "endpoint_already_running",
+                "endpoint_provision_failed",
+                "endpoint_reachable",
+            )
+            else 400
+        )
+        if e.code == "job_not_found":
+            raise HTTPException(404, "No such job.") from e
+        raise HTTPException(status, {"code": e.code, "message": str(e)}) from e
+
+
+@app.get(
+    "/v1/jobs/{job_id}/endpoint", tags=["jobs"], response_model=EndpointRecord
+)
+def get_endpoint(job_id: str):
+    """The job's active endpoint, if any. The key hash is never returned."""
+    if not db.get_job(job_id):
+        raise HTTPException(404, "No such job.")
+    from temper_control_plane import serving as serving_mod
+
+    ep = serving_mod.get_endpoint(job_id)
+    if ep is None:
+        raise HTTPException(
+            404,
+            {
+                "code": "endpoint_not_found",
+                "message": f"No running endpoint for job {job_id}.",
+            },
+        )
+    # Enrich with the domain constants so the interface can show the idle
+    # and max windows without retyping them (ADR-0010).
+    from temper_core import serving as core_serving
+
+    ep["idle_timeout_s"] = float(core_serving.ENDPOINT_IDLE_TIMEOUT_S)
+    ep["max_lifetime_s"] = float(core_serving.ENDPOINT_MAX_LIFETIME_S)
+    return ep
+
+
+@app.delete(
+    "/v1/jobs/{job_id}/endpoint", tags=["jobs"], response_model=EndpointRecord
+)
+def delete_endpoint(job_id: str):
+    """Stop the job's active endpoint immediately, via confirmed teardown."""
+    if not db.get_job(job_id):
+        raise HTTPException(404, "No such job.")
+    from temper_control_plane import serving as serving_mod
+    from temper_core.errors import OrchestratorError
+
+    try:
+        ep = serving_mod.stop_endpoint(job_id)
+        from temper_core import serving as core_serving
+
+        ep["idle_timeout_s"] = float(core_serving.ENDPOINT_IDLE_TIMEOUT_S)
+        ep["max_lifetime_s"] = float(core_serving.ENDPOINT_MAX_LIFETIME_S)
+        return ep
+    except OrchestratorError as e:
+        if e.code == "endpoint_not_found":
+            raise HTTPException(
+                404, {"code": e.code, "message": str(e)}
+            ) from e
+        raise HTTPException(409, {"code": e.code, "message": str(e)}) from e
+
+
+@app.post(
+    "/v1/jobs/{job_id}/endpoint/infer",
+    tags=["jobs"],
+    response_model=InferResponse,
+)
+def infer_endpoint(
+    job_id: str,
+    body: InferRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+):
+    """Answer a prompt via the job's active endpoint. Requires the endpoint's key.
+
+    The key is verified against the stored hash (constant-time), the expiry
+    is checked and extended on success (capped by the max), and a completion
+    is returned. A busy endpoint that is kept alive by traffic still dies at
+    the max, because the extension is capped. The generation itself is a
+    stub in the fake tier; on real hardware it would reach the machine over
+    SSH and run the model there.
+    """
+    if not db.get_job(job_id):
+        raise HTTPException(404, "No such job.")
+    # Accept either X-API-Key or Authorization: Bearer <key>
+    key = x_api_key
+    if not key and authorization:
+        if authorization.lower().startswith("bearer "):
+            key = authorization[7:].strip()
+        else:
+            key = authorization.strip()
+    if not key:
+        raise HTTPException(
+            401,
+            {
+                "code": "endpoint_unauthorized",
+                "message": (
+                    "This endpoint requires a key. Pass it as X-API-Key or "
+                    "Authorization: Bearer <key>."
+                ),
+            },
+        )
+    from temper_control_plane import serving as serving_mod
+    from temper_core.errors import OrchestratorError
+
+    try:
+        return serving_mod.infer(job_id, key, body.prompt)
+    except OrchestratorError as e:
+        if e.code == "endpoint_not_found":
+            raise HTTPException(
+                404, {"code": e.code, "message": str(e)}
+            ) from e
+        if e.code == "endpoint_unauthorized":
+            raise HTTPException(
+                401, {"code": e.code, "message": str(e)}
+            ) from e
+        if e.code == "endpoint_expired":
+            raise HTTPException(
+                410, {"code": e.code, "message": str(e)}
+            ) from e
+        raise HTTPException(400, {"code": e.code, "message": str(e)}) from e
+
+
 def _probe_dependency(report: dict[str, dict], name: str, probe) -> None:
     """Probe one dependency into `report`, naming it and its failure kind.
 
@@ -1212,7 +1429,7 @@ def _probe_dependency(report: dict[str, dict], name: str, probe) -> None:
     try:
         probe()
         report[name] = {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: S110
         report[name] = {"ok": False, "error": type(e).__name__}
 
 

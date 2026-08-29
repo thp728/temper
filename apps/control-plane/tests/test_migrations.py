@@ -63,6 +63,7 @@ def test_a_fresh_database_migrates_to_head(empty_database):
         "artifact_members",
         "metric_series",
         "checkpoints",
+        "endpoints",
     ):
         assert expected in tables, f"{expected} missing after migrate_up"
     assert set(migrations.applied_ids(empty_database)) == {
@@ -86,7 +87,7 @@ def test_every_migration_rolls_back_the_schema_it_added(empty_database):
     migrations.migrate_down(empty_database, steps=len(migrations.MIGRATIONS))
 
     tables = _table_names(empty_database)
-    for table in ("jobs", "datasets", "quotes", "checkpoints"):
+    for table in ("jobs", "datasets", "quotes", "checkpoints", "endpoints"):
         assert table not in tables
     assert migrations.applied_ids(empty_database) == []
 
@@ -105,12 +106,17 @@ def test_rolling_back_0002_drops_the_phase_b_tables_and_keeps_the_baseline(
     migrations.migrate_down(empty_database, steps=1)
 
     tables = _table_names(empty_database)
-    assert "quotes" not in tables
-    assert "checkpoints" not in tables
-    # The baseline (0001) survives a rollback of 0002 alone.
+    # Rolling back the last migration (now 0003_endpoints) drops endpoints
+    # but keeps the baseline and the phase-B tables.
+    assert "endpoints" not in tables
+    assert "quotes" in tables
+    assert "checkpoints" in tables
     assert "jobs" in tables
     assert "datasets" in tables
-    assert migrations.applied_ids(empty_database) == ["0001_baseline"]
+    assert migrations.applied_ids(empty_database) == [
+        "0001_baseline",
+        "0002_phase_b_tables",
+    ]
 
 
 def test_rolling_back_the_baseline_loses_the_data_it_held(empty_database):

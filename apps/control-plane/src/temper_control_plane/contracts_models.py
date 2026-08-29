@@ -938,3 +938,69 @@ class Calibration(BaseModel):
     metrics: dict[str, CalibrationMetric]
     phases: list[CalibrationPhase]
     runs: list[CalibrationRun]
+
+
+class EndpointPreview(BaseModel):
+    """What starting an endpoint would cost and when it would stop, before it starts.
+
+    The hourly cost is the job's frozen price (the rate the job was
+    provisioned at) and the stop times are now + idle and now + max, both
+    domain constants (temper_core.serving). The preview is what the
+    interface shows before the user confirms the start, so there is no
+    surprise about the bill or the lifetime (spec 011: "the hourly cost and
+    the stop time are shown before it starts")."""
+
+    price_per_hour: float
+    currency: str
+    idle_timeout_s: float
+    max_lifetime_s: float
+    expires_at: float
+    max_expires_at: float
+
+
+class EndpointRecord(BaseModel):
+    """A temporary authenticated endpoint (issue #78).
+
+    The key itself is never published: the creation response carries the
+    plaintext once, and every later read carries only the display prefix.
+    A key that can be read back out of the store is a finding. The
+    endpoint carries its own expiry from the moment it starts, extends on
+    use, and stops itself via a timer -- the forgotten warm machine is the
+    loudest complaint against the commercial baseline, so stopping itself
+    is the feature."""
+
+    id: str
+    job_id: str
+    status: str
+    api_key_prefix: str
+    created_at: float
+    expires_at: float
+    max_expires_at: float
+    last_used_at: float
+    price_per_hour: float | None = None
+    currency: str | None = None
+    machine_id: int | None = None
+    idle_timeout_s: float | None = None
+    max_lifetime_s: float | None = None
+    stopped_at: float | None = None
+    stop_reason: str | None = None
+
+
+class EndpointCreated(EndpointRecord):
+    """The creation response: the endpoint plus the plaintext key, once."""
+
+    api_key: str
+
+
+class InferRequest(BaseModel):
+    """One prompt for the served model."""
+
+    prompt: str
+
+
+class InferResponse(BaseModel):
+    """The model's completion, plus the refreshed expiry."""
+
+    completion: str
+    expires_at: float
+    max_expires_at: float
