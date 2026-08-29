@@ -106,6 +106,7 @@ repository becomes public at submission.
 | [0063](0063-a-spend-ceiling-is-enforced-outside-the-training-process.md) | A spend ceiling is enforced outside the training process, with the shutdown ordered checkpoint-then-terminate-then-destroy | accepted | 2026-08-28 |
 | [0064](0064-the-relational-store-moves-behind-the-existing-seam.md) | The relational store moves behind the existing persistence seam, and the migration's boundary held for the domain but not for the test harness's isolation strategy or the engine's operational shape | accepted | 2026-08-29 |
 | [0065](0065-a-served-endpoint-stops-itself.md) | A served endpoint stops itself | accepted | 2026-08-29 |
+| [0066](0066-orchestration-moves-into-a-worker-process-that-claims-work.md) | Orchestration moves into a worker process that claims queued jobs with `SELECT ... FOR UPDATE SKIP LOCKED`; the request path starts no threads | accepted | 2026-08-29 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

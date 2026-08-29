@@ -1,10 +1,14 @@
 # Control plane
 
-The API: FastAPI, SQLite, a thread per job. The server-rendered pages this
+The API: FastAPI over PostgreSQL (ADR-0064). The server-rendered pages this
 once also served were deleted when the last screen was ported into
 `apps/web` (Spec 007) — this app now answers the `/v1` contract only, and
 the interface that consumes it lives in the web app. The domain logic sits in
 `packages/core` (moved here from this app's own source under issue #15).
+
+**This process does not run jobs.** `jobs.create` inserts a `queued` row and
+returns; `apps/worker` claims it and calls `orchestrator.run_job` from a
+separate process (ADR-0066). The request path starts no threads.
 
 ## Seams that Phase B depends on
 
