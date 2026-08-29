@@ -114,11 +114,9 @@ def run_forever(stop: threading.Event | None = None) -> None:
 
 def main() -> None:
     """Entry point for ``python -m temper_worker`` (``__main__.py``) and
-    Docker. Also runnable directly as ``python -m temper_worker.worker`` via
-    the guard below -- both names are correct on purpose after the first one
-    got typo'd into ``compose.yaml`` and ``playwright.config.ts``, where a
-    silent exit(0) went unnoticed by every unit test and was only caught by
-    the e2e journeys leaving every launched job ``queued`` forever."""
+    Docker. Also runnable directly via the guard below, since a submodule
+    invocation without one previously exited silently doing nothing --
+    see the guard's own comment."""
 
     logging.basicConfig(
         level=logging.INFO,
@@ -142,4 +140,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # `compose.yaml` and `playwright.config.ts` both once invoked this file
+    # as `python -m temper_worker.worker` (the submodule) rather than
+    # `python -m temper_worker` (the package, which `__main__.py` runs).
+    # Without this guard, the submodule form imports the module, defines
+    # its functions, and exits 0 having started nothing -- no unit test
+    # calls a command line, so only the e2e journeys caught it (every
+    # launched job stayed `queued` forever). Both invocations now work.
     main()

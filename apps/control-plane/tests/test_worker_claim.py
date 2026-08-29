@@ -33,6 +33,27 @@ from temper_control_plane.fake_provider import FakeProvider
 pytestmark = pytest.mark.usefixtures("isolated")
 
 
+def _finished_dataset_id(name: str) -> str:
+    """A dataset row valid enough to satisfy a job's foreign key -- these
+    tests exercise `db.claim_next_job` directly, which only cares about a
+    job's status, not the dataset behind it."""
+
+    ds_id = db.create_dataset("d.jsonl", f"datasets/{name}.jsonl", name)
+    db.finish_dataset(
+        ds_id,
+        {
+            "valid": True,
+            "row_count": 12,
+            "schema_type": "chat",
+            "enable_thinking": False,
+            "errors": [],
+            "warnings": [],
+            "preview": [],
+        },
+    )
+    return ds_id
+
+
 def _queued_job_via_api(client, tmp_path) -> str:
     """Create a dataset and a job via the HTTP API, return the job id.
 
@@ -68,23 +89,7 @@ def _queued_job_via_api(client, tmp_path) -> str:
 
 
 def test_claim_next_job_moves_one_queued_job_to_provisioning(isolated):
-    ds_id = db.create_dataset("d.jsonl", "datasets/ds_claim.jsonl", "ds_claim")
-    # Finish dataset so job creation would be valid, but claim_next_job only
-    # cares about status, so we can use any dataset id.
-
-    # Need a valid dataset row for job FK
-    db.finish_dataset(
-        ds_id,
-        {
-            "valid": True,
-            "row_count": 12,
-            "schema_type": "chat",
-            "enable_thinking": False,
-            "errors": [],
-            "warnings": [],
-            "preview": [],
-        },
-    )
+    ds_id = _finished_dataset_id("ds_claim")
     job_id = db.create_job(ds_id, "qwen3-4b", {})
     assert db.get_job(job_id)["status"] == "queued"
 
@@ -116,19 +121,7 @@ def test_concurrent_workers_never_claim_the_same_job(
     database was changed for; asserting it directly is asserting the reason.
     """
 
-    ds_id = db.create_dataset("d.jsonl", "datasets/ds_race.jsonl", "ds_race")
-    db.finish_dataset(
-        ds_id,
-        {
-            "valid": True,
-            "row_count": 12,
-            "schema_type": "chat",
-            "enable_thinking": False,
-            "errors": [],
-            "warnings": [],
-            "preview": [],
-        },
-    )
+    ds_id = _finished_dataset_id("ds_race")
     job_id = db.create_job(ds_id, "qwen3-4b", {})
 
     results: list[object] = []
@@ -173,19 +166,7 @@ def test_concurrent_claims_do_not_block(isolated, tmp_path, monkeypatch):
     serialize and take far longer, or deadlock the suite.
     """
 
-    ds_id = db.create_dataset("d.jsonl", "datasets/ds_skip.jsonl", "ds_skip")
-    db.finish_dataset(
-        ds_id,
-        {
-            "valid": True,
-            "row_count": 12,
-            "schema_type": "chat",
-            "enable_thinking": False,
-            "errors": [],
-            "warnings": [],
-            "preview": [],
-        },
-    )
+    ds_id = _finished_dataset_id("ds_skip")
     db.create_job(ds_id, "qwen3-4b", {})
 
     n = 20
@@ -223,19 +204,7 @@ def test_concurrent_claims_do_not_block(isolated, tmp_path, monkeypatch):
 def test_claim_orders_by_created_at(isolated):
     """The oldest queued job is claimed first."""
 
-    ds_id = db.create_dataset("d.jsonl", "datasets/ds_order.jsonl", "ds_order")
-    db.finish_dataset(
-        ds_id,
-        {
-            "valid": True,
-            "row_count": 12,
-            "schema_type": "chat",
-            "enable_thinking": False,
-            "errors": [],
-            "warnings": [],
-            "preview": [],
-        },
-    )
+    ds_id = _finished_dataset_id("ds_order")
     j1 = db.create_job(ds_id, "qwen3-4b", {})
     time.sleep(0.01)
     j2 = db.create_job(ds_id, "qwen3-4b", {})
@@ -303,36 +272,12 @@ def test_provisioning_is_recorded_before_anything_else_can_fail(
         ),
     )
 
-    # Create dataset and job via API helpers to get a valid row.
-    import json
-
-    from helpers import wait_validated
-
-    def chat(user, assistant):
-        return {
-            "messages": [
-                {"role": "user", "content": user},
-                {"role": "assistant", "content": assistant},
-            ]
-        }
-
     from fastapi.testclient import TestClient
 
     from temper_control_plane import main
 
     with TestClient(main.app) as client:
-        path = tmp_path / "d.jsonl"
-        path.write_text(
-            "\n".join(json.dumps(chat(f"q{i}", f"a{i}")) for i in range(12)),
-            encoding="utf-8",
-        )
-        with open(path, "rb") as f:
-            ds = client.post(
-                "/v1/datasets", files={"file": (path.name, f)}
-            ).json()["id"]
-        wait_validated(client, ds)
-        r = client.post("/v1/jobs", json={"dataset_id": ds})
-        job_id = r.json()["id"]
+        job_id = _queued_job_via_api(client, tmp_path)
         assert client.get(f"/v1/jobs/{job_id}").json()["status"] == "queued"
 
         # Provider that succeeds at create but fails at await_ready.
