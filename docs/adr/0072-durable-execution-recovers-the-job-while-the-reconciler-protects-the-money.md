@@ -83,7 +83,14 @@ storage.**
     recovery" is kept true by teardown-before-provision when the machine was
     already created. The run is then handed to #60's interruption handling --
     discover the surviving checkpoints, resume from the latest on a fresh
-    machine -- which composes rather than duplicating it.
+    machine -- which composes rather than duplicating it. One refinement for
+    `preparing`: training never began, so nothing can survive to resume from,
+    and failing the run as `interrupted` would make a job killed later end up
+    worse than one killed in `provisioning`. The interruption handling
+    therefore *restarts* a run whose status is still `preparing` -- the
+    interrupted attempt is recorded with its machine, and a fresh attempt
+    follows -- while a run that actually trained and lost everything still
+    surfaces as `interrupted`, unchanged from #60.
   - `packaging`: the run already finished training; only collection remains.
     The result manifest is now persisted the moment packaging begins (it is the
     record of what the run produced), so a packaging recovery re-verifies the
@@ -128,9 +135,11 @@ decision): the reclaim finds an abandoned job and only an abandoned one; a live
 job is never stolen; a reclaimed `training` job's machine is destroyed before
 the resumption provisions (no second machine), the run resumes from its last
 checkpoint and completes with its record and artifact intact; a reclaimed
-`packaging` job is re-collected without provisioning a single machine; the
-heartbeat keeps a driving worker from looking abandoned; a worker survives a
-control-plane restart.
+`preparing` job restarts rather than failing (nothing was trained to resume
+from); a reclaimed `provisioning` job re-runs the attempt and provisions
+exactly one machine; a reclaimed `packaging` job is re-collected without
+provisioning a single machine; the heartbeat keeps a driving worker from
+looking abandoned; a worker survives a control-plane restart.
 
 What the double cannot prove is the criterion the issue states as the finish
 line -- **a worker killed during a live job on real hardware, and the job
