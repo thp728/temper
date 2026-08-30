@@ -33,7 +33,12 @@ def test_an_interruption_is_its_own_code_and_no_training_failure():
     """A run that ended without a result document is named as such, and a
     client can branch on the code rather than on prose."""
     assert is_interruption(INTERRUPTED_CODE)
-    for other in ("training_failed", "training_oom", "training_diverged", None):
+    for other in (
+        "training_failed",
+        "training_oom",
+        "training_diverged",
+        None,
+    ):
         assert not is_interruption(other), other
 
 
@@ -48,7 +53,9 @@ def test_the_latest_verified_checkpoint_is_chosen():
 def test_unverified_checkpoints_are_never_resume_candidates():
     """Bytes that are not in storage are nothing to resume from; only
     verified records count, whatever step they claim."""
-    assert latest_checkpoint([ckpt(10), ckpt(20, verified=False)])["step"] == 10
+    assert (
+        latest_checkpoint([ckpt(10), ckpt(20, verified=False)])["step"] == 10
+    )
     assert latest_checkpoint([ckpt(10, verified=False)]) is None
     assert latest_checkpoint([]) is None
 

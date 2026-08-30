@@ -105,6 +105,7 @@ def may_resume(resumptions_used: int, cap: int = RESUME_RETRY_CAP) -> bool:
 # Which checkpoint a resumption comes back to.
 # ---------------------------------------------------------------------------
 
+
 def latest_checkpoint(
     checkpoints: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any] | None:

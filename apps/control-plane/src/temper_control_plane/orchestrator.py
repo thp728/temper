@@ -63,10 +63,12 @@ from temper_core import (
     memory_retry,
     overrides,
     progress,
-    resume as resume_logic,
     selection,
 )
 from temper_core import faults as fault_surface
+from temper_core import (
+    resume as resume_logic,
+)
 from temper_core.errors import Cancelled, OrchestratorError
 from temper_core.models import Models
 
@@ -1211,7 +1213,9 @@ def _checkpoint_identity(
                 except (ValueError, UnicodeDecodeError):
                     continue
                 raw_step = state.get("global_step")
-                if isinstance(raw_step, int) and not isinstance(raw_step, bool):
+                if isinstance(raw_step, int) and not isinstance(
+                    raw_step, bool
+                ):
                     step = raw_step
                 for row in reversed(state.get("log_history") or []):
                     if not isinstance(row, dict) or row.get("step") != step:
@@ -1737,6 +1741,16 @@ def _attempt(
     resume_from_checkpoint: str | None = None
     if resume_checkpoint is not None:
         step = resume_checkpoint.get("step")
+        # The checkpoint a resumption comes back to always carries the step it
+        # is named by (the discovery that produced it records one); a record
+        # that somehow lacks it is refused rather than resumed from a path
+        # nobody could have named.
+        if not isinstance(step, int):
+            raise OrchestratorError(
+                "resume_invalid",
+                "The checkpoint selected for resumption carried no step, so "
+                "it cannot be resumed from.",
+            )
         resume_from_checkpoint = resume_logic.resume_path(step)
         provider.push_stream(
             machine,

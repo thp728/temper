@@ -62,7 +62,7 @@ class Harness:
 
     def create(self, hyperparameters: dict):
         """Create a job and drive it inline with `completed_run()`'s machine."""
-        from temper_control_plane import fake_models, orchestrator
+        from temper_control_plane import fake_models
 
         self.provider = completed_run()
         self._pending_provider = self.provider
@@ -71,7 +71,7 @@ class Harness:
 
     def run(self, provider, hyperparameters=None, limits=None):
         """Create a job and drive it with an explicitly provided machine."""
-        from temper_control_plane import fake_models, orchestrator
+        from temper_control_plane import fake_models
 
         self.provider = provider
         self._pending_provider = provider
@@ -134,7 +134,10 @@ def harness(isolated, tmp_path, monkeypatch):
     monkeypatch.setattr(
         orchestrator,
         "published_reference",
-        lambda: "ghcr.io/thp728/temper/trainer@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        lambda: (
+            "ghcr.io/thp728/temper/trainer@sha256:"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        ),
     )
     with TestClient(main.app) as c:
         yield Harness(c, monkeypatch, tmp_path)
@@ -297,4 +300,3 @@ def test_resumption_is_bounded(harness):
         "resuming from checkpoint step 10" in m
         for m in harness.messages(job_id)
     )
-

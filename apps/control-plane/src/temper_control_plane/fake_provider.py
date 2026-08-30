@@ -732,7 +732,9 @@ def fake_checkpoint_tar(
             history["eval_loss"] = held_out_loss
         state = {
             "global_step": step,
-            "log_history": [history] if history.get("loss") is not None else [],
+            "log_history": [history]
+            if history.get("loss") is not None
+            else [],
         }
         add(
             f"{base}/trainer_state.json",
@@ -740,6 +742,7 @@ def fake_checkpoint_tar(
         )
         add(f"{base}/model.safetensors", payload)
     return buf.getvalue()
+
 
 # The bytes of a delivery format as the simulated machine uploads them (issue
 # #74): opaque, exactly as the adapter's are. The fake PUTs them to the
