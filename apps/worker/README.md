@@ -8,6 +8,11 @@ claims. The orchestration entry point is unchanged: it is still a function
 over a job record that does not know what called it. See
 [ADR-0066](../../docs/adr/0066-orchestration-moves-into-a-worker-process-that-claims-work.md).
 
-Recovering a job left non-terminal by a worker crash mid-run is Spec 010's
-reconciler, not this app's job -- see that ADR's "what this does not do"
-section.
+The worker also hosts the machine-lifetime reconciler (issue #61 / Spec
+010): a scheduled pass, on its own thread so a long-running job claim cannot
+stall it, that lists machines, matches them against jobs that are not in a
+terminal state and against served endpoints, and destroys anything it cannot
+account for. It protects the money, not the job. *Recovering* a job left
+non-terminal by a worker crash mid-run -- re-driving it so it can finish -- is
+the resumption path's job (#60), not this pass's; see that ADR's "what this
+does not do" section.

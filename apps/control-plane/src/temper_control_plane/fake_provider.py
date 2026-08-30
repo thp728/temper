@@ -497,6 +497,15 @@ class FakeProvider:
         self.destroy_attempts += 1
         if self.destroy_attempts <= self._destroy_failures:
             raise RuntimeError("provider refused the destroy call")
+        if machine_id in self._orphan_ids:
+            # An orphan destroyed is an orphan no longer listed -- the
+            # reconciler's fixture (issue #61). The real provider would stop
+            # billing it; a fake that kept a destroyed orphan listed forever
+            # would make every reconciliation of it look like a STRAY.
+            self._orphan_ids = [
+                oid for oid in self._orphan_ids if oid != machine_id
+            ]
+            return
         self.destroyed = True
         if self._destroyed_at_call is None:
             self._destroyed_at_call = self._list_calls

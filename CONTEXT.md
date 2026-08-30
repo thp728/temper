@@ -111,6 +111,14 @@ _Avoid_: cloud, vendor, platform
 A GPU host provisioned for a single job and destroyed when that job ends. It is a pure compute node — reached only by the control plane, and never a source or destination for stored data.
 _Avoid_: instance, VM, box, node, server
 
+**Orphan machine**:
+A machine the provider is billing for with no live job that owns it — no job in a non-terminal state records its id, and no served endpoint serves it. The final-block teardown covers the failures the orchestrator can see; it cannot cover the process disappearing, which is exactly what leaves an orphan. An orphan bills until someone notices, so destroying it is a financial control, not housekeeping.
+_Avoid_: stray machine, leaked machine (unless that is what it is)
+
+**Reconciler**:
+The scheduled pass that lists machines, matches them against jobs that are not in a terminal state and against served endpoints, destroys anything it cannot account for, records what it did, and marks a job whose machine was destroyed as unowned failed with a reason. It protects the money, not the job: it assumes nothing about whether orchestration is healthy, and would stay even with durable execution working perfectly. Distinct from durable execution, which recovers the job; the two defend different failures.
+_Avoid_: sweep (the endpoint sweep is a different, narrower pass), garbage collector
+
 **Trainer**:
 The pinned container image that runs one job on a machine. It owns the training loop; the platform owns the contract it runs under.
 _Avoid_: worker, runner, image, container

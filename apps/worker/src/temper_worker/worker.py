@@ -34,6 +34,11 @@ touches them. The control plane's lifespan still re-arms timers after a
 restart and sweeps expired endpoints. The worker watches jobs; the
 control plane watches endpoints. Both watch spend and teardown through
 the same confirmed path (ADR-0057) inside ``run_job``.
+
+The worker also hosts the machine-lifetime reconciler (issue #61): a
+scheduled pass on its own thread that destroys machines no live job or
+served endpoint owns. It protects the money, not the job, and runs
+independently of any workflow.
 """
 
 from __future__ import annotations
@@ -44,6 +49,8 @@ from temper_control_plane import db, orchestrator
 from temper_control_plane.correlation import set_correlation_id
 from temper_control_plane.logging import configure_logging, get_logger
 from temper_control_plane.sentry import init_sentry
+
+from . import reconciler
 
 logger = get_logger(__name__)
 
@@ -166,12 +173,24 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001 - a failed init must be loud
         logger.exception("worker db init failed", exc_info=e)
         raise
+    # Start the machine-lifetime reconciler (issue #61): the scheduled pass
+    # that destroys machines no live job or served endpoint owns, on its own
+    # thread so a long-running job claim cannot stall it. It runs
+    # independently of any workflow -- the pass does not care whether a job
+    # is being driven, only whether a listed machine has an owner.
+    try:
+        reconciler.start_reconciler_thread()
+    except Exception as e:  # noqa: BLE001 - a reconciler that fails to start must be loud
+        logger.exception("reconciler failed to start", exc_info=e)
+        raise
     stop = threading.Event()
     try:
         run_forever(stop)
     except KeyboardInterrupt:
         logger.info("worker stopping on interrupt")
         stop.set()
+    finally:
+        reconciler.stop_reconciler_thread()
 
 
 if __name__ == "__main__":

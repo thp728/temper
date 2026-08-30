@@ -1056,6 +1056,46 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
     ]
 
 
+def list_non_terminal_machine_ids() -> list[int]:
+    """The machine ids owned by jobs that are not in a terminal state.
+
+    The reconciler's (issue #61) ownership half. ``claim_next_job`` only
+    ever looks at ``queued`` rows, by design, so a machine owned by a
+    ``provisioning``/``preparing``/``training``/``packaging`` job can never
+    be matched against that query -- the reconciler must match machines
+    against *all* non-terminal states or it would treat a machine a worker
+    is actively driving as an orphan and destroy it. A machine in this set
+    is accounted for and left alone.
+    """
+    states = tuple(sorted(TERMINAL_STATES))
+    placeholders = ", ".join(["%s"] * len(states))
+    with connect() as c:
+        rows = c.execute(
+            "SELECT machine_id FROM jobs "
+            f"WHERE status NOT IN ({placeholders}) AND machine_id IS NOT NULL",
+            states,
+        ).fetchall()
+    return [int(r["machine_id"]) for r in rows]
+
+
+def job_rows_for_machine(machine_id: int) -> list[dict]:
+    """Every job row that records `machine_id`, whatever its state.
+
+    The reconciler uses this after it destroys an orphan so the destruction
+    is recorded on the owner's own history and so a job that still claims a
+    machine the reconciler destroyed as unowned is marked failed rather than
+    left non-terminal forever (the criterion's "rather than left running
+    forever"). Only the columns the reconciler reads are returned -- a raw
+    row without the API decorations, which is all it needs.
+    """
+    with connect() as c:
+        rows = c.execute(
+            "SELECT id, status, machine_id FROM jobs WHERE machine_id=%s",
+            (machine_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def count_events(job_id: str) -> int:
     """How many events a job has in total, regardless of any paging window.
 
@@ -1321,6 +1361,25 @@ def active_endpoints() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def list_active_endpoint_machine_ids() -> list[int]:
+    """The machine ids of running (served) endpoints.
+
+    The reconciler's (issue #61) other ownership half: a served endpoint is
+    a billed, warm machine the control plane provisions and arms with idle
+    and max timers (ADR-0065). It is not a job, so matching machines against
+    non-terminal jobs alone would treat it as an orphan and destroy it while
+    a user is actively serving. A machine in this set is accounted for and
+    left alone.
+    """
+    with connect() as c:
+        rows = c.execute(
+            "SELECT machine_id FROM endpoints "
+            "WHERE status=%s AND machine_id IS NOT NULL",
+            (ENDPOINT_ACTIVE,),
+        ).fetchall()
+    return [int(r["machine_id"]) for r in rows]
+
+
 def touch_endpoint(
     endpoint_id: str, now: float, new_expires_at: float
 ) -> None:
@@ -1350,3 +1409,57 @@ def set_endpoint_status(
 def delete_endpoint(endpoint_id: str) -> None:
     with connect() as c:
         c.execute("DELETE FROM endpoints WHERE id=%s", (endpoint_id,))
+
+
+# --------------------------------------------------------------------------
+# machine reconciliation (issue #61 / spec 010): what the reconciler did
+# --------------------------------------------------------------------------
+
+
+def record_reconciliation(
+    machine_id: int,
+    action: str,
+    reason: str | None,
+    *,
+    status: str | None = None,
+    job_id: str | None = None,
+    ts: float | None = None,
+) -> None:
+    """Record one decision the reconciler made about one machine.
+
+    The "what it did is recorded" half of the criterion: a destroyed orphan
+    is an event, not a silent removal. Each row names the machine, the
+    provider's view of its status, the action taken and why, and the job
+    that owned it when one existed. `ts` is passed through when the caller
+    holds the instant the action happened; defaulting to the write time
+    keeps a caller that does not care about the difference simple.
+    """
+    with connect() as c:
+        c.execute(
+            "INSERT INTO machine_reconciliation "
+            "(machine_id, status, action, reason, job_id, ts) "
+            "VALUES (%s,%s,%s,%s,%s,%s)",
+            (
+                int(machine_id),
+                status,
+                action,
+                reason,
+                job_id,
+                ts if ts is not None else time.time(),
+            ),
+        )
+
+
+def list_reconciliations(limit: int = 100) -> list[dict]:
+    """The reconciler's decisions, newest first.
+
+    The operator-visible read side of the log: every recovery/destruction
+    that has happened, so a systematically failing configuration is visible
+    rather than absorbed (user story 19 of Spec 010).
+    """
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM machine_reconciliation ORDER BY ts DESC LIMIT %s",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
