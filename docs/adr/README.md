@@ -110,6 +110,7 @@ repository becomes public at submission.
 | [0067](0067-the-general-capability-check-is-a-small-slice-whose-limits-are-stated.md) | The general-capability check is a small slice, labelled a smoke test, whose limits are stated | accepted | 2026-08-30 |
 | [0068](0068-the-reconciler-destroys-machines-no-live-job-owns.md) | The reconciler destroys machines no live job owns | accepted | 2026-08-30 |
 | [0069](0069-an-interrupted-job-resumes-from-its-last-checkpoint-on-a-fresh-machine.md) | An interrupted job resumes from its last checkpoint on a fresh machine | accepted | 2026-08-30 |
+| [0070](0070-events-are-persisted-before-published-and-replay-by-last-seen.md) | Events are persisted before they are published, and watchers replay by last-seen identifier | accepted | 2026-08-30 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
