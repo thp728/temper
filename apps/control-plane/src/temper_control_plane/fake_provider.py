@@ -225,6 +225,11 @@ class FakeProvider:
         # Observable afterwards.
         self.calls: list[str] = []
         self.created: list[Machine] = []
+        # How many machines `create` has returned, so each gets its own id:
+        # the first is MACHINE_ID, and every further one (a memory recovery's
+        # retry, a resumption's fresh machine -- issue #60) is distinct, so
+        # the attempts record can name which machine ran which attempt.
+        self._created_count = 0
         # What `create` was actually asked for -- (gpu_type, num_gpus,
         # storage_gb, name), one per call. `created` alone shows what came
         # back; this is how a test tells disk was passed as a computed
@@ -260,7 +265,10 @@ class FakeProvider:
     ) -> Machine:
         self._enter("create")
         self.create_calls.append((gpu_type, num_gpus, storage_gb, name))
-        machine = Machine(MACHINE_ID, handle=f"fake://{name}")
+        machine = Machine(
+            MACHINE_ID + self._created_count, handle=f"fake://{name}"
+        )
+        self._created_count += 1
         self.created.append(machine)
         return machine
 

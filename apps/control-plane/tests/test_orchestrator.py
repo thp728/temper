@@ -1250,13 +1250,19 @@ def test_failure_at_a_stage_fails_the_job_with_its_code(harness, stage, code):
 
 
 def test_a_provider_that_stops_producing_output_fails_the_job(harness):
-    """No result marker means no result, whatever the output said."""
+    """No result marker means no result, whatever the output said: the stream
+    ending without a result document is an interruption (issue #60), named as
+    such -- and with no checkpoint to resume from it surfaces rather than
+    pretending a resumption was possible."""
     provider = FakeProvider(lines=TRAINING_LINES, result=RESULT, stop_after=2)
     job_id = harness.run(provider)
 
     job = harness.job(job_id)
     assert job["status"] == "failed"
-    assert job["error_code"] == "training_failed"
+    assert job["error_code"] == "interrupted"
+    attempts = job["attempts"]
+    assert len(attempts) == 1
+    assert attempts[0]["outcome"] == "interrupted"
     assert provider.destroyed
 
 

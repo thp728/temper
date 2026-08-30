@@ -63,6 +63,7 @@ from temper_core import (
     memory_retry,
     overrides,
     progress,
+    resume as resume_logic,
     selection,
 )
 from temper_core import faults as fault_surface
@@ -146,11 +147,17 @@ PULL_FAILED = json.dumps(
         "in the job events.",
     }
 )
+# The code the machine reports when training ended without leaving a
+# result.json -- the honest shape of an interruption (issue #60), whether the
+# trainer was killed or the container died: no result document means the run
+# was cut off, not that it failed on its own terms. Defined once so the
+# result document and the interruption classification read the same name.
+NO_RESULT_CODE = "trainer_no_result"
 NO_RESULT = json.dumps(
     {
         "stage": "train",
         "ok": False,
-        "error_code": "trainer_no_result",
+        "error_code": NO_RESULT_CODE,
         "error": "The trainer produced no result.json; its output is in the job "
         "events.",
     }
@@ -308,6 +315,27 @@ def _dataset_chunks(dataset_object_key: str) -> Iterator[bytes]:
     return piped_chunks(lambda sink: _pour_tar([member], sink))
 
 
+def _resume_extract(resume_from_checkpoint: str | None) -> str:
+    """The shell that lands a resumed run's checkpoint on the machine.
+
+    The archive was streamed to `/tmp/checkpoint.tar` ahead of the script
+    (see `_attempt`); this extracts it under `/tmp/out/run` -- the host half
+    of the container's `/out/run` -- so the checkpoint directory axolotl
+    resumes from is exactly where the trainer's own `output_dir` lives, and
+    `resume_from_checkpoint` (a container path) resolves to it. Empty when
+    the run is not a resumption, so an ordinary script carries no trace of
+    one. The archive is a plain (uncompressed) tar, the shape the trainer's
+    uploader writes and this path re-ships unchanged.
+    """
+    if not resume_from_checkpoint:
+        return ""
+    return (
+        "mkdir -p /tmp/out/run\n"
+        "tar xf /tmp/checkpoint.tar -C /tmp/out/run\n"
+        f'say "resuming from {resume_from_checkpoint}"\n'
+    )
+
+
 def _remote_script(
     job: dict,
     model: catalog.BaseModel,
@@ -318,6 +346,7 @@ def _remote_script(
     checkpoint_grants: list[storage.WriteGrant] | None = None,
     delivery_grants: list[tuple[str, storage.WriteGrant]] | None = None,
     resolved_hp: dict | None = None,
+    resume_from_checkpoint: str | None = None,
 ) -> bytes:
     """The on-machine script: pull the published image, run the job, report.
 
@@ -404,6 +433,15 @@ def _remote_script(
             }
             for grant in checkpoint_grants
         ]
+    # Issue #60: a resumed attempt continues from its last checkpoint, so the
+    # spec carries the machine-local path axolotl resumes from. The trainer
+    # already passes the key through to axolotl (which restores the optimiser,
+    # scheduler and step position -- the whole checkpoint directory), so this
+    # side only names where the archive was extracted to; the resumed step
+    # itself is recorded on the attempt, never smuggled into the trainer spec
+    # as a key it does not know.
+    if resume_from_checkpoint:
+        job_spec["resume_from_checkpoint"] = resume_from_checkpoint
     # Issue #74: the frozen delivery request (which formats the launch asked
     # for) rides into the spec so the trainer knows what to produce, and each
     # produced format gets its own scoped write grant, one object per format.
@@ -445,6 +483,7 @@ sudo ufw --force enable >/dev/null 2>&1
 
 mkdir -p /tmp/job /tmp/out
 tar xzf {DATASET_TARBALL} -C /tmp/job
+{_resume_extract(resume_from_checkpoint)}
 cat > /tmp/job/job.json <<'JOBSPEC'
 {json.dumps(job_spec, indent=2)}
 JOBSPEC
@@ -621,9 +660,14 @@ def _consume(job_id: str, lines) -> dict:
             result_lines.append(line)
 
     if not seen_marker:
+        # The stream ended without ever producing a result document: the
+        # machine or the worker died mid-run. That is an interruption (issue
+        # #60), named as such -- not a training failure, which is a result
+        # document that says the run failed -- so the job's history and the
+        # resumption path can tell the two apart.
         raise OrchestratorError(
-            "training_failed",
-            "Trainer produced no result.json. See job events.",
+            resume_logic.INTERRUPTED_CODE,
+            resume_logic.INTERRUPTED_MESSAGE,
         )
     try:
         return json.loads("\n".join(result_lines))
@@ -1102,6 +1146,134 @@ def _record_best_checkpoint(job_id: str, records: list[dict]) -> None:
         )
 
 
+class _HashingStream(io.RawIOBase):
+    """A file-like over a storage stream that feeds every byte read into a
+    SHA-256.
+
+    Lets one pass both verify a stored checkpoint and parse its
+    `trainer_state.json`, without ever holding the object whole (ADR-0010):
+    tarfile pulls blocks through `readinto`, and each block is hashed as it
+    crosses, so `digest` covers exactly the bytes that are in storage.
+    """
+
+    def __init__(self, chunks: Iterator[bytes]) -> None:
+        self._it = iter(chunks)
+        self._buf = b""
+        self.digest = hashlib.sha256()
+        self.bytes_read = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, b) -> int:  # noqa: N802 - the io protocol spells it this way
+        if not self._buf:
+            try:
+                self._buf = next(self._it)
+            except StopIteration:
+                return 0
+        n = min(len(b), len(self._buf))
+        piece = self._buf[:n]
+        self._buf = self._buf[n:]
+        self.digest.update(piece)
+        self.bytes_read += n
+        b[:n] = piece
+        return n
+
+
+def _checkpoint_identity(
+    stream,
+) -> tuple[int | None, float | None, float | None]:
+    """The step, training loss and held-out loss a checkpoint tar records.
+
+    Reads the checkpoint's own `trainer_state.json` the same way the
+    trainer's uploader writes it (issue #37): `global_step` names the step,
+    and the step's entry in `log_history` carries the losses. Returns
+    (None, None, None) when the object is not a parseable checkpoint -- a
+    slot that was overwritten mid-write, say -- so the caller can skip it
+    rather than resume from bytes that are not a checkpoint.
+    """
+    step: int | None = None
+    train_loss: float | None = None
+    held_out: float | None = None
+    try:
+        with tarfile.open(fileobj=stream, mode="r|") as tar:
+            for member in tar:
+                if not member.name.endswith("trainer_state.json"):
+                    continue
+                f = tar.extractfile(member)
+                if f is None:
+                    continue
+                data = b""
+                while chunk := f.read(1 << 20):
+                    data += chunk
+                try:
+                    state = json.loads(data.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                raw_step = state.get("global_step")
+                if isinstance(raw_step, int) and not isinstance(raw_step, bool):
+                    step = raw_step
+                for row in reversed(state.get("log_history") or []):
+                    if not isinstance(row, dict) or row.get("step") != step:
+                        continue
+                    if isinstance(row.get("loss"), (int, float)):
+                        train_loss = float(row["loss"])
+                    if isinstance(row.get("eval_loss"), (int, float)):
+                        held_out = float(row["eval_loss"])
+                    break
+    except (tarfile.TarError, EOFError, OSError):
+        return None, None, None
+    return step, train_loss, held_out
+
+
+def _discover_interrupted_checkpoints(job_id: str) -> list[dict]:
+    """Find and verify what a dead machine left in the checkpoint slots.
+
+    An interrupted run produced no result document, so there is no manifest
+    of what its machine wrote off itself before it died (issue #37 uploads
+    checkpoints as it trains). The slots are the record: each retained slot
+    is streamed, hashed, and parsed for its `trainer_state.json` (issue #60),
+    and anything that verifies becomes a checkpoint record exactly like a
+    machine-reported one -- step, slot, key, checksum, losses -- so a
+    resumption can come back to it and the job's checkpoint record is honest
+    even when the run cannot resume. Streaming, never whole (ADR-0010); a
+    slot that does not parse is skipped, because bytes that are not a
+    checkpoint are nothing to resume from.
+    """
+    records: list[dict] = []
+    for slot, key in enumerate(
+        storage.checkpoint_keys(job_id, config.CHECKPOINT_RETENTION)
+    ):
+        try:
+            chunks = storage.STORE.get_stream(key)
+        except storage.ObjectNotFound:
+            continue
+        reader = _HashingStream(chunks)
+        step, train_loss, held_out = _checkpoint_identity(reader)
+        if step is None:
+            continue
+        record: dict = {
+            "step": step,
+            "slot": slot,
+            "key": key,
+            "sha256": reader.digest.hexdigest(),
+            "bytes": reader.bytes_read,
+            "verified": True,
+        }
+        if train_loss is not None:
+            record["loss"] = train_loss
+        if held_out is not None:
+            record["held_out_loss"] = held_out
+        records.append(record)
+        db.add_event(
+            job_id,
+            "log",
+            f"Discovered surviving checkpoint at step {step} "
+            f"({reader.bytes_read / 1e6:.1f} MB)",
+        )
+    return sorted(records, key=lambda r: r.get("step", -1))
+
+
 def _discard_if_cancelled(job_id: str, check) -> None:
     """Throw away an artifact that arrived after the user asked to stop.
 
@@ -1362,6 +1534,7 @@ def _attempt(
     *,
     resolved_hp: dict | None = None,
     availability_override: Sequence | None = None,
+    resume_checkpoint: dict | None = None,
 ) -> tuple[str, str, dict]:
     """Do the work. Returns the terminal state to record, but never records it.
 
@@ -1555,6 +1728,21 @@ def _attempt(
         _dataset_chunks(dataset["object_key"]),
         DATASET_TARBALL,
     )
+    # Issue #60: a resumed attempt ships its last checkpoint to the machine
+    # before the container runs. The archive is streamed straight out of
+    # storage -- the object is already a tar, the shape the trainer's
+    # uploader wrote -- so nothing is held whole (ADR-0010), and the remote
+    # script extracts it under the trainer's own output_dir before axolotl
+    # starts. The step names the container path axolotl resumes from.
+    resume_from_checkpoint: str | None = None
+    if resume_checkpoint is not None:
+        step = resume_checkpoint.get("step")
+        resume_from_checkpoint = resume_logic.resume_path(step)
+        provider.push_stream(
+            machine,
+            storage.STORE.get_stream(resume_checkpoint["key"]),
+            "/tmp/checkpoint.tar",
+        )
 
     # Checked between stages as well as inside the stream: the guard below can
     # only notice the ceiling while lines are arriving, and everything above
@@ -1613,6 +1801,7 @@ def _attempt(
         checkpoint_grants=checkpoint_grants,
         delivery_grants=delivery_grants,
         resolved_hp=resolved_hp,
+        resume_from_checkpoint=resume_from_checkpoint,
     )
     # The guard sits between the transport and the reader, so both limits hold
     # for any provider rather than for the SSH one only.
@@ -1634,9 +1823,18 @@ def _attempt(
         _record_best_checkpoint(job_id, failed_checkpoints)
         # The result document names its own failure where it can. A stage that
         # failed before training started is not a training failure, and telling
-        # a user otherwise sends them to read the wrong logs.
+        # a user otherwise sends them to read the wrong logs. A run that
+        # produced no result document at all (NO_RESULT_CODE) is an
+        # interruption (issue #60), named as such, so the resumption path can
+        # recover it rather than reading it as a bare training failure.
+        code = result.get("error_code") or "training_failed"
+        if code == NO_RESULT_CODE:
+            raise OrchestratorError(
+                resume_logic.INTERRUPTED_CODE,
+                resume_logic.INTERRUPTED_MESSAGE,
+            )
         raise OrchestratorError(
-            result.get("error_code") or "training_failed",
+            code,
             result.get("error") or "Training did not complete.",
         )
 
@@ -1820,6 +2018,22 @@ def _memory_surface(
     )
 
 
+def _attempt_rate(job: dict) -> dict | None:
+    """The billing rate one attempt's machine was provisioned at, or None.
+
+    The rate is frozen onto the job row at provisioning (`set_state` with
+    `price_per_hour` and `currency`), so by the time an attempt's outcome is
+    recorded the row carries what that attempt's machine bills at. An attempt
+    that failed before provisioning records None -- honest absence, never a
+    guessed rate.
+    """
+    price = job.get("price_per_hour")
+    currency = job.get("currency")
+    if isinstance(price, (int, float)) and isinstance(currency, str):
+        return {"price_per_hour": float(price), "currency": currency}
+    return None
+
+
 def _record_attempt(
     job_id: str,
     attempts: list[dict],
@@ -1829,14 +2043,18 @@ def _record_attempt(
     error_code: str | None,
     resolved_hp: dict | None,
     recovery: dict | None = None,
+    resumed_from: int | None = None,
 ) -> None:
     """Persist one attempt's record: what it ran, what it ended as, and (for
     a memory-failed attempt) what the recovery changed for the next one.
 
     This is the "attempts recorded" half of the retry-cap criterion (issue
-    #35) and the shape a resumption ticket (#60) will read: each attempt
-    carries its own machine, its own spec, and its own outcome, so the
-    history says what actually happened rather than one continuous run.
+    #35) and the shape a resumption ticket (#60) reads: each attempt
+    carries its own machine, its own rate, its own spec and its own outcome,
+    so the history says what actually happened rather than one continuous
+    run. A resumed attempt names the step it came back to (`resumed_from`),
+    and an interrupted attempt's `outcome` is `interrupted`, never `failed`
+    -- a run cut off is not a run that failed on its own terms.
     """
     job = db.require_job(job_id)
     record: dict = {
@@ -1844,11 +2062,54 @@ def _record_attempt(
         "outcome": outcome,
         "error_code": error_code,
         "machine_id": machines[-1].machine_id if machines else None,
+        "rate": _attempt_rate(job),
         "spec": _attempt_spec(job, resolved_hp),
         "recovery": recovery,
     }
+    if resumed_from is not None:
+        record["resumed_from"] = resumed_from
     attempts.append(record)
     db.set_attempts(job_id, attempts)
+
+
+def _resume_surface(
+    job_id: str, attempts: list[dict], checkpoint_record: dict
+) -> tuple[str, str, dict]:
+    """The terminal outcome when resumption is exhausted: the job fails with
+    the stable code and the attempts recorded.
+
+    A checkpoint survived but the run kept being interrupted past the cap
+    (issue #60), so this is not a bare `interrupted` (which is what a job
+    with nothing to resume from fails with) and never a `training_failed`:
+    the run was cut off, and the record says how many times and from what
+    step rather than leaving it to inference.
+    """
+    message = resume_logic.RESUME_EXHAUSTED_MESSAGE
+    db.add_event(
+        job_id,
+        "error",
+        message,
+        {
+            "code": resume_logic.RESUME_EXHAUSTED_CODE,
+            "attempts": len(attempts),
+            "step": checkpoint_record.get("step"),
+        },
+    )
+    return (
+        "failed",
+        message,
+        {
+            "error_code": resume_logic.RESUME_EXHAUSTED_CODE,
+            "error_message": message,
+        },
+    )
+
+
+def _resumed_step(resume_checkpoint: dict | None) -> int | None:
+    """The step a current attempt resumed from, or None for the first one."""
+    if resume_checkpoint is None:
+        return None
+    return resume_checkpoint.get("step")
 
 
 def run_job(
@@ -1963,6 +2224,13 @@ def run_job(
         availability_override: Sequence | None = None
         last_rung: str | None = None
         retries_used = 0
+        # Issue #60: how many times this job has already resumed, and the
+        # checkpoint the current attempt came back from (None for the first).
+        # Each resumption provisions a fresh machine, so the count is what
+        # bounds the loop; the checkpoint is what the next attempt ships to
+        # its machine and names in `resume_from_checkpoint`.
+        resumptions_used = 0
+        resume_checkpoint: dict | None = None
         attempts: list[dict] = []
         outcome: tuple[str, str, dict] | None = None
         while True:
@@ -1977,6 +2245,7 @@ def run_job(
                     models,
                     resolved_hp=resolved_hp,
                     availability_override=availability_override,
+                    resume_checkpoint=resume_checkpoint,
                 )
                 _record_attempt(
                     job_id,
@@ -1986,6 +2255,7 @@ def run_job(
                     outcome[0],
                     None,
                     resolved_hp,
+                    resumed_from=_resumed_step(resume_checkpoint),
                 )
                 break
             except Cancelled as e:
@@ -2009,10 +2279,74 @@ def run_job(
                     "cancelled",
                     None,
                     resolved_hp,
+                    resumed_from=_resumed_step(resume_checkpoint),
                 )
                 outcome = ("cancelled", str(e), {})
                 break
             except OrchestratorError as e:
+                if e.code == resume_logic.INTERRUPTED_CODE:
+                    # Issue #60: a run that ended without a result document is
+                    # an interruption, not a training failure. What survived
+                    # the machine is in the checkpoint slots (issue #37 wrote
+                    # them off as training produced them); what can be parsed
+                    # back and verified is recorded, and the job resumes from
+                    # the latest on a fresh machine -- restoring the optimiser,
+                    # scheduler and step position, the whole checkpoint
+                    # directory, not only the weights. Bounded: a job the
+                    # infrastructure keeps interrupting surfaces with the
+                    # attempts recorded rather than billing forever.
+                    discovered = _discover_interrupted_checkpoints(job_id)
+                    db.set_checkpoints(job_id, discovered)
+                    _record_best_checkpoint(job_id, discovered)
+                    source = resume_logic.latest_checkpoint(discovered)
+                    _record_attempt(
+                        job_id,
+                        attempts,
+                        attempt_no,
+                        machines,
+                        "interrupted",
+                        e.code,
+                        resolved_hp,
+                        resumed_from=_resumed_step(resume_checkpoint),
+                    )
+                    if source is None:
+                        # Nothing survived to resume from: the job fails with
+                        # the honest interruption code and the attempts
+                        # recorded, rather than pretending a resumption was
+                        # possible when no checkpoint exists to come back to.
+                        outcome = (
+                            "failed",
+                            str(e),
+                            {
+                                "error_code": e.code,
+                                "error_message": str(e),
+                            },
+                        )
+                        break
+                    if not resume_logic.may_resume(resumptions_used):
+                        outcome = _resume_surface(job_id, attempts, source)
+                        break
+                    resumptions_used += 1
+                    resume_checkpoint = source
+                    db.add_event(
+                        job_id,
+                        "log",
+                        f"Run interrupted after reaching step "
+                        f"{source['step']}; resuming from checkpoint step "
+                        f"{source['step']} on a new machine",
+                        {
+                            "code": resume_logic.RESUME_RECOVERY_CODE,
+                            "step": source["step"],
+                            "attempt": attempt_no,
+                        },
+                    )
+                    db.set_state(
+                        job_id,
+                        "training",
+                        f"Resuming from checkpoint step {source['step']} on a "
+                        "new machine",
+                    )
+                    continue
                 is_memory = e.code in memory_retry.MEMORY_FAILURE_CODES
                 if is_memory:
                     if retries_used >= memory_retry.MEMORY_RETRY_CAP:
@@ -2027,6 +2361,7 @@ def run_job(
                             "failed",
                             e.code,
                             resolved_hp,
+                            resumed_from=_resumed_step(resume_checkpoint),
                         )
                         outcome = _memory_surface(job_id, attempts)
                         break
@@ -2056,6 +2391,7 @@ def run_job(
                         e.code,
                         resolved_hp,
                         recovery=_recovery_record(step),
+                        resumed_from=_resumed_step(resume_checkpoint),
                     )
                     if step is None:
                         # Every reduction the ladder can express is spent;
@@ -2113,6 +2449,7 @@ def run_job(
                         "failed",
                         e.code,
                         resolved_hp,
+                        resumed_from=_resumed_step(resume_checkpoint),
                     )
                     outcome = _memory_surface(job_id, attempts)
                     break
@@ -2132,6 +2469,7 @@ def run_job(
                     "failed",
                     e.code,
                     resolved_hp,
+                    resumed_from=_resumed_step(resume_checkpoint),
                 )
                 outcome = (
                     "failed",
@@ -2148,6 +2486,7 @@ def run_job(
                     "failed",
                     "internal_error",
                     resolved_hp,
+                    resumed_from=_resumed_step(resume_checkpoint),
                 )
                 outcome = (
                     "failed",
