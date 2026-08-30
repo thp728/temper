@@ -236,6 +236,32 @@ _max_dataset_mb = _megabytes("TEMPER_MAX_DATASET_MB", DEFAULT_MAX_DATASET_MB)
 MAX_DATASET_BYTES = int(_max_dataset_mb * 1024 * 1024)
 
 
+def _flag(name: str, default: bool) -> bool:
+    """A boolean from the environment, or its default.
+
+    Parsed as the value a human writes, not as mere presence: `1`, `true`,
+    `yes` and `on` (any case) mean on; `0`, `false`, `no` and `off` mean off;
+    an absent or empty value is the default. Anything else refuses loudly,
+    like every other reader in this module -- a value the process cannot
+    honour is refused rather than silently becoming one of the two booleans
+    (ADR-0067 documents that both halves read this same rule, so the web
+    shell's banner and the backend's provider can never disagree about which
+    mode is in force).
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    lowered = raw.strip().lower()
+    if lowered in ("1", "true", "yes", "on"):
+        return True
+    if lowered in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(
+        f"{name}={raw!r} is not a boolean. It selects the compute mode, so "
+        f"it is refused rather than guessed: use 1/true or 0/false."
+    )
+
+
 # --- journey provider -------------------------------------------------------
 # **Off by default.** TEMPER_FAKE_PROVIDER swaps the in-package FakeProvider
 # in for launched jobs, so the browser journeys (apps/web/e2e) can drive a
@@ -246,13 +272,15 @@ MAX_DATASET_BYTES = int(_max_dataset_mb * 1024 * 1024)
 # Hugging Face on every run trades that same "runs everywhere" guarantee for
 # a network dependency that costs nothing to remove. Everything else stays
 # real: the same API, the same database, the same orchestrator transitions.
-# Whether real compute is used is this one setting (ADR-0024, ADR-0062).
+# Whether real compute is used is this one setting (ADR-0024, ADR-0062,
+# ADR-0067). Every process that reads it -- control plane, worker and the
+# web shell -- parses it the same way (`_flag`), so a `=0` that the backend
+# honours while the shell still believes it is in the zero-cost tier cannot
+# happen, because both read the same string through the same rule.
 DEFAULT_FAKE_PROVIDER = False
 DEFAULT_FAKE_LINE_DELAY_S = 0.0
 
-FAKE_PROVIDER = bool(
-    os.environ.get("TEMPER_FAKE_PROVIDER", DEFAULT_FAKE_PROVIDER)
-)
+FAKE_PROVIDER = _flag("TEMPER_FAKE_PROVIDER", DEFAULT_FAKE_PROVIDER)
 
 # How long the simulated machine waits between output lines. Zero (default)
 # completes a canned run in milliseconds, which is what the suite wants except
