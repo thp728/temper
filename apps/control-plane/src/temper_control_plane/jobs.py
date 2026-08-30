@@ -14,7 +14,7 @@ from collections.abc import Sequence
 
 from fastapi import HTTPException
 
-from temper_control_plane import admission, config, db, orchestrator
+from temper_control_plane import admission, config, db
 from temper_core import (
     delivery,
     divergence,
@@ -294,7 +294,13 @@ def create(
             warn["message"],
             {k: v for k, v in warn.items() if k != "message"},
         )
-    orchestrator.launch(job_id)
+    # The request path no longer starts threads (issue #51): it inserts the
+    # ``queued`` row and returns. A separate worker process claims it with
+    # ``SELECT ... FOR UPDATE SKIP LOCKED`` and drives it through
+    # ``orchestrator.run_job``, unchanged. Nothing here calls into the
+    # orchestrator at all -- not even conditionally -- because a request
+    # path that starts a thread under some condition is still a request path
+    # that starts threads.
     return job_id
 
 
@@ -413,5 +419,6 @@ def retry_diverged_job(job_id: str) -> str:
         "or the rate is wrong.",
         {"retry_from": job_id, "old_lr": old_lr, "new_lr": new_lr},
     )
-    orchestrator.launch(new_job_id)
+    # Like ``create`` above, the retry job is just inserted as ``queued``;
+    # the worker claims it. No thread is started on the request path.
     return new_job_id

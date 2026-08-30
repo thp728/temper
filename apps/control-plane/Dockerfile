@@ -13,8 +13,18 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1
 
 # uv pinned to a release, copied from its own image, so the install step is
-# reproducible without installing a package manager through pip.
-COPY --from=ghcr.io/astral-sh/uv:0.7.0 /uv /usr/local/bin/uv
+# reproducible without installing a package manager through pip. 0.9.26, not
+# 0.7.0: `uv sync` did not accept a repeated `--package` flag until somewhere
+# between 0.9.6 and 0.9.8 (bisected against the image tags directly -- 0.7.0
+# rejects the two `--package` flags below outright with "the argument
+# '--package <PACKAGE>' cannot be used multiple times", exit 2, which built
+# clean in CI's `just check` job only because that job installs uv fresh via
+# astral-sh/setup-uv rather than through this Dockerfile, and built clean on
+# a developer machine only because `uv` was already on PATH there at
+# whatever version happened to be installed -- neither ever exercises this
+# COPY). Pinned to the exact version already proven by the rest of this
+# repository's own gate, not a floating "latest".
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
@@ -28,7 +38,7 @@ COPY packages/core packages/core
 COPY packages/contracts packages/contracts
 COPY spike spike
 
-RUN uv sync --frozen --no-dev --package temper-control-plane
+RUN uv sync --frozen --no-dev --package temper-control-plane --package temper-worker
 
 ENV PATH="/app/.venv/bin:$PATH"
 

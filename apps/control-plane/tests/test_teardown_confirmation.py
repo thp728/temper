@@ -48,15 +48,6 @@ class Harness:
         from temper_control_plane import fake_models, orchestrator
 
         self.provider = provider
-        self._monkeypatch.setattr(
-            orchestrator,
-            "launch",
-            lambda job_id: orchestrator.run_job(
-                job_id,
-                provider=provider,
-                models=fake_models.catalog_models(),
-            ),
-        )
         path = self._tmp_path / "d.jsonl"
         path.write_text(
             "\n".join(json.dumps(chat(f"q{i}", f"a{i}")) for i in range(12)),
@@ -73,6 +64,13 @@ class Harness:
         )
         assert r.status_code == 201, r.text
         job_id = r.json()["id"]
+        # The request path only inserts a `queued` row (issue #51); drive it
+        # directly, the way the worker would.
+        orchestrator.run_job(
+            job_id,
+            provider=provider,
+            models=fake_models.catalog_models(),
+        )
         return job_id
 
     def job(self, job_id):

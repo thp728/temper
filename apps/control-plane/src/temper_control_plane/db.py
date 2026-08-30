@@ -1047,41 +1047,75 @@ def get_events(job_id: str, after_id: int = 0, limit: int = 500) -> list[dict]:
     return out
 
 
-def active_jobs() -> list[dict]:
-    """Non-terminal jobs. Used at startup to spot runs orphaned by a restart."""
+def claim_next_job() -> dict | None:
+    """Atomically claim one queued job for a worker.
+
+    The local file that preceded PostgreSQL could not express a claim on a
+    row surviving contention, so there was no path to running orchestration
+    outside the request-serving process. This is the mechanism that issue
+    points at: ``SELECT ... FOR UPDATE SKIP LOCKED``.
+
+    * ``FOR UPDATE`` takes a row-level lock that survives contention: a
+      second worker trying to claim the same row blocks on the first's
+      transaction.
+    * ``SKIP LOCKED`` is what makes the second half of the criterion true:
+      workers that would otherwise block *skip* the locked row instead.
+      Without it two workers would serialize on the lock; with it they
+      never wait and never claim the same job.
+
+    The claim and its event are one transaction: a status that moved with
+    no event is a run you cannot explain.
+    """
+
     with connect() as c:
-        q = ",".join(["%s"] * len(TERMINAL_STATES))
-        rows = c.execute(
-            f"SELECT * FROM jobs WHERE status NOT IN ({q})",
-            tuple(TERMINAL_STATES),
-        ).fetchall()
-    return [
-        _present(
-            _with_artifact(
-                _with_is_moe(
-                    _with_warnings(
-                        _row(
-                            r,
-                            {
-                                "hyperparams_json": "hyperparameters",
-                                "warnings_json": "warnings",
-                                "quote_json": "quote",
-                                "overrides_json": "overrides",
-                                "actuals_json": "actuals",
-                                "attempts_json": "attempts",
-                            },
-                            defaults={
-                                "overrides": [],
-                                "attempts": [],
-                                "warnings": [],
-                            },
-                        )
-                    )
-                )
+        row = c.execute(
+            """
+            WITH claimed AS (
+                SELECT id FROM jobs
+                WHERE status = 'queued'
+                ORDER BY created_at
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
             )
+            UPDATE jobs
+            SET status = 'provisioning'
+            WHERE id IN (SELECT id FROM claimed)
+            RETURNING *
+            """
+        ).fetchone()
+        if row is None:
+            return None
+        _append_event(
+            c, row["id"], "state", "provisioning", {"state": "provisioning"}
         )
-        for r in rows
-    ]
+        job = _row(
+            row,
+            {
+                "hyperparams_json": "hyperparameters",
+                "result_json": "result",
+                "warnings_json": "warnings",
+                "quote_json": "quote",
+                "overrides_json": "overrides",
+                "actuals_json": "actuals",
+                "checkpoints_json": "checkpoints",
+                "best_checkpoint_json": "best_checkpoint",
+                "artifact_json": "artifact_record",
+                "delivery_request_json": "delivery_request",
+                "delivery_json": "delivery",
+                "attempts_json": "attempts",
+            },
+            defaults={
+                "overrides": [],
+                "checkpoints": [],
+                "best_checkpoint": None,
+                "delivery_request": [],
+                "delivery": [],
+                "attempts": [],
+            },
+        )
+        return _with_best_checkpoint(
+            _with_artifact(_with_is_moe(_with_warnings(_with_comparison(job))))
+        )
 
 
 def _row(

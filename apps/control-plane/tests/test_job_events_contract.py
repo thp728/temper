@@ -14,7 +14,7 @@ from helpers import wait_validated
 
 
 @pytest.fixture()
-def finished_job_id(client, monkeypatch):
+def finished_job_id(client):
     """One job driven to `complete` on the journey fake, created via API."""
     from temper_control_plane import orchestrator
     from temper_control_plane.fake_provider import completed_run
@@ -43,19 +43,19 @@ def finished_job_id(client, monkeypatch):
     ds_id = r.json()["id"]
     wait_validated(client, ds_id)  # the job needs the finished report
 
-    def start(job_id):
-        from temper_control_plane import fake_models
+    from temper_control_plane import fake_models
 
-        orchestrator.run_job(
-            job_id,
-            provider=completed_run(),
-            models=fake_models.catalog_models(),
-        )
-
-    monkeypatch.setattr(orchestrator, "launch", start)
     r = client.post("/v1/jobs", json={"dataset_id": ds_id})
     assert r.status_code == 201, r.text
-    return r.json()["id"]
+    job_id = r.json()["id"]
+    # The request path only inserts a `queued` row (issue #51); drive it
+    # directly, the way the worker would.
+    orchestrator.run_job(
+        job_id,
+        provider=completed_run(),
+        models=fake_models.catalog_models(),
+    )
+    return job_id
 
 
 def test_the_event_page_is_published_typed(client, finished_job_id):
@@ -116,7 +116,7 @@ def test_after_resumes_from_where_the_client_stopped(client, finished_job_id):
 
 
 def test_where_a_limit_still_applies_the_page_says_what_it_shows_and_the_full_record_is_reachable(
-    client, monkeypatch
+    client,
 ):
     """#56's guardrail: a job that genuinely produces >500 events is paginated
     rather than silently cut, the page says what it is showing and of how many,
@@ -170,17 +170,16 @@ def test_where_a_limit_still_applies_the_page_says_what_it_shows_and_the_full_re
     ds_id = r.json()["id"]
     wait_validated(client, ds_id)
 
-    def start(job_id):
-        orchestrator.run_job(
-            job_id,
-            provider=FakeProvider(lines=many_logs, result=result),
-            models=fake_models.catalog_models(),
-        )
-
-    monkeypatch.setattr(orchestrator, "launch", start)
     r = client.post("/v1/jobs", json={"dataset_id": ds_id})
     assert r.status_code == 201, r.text
     job_id = r.json()["id"]
+    # The request path only inserts a `queued` row (issue #51); drive it
+    # directly, the way the worker would.
+    orchestrator.run_job(
+        job_id,
+        provider=FakeProvider(lines=many_logs, result=result),
+        models=fake_models.catalog_models(),
+    )
 
     # First page: capped at 500 but says how many there are.
     first = client.get(f"/v1/jobs/{job_id}/events").json()

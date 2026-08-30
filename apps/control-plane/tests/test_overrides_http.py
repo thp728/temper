@@ -374,15 +374,6 @@ def test_provisioning_honours_a_frozen_hardware_override(
         },
     )
     monkeypatch.setattr(quote_mod, "QUOTE_PROVIDER", provider)
-    monkeypatch.setattr(
-        orchestrator,
-        "launch",
-        lambda job_id: orchestrator.run_job(
-            job_id,
-            provider=provider,
-            models=fake_models.catalog_models(),
-        ),
-    )
 
     ds = valid_dataset(client, tmp_path)
     r = client.post(
@@ -393,7 +384,14 @@ def test_provisioning_honours_a_frozen_hardware_override(
         },
     )
     assert r.status_code == 201
-    job = r.json()
+    job_id = r.json()["id"]
+    # The request path only inserts a `queued` row (issue #51); drive it
+    # directly, the way the worker would. `gpu_type` is written during
+    # provisioning, not at creation, so re-fetch afterward.
+    orchestrator.run_job(
+        job_id, provider=provider, models=fake_models.catalog_models()
+    )
+    job = client.get(f"/v1/jobs/{job_id}").json()
     assert job["gpu_type"] == "H100"
     assert job["device_count"] == 1
     # The quote it was shown also reflects the pinned card.

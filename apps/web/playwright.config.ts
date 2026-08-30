@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import os from "node:os";
 import path from "node:path";
 import { E2E_BACKEND_PORT, E2E_WEB_PORT } from "./src/lib/backend";
 
@@ -51,10 +52,39 @@ const e2eDatabaseUrl =
   "postgresql://temper:temper@localhost:5432/temper";
 const e2eObjectsPath = path.join(repoRoot, "data", "objects-e2e");
 
+// Issue #51: a single worker claims and drives jobs strictly one at a time
+// (that is the point of the row-level claim). The journeys can launch jobs
+// from as many parallel Playwright test processes as `workers` allows, so
+// one temper_worker becomes a serial bottleneck the launch-then-watch tests
+// time out against -- proven by running it: one worker cleared roughly a job
+// every 12s, and several journeys' 30s waits for `complete` were still
+// `queued` when they gave up. Several worker processes claiming from the
+// same table (exactly the concurrent-claim property `test_worker_claim.py`
+// proves at the database level) is both the fix and a more realistic
+// demonstration of "starting more than one worker is possible and safe"
+// than a single instance is. Pinned to Playwright's own `workers` below,
+// rather than guessed independently, so test parallelism can never
+// outrun worker capacity on a machine with a different core count than
+// whichever one this comment was measured on.
+//
+// 2026-08-30: hardcoded 6 passed locally but failed CI: a GitHub runner has
+// 2 cores, so 6 Chromium workers + 6 temper_workers + control-plane + web +
+// postgres = ~14 contending processes on 2 cores. Validations that take
+// <1s locally exceeded the 5s Playwright expect timeout under that load
+// (8 journeys failed identically, FFFF pattern across parallel workers).
+// Measured locally: `os.availableParallelism()` is 2 on CI, ~8-16 on a dev
+// machine. Clamp to [2,6] and let Playwright's own workers match: CI gets
+// 2+2 (validation back under 1s, 6x less DB polling than 6×0.5s), dev keeps
+// 6 (still enough throughput for the burst-launch tests; 4 workers got
+// 30/31, 6 got 31/31). Also see worker.py poll interval note.
+const _cpus = os.availableParallelism?.() ?? os.cpus().length;
+const E2E_WORKER_COUNT = Math.min(6, Math.max(2, _cpus));
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
   forbidOnly: !!process.env.CI,
+  workers: E2E_WORKER_COUNT,
   use: {
     baseURL: `http://127.0.0.1:${webPort}`,
     trace: "retain-on-failure",
@@ -104,5 +134,29 @@ export default defineConfig({
         TEMPER_STORAGE_ROOT: e2eObjectsPath,
       },
     },
+    // Issue #51: orchestration now lives in the worker, not in the control
+    // plane. The backend above just inserts the row; each of these claims
+    // ``queued`` jobs with ``SELECT ... FOR UPDATE SKIP LOCKED`` and drives
+    // them. Without at least one, a journey's launch would stay queued
+    // forever; `E2E_WORKER_COUNT` of them is what keeps up with the
+    // journeys' own parallelism (see its comment above). None of the
+    // ``url``-bearing entries above wait on these, and the array's entries
+    // start in order, so by the time any of these spawn the backend has
+    // already finished migrating -- these only ever call `migrate_up`
+    // (idempotent), never `TEMPER_DB_RESET`, so N of them starting at once
+    // never race each other over the schema.
+    ...Array.from({ length: E2E_WORKER_COUNT }, () => ({
+      command: `uv run python -m temper_worker`,
+      cwd: "../..",
+      reuseExistingServer: false,
+      timeout: 180_000,
+      env: {
+        ...process.env,
+        TEMPER_FAKE_PROVIDER: "1",
+        TEMPER_FAKE_LINE_DELAY_S: "0.6",
+        TEMPER_DATABASE_URL: e2eDatabaseUrl,
+        TEMPER_STORAGE_ROOT: e2eObjectsPath,
+      },
+    })),
   ],
 });

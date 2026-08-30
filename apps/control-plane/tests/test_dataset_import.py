@@ -28,10 +28,11 @@ from temper_control_plane.fake_remote_datasets import (
 
 
 @pytest.fixture()
-def server(isolated, monkeypatch):
-    from temper_control_plane import main, orchestrator
+def server(isolated):
+    # Posting a job here only inserts a `queued` row (issue #51); nothing
+    # runs it, so there is nothing to neuter.
+    from temper_control_plane import main
 
-    monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
     return main
 
 

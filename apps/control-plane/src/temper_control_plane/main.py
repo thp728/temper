@@ -151,19 +151,19 @@ async def lifespan(_app: FastAPI):
             "file). Datasets validate fine; jobs will fail at provisioning.",
             file=sys.stderr,
         )
-    # A job left non-terminal by a restart is not silently resumed -- it is
-    # surfaced. Pretending it is still running would be a lie the UI repeats,
-    # and the VM it created may still be billing.
-    for job in db.active_jobs():
-        db.set_state(
-            job["id"],
-            "failed",
-            "Control plane restarted while this job was in flight",
-            error_code="orphaned_by_restart",
-            error_message="The process restarted mid-run. Any VM it "
-            "created may still exist -- check the "
-            "provider console.",
-        )
+    # Issue #51: orchestration now lives in the worker, not in this process.
+    # A restart of the control plane no longer loses the thread driving a
+    # job, because there is no thread in this process to lose. Jobs that
+    # are still non-terminal after a restart are left for the worker to
+    # claim (``SELECT ... FOR UPDATE SKIP LOCKED``) rather than being
+    # failed as ``orphaned_by_restart`` here -- that marking was the
+    # pre-worker behaviour where orphaning meant "the only thread that
+    # could have finished this job died with this process". The worker now
+    # watches spend and teardown (ADR-0057, ADR-0063) directly, while
+    # serving endpoints' idle/max timers (ADR-0065) stay in this process
+    # -- they are what stop a serving machine from billing forever, and a
+    # restart that lost them would leave a billed GPU warm until someone
+    # notices.
     # Endpoints that outlive their usefulness are the top complaint against
     # the commercial baseline -- the training is cheap and the forgotten warm
     # machine is the bill -- so stopping itself is the feature (ADR-0065).

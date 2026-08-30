@@ -391,11 +391,28 @@ def test_stopping_and_restarting_preserves_data(
         job_record = boot_two.get(f"/v1/jobs/{job_id}").json()
         assert job_record["id"] == job_id
         assert job_record["dataset_id"] == ds_id
-        # The row survived the restart; the job itself is surfaced as orphaned
-        # rather than silently resumed -- the documented restart behaviour,
-        # which a reviewer restarting mid-run would see.
-        assert job_record["status"] == "failed"
-        assert job_record["error_code"] == "orphaned_by_restart"
+        # Issue #51: orchestration now lives in the worker, not in this
+        # process. A restart of the control plane no longer loses the
+        # thread driving the job, so the pre-worker behaviour of marking
+        # the job ``orphaned_by_restart`` no longer applies. The row
+        # survives and remains ``queued`` for the worker to claim via
+        # ``SELECT ... FOR UPDATE SKIP LOCKED`` -- the whole point of the
+        # relational store. A job that was already terminal stays terminal,
+        # but a queued job stays queued.
+        assert job_record["status"] == "queued"
+        assert job_record["error_code"] is None
+
+        # The worker can now claim it -- proof that a restart does not
+        # destroy the run. Claiming moves it to ``provisioning`` atomically
+        # and never blocks a second claimant.
+        claimed = db.claim_next_job()
+        assert claimed is not None
+        assert claimed["id"] == job_id
+        assert claimed["status"] == "provisioning"
+        # A second claim finds nothing -- the row is no longer queued.
+        assert db.claim_next_job() is None
+        # The job that survived the restart is now provisioning, not failed.
+        assert db.get_job(job_id)["status"] == "provisioning"
 
         # The stored object survived the restart too, byte for byte.
         key = storage.dataset_key(ds_id)

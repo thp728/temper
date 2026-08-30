@@ -2,10 +2,11 @@
 #
 #     docker compose up          (or `just up`)
 #
-# Three services: PostgreSQL (issue #43's relational store), the control
-# plane (the API) and the web shell (the interface). The worker app is empty
-# by design (ADR-0010 reserves it for orchestration,
-# issue #51) and joins this file when it ships something to run.
+# Four services: PostgreSQL (issue #43's relational store), the control
+# plane (the API), the worker (issue #51's separate process that claims
+# ``queued`` jobs with ``SELECT ... FOR UPDATE SKIP LOCKED`` and drives
+# them), and the web shell. The worker was empty by design (ADR-0010
+# reserves it for orchestration) and joins this file now that it ships.
 #
 # **The mode.** The control plane defaults to the zero-cost tier
 # (TEMPER_FAKE_PROVIDER=1, the in-package fake provider): a reviewer with no
@@ -94,6 +95,48 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile
+    # The package, not the submodule: `python -m temper_worker` runs
+    # `__main__.py`, which calls `worker.main()`. `python -m
+    # temper_worker.worker` runs worker.py as `__main__` with no
+    # `if __name__ == "__main__"` guard in that file -- it imports the
+    # module, defines the functions, and exits 0 having done nothing. Found
+    # by the e2e journeys leaving every launched job `queued` forever; no
+    # unit test calls this command line.
+    command: ["python", "-m", "temper_worker"]
+    environment:
+      TEMPER_FAKE_PROVIDER: "1"
+      TEMPER_DATABASE_URL: postgresql://temper:temper@postgres:5432/temper
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      control-plane:
+        condition: service_healthy
+    volumes:
+      - temper-objects:/data
+    restart: unless-stopped
+    healthcheck:
+      # `python:3.12-slim` carries no `ps` (no procps package), so a
+      # process-table check isn't available; `db.ping()` checks the
+      # dependency that actually matters -- a worker that cannot reach the
+      # database cannot claim anything, which is a truer liveness signal
+      # than "a process with this name exists" would be anyway.
+      test:
+        - CMD
+        - python
+        - -c
+        - "from temper_control_plane import db; db.ping()"
+      interval: 10s
+      timeout: 3s
+      retries: 3
       start_period: 10s
 
   web:

@@ -88,19 +88,20 @@ def _upload_and_create(client):
 
 
 def _run_sync(client, monkeypatch, provider):
-    """Launch every job synchronously on the given provider."""
+    """Create a job and drive it synchronously on the given provider.
+
+    The request path only inserts a `queued` row (issue #51); this drives
+    it directly, the way the worker would.
+    """
     from temper_control_plane import fake_models, orchestrator
 
-    monkeypatch.setattr(
-        orchestrator,
-        "launch",
-        lambda job_id: orchestrator.run_job(
-            job_id,
-            provider=provider,
-            models=fake_models.catalog_models(),
-        ),
+    job_id = _upload_and_create(client)
+    orchestrator.run_job(
+        job_id,
+        provider=provider,
+        models=fake_models.catalog_models(),
     )
-    return _upload_and_create(client)
+    return job_id
 
 
 def _progress(client, job_id):
@@ -238,16 +239,17 @@ def test_the_stream_pushes_the_progress_snapshot(client, monkeypatch):
         pause_at_line=len(PULL_LINES) + 1,
     )
 
-    def start(job_id):
-        threading.Thread(
-            target=orchestrator.run_job,
-            args=(job_id, provider, None, fake_models.catalog_models()),
-            daemon=True,
-            name=f"job-{job_id[:8]}",
-        ).start()
-
-    monkeypatch.setattr(orchestrator, "launch", start)
+    # The request path only inserts a `queued` row (issue #51); start the
+    # job on a thread directly, the way the worker would, so the stream can
+    # be read while it runs.
     job_id = _upload_and_create(client)
+    thread = threading.Thread(
+        target=orchestrator.run_job,
+        args=(job_id, provider, None, fake_models.catalog_models()),
+        daemon=True,
+        name=f"job-{job_id[:8]}",
+    )
+    thread.start()
     assert provider.wait_until_paused(), "the job never reached its pause"
 
     with client.stream("GET", f"/v1/jobs/{job_id}/stream") as r:
@@ -267,3 +269,4 @@ def test_the_stream_pushes_the_progress_snapshot(client, monkeypatch):
     assert "event: progress" in text
     assert PHASE_IMAGE_PULL in text
     assert "event: output" in text
+    thread.join(timeout=5.0)

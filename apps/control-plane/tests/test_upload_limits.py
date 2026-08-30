@@ -27,11 +27,11 @@ from temper_control_plane import config
 
 
 @pytest.fixture()
-def server(isolated, monkeypatch):
-    """The app, storage-isolated by `isolated`, launches made inert."""
-    from temper_control_plane import main, orchestrator
+def server(isolated):
+    """The app, storage-isolated by `isolated`. Posting a job only inserts a
+    `queued` row (issue #51); nothing here runs it."""
+    from temper_control_plane import main
 
-    monkeypatch.setattr(orchestrator, "launch", lambda job_id: None)
     return main
 
 

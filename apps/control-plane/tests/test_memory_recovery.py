@@ -158,14 +158,14 @@ class Harness:
         from temper_control_plane import fake_models, orchestrator
 
         models = models or fake_models.catalog_models()
-        self._monkeypatch.setattr(
-            orchestrator,
-            "launch",
-            lambda job_id: orchestrator.run_job(
-                job_id, provider=provider, limits=limits, models=models
-            ),
+        # Issue #51: the request path no longer starts threads. Drive
+        # the job directly as the worker would, rather than relying on
+        # ``launch`` being called by ``POST /v1/jobs``.
+        job_id = self._create(hyperparameters)
+        orchestrator.run_job(
+            job_id, provider=provider, limits=limits, models=models
         )
-        return self._create(hyperparameters)
+        return job_id
 
     def _create(self, hyperparameters=None) -> str:
         path = self._tmp_path / "d.jsonl"
@@ -488,13 +488,6 @@ def test_the_oom_fault_exercises_the_recovery_through_the_fault_surface(
 
     harness._monkeypatch.setattr(config, "FAKE_PROVIDER", True)
     provider = completed_run()
-    harness._monkeypatch.setattr(
-        orchestrator,
-        "launch",
-        lambda job_id: orchestrator.run_job(
-            job_id, provider=provider, models=fake_models.catalog_models()
-        ),
-    )
     path = harness._tmp_path / "fault.jsonl"
     path.write_text(
         "\n".join(json.dumps(chat(f"q{i}", f"a{i}")) for i in range(12)),
@@ -514,6 +507,11 @@ def test_the_oom_fault_exercises_the_recovery_through_the_fault_surface(
     )
     assert r.status_code == 201, r.text
     job_id = r.json()["id"]
+    # The request path only inserts a `queued` row (issue #51); drive it
+    # directly, the way the worker would.
+    orchestrator.run_job(
+        job_id, provider=provider, models=fake_models.catalog_models()
+    )
     job = harness.job(job_id)
     assert job["status"] == "complete"
     assert provider.fault_applied == "oom"

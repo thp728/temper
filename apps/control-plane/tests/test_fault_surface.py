@@ -89,16 +89,11 @@ class Harness:
         from temper_control_plane import fake_models, orchestrator
 
         self.provider = completed_run()
-        self._monkeypatch.setattr(
-            orchestrator,
-            "launch",
-            lambda job_id: orchestrator.run_job(
-                job_id,
-                provider=self.provider,
-                limits=limits,
-                models=fake_models.catalog_models(),
-            ),
-        )
+        # Issue #51: creation no longer starts a job; remember the
+        # provider so the caller can drive it explicitly after POST.
+        self._pending_provider = self.provider
+        self._pending_limits = limits
+        self._pending_models = fake_models.catalog_models()
         path = self._tmp_path / "d.jsonl"
         path.write_text(
             "\n".join(json.dumps(chat(f"q{i}", f"a{i}")) for i in range(12)),
@@ -116,7 +111,16 @@ class Harness:
             json={"dataset_id": ds, "hyperparameters": hyperparameters},
         )
         body = r.json()
-        return r, body.get("id") if isinstance(body, dict) else None
+        job_id = body.get("id") if isinstance(body, dict) else None
+        # Drive the job as the worker would if creation succeeded.
+        if r.status_code == 201 and job_id is not None:
+            orchestrator.run_job(
+                job_id,
+                provider=self._pending_provider,
+                limits=self._pending_limits,
+                models=self._pending_models,
+            )
+        return r, job_id
 
     def job(self, job_id) -> dict:
         return self._client.get(f"/v1/jobs/{job_id}").json()

@@ -43,7 +43,6 @@ import hashlib
 import io
 import json
 import tarfile
-import threading
 import time
 from collections.abc import Iterator, Sequence
 from contextlib import suppress
@@ -2096,24 +2095,3 @@ def run_job(
     finally:
         if owns_provider:
             provider.close()
-
-
-def launch(
-    job_id: str,
-    provider: Provider | None = None,
-    limits: RunLimits | None = None,
-    models: Models | None = None,
-) -> None:
-    """Start a job on a background thread.
-
-    A thread rather than Celery: one process is the whole deployment, and a
-    queue with one worker and no retries would be ceremony. The cost is honest
-    -- a process restart orphans in-flight jobs, which `db.active_jobs()`
-    surfaces at startup rather than hiding.
-    """
-    threading.Thread(
-        target=run_job,
-        args=(job_id, provider, limits, models),
-        daemon=True,
-        name=f"job-{job_id[:8]}",
-    ).start()
