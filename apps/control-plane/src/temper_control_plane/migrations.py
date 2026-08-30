@@ -330,9 +330,9 @@ def _up_0005(cur: psycopg.Cursor) -> None:
     than silently cleaned" is that a destroyed orphan is an event, not a
     silent removal. This table is that record: machine id, the provider's
     lifecycle status, the action taken (destroyed / skipped as still
-    destroying / skipped as owned), the reason, and the job or endpoint that
-    owned it, if any. An operator who wants to know whether a machine was
-    ever reconciled reads this rather than reconstructing it from logs.
+    destroying / skipped as owned), the reason, and the job that owned it,
+    if any. An operator who wants to know whether a machine was ever
+    reconciled reads this rather than reconstructing it from logs.
 
     `job_id` is nullable because a pure orphan (the fault surface's `orphan`
     fixture) has no owner. It is not a foreign key on purpose: the whole
@@ -348,7 +348,6 @@ def _up_0005(cur: psycopg.Cursor) -> None:
             action        TEXT NOT NULL,
             reason        TEXT,
             job_id        TEXT,
-            endpoint_id   TEXT,
             ts            DOUBLE PRECISION NOT NULL
         )
     """)

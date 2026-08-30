@@ -260,6 +260,54 @@ def test_a_machine_reported_as_destroying_is_not_double_destroyed(
     )
 
 
+def test_a_refused_destroy_is_reported_unconfirmed_not_destroyed(
+    fast_teardown,
+):
+    """The report must not lie: a destroy the provider refuses leaves the
+    machine still billing, so it is `unconfirmed`, never `destroyed`, and no
+    job is failed on the strength of a destruction that did not happen."""
+    provider = FakeProvider(
+        list_sequence=[[7777]],
+        destroy_failures=99,
+        stays_listed=True,
+    )
+    report = reconcile_once(provider)
+
+    assert report["destroyed"] == []
+    assert report["unconfirmed"] == [7777]
+    assert report["marked_failed"] == []
+    # Retried then escalated to the loud STRAY, exactly as teardown would.
+    assert provider.destroy_attempts == 3
+    recs = db.list_reconciliations()
+    assert any(
+        r["machine_id"] == 7777
+        and r["action"] == "destroy_unconfirmed"
+        and "manual removal" in r["reason"]
+        for r in recs
+    )
+
+
+def test_a_refused_destroy_does_not_fail_a_job_that_names_the_machine(
+    fast_teardown, monkeypatch
+):
+    """A machine the reconciler could not destroy is still billed and still
+    listed, so a non-terminal job that names it has not lost it -- marking it
+    failed would be a lie. Only a *confirmed* destroy fails the owner."""
+    from temper_worker.reconciler import ORPHANED_MACHINE_CODE
+
+    job_id = _non_terminal_job(MACHINE_ID, state="training")
+    monkeypatch.setattr(db, "list_non_terminal_machine_ids", lambda: [])
+    provider = FakeProvider(destroy_failures=99, stays_listed=True)
+    report = reconcile_once(provider)
+
+    assert report["unconfirmed"] == [MACHINE_ID]
+    assert report["destroyed"] == []
+    assert report["marked_failed"] == []
+    job = db.get_job(job_id)
+    assert job["status"] == "training"
+    assert job.get("error_code") != ORPHANED_MACHINE_CODE
+
+
 def test_reconcile_once_destroys_the_machine_the_orphan_fault_left(
     fast_teardown, monkeypatch
 ):

@@ -141,7 +141,10 @@ bounded gap rather than silently assumed closed.
 - An orphan is found within a pass interval and destroyed through the same
   confirmed path a job's own teardown uses; a job whose machine is destroyed
   as unowned is marked `failed` with `orphaned_machine` rather than left
-  non-terminal forever.
+  non-terminal forever. A destroy the provider refuses is recorded as
+  `destroy_unconfirmed` — the STRAY case — and does not fail any job, because
+  the machine is still billed and still listed and telling an owner job
+  otherwise would be a lie.
 - What the double proves is the orchestration logic — matching, confirmed
   destroy, recording, the endpoint protection, the mark-failed branch. What
   it cannot prove is the recovery on real hardware: a machine deliberately

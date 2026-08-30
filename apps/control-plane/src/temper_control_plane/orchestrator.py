@@ -1189,7 +1189,7 @@ def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
         )
 
 
-def _confirmed_destroy(
+def confirmed_destroy(
     provider: Provider,
     machine,
     record: _Record,
@@ -1205,7 +1205,7 @@ def _confirmed_destroy(
     `destroying`, then go absent for good. A single absent observation is
     therefore not proof; confirmation requires `TEARDOWN_CONFIRM_SAMPLES`
     consecutive absent listings, and a machine reported as `destroying` is
-    treated as not yet confirmed rather than as a stray. A  `destroy` the
+    treated as not yet confirmed rather than as a stray. A `destroy` the
     provider refuses is retried `DESTROY_ATTEMPTS` times and, when exhausted,
     escalated as a loud error — an orphaned GPU bills until someone notices.
 
@@ -1301,7 +1301,7 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
     no longer being listed, and a machine that is still listed is billing right
     now — so it is reported as an error an operator cannot miss. The retry,
     escalation and consecutive-absence confirmation rules live in
-    `_confirmed_destroy`, defined once and shared with the reconciler (issue
+    `confirmed_destroy`, defined once and shared with the reconciler (issue
     #61) so the two cannot drift (ADR-0057); this wrapper records the outcome
     on the job's own event log.
     """
@@ -1309,7 +1309,7 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
     def record(kind: str, message: str, data: dict | None = None) -> None:
         db.add_event(job_id, kind, message, data)
 
-    _confirmed_destroy(provider, machine, record)
+    confirmed_destroy(provider, machine, record)
 
 
 def _stall_reporter(job_id: str, limits: RunLimits):

@@ -1064,7 +1064,7 @@ def list_non_terminal_machine_ids() -> list[int]:
     ``provisioning``/``preparing``/``training``/``packaging`` job can never
     be matched against that query -- the reconciler must match machines
     against *all* non-terminal states or it would treat a machine a worker
-    is actively driving as an orphan and destroy it.     A machine in this set
+    is actively driving as an orphan and destroy it. A machine in this set
     is accounted for and left alone.
     """
     states = tuple(sorted(TERMINAL_STATES))
@@ -1423,30 +1423,28 @@ def record_reconciliation(
     *,
     status: str | None = None,
     job_id: str | None = None,
-    endpoint_id: str | None = None,
     ts: float | None = None,
 ) -> None:
     """Record one decision the reconciler made about one machine.
 
     The "what it did is recorded" half of the criterion: a destroyed orphan
     is an event, not a silent removal. Each row names the machine, the
-    provider's view of its status, the action taken and why, and the job or
-    endpoint that owned it when one existed. `ts` is passed through when the
-    caller holds the instant the action happened; defaulting to the write
-    time keeps a caller that does not care about the difference simple.
+    provider's view of its status, the action taken and why, and the job
+    that owned it when one existed. `ts` is passed through when the caller
+    holds the instant the action happened; defaulting to the write time
+    keeps a caller that does not care about the difference simple.
     """
     with connect() as c:
         c.execute(
             "INSERT INTO machine_reconciliation "
-            "(machine_id, status, action, reason, job_id, endpoint_id, ts) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            "(machine_id, status, action, reason, job_id, ts) "
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (
                 int(machine_id),
                 status,
                 action,
                 reason,
                 job_id,
-                endpoint_id,
                 ts if ts is not None else time.time(),
             ),
         )

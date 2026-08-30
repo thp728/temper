@@ -25,7 +25,7 @@ non-terminal state, never a queued-only subset, or this pass would destroy a
 machine a worker is actively driving.
 
 Teardown uses the same confirmed destroy the orchestrator's ``_teardown``
-does (``_confirmed_destroy``, ADR-0057): retry a refused destroy, then
+does (``confirmed_destroy``, ADR-0057): retry a refused destroy, then
 require consecutive absent listings, treating ``destroying`` as not yet
 confirmed. A machine in ``destroying`` is therefore never issued a second
 destroy by this pass — that is the double-destroy ADR-0057 exists to stop.
@@ -70,6 +70,17 @@ ORPHANED_MACHINE_MESSAGE = (
     "destroyed by the reconciler. The job cannot continue."
 )
 
+# The action vocabulary of the reconciliation log, defined once and read by
+# the pass and the tests so an operator reading the table sees a stable set
+# of labels. `destroyed` means the destroy was confirmed absent across
+# consecutive observations (ADR-0057); `destroy_unconfirmed` means the
+# provider refused it and the machine is still billing — the STRAY case;
+# `skipped_destroying` means the provider reported it mid-destroy and a
+# second destroy would be the double-destroy ADR-0057 exists to stop.
+ACTION_DESTROYED = "destroyed"
+ACTION_DESTROY_UNCONFIRMED = "destroy_unconfirmed"
+ACTION_SKIPPED_DESTROYING = "skipped_destroying"
+
 
 def _destroy_orphan(
     provider, machine_id: int, status: str, report: dict
@@ -77,23 +88,30 @@ def _destroy_orphan(
     """Destroy one unowned machine and record what happened, then and there.
 
     The destroy itself goes through the same confirmed path the orchestrator
-    uses (`_confirmed_destroy`, ADR-0057): retry a refused destroy, escalate
+    uses (`confirmed_destroy`, ADR-0057): retry a refused destroy, escalate
     loudly, then require consecutive absent listings. Each step is recorded on
     the owner job's own history when the machine has an owner, and every
     outcome lands one row in the reconciliation log — a destroyed orphan is
     an event, never a silent removal.
 
-    After the destroy, any job row that still names this machine as its
-    current machine and is not terminal is marked failed: a job that claims a
-    machine the reconciler has just destroyed as unowned would otherwise sit
-    non-terminal forever. This is the branch the "rather than left running
-    forever" clause exists for — reachable in the real world by the
-    record-first race, where a worker records its machine_id onto a live row
-    in the same instant the reconciler is acting on the unowned machine, and
-    exercised deterministically in the reconciler tests.
+    After a *confirmed* destroy, any job row that still names this machine as
+    its current machine and is not terminal is marked failed: a job that
+    claims a machine the reconciler has just destroyed as unowned would
+    otherwise sit non-terminal forever. This is the branch the "rather than
+    left running forever" clause exists for — reachable in the real world by
+    the record-first race, where a worker records its machine_id onto a live
+    row in the same instant the reconciler is acting on the unowned machine,
+    and exercised deterministically in the reconciler tests.
+
+    A destroy that is *not* confirmed (the provider refused it and the machine
+    is still billing) does not mark any job failed: the machine is still
+    there, so a job that names it has not lost it, and telling the job
+    otherwise would be a lie. The reconciliation log records it as
+    `destroy_unconfirmed` — the STRAY case an operator must act on — and a
+    later pass, or manual removal, takes over.
     """
     from temper_control_plane import db
-    from temper_control_plane.orchestrator import _confirmed_destroy
+    from temper_control_plane.orchestrator import confirmed_destroy
     from temper_control_plane.provider import Machine
 
     machine = Machine(machine_id=machine_id, status=status)
@@ -118,16 +136,18 @@ def _destroy_orphan(
             message=message,
         )
 
-    confirmed = _confirmed_destroy(provider, machine, record)
+    confirmed = confirmed_destroy(provider, machine, record)
 
-    action = "destroyed" if confirmed else "destroy_unconfirmed"
-    reason = (
-        ORPHANED_MACHINE_MESSAGE
-        if confirmed
-        else (
+    if confirmed:
+        action = ACTION_DESTROYED
+        reason = ORPHANED_MACHINE_MESSAGE
+        report["destroyed"].append(machine_id)
+    else:
+        action = ACTION_DESTROY_UNCONFIRMED
+        reason = (
             "destroy refused and machine still listed; manual removal required"
         )
-    )
+        report["unconfirmed"].append(machine_id)
     db.record_reconciliation(
         machine_id,
         action,
@@ -135,6 +155,11 @@ def _destroy_orphan(
         status=status,
         job_id=owner_job_id,
     )
+
+    if not confirmed:
+        # The machine is still billing; there is no destroyed machine for a
+        # job to have lost. Nothing to fail.
+        return
 
     for owner in owners:
         if owner["status"] in db.TERMINAL_STATES:
@@ -158,8 +183,6 @@ def _destroy_orphan(
             f"{ORPHANED_MACHINE_MESSAGE}",
         )
         report["marked_failed"].append(owner["id"])
-
-    report["destroyed"].append(machine_id)
 
 
 def reconcile_once(provider=None) -> dict:
@@ -221,7 +244,7 @@ def reconcile_once(provider=None) -> dict:
                 if mid not in owned_by_job and mid not in owned_by_endpoint:
                     db.record_reconciliation(
                         mid,
-                        "skipped_destroying",
+                        ACTION_SKIPPED_DESTROYING,
                         "already being destroyed; not yet confirmed (ADR-0057)",
                         status=status,
                     )
