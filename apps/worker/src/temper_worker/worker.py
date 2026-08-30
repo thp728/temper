@@ -38,12 +38,14 @@ the same confirmed path (ADR-0057) inside ``run_job``.
 
 from __future__ import annotations
 
-import logging
 import threading
 
 from temper_control_plane import db, orchestrator
+from temper_control_plane.correlation import set_correlation_id
+from temper_control_plane.logging import configure_logging, get_logger
+from temper_control_plane.sentry import init_sentry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # How often a worker with nothing to do checks for queued jobs. Domain
 # constant with derivation, not a deployment setting (ADR-0062): 1.0s, up
@@ -72,11 +74,36 @@ def run_once() -> bool:
     if job is None:
         return False
     job_id = job["id"]
-    logger.info("worker claimed job %s", job_id)
+    # Re-hydrate the request's correlation identifier so every log line this
+    # job emits carries the same identifier the request's error response did
+    # (issue #52). A missing correlation is an honest absence for pre-migration
+    # rows, not a redaction.
+    cid = job.get("correlation_id")
+    if isinstance(cid, str) and cid:
+        set_correlation_id(cid)
+    else:
+        # No correlation on the row: honest absence for pre-migration rows or
+        # jobs created outside a request context (e.g. direct ``db.create_job``
+        # in tests). Clearing prevents a previous job's correlation leaking
+        # into this one's logs, and an absent correlation is not a redaction
+        # but a true absence -- every log line is still JSON, just without
+        # the identifier.
+        set_correlation_id(None)
+    logger.info(
+        "worker claimed job",
+        job_id=job_id,
+        correlation_id=job.get("correlation_id"),
+        machine_id=job.get("machine_id"),
+    )
     try:
         orchestrator.run_job(job_id)
     except Exception as e:  # noqa: BLE001 - a failed job must not kill the worker
-        logger.exception("worker failed to drive job %s: %s", job_id, e)
+        logger.exception(
+            "worker failed to drive job",
+            job_id=job_id,
+            correlation_id=job.get("correlation_id"),
+            exc_info=e,
+        )
         # ``run_job`` already records the failure on the row before raising;
         # a bare exception here means the row may still be non-terminal, so
         # mark it failed rather than leave it stuck provisioning forever.
@@ -95,6 +122,10 @@ def run_once() -> bool:
                 )
         except Exception:  # noqa: S110 - the job is already in an unknown state
             pass
+    finally:
+        # Clear so the next poll or idle period does not carry the previous
+        # job's correlation into an unattributed log line.
+        set_correlation_id(None)
     return True
 
 
@@ -107,7 +138,7 @@ def run_forever(stop: threading.Event | None = None) -> None:
         try:
             did_work = run_once()
         except Exception as e:  # noqa: BLE001 - the worker must stay up
-            logger.exception("worker poll failed: %s", e)
+            logger.exception("worker poll failed", exc_info=e)
         if not did_work:
             # No job was queued; wait a beat before polling again. Using
             # ``Event.wait`` rather than ``time.sleep`` so a stop request
@@ -124,18 +155,16 @@ def main() -> None:
     invocation without one previously exited silently doing nothing --
     see the guard's own comment."""
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
-    logger.info("worker starting, polling every %ss", WORKER_POLL_INTERVAL_S)
+    configure_logging()
+    init_sentry()
+    logger.info("worker starting", poll_interval_s=WORKER_POLL_INTERVAL_S)
     # Ensure the database is migrated before the first claim. The control
     # plane also migrates at startup; this is idempotent and makes a
     # worker that starts before the control plane still ready.
     try:
         db.init()
     except Exception as e:  # noqa: BLE001 - a failed init must be loud
-        logger.exception("worker db init failed: %s", e)
+        logger.exception("worker db init failed", exc_info=e)
         raise
     stop = threading.Event()
     try:

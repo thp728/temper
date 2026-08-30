@@ -476,6 +476,29 @@ WARNING_CONSECUTIVE = _positive_int(
     "TEMPER_WARNING_CONSECUTIVE", divergence.WARNING_CONSECUTIVE
 )
 
+# --- observability (issue #52) -------------------------------------------------
+# Structured logs with a correlation identifier threaded from request through
+# job through machine (spec 008). One deployment value is what decides where
+# error reports go; the shape is present even when the credential is not.
+#
+# `TEMPER_SENTRY_DSN` wires error reporting as an integration point with no
+# credential set locally -- present in shape, inert in effect. The SDK is
+# installed and `sentry.init()` is called, but with no DSN it does nothing, so
+# a fresh clone needs no secret to run and nothing is sent anywhere.
+DEFAULT_SENTRY_DSN: str | None = None
+
+SENTRY_DSN = (
+    _text("TEMPER_SENTRY_DSN") or _text("SENTRY_DSN") or DEFAULT_SENTRY_DSN
+)
+
+# Logging level for the structured JSON logger. Local default is INFO so
+# a reviewer's first run is not silent, and the value is typed here rather
+# than ad-hoc in the logger setup -- a value two components must agree on is
+# defined once and read, never retyped.
+DEFAULT_LOG_LEVEL = "INFO"
+
+LOG_LEVEL = (_text("TEMPER_LOG_LEVEL") or DEFAULT_LOG_LEVEL).upper()
+
 # --- checkpoint retention ----------------------------------------------------
 # How many checkpoints one job may keep in object storage at once, and hence
 # how many scoped write grants the control plane mints for a job. Bounded by
@@ -533,6 +556,8 @@ class Settings(BaseModel):
     s3_endpoint_url: str | None = None
     s3_region: str | None = None
     storage_secret: str | None = None
+    sentry_dsn: str | None = None
+    log_level: str = DEFAULT_LOG_LEVEL
     checkpoint_retention: int = DEFAULT_CHECKPOINT_RETENTION
 
 
@@ -555,5 +580,7 @@ settings = Settings(
     s3_endpoint_url=S3_ENDPOINT_URL,
     s3_region=S3_REGION,
     storage_secret=STORAGE_SECRET,
+    sentry_dsn=SENTRY_DSN,
+    log_level=LOG_LEVEL,
     checkpoint_retention=CHECKPOINT_RETENTION,
 )

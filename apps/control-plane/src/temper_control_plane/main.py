@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
-import sys
 import time
 import zipfile
 from collections.abc import AsyncIterator, Iterator
@@ -60,6 +59,15 @@ from temper_control_plane.contracts_models import (
     Quote,
     QuoteRequest,
 )
+from temper_control_plane.correlation import (
+    CORRELATION_HEADER,
+    REQUEST_ID_HEADER,
+    generate_correlation_id,
+    get_correlation_id,
+    set_correlation_id,
+)
+from temper_control_plane.logging import configure_logging, get_logger
+from temper_control_plane.sentry import init_sentry
 from temper_control_plane.storage import ObjectNotFound
 from temper_core import (
     artifacts,
@@ -74,6 +82,16 @@ from temper_core import (
     surface,
 )
 from temper_core import manifest as provenance_manifest
+
+# Configure structured JSON logging for every process that imports this
+# module -- the control plane's request handler and the worker's
+# orchestrator both import ``main`` transitively (``jobs.create`` etc),
+# so configuring at import makes every entry point emit one JSON line per
+# event, machine-readable, rather than two shapes. ``configure_logging``
+# is idempotent, so calling it again in ``lifespan`` or ``worker.main``
+# is harmless.
+configure_logging()
+logger = get_logger(__name__)
 
 # The default resolver, built once at import: `HuggingFaceModels()` performs
 # no I/O until `.resolve()` is called, so this is as safe at import time as
@@ -138,6 +156,7 @@ def _catalog_entry(m: catalog.BaseModel) -> dict:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    init_sentry()
     db.init()
     storage.STORE.ensure_ready()
     # Fail loudly at boot rather than four seconds into someone's first job.
@@ -146,10 +165,9 @@ async def lifespan(_app: FastAPI):
     # the real tier, where a missing key is a jobs-will-fail-at-provisioning
     # surprise rather than a demo detail.
     if not config.FAKE_PROVIDER and not config.provider_credentials_present():
-        print(
-            "WARNING: no provider credentials (JL_API_KEY unset, no jl config "
-            "file). Datasets validate fine; jobs will fail at provisioning.",
-            file=sys.stderr,
+        logger.warning(
+            "missing provider credentials, jobs will fail at provisioning",
+            reason="JL_API_KEY unset and no jl config file; datasets validate fine",
         )
     # Issue #51: orchestration now lives in the worker, not in this process.
     # A restart of the control plane no longer loses the thread driving a
@@ -195,6 +213,219 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+# ---------------------------------------------------------------------------
+# correlation middleware -- one identifier per request, on every log line
+# ---------------------------------------------------------------------------
+
+
+@app.middleware("http")
+async def correlation_middleware(request: Request, call_next):
+    """Bind one correlation identifier for this request.
+
+    The header is honoured when the caller set it (so a retry can carry the
+    same story), otherwise a fresh ``req_`` identifier is generated. The
+    identifier is bound to ``contextvars`` so every structured log line this
+    request or its resulting job emits carries it (the worker re-hydrates
+    from the job row), and it is echoed on the response headers and on
+    user-visible errors so a report can be traced. Structured request
+    start/finish lines are emitted so a failure spanning a request, a job and
+    a machine can be reassembled from logs alone (spec 008).
+    """
+    start = time.time()
+    # Honour a caller-provided identifier (either header spelling) so a
+    # retry or an external caller can thread its own retry into the same
+    # trace; generate when absent so every request has one even without a
+    # header.
+    incoming = request.headers.get(CORRELATION_HEADER) or request.headers.get(
+        REQUEST_ID_HEADER
+    )
+    cid = (
+        incoming.strip()
+        if incoming and incoming.strip()
+        else generate_correlation_id()
+    )
+    set_correlation_id(cid)
+    # Bind into structlog's contextvars as well, so ``merge_contextvars``
+    # sees it even when the logger was obtained before the middleware bound
+    # it. The two bindings are the same value, the same identifier, read
+    # from one definition.
+    try:
+        from structlog import contextvars as structlog_contextvars
+
+        structlog_contextvars.bind_contextvars(correlation_id=cid)
+    except Exception:  # noqa: S110
+        pass
+    logger.info(
+        "request started",
+        method=request.method,
+        path=request.url.path,
+        correlation_id=cid,
+    )
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        # An unhandled exception is the one case the per-route handlers did
+        # not already surface with a correlation-bearing payload; report it
+        # once, with the identifier, and surface it on the response as well
+        # so a report can be traced. The sentry integration is inert when no
+        # DSN is configured, so reporting here is present in shape even when
+        # it does nothing locally.
+        duration_ms = round((time.time() - start) * 1000, 1)
+        logger.exception(
+            "request failed: unhandled exception",
+            method=request.method,
+            path=request.url.path,
+            correlation_id=cid,
+            duration_ms=duration_ms,
+            exc_info=e,
+        )
+        try:
+            import sentry_sdk
+
+            from temper_control_plane.sentry import (
+                before_send as _scrub,  # noqa: F401
+            )
+
+            sentry_sdk.capture_exception(e)
+        except Exception:  # noqa: S110
+            pass
+        # Surface the correlation on the error payload so a report can be
+        # traced (acceptance: "The identifier is surfaced on user-visible
+        # errors"). Raising an HTTPException here would be another handler;
+        # returning a JSONResponse keeps the middleware as the single place
+        # this surfacing lives.
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": "An unexpected error occurred.",
+                },
+                "correlation_id": cid,
+            },
+            headers={
+                CORRELATION_HEADER: cid,
+                REQUEST_ID_HEADER: cid,
+            },
+        )
+    duration_ms = round((time.time() - start) * 1000, 1)
+    # Structured completion line, machine-readable, carrying the same
+    # correlation so a request, its job and its machine read as one story.
+    logger.info(
+        "request finished",
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        correlation_id=cid,
+        duration_ms=duration_ms,
+    )
+    response.headers[CORRELATION_HEADER] = cid
+    response.headers[REQUEST_ID_HEADER] = cid
+    # Also bind into structlog's contextvars for any logger that reads from
+    # there; cleared on the next request's bind.
+    try:
+        from structlog import contextvars as structlog_contextvars
+
+        structlog_contextvars.bind_contextvars(correlation_id=cid)
+    except Exception:  # noqa: S110
+        pass
+    return response
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler_with_correlation(
+    request: Request, exc: HTTPException
+):
+    """Surface the correlation identifier on every user-visible error.
+
+    FastAPI's default handler returns ``{"detail": ...}``; this handler keeps
+    that shape but ensures the correlation identifier is both in the response
+    headers and, when the payload is a dict, inside the payload so a report
+    can be traced without hunting headers. Structured log line is emitted
+    at the same time, so the error's own log and the response share the
+    same identifier.
+    """
+    cid = get_correlation_id() or generate_correlation_id()
+    # Log the error as structured JSON, scrubbed, with the correlation -- a
+    # training platform that logs user data has a problem no access control
+    # fixes, so the logger's redaction still applies, and no prompt ever
+    # reaches this line because the handler never logs the request body.
+    logger.warning(
+        "request error",
+        method=request.method,
+        path=request.url.path,
+        status_code=exc.status_code,
+        correlation_id=cid,
+        code=getattr(exc.detail, "get", lambda *_: None)("code")
+        if isinstance(exc.detail, dict)
+        else None,
+    )
+    # Report to Sentry when a DSN is configured; inert otherwise (the same
+    # integration point the logging module describes -- present in shape,
+    # inert in effect when no credential is set locally).
+    if exc.status_code >= 500:
+        try:
+            import sentry_sdk
+
+            sentry_sdk.capture_exception(exc)
+        except Exception:  # noqa: S110
+            pass
+    detail = exc.detail
+    if isinstance(detail, dict):
+        # Do not mutate the original detail in place (it may be reused), and
+        # ensure the correlation is surfaced on user-visible errors so a report
+        # can be traced. Redact any secret that somehow reached the payload --
+        # no secret ever appears in a response (acceptance). The wrapper is
+        # ``{"detail": payload}`` so a client that expects
+        # ``r.json()["detail"]["code"]`` keeps working, and ``correlation_id``
+        # is surfaced both inside the payload and at the top level/header so
+        # a report can be traced without hunting.
+        payload = dict(detail)
+        # Scrub secrets from the payload itself before it leaves the process:
+        # a secret that reached an error message (e.g. a DSN in an exception
+        # string) must not be surfaced to the user.
+        try:
+            from temper_control_plane.logging import (
+                _SECRET_KEY_RE,
+                _SECRET_VALUE_RE,
+                _known_secrets,
+            )
+
+            redacted: dict = {}
+            for k, v in payload.items():
+                if isinstance(k, str) and _SECRET_KEY_RE.search(k):
+                    redacted[k] = "[REDACTED]"
+                elif isinstance(v, str) and _SECRET_VALUE_RE.search(v):
+                    redacted[k] = _SECRET_VALUE_RE.sub("[REDACTED]", v)
+                elif isinstance(v, str) and any(
+                    s and s in v for s in _known_secrets
+                ):
+                    redacted[k] = "[REDACTED]"
+                else:
+                    redacted[k] = v
+            payload = redacted
+        except Exception:  # noqa: S110
+            pass
+        payload.setdefault("correlation_id", cid)
+        content: dict = {"detail": payload, "correlation_id": cid}
+    else:
+        payload = {"detail": detail, "correlation_id": cid}
+        content = payload
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers={
+            CORRELATION_HEADER: cid,
+            REQUEST_ID_HEADER: cid,
+            **(exc.headers or {}),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
