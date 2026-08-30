@@ -8,6 +8,8 @@ the stream ends exactly when the job reaches a terminal state, having
 delivered the terminal transition itself.
 """
 
+import asyncio
+import contextlib
 import json
 import threading
 import time
@@ -16,6 +18,7 @@ import pytest
 from helpers import wait_validated
 
 from temper_control_plane.fake_provider import (
+    DEMO_ADAPTER_BYTES,
     DEMO_LINES,
     DEMO_RESULT,
     FakeProvider,
@@ -178,6 +181,242 @@ def test_last_event_id_header_wins_over_after(client, finished_job_id):
     )
     delivered = _payloads(body)
     assert all(e["id"] > mid for e in delivered)
+
+
+def _paused_live_provider():
+    """A live job's fake that holds still after the image build, so a test
+    can open watchers and act on the run at a known point (issue #57: the
+    two-watcher and dropped-connection tests both need a job they can hold
+    still while connections come and go)."""
+    return FakeProvider(
+        lines=DEMO_LINES,
+        result=DEMO_RESULT,
+        adapter_bytes=DEMO_ADAPTER_BYTES,
+        pause_at_line=2,
+    )
+
+
+def _drive_live_job(client, provider):
+    """Start a job on a daemon thread the way the worker would (issue #51),
+    and return the job id once the provider reports it is paused."""
+    from temper_control_plane import fake_models, orchestrator
+
+    threads: list[threading.Thread] = []
+
+    def start(job_id):
+        t = threading.Thread(
+            target=orchestrator.run_job,
+            args=(job_id, provider, None, fake_models.catalog_models()),
+            daemon=True,
+            name=f"job-{job_id[:8]}",
+        )
+        t.start()
+        threads.append(t)
+
+    job_id = _upload_and_create(client, driver=start)
+    assert provider.wait_until_paused(), "the job never reached its pause"
+    return job_id, threads
+
+
+def test_two_watchers_on_one_job_both_receive_everything(client, tmp_path):
+    """Two streams on one job both deliver the whole history, and neither
+    affects the other (spec 008's story of the second device).
+
+    Both watchers are open while the job is still working -- the same live
+    run, not one after the other -- and each ends on the terminal transition
+    with the full record, identical to the other's and to the store's. A
+    fan-out that shared a cursor or consumed a notification out from under
+    the other watcher would fail this with a gap in one of the two.
+    """
+    provider = _paused_live_provider()
+    job_id, threads = _drive_live_job(client, provider)
+
+    with (
+        client.stream("GET", f"/v1/jobs/{job_id}/stream") as first,
+        client.stream("GET", f"/v1/jobs/{job_id}/stream") as second,
+    ):
+        assert first.status_code == 200
+        assert second.status_code == 200
+        # Both watchers are subscribed while the job is held still, so every
+        # event from here on is fanned out to both -- and both replay the
+        # history recorded before they connected from the store (the stream
+        # reads history first, then follows the channel; ADR-0070).
+        provider.resume.set()
+        body_first = first.read().decode("utf-8")
+        body_second = second.read().decode("utf-8")
+
+    for t in threads:
+        t.join(timeout=5.0)
+
+    page = client.get(f"/v1/jobs/{job_id}/events").json()
+    expected = page["events"]
+    assert expected, "the run recorded no events"
+    # Each watcher got everything, in order, once -- and they agree with each
+    # other (neither affected the other) and with the store (the truth).
+    assert _payloads(body_first) == expected
+    assert _payloads(body_second) == expected
+    assert _ids(body_first) == [e["id"] for e in expected]
+    assert _ids(body_second) == [e["id"] for e in expected]
+    # Both ended on their own: the terminal transition, then the explicit end
+    # marker -- one watcher's end did not close the other.
+    assert _payloads(body_first)[-1]["kind"] == "state"
+    assert _payloads(body_second)[-1]["kind"] == "state"
+    assert "event: end" in body_first
+    assert "event: end" in body_second
+
+
+def test_a_dropped_connection_replays_exactly_what_it_missed(client, tmp_path):
+    """A connection that is actually dropped mid-stream -- closed, not
+    simulated -- replays exactly what it missed, in order, once, on
+    reconnecting with its last seen identifier (spec 008's replay-by-last-
+    seen rule; ADR-0070).
+
+    The drop is real: the stream is closed while the job is held still, the
+    job then runs on to completion out of any connection's sight, and the
+    reconnect asks for everything after the last id the dropped watcher had
+    delivered. The store is the truth, so the gap is filled exactly --
+    nothing re-sent, nothing skipped, nothing doubled.
+    """
+    provider = _paused_live_provider()
+    job_id, threads = _drive_live_job(client, provider)
+
+    # Watch until the image build is done, then drop the connection for real
+    # by closing the stream while the job is still paused.
+    with client.stream("GET", f"/v1/jobs/{job_id}/stream") as r:
+        assert r.status_code == 200
+        seen: list[str] = []
+        for line in r.iter_lines():
+            seen.append(line)
+            if "image built" in "\n".join(seen):
+                break
+    # The connection is closed now. Everything recorded from here on is
+    # genuinely missed by the dropped watcher.
+    last_seen = _ids("\n".join(seen))[-1]
+
+    provider.resume.set()
+    _wait_terminal(client, job_id)
+    for t in threads:
+        t.join(timeout=5.0)
+
+    page = client.get(f"/v1/jobs/{job_id}/events").json()
+    expected = page["events"]
+    missed = [e for e in expected if e["id"] > last_seen]
+    assert missed, (
+        "the job recorded nothing after the drop; the test needs a gap"
+    )
+
+    # Reconnect with the last id the dropped watcher had seen: exactly the
+    # gap, in order, once.
+    body = _stream_body(
+        client,
+        f"/v1/jobs/{job_id}/stream",
+        headers={"Last-Event-ID": str(last_seen)},
+    )
+    delivered = _payloads(body)
+    assert delivered == missed, (
+        "the reconnecting watcher did not receive exactly the events it "
+        "missed, in order, once"
+    )
+    assert _ids(body) == [e["id"] for e in missed]
+    # And the whole history is still continuous from the drop point: the
+    # first missed event is the one after the last seen, with nothing lost
+    # in between.
+    assert missed[0]["id"] == last_seen + 1
+
+
+def test_an_idle_stream_reads_no_store_and_a_publish_wakes_it(
+    isolated, monkeypatch
+):
+    """The channel is the delivery mechanism, not an ornament on a poll
+    (ADR-0070, spec 008's "reads history from the store, then follows the
+    channel"): after the catch-up read, an idle stream makes no store reads,
+    and a persisted-then-published event wakes it to re-read and deliver.
+
+    This is the property that makes the stream a follower of the channel
+    rather than a timer with a shorter interval. It is pinned by counting
+    the store reads `_job_event_stream` performs: an idle wait comfortably
+    longer than `STREAM_WAIT_S` must produce none, which the pre-change
+    poll-based stream would have failed with a read every quarter second.
+    """
+    from temper_control_plane import db, main
+
+    ds_id = db.create_dataset("d.jsonl", "datasets/ds_idle.jsonl", "ds_idle")
+    job_id = db.create_job(ds_id, "qwen3-4b", {})
+
+    reads = {
+        "get_events": 0,
+        "get_job": 0,
+        "get_progress": 0,
+        "get_output": 0,
+    }
+    originals = {name: getattr(db, name) for name in reads}
+
+    def counter(name):
+        def wrapped(*args, **kwargs):
+            reads[name] += 1
+            return originals[name](*args, **kwargs)
+
+        return wrapped
+
+    for name in reads:
+        monkeypatch.setattr(db, name, counter(name))
+
+    class _NeverDisconnected:
+        async def is_disconnected(self):
+            return False
+
+    async def drive():
+        gen = main._job_event_stream(_NeverDisconnected(), job_id, 0)
+        queue: asyncio.Queue[str] = asyncio.Queue()
+
+        async def pump():
+            async for item in gen:
+                await queue.put(item)
+
+        task = asyncio.create_task(pump())
+        try:
+            # The catch-up: history from the store first, delivered once.
+            caught_up = await asyncio.wait_for(queue.get(), 2.0)
+            assert "queued" in caught_up
+            # Wait for the catch-up iteration to finish every read it makes
+            # (progress and output are read after the event is yielded), so
+            # the idle window below starts from a settled snapshot -- not
+            # from a generator still mid-iteration.
+            loop = asyncio.get_running_loop()
+
+            async def settled() -> None:
+                deadline = loop.time() + 2.0
+                while not (
+                    reads["get_progress"] >= 1 and reads["get_output"] >= 1
+                ):
+                    if loop.time() > deadline:
+                        raise AssertionError("the catch-up read never settled")
+                    await asyncio.sleep(0.01)
+
+            await settled()
+            # Idle: a wait longer than the channel wait must produce no store
+            # reads -- the channel is the wake, not a timer.
+            after_catchup = dict(reads)
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(queue.get(), 0.8)
+            assert reads == after_catchup, (
+                "an idle stream kept polling the store instead of waiting "
+                "on the channel"
+            )
+            # A publish (persisted first, NOTIFY in the same transaction)
+            # wakes the stream, which re-reads the store and yields the new
+            # event.
+            db.add_event(job_id, "log", "woken by the channel")
+            got = await asyncio.wait_for(queue.get(), 2.0)
+            assert "woken by the channel" in got
+            assert reads["get_events"] == after_catchup["get_events"] + 1
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            await gen.aclose()
+
+    asyncio.run(drive())
 
 
 def test_the_stream_carries_live_events_and_ends_at_terminal(
