@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist } from "next/font/google";
+import DemoBanner from "@/components/DemoBanner";
 import { cn } from "@/lib/utils";
+import { isZeroCostMode } from "@/lib/demo-mode";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+
+// The demonstration marking is read at request time, never baked at build
+// time: the compose image builds once and the reviewer's `docker compose up`
+// decides the mode, so a statically-prerendered banner would freeze the wrong
+// answer into every page.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: {
@@ -17,9 +25,11 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const zeroCost = isZeroCostMode();
   return (
     <html lang="en" className={cn("font-sans", geist.variable)}>
       <body className="flex min-h-screen flex-col bg-background text-foreground antialiased">
+        {zeroCost ? <DemoBanner /> : null}
         <header className="border-b bg-card">
           <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3">
             <Link
