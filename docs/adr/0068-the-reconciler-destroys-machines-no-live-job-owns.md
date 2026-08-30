@@ -1,4 +1,4 @@
-# ADR-0067 — The reconciler destroys machines no live job owns
+# ADR-0068 — The reconciler destroys machines no live job owns
 
 - **Status:** accepted
 - **Date:** 2026-08-30
