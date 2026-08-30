@@ -186,7 +186,11 @@ def test_each_delivery_format_downloads_with_a_manifest_describing_itself(
     r = client.get(
         f"/v1/jobs/{job['id']}/artifact", params={"format": "merged"}
     )
-    assert r.status_code == 200, r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text
+    assert r.status_code == 200, (
+        r.json()
+        if r.headers.get("content-type", "").startswith("application/json")
+        else r.text
+    )
     assert "merged.zip" in r.headers["content-disposition"]
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         names = set(z.namelist())
@@ -229,7 +233,11 @@ def test_the_default_download_still_serves_the_canonical_artifact(
     assert rec["status"] == "complete", rec
 
     r = client.get(f"/v1/jobs/{job['id']}/artifact")
-    assert r.status_code == 200, r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text
+    assert r.status_code == 200, (
+        r.json()
+        if r.headers.get("content-type", "").startswith("application/json")
+        else r.text
+    )
     assert "artifact.zip" in r.headers["content-disposition"]
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         assert "adapter_model.safetensors" in z.namelist()
