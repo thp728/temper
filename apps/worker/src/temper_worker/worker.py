@@ -44,6 +44,7 @@ independently of any workflow.
 from __future__ import annotations
 
 import threading
+import time
 
 from temper_control_plane import db, orchestrator
 from temper_control_plane.correlation import set_correlation_id
@@ -67,6 +68,46 @@ logger = get_logger(__name__)
 # database. The value is tuning, not contract, and tests patch it directly
 # when they need a faster or slower poll.
 WORKER_POLL_INTERVAL_S = 1.0
+
+# The claim lease (issue #68 durable execution): how often a worker driving a
+# job refreshes the job's `claimed_at`, and how long a job may go without a
+# refresh before it counts as abandoned and another worker may reclaim it.
+# The two are one invariant: a live driver's heartbeat thread refreshes every
+# HEARTBEAT_INTERVAL_S, so the driver's job must never look stale while the
+# heartbeat is alive. 5s between touches and a 30s staleness (six missed
+# beats) leaves a huge margin -- the heartbeat is a single tiny UPDATE on its
+# own thread, so a live process misses six in a row only if it is truly
+# wedged -- while keeping a dead worker's job reclaimable within half a
+# minute. The invariant HEARTBEAT_INTERVAL_S < CLAIM_STALE_AFTER_S is pinned
+# by a test, so a future edit that inverts it fails rather than silently
+# letting live jobs be stolen.
+HEARTBEAT_INTERVAL_S = 5.0
+HEARTBEAT_STOP_JOIN_S = 0.5
+
+
+def _heartbeat_loop(stop: threading.Event, job_id: str) -> None:
+    """Refresh a claimed job's lease while its driver works (issue #68).
+
+    The lease (``db.touch_claim``) is what lets a fresh worker tell a job
+    whose driver died from one that is merely quiet. A job spends long
+    stretches writing nothing to the database -- `await_ready` polls SSH for
+    minutes, a silent stream waits out the stall window -- so without a
+    heartbeat it would look abandoned and be stolen mid-flight. The thread
+    wakes often so it notices a stop promptly, and touches the row at most
+    every `HEARTBEAT_INTERVAL_S`. A write that fails is suppressed: an
+    unreachable database cannot be refreshed, and a lease that cannot refresh
+    is a driver that cannot be told apart from a dead one, which is the safe
+    direction for the reclaim logic to fail in.
+    """
+    next_touch = time.time() + HEARTBEAT_INTERVAL_S
+    while not stop.wait(0.1):
+        now = time.time()
+        if now >= next_touch:
+            try:
+                db.touch_claim(job_id)
+            except Exception:  # noqa: BLE001 - a lease that cannot refresh must not kill the drive
+                logger.debug("claim heartbeat failed", job_id=job_id)
+            next_touch = now + HEARTBEAT_INTERVAL_S
 
 
 def run_once() -> bool:
@@ -102,6 +143,21 @@ def run_once() -> bool:
         correlation_id=job.get("correlation_id"),
         machine_id=job.get("machine_id"),
     )
+    # Durable execution (issue #68): while this worker drives the job, a
+    # heartbeat thread refreshes the claim lease, so a job being driven is
+    # never mistaken for an abandoned one -- even through the minutes-long
+    # stretches (await_ready, a silent stream) during which the job writes
+    # nothing to the database. If this worker dies, the lease goes stale past
+    # db.CLAIM_STALE_AFTER_S and a fresh worker reclaims the job and resumes
+    # it from its recorded step.
+    heartbeat_stop = threading.Event()
+    heartbeat = threading.Thread(
+        target=_heartbeat_loop,
+        args=(heartbeat_stop, job_id),
+        daemon=True,
+        name=f"claim-heartbeat-{job_id[:8]}",
+    )
+    heartbeat.start()
     try:
         orchestrator.run_job(job_id)
     except Exception as e:  # noqa: BLE001 - a failed job must not kill the worker
@@ -130,8 +186,11 @@ def run_once() -> bool:
         except Exception:  # noqa: S110 - the job is already in an unknown state
             pass
     finally:
-        # Clear so the next poll or idle period does not carry the previous
-        # job's correlation into an unattributed log line.
+        # Stop the heartbeat so no straggler refreshes a terminal job's
+        # lease, then clear so the next poll or idle period does not carry
+        # the previous job's correlation into an unattributed log line.
+        heartbeat_stop.set()
+        heartbeat.join(timeout=HEARTBEAT_STOP_JOIN_S)
         set_correlation_id(None)
     return True
 

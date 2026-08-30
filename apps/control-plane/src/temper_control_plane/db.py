@@ -64,6 +64,18 @@ JOB_STATES = (
 )
 TERMINAL_STATES = {"complete", "failed", "cancelled"}
 
+# How old a job's claim lease must be before the job counts as abandoned and
+# another worker may reclaim it (issue #68 durable execution). Domain
+# constant with derivation, not a deployment setting (ADR-0062): the worker
+# driving a job refreshes its lease every `worker.HEARTBEAT_INTERVAL_S` (5s),
+# so a live driver never looks stale as long as its heartbeat thread is
+# alive. 30s is six missed beats -- far longer than any single heartbeat
+# write can block, and short enough that a dead worker's job is reclaimed
+# within half a minute. A claim that was never taken (`claimed_at IS NULL`)
+# is never treated as stale: reclaiming requires a lease to have gone stale,
+# so a row nobody claimed cannot be mistaken for a dead driver's.
+CLAIM_STALE_AFTER_S = 30.0
+
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
@@ -591,6 +603,25 @@ def cancel_requested(job_id: str) -> bool:
             "SELECT cancel_requested FROM jobs WHERE id=%s", (job_id,)
         ).fetchone()
     return bool(row and row["cancel_requested"])
+
+
+def touch_claim(job_id: str) -> None:
+    """Stamp (or refresh) a job's claim lease (issue #68 durable execution).
+
+    Whoever drives a job owns it: `orchestrator.run_job` stamps the lease when
+    it takes over, and the worker refreshes it on an interval while it drives,
+    so a live driver is never mistaken for a dead one. A job whose lease has
+    gone stale past `CLAIM_STALE_AFTER_S` is abandoned and reclaimable.
+
+    Best-effort by contract: a lease that cannot be refreshed is a driver
+    that cannot be distinguished from a dead one, which is the safe direction
+    for the reclaim logic to fail in. The heartbeat thread suppresses write
+    failures rather than letting them kill the drive.
+    """
+    with connect() as c:
+        c.execute(
+            "UPDATE jobs SET claimed_at=%s WHERE id=%s", (time.time(), job_id)
+        )
 
 
 def record_actuals(job_id: str, actuals: dict) -> None:
@@ -1165,8 +1196,17 @@ def get_events(job_id: str, after_id: int = 0, limit: int = 500) -> list[dict]:
     return out
 
 
+# The event code a reclaim carries (issue #68 durable execution): a job whose
+# driver died is picked up by a fresh worker, and the run's own history must
+# say so -- user story 19 (every recovery visible) holds for a recovered job
+# as for a recovered run. Distinct from any orchestrator code so a client can
+# branch on "this job was resumed by durable execution" separately from a
+# training outcome.
+RECLAIMED_CODE = "job_reclaimed"
+
+
 def claim_next_job() -> dict | None:
-    """Atomically claim one queued job for a worker.
+    """Atomically claim one job for a worker.
 
     The local file that preceded PostgreSQL could not express a claim on a
     row surviving contention, so there was no path to running orchestration
@@ -1181,31 +1221,45 @@ def claim_next_job() -> dict | None:
       Without it two workers would serialize on the lock; with it they
       never wait and never claim the same job.
 
+    Issue #68 extends what is claimable, without weakening either half: a
+    worker claims a fresh ``queued`` job first (oldest first, moved to
+    ``provisioning`` as before), and when nothing is queued it reclaims the
+    oldest *abandoned* job -- one whose lease has gone stale past
+    ``CLAIM_STALE_AFTER_S``, meaning the worker driving it died. A job a live
+    worker is driving has a fresh lease, so it is never reclaimed; a job
+    nobody ever claimed (``claimed_at IS NULL``) is never treated as
+    abandoned. The reclaim keeps the job's status, because the status is the
+    step cursor the new driver resumes from rather than a value to reset.
+
     The claim and its event are one transaction: a status that moved with
     no event is a run you cannot explain.
     """
 
     with connect() as c:
-        row = c.execute(
-            """
-            WITH claimed AS (
-                SELECT id FROM jobs
-                WHERE status = 'queued'
-                ORDER BY created_at
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-            )
-            UPDATE jobs
-            SET status = 'provisioning'
-            WHERE id IN (SELECT id FROM claimed)
-            RETURNING *
-            """
-        ).fetchone()
+        row = _claim_one(c, reclaim=False)
+        was_reclaim = False
+        if row is None:
+            row = _claim_one(c, reclaim=True)
+            was_reclaim = row is not None
         if row is None:
             return None
-        _append_event(
-            c, row["id"], "state", "provisioning", {"state": "provisioning"}
-        )
+        if was_reclaim:
+            _append_event(
+                c,
+                row["id"],
+                "log",
+                f"Job reclaimed after its driver was lost; resuming from "
+                f"'{row['status']}'",
+                {"code": RECLAIMED_CODE, "step": row["status"]},
+            )
+        else:
+            _append_event(
+                c,
+                row["id"],
+                "state",
+                "provisioning",
+                {"state": "provisioning"},
+            )
         job = _row(
             row,
             {
@@ -1238,6 +1292,52 @@ def claim_next_job() -> dict | None:
                 )
             )
         )
+
+
+def _claim_one(c, *, reclaim: bool) -> dict | None:
+    """One claim candidate under ``FOR UPDATE SKIP LOCKED``, or None.
+
+    ``reclaim=False`` claims the oldest ``queued`` job and moves it to
+    ``provisioning``. ``reclaim=True`` claims the oldest abandoned non-terminal
+    job -- its lease gone stale -- and keeps its status. Both stamp
+    ``claimed_at`` so the winner holds a fresh lease and a concurrent worker
+    skipping the same row cannot claim it a second time.
+    """
+    if reclaim:
+        states = tuple(sorted(TERMINAL_STATES))
+        placeholders = ", ".join(["%s"] * len(states))
+        where = (
+            f"status NOT IN ({placeholders}) "
+            "AND status <> 'queued' "
+            "AND claimed_at IS NOT NULL "
+            "AND claimed_at < %s"
+        )
+        set_clause = "claimed_at = %s"
+        params = [
+            *states,
+            time.time() - CLAIM_STALE_AFTER_S,
+            time.time(),
+        ]
+    else:
+        where = "status = 'queued'"
+        set_clause = "status = 'provisioning', claimed_at = %s"
+        params = [time.time()]
+    return c.execute(
+        f"""
+        WITH claimed AS (
+            SELECT id FROM jobs
+            WHERE {where}
+            ORDER BY created_at
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE jobs
+        SET {set_clause}
+        WHERE id IN (SELECT id FROM claimed)
+        RETURNING *
+        """,
+        params,
+    ).fetchone()
 
 
 def _row(

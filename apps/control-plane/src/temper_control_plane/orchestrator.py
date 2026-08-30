@@ -79,6 +79,7 @@ from .limits import BUDGET_EXHAUSTED_CODE, RunLimits, guard
 from .logging import get_logger
 from .models import new_models
 from .provider import (
+    Machine,
     Provider,
     container_name,
     new_provider,
@@ -1864,7 +1865,14 @@ def _attempt(
     # produced one would be the single worst thing this path could tell a user,
     # so what already landed is discarded rather than kept.
     _discard_if_cancelled(job_id, cancelled)
-    db.set_state(job_id, "packaging", "Verifying artifact")
+    # Issue #68: the result manifest is persisted the moment packaging begins,
+    # not only when the job reaches its terminal state. A worker killed during
+    # collection would otherwise take the run's own manifest with it -- the
+    # one record that ties the stored artifact to its checksum -- leaving a
+    # packaging recovery with nothing to re-collect against. Persisting it
+    # here makes packaging resumable and is honest: the run *did* produce this
+    # result document, and the row is its record.
+    db.set_state(job_id, "packaging", "Verifying artifact", result_json=result)
     artifact = _collect_artifact(job_id, result, plan.method)
     checkpoints = _collect_checkpoints(job_id, result)
     db.set_checkpoints(job_id, checkpoints)
@@ -2134,6 +2142,153 @@ def _resumed_step(resume_checkpoint: dict | None) -> int | None:
     return resume_checkpoint.get("step")
 
 
+# The stable code and sentence a reclaimed job's first recovery event carries.
+# The reclaim event itself is written by ``db.claim_next_job`` (which owns the
+# claim vocabulary); this is the orchestrator's own narration when it actually
+# performs the recovery, and the two say the same thing from their own sides.
+RECLAIM_RECOVERY_CODE = "durable_recovery"
+
+
+def _resolved_hp_from_attempts(job: dict) -> dict | None:
+    """The hyperparameter spec the last attempt ran, reconstructed for a
+    reclaimed job (issue #68), or None when the job has no attempts.
+
+    A reclaimed job's new driver must resume with the spec the interrupted
+    attempt was actually running -- a memory recovery's halved batch is the
+    job's spec now, not the frozen request's -- or the resumption would
+    quietly change the optimisation, the exact failure ADR-0069 exists to
+    prevent. The attempts record keeps only the memory-relevant keys
+    (per-step batch, accumulation, sequence length) plus the method, so the
+    frozen effective spec is taken and those keys overlaid. When the last
+    attempt ran the frozen spec unchanged, this returns None so the fresh
+    path re-resolves exactly as before (a reconstructed-but-equal dict would
+    otherwise change the method pinning in `_attempt` for no reason).
+    """
+    attempts = job.get("attempts") or []
+    if not attempts:
+        return None
+    last_spec = attempts[-1].get("spec") or {}
+    method = last_spec.get("method") or job.get("method")
+    frozen = hyperparams.effective(
+        job.get("hyperparameters") or {}, method=method
+    )
+    overlay = dict(frozen)
+    for key in (
+        memory_retry.MICRO_BATCH_KEY,
+        memory_retry.ACCUMULATION_KEY,
+        memory_retry.SEQUENCE_LEN_KEY,
+    ):
+        if key in last_spec:
+            overlay[key] = last_spec[key]
+    if all(
+        overlay.get(k) == frozen.get(k)
+        for k in (
+            memory_retry.MICRO_BATCH_KEY,
+            memory_retry.ACCUMULATION_KEY,
+            memory_retry.SEQUENCE_LEN_KEY,
+        )
+    ):
+        return None
+    return overlay
+
+
+def _recover_abandoned(
+    provider: Provider,
+    job_id: str,
+    machines: list,
+    job: dict,
+    status: str,
+) -> tuple[str, str, dict]:
+    """Drive an abandoned job -- one reclaimed after its worker died (issue
+    #68) -- to its next state.
+
+    Returns an outcome tuple when the run had already finished training and
+    is re-collected from storage (``packaging``); raises the interruption
+    error otherwise, so the caller's resumption loop (issue #60) discovers
+    the surviving checkpoints and resumes on a fresh machine. The recorded
+    machine is appended to `machines` when it is still listed, so the loop's
+    per-attempt ``finally`` tears it down once before anything new provisions
+    -- recovery never stacks machines, which is how "no second machine
+    appears as a result of recovery" is kept true when the machine was
+    already created. A machine no longer listed is logged as already gone and
+    not appended, so a ghost is never issued a second destroy.
+
+    This is the durable half of the two-recovery split Spec 010 draws: the
+    reconciler protects the money (it would destroy this job's machine only
+    if the job stopped owning it), and this path recovers the job. The two
+    address different failures and both stay.
+    """
+    machine_id = job.get("machine_id")
+    if machine_id is not None:
+        machine = Machine(machine_id=machine_id)
+        if any(m.machine_id == machine_id for m in provider.list_machines()):
+            db.add_event(
+                job_id,
+                "log",
+                f"Worker driving this job was lost; its machine "
+                f"{machine_id} will be destroyed before resuming",
+            )
+            machines.append(machine)
+        else:
+            db.add_event(
+                job_id,
+                "log",
+                f"Worker driving this job was lost; its machine "
+                f"{machine_id} is already gone",
+            )
+
+    db.add_event(
+        job_id,
+        "log",
+        f"Resuming job from '{status}' after its driver was lost",
+        {"code": RECLAIM_RECOVERY_CODE, "step": status},
+    )
+
+    if status == "packaging":
+        # Training finished; only collection remains. The result manifest was
+        # persisted when packaging began (it is the record of what the run
+        # produced), so re-verifying from storage and finishing is safe and
+        # exact: nothing is re-run, only re-collected. A manifest that is
+        # somehow missing (a row predating the persistence) leaves nothing to
+        # re-collect against, so the run is surfaced as interrupted rather
+        # than guessed at.
+        result = job.get("result")
+        if not isinstance(result, dict):
+            raise OrchestratorError(
+                resume_logic.INTERRUPTED_CODE,
+                resume_logic.INTERRUPTED_MESSAGE,
+            )
+        cancelled = _cancellation_check(job_id)
+        _discard_if_cancelled(job_id, cancelled)
+        db.set_state(job_id, "packaging", "Verifying artifact")
+        artifact = _collect_artifact(job_id, result, job.get("method"))
+        checkpoints = _collect_checkpoints(job_id, result)
+        db.set_checkpoints(job_id, checkpoints)
+        _record_best_checkpoint(job_id, checkpoints)
+        delivery_records = _collect_delivery(job_id, result)
+        if delivery_records:
+            db.set_delivery(job_id, delivery_records)
+        _discard_if_cancelled(job_id, cancelled)
+        fields: dict = {
+            "result_json": result,
+            "artifact_key": (
+                artifact["weights_key"] if artifact is not None else None
+            ),
+        }
+        if artifact is not None:
+            fields["artifact_json"] = artifact
+        return ("complete", "Training complete", fields)
+
+    # preparing / training: the run was cut off mid-flight. What survived is
+    # in the checkpoint slots; raising the interruption error hands the job to
+    # the same resumption loop a live worker's interrupted run uses (issue
+    # #60), so the two recoveries compose rather than duplicating each other.
+    raise OrchestratorError(
+        resume_logic.INTERRUPTED_CODE,
+        resume_logic.INTERRUPTED_MESSAGE,
+    )
+
+
 def run_job(
     job_id: str,
     provider: Provider | None = None,
@@ -2228,47 +2383,94 @@ def run_job(
     machines: list = []
     wall_started = time.time()
     try:
+        # Issue #68: whoever drives this job owns it. Stamp the claim lease
+        # (the worker already did when it claimed; this also makes a direct
+        # driver -- tests, the boot-time seed -- own the job), then seed the
+        # durable state from the row: a job reclaimed after its driver died
+        # must continue its attempts, its resume bounds and its recovery spec
+        # rather than start over.
+        db.touch_claim(job_id)
+        job = db.require_job(job_id)
+        attempts = list(job.get("attempts") or [])
+        # Issue #60's resume bounds and issue #35's memory-retry bounds are
+        # carried over from the attempts record so a reclaimed job does not
+        # reset them: the caps bound the job's total resumptions and retries,
+        # not the work of one driver. A resumed attempt is one that recorded
+        # `resumed_from`; a memory recovery is one that recorded `recovery`.
+        resumptions_used = sum(
+            1 for a in attempts if a.get("resumed_from") is not None
+        )
+        retries_used = sum(
+            1 for a in attempts if a.get("recovery") is not None
+        )
+        # The spec the last attempt actually ran (a memory recovery's halved
+        # batch, not the frozen request) -- None when it ran the frozen spec.
+        resolved_hp = _resolved_hp_from_attempts(job)
+
+        # Issue #68: whether this drive's first attempt recovers an abandoned
+        # job from its recorded step rather than starting fresh. A reclaimed
+        # job resumes where its dead driver stopped: the recovery either
+        # returns a terminal outcome (packaging: the run finished training and
+        # is re-collected from storage) or raises the interruption error this
+        # loop's own handler turns into a checkpoint resumption (preparing /
+        # training: issue #60) -- the two recoveries compose rather than
+        # duplicating each other.
+        reclaim_status: str | None = job.get("status")
+        if reclaim_status in ("queued", "provisioning"):
+            # No machine is recorded to resume from; run the normal attempt.
+            reclaim_status = None
         # Issue #35: an out-of-memory failure retries **automatically**,
         # climbing the escalation ladder one rung per retry (halve the
         # per-step batch, gradient checkpointing, sequence length, more
         # capable hardware), each retry on its own machine -- torn down
-        # before the next one provisions -- until the ladder or the retry cap
-        # is exhausted and the failure is surfaced with the attempts recorded.
-        # Every other failure, and a cancellation, ends the job exactly as
-        # before. The retry being automatic is precisely what distinguishes it
-        # from a divergence retry (ADR-0055), which is a *choice*: a diverging
-        # run usually means the data or the rate is wrong, while a memory
-        # retry preserves the effective batch and so cannot change the
-        # optimisation. The two decisions never look alike in the record or
-        # the database (the codes are asserted disjoint by a core test).
+        # before the next one provisions -- until the ladder or the retry
+        # cap is exhausted and the failure is surfaced with the attempts
+        # recorded. Every other failure, and a cancellation, ends the job
+        # exactly as before. The retry being automatic is precisely what
+        # distinguishes it from a divergence retry (ADR-0055), which is a
+        # *choice*: a diverging run usually means the data or the rate is
+        # wrong, while a memory retry preserves the effective batch and so
+        # cannot change the optimisation. The two decisions never look
+        # alike in the record or the database (the codes are asserted
+        # disjoint by a core test).
         escalator: memory_retry.MemoryEscalator | None = None
-        resolved_hp: dict | None = None
         availability_override: Sequence | None = None
         last_rung: str | None = None
-        retries_used = 0
-        # Issue #60: how many times this job has already resumed, and the
-        # checkpoint the current attempt came back from (None for the first).
-        # Each resumption provisions a fresh machine, so the count is what
-        # bounds the loop; the checkpoint is what the next attempt ships to
-        # its machine and names in `resume_from_checkpoint`.
-        resumptions_used = 0
+        # Issue #60: the checkpoint the current attempt came back from
+        # (None for the first). The count is above, seeded from the row.
         resume_checkpoint: dict | None = None
-        attempts: list[dict] = []
         outcome: tuple[str, str, dict] | None = None
         while True:
             attempt_no = len(attempts) + 1
             attempt_started = time.time()
             try:
-                outcome = _attempt(
-                    provider,
-                    job_id,
-                    machines,
-                    limits,
-                    models,
-                    resolved_hp=resolved_hp,
-                    availability_override=availability_override,
-                    resume_checkpoint=resume_checkpoint,
-                )
+                if reclaim_status is not None:
+                    # First attempt of a reclaimed job: recover it from its
+                    # recorded step. preparing/training raise the interruption
+                    # error handled below (the machine is in `machines` for
+                    # the attempt record and is torn down by this iteration's
+                    # finally); packaging returns a terminal outcome, which is
+                    # recorded and breaks exactly like a completed `_attempt`.
+                    pending_status = reclaim_status
+                    reclaim_status = None
+                    outcome = _recover_abandoned(
+                        provider,
+                        job_id,
+                        machines,
+                        job,
+                        pending_status,
+                    )
+                else:
+                    outcome = _attempt(
+                        provider,
+                        job_id,
+                        machines,
+                        limits,
+                        models,
+                        resolved_hp=resolved_hp,
+                        availability_override=availability_override,
+                        resume_checkpoint=resume_checkpoint,
+                    )
                 _record_attempt(
                     job_id,
                     attempts,
@@ -2547,6 +2749,14 @@ def run_job(
             "log",
             f"Job finished in {time.time() - wall_started:.0f}s",
         )
+        if state == "cancelled":
+            # A job cancelled while the result was already persisted at
+            # packaging start (issue #68) must not keep that document: the
+            # cancel discards the artifact it names, and a `cancelled` job
+            # reporting a result it was told to destroy would contradict the
+            # answer the button gave (ADR-0003). The terminal transition
+            # clears it, so a cancelled job's record says no result was kept.
+            fields = {**fields, "result_json": None}
         db.set_state(job_id, state, message, **fields)
         logger.info(
             "job finished",

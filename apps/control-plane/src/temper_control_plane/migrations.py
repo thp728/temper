@@ -361,12 +361,37 @@ def _down_0005(cur: psycopg.Cursor) -> None:
     cur.execute("DROP TABLE machine_reconciliation")
 
 
+def _up_0006(cur: psycopg.Cursor) -> None:
+    """Claim lease on the jobs row (spec 010 / issue #68).
+
+    Durable execution needs to know which non-terminal job a live worker is
+    driving, so that a job whose driver died can be reclaimed without ever
+    stealing one a live worker still owns. ``claimed_at`` is that lease: the
+    worker that claims a job stamps it, refreshes it while it drives, and a
+    job whose lease has gone stale past ``db.CLAIM_STALE_AFTER_S`` is
+    abandoned and reclaimable. ``NULL`` means nobody ever claimed the row (a
+    fresh ``queued`` job, or a job driven directly without the worker's
+    claim) and is deliberately *not* treated as abandoned -- the reclaim path
+    only matches rows that were once leased, so a row nobody ever claimed
+    cannot be mistaken for a dead driver's. Existing rows keep ``NULL``, which
+    for them is the honest "no lease was ever taken".
+    """
+    cur.execute("ALTER TABLE jobs ADD COLUMN claimed_at DOUBLE PRECISION")
+    cur.execute("CREATE INDEX idx_jobs_claim ON jobs(status, claimed_at)")
+
+
+def _down_0006(cur: psycopg.Cursor) -> None:
+    cur.execute("DROP INDEX IF EXISTS idx_jobs_claim")
+    cur.execute("ALTER TABLE jobs DROP COLUMN claimed_at")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     ("0001_baseline", _up_0001, _down_0001),
     ("0002_phase_b_tables", _up_0002, _down_0002),
     ("0003_serving_endpoints", _up_0003, _down_0003),
     ("0004_correlation_id", _up_0004, _down_0004),
     ("0005_machine_reconciliation", _up_0005, _down_0005),
+    ("0006_job_claim_lease", _up_0006, _down_0006),
 )
 
 
