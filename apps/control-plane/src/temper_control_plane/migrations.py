@@ -321,11 +321,53 @@ def _down_0004(cur: psycopg.Cursor) -> None:
     cur.execute("ALTER TABLE jobs DROP COLUMN correlation_id")
 
 
+def _up_0005(cur: psycopg.Cursor) -> None:
+    """Machine reconciliation log (spec 010 / issue #61).
+
+    One row per decision the reconciler makes about a listed machine. The
+    reconciler destroys any machine no live job or served endpoint owns; the
+    whole point of "what it did is recorded, so an orphan is visible rather
+    than silently cleaned" is that a destroyed orphan is an event, not a
+    silent removal. This table is that record: machine id, the provider's
+    lifecycle status, the action taken (destroyed / skipped as still
+    destroying / skipped as owned), the reason, and the job or endpoint that
+    owned it, if any. An operator who wants to know whether a machine was
+    ever reconciled reads this rather than reconstructing it from logs.
+
+    `job_id` is nullable because a pure orphan (the fault surface's `orphan`
+    fixture) has no owner. It is not a foreign key on purpose: the whole
+    point is to keep the record even if the owning row is later deleted,
+    and a reconciliation log that could not outlive its job would lose
+    exactly the evidence it exists to keep.
+    """
+    cur.execute("""
+        CREATE TABLE machine_reconciliation (
+            id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            machine_id    INTEGER NOT NULL,
+            status        TEXT,
+            action        TEXT NOT NULL,
+            reason        TEXT,
+            job_id        TEXT,
+            endpoint_id   TEXT,
+            ts            DOUBLE PRECISION NOT NULL
+        )
+    """)
+    cur.execute(
+        "CREATE INDEX idx_machine_reconciliation_ts "
+        "ON machine_reconciliation(ts)"
+    )
+
+
+def _down_0005(cur: psycopg.Cursor) -> None:
+    cur.execute("DROP TABLE machine_reconciliation")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     ("0001_baseline", _up_0001, _down_0001),
     ("0002_phase_b_tables", _up_0002, _down_0002),
     ("0003_serving_endpoints", _up_0003, _down_0003),
     ("0004_correlation_id", _up_0004, _down_0004),
+    ("0005_machine_reconciliation", _up_0005, _down_0005),
 )
 
 

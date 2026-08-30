@@ -47,7 +47,7 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import suppress
 from pathlib import Path
-from typing import BinaryIO, NamedTuple
+from typing import BinaryIO, NamedTuple, Protocol
 
 from temper_core import (
     actuals,
@@ -84,6 +84,20 @@ from .provider import (
 from .trainer_build import published_reference
 
 logger = get_logger(__name__)
+
+
+class _Record(Protocol):
+    """How a teardown records one line of what happened.
+
+    `data` is optional: every caller writes a plain message for most lines
+    and attaches a structured payload for a few. Declared as a Protocol so
+    mypy sees the optional third argument the way the closures actually
+    shape it, instead of requiring every call to pass three arguments.
+    """
+
+    def __call__(
+        self, kind: str, message: str, data: dict | None = None
+    ) -> None: ...
 
 
 def _bind_correlation_from_job(job_id: str) -> str | None:
@@ -1175,8 +1189,12 @@ def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
         )
 
 
-def _teardown(provider: Provider, job_id: str, machine) -> None:
-    """Destroy the machine, then confirm it independently.
+def _confirmed_destroy(
+    provider: Provider,
+    machine,
+    record: _Record,
+) -> bool:
+    """Destroy a machine, then confirm it independently. Records via `record`.
 
     A destroy call that returns cleanly is a claim. The evidence is the machine
     no longer being listed, and a machine that is still listed is billing right
@@ -1190,29 +1208,37 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
     treated as not yet confirmed rather than as a stray. A  `destroy` the
     provider refuses is retried `DESTROY_ATTEMPTS` times and, when exhausted,
     escalated as a loud error — an orphaned GPU bills until someone notices.
+
+    `record(kind, message, data=None)` is how one line of what happened is
+    written wherever the caller's history lives: a job's event log for
+    `_teardown`, the reconciler's log for the machine-lifetime pass (issue
+    #61). The retry/escalation and consecutive-absence rules live here,
+    defined once, so the two cannot drift about what a destroy looks like or
+    when it is confirmed (ADR-0057).
+
+    Returns True when the machine was confirmed absent across consecutive
+    observations, False when the confirmation window expired with the machine
+    still listed (the STRAY case). Callers that only care about the side
+    effect — `_teardown` — ignore it; the reconciler records it.
     """
     last_exc: Exception | None = None
     destroyed = False
     for attempt in range(DESTROY_ATTEMPTS):
         try:
             provider.destroy(machine.machine_id)
-            db.add_event(
-                job_id, "log", f"Machine {machine.machine_id} destroyed"
-            )
+            record("log", f"Machine {machine.machine_id} destroyed")
             destroyed = True
             break
         except Exception as e:
             last_exc = e
-            db.add_event(
-                job_id,
+            record(
                 "error",
                 f"Destroy attempt failed: {e} (attempt {attempt + 1}/{DESTROY_ATTEMPTS})",
             )
             if attempt < DESTROY_ATTEMPTS - 1:
                 time.sleep(DESTROY_RETRY_DELAY_S)
     if not destroyed:
-        db.add_event(
-            job_id,
+        record(
             "error",
             f"Machine {machine.machine_id} destroy refused after "
             f"{DESTROY_ATTEMPTS} attempts: {last_exc}; still billing — "
@@ -1238,16 +1264,14 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
             if status == "ABSENT":
                 consecutive_absent += 1
                 if consecutive_absent >= TEARDOWN_CONFIRM_SAMPLES:
-                    db.add_event(
-                        job_id,
+                    record(
                         "log",
                         f"Teardown confirmed: machine {machine.machine_id} "
                         f"absent in {TEARDOWN_CONFIRM_SAMPLES} consecutive listings",
                     )
-                    return
+                    return True
             elif status == "destroying":
-                db.add_event(
-                    job_id,
+                record(
                     "log",
                     f"Machine {machine.machine_id} still destroying — "
                     f"not yet confirmed",
@@ -1256,19 +1280,36 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
             else:
                 consecutive_absent = 0
         except Exception as e:
-            db.add_event(
-                job_id,
+            record(
                 "error",
                 f"Could not confirm teardown of machine {machine.machine_id}: {e}",
             )
             consecutive_absent = 0
         time.sleep(TEARDOWN_CONFIRM_INTERVAL_S)
-    db.add_event(
-        job_id,
+    record(
         "error",
         f"STRAY MACHINE {machine.machine_id} still listed — "
         f"destroy it manually, it is billing",
     )
+    return False
+
+
+def _teardown(provider: Provider, job_id: str, machine) -> None:
+    """Destroy the job's machine, then confirm it independently.
+
+    A destroy call that returns cleanly is a claim. The evidence is the machine
+    no longer being listed, and a machine that is still listed is billing right
+    now — so it is reported as an error an operator cannot miss. The retry,
+    escalation and consecutive-absence confirmation rules live in
+    `_confirmed_destroy`, defined once and shared with the reconciler (issue
+    #61) so the two cannot drift (ADR-0057); this wrapper records the outcome
+    on the job's own event log.
+    """
+
+    def record(kind: str, message: str, data: dict | None = None) -> None:
+        db.add_event(job_id, kind, message, data)
+
+    _confirmed_destroy(provider, machine, record)
 
 
 def _stall_reporter(job_id: str, limits: RunLimits):

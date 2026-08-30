@@ -45,6 +45,8 @@ from temper_control_plane.correlation import set_correlation_id
 from temper_control_plane.logging import configure_logging, get_logger
 from temper_control_plane.sentry import init_sentry
 
+from . import reconciler
+
 logger = get_logger(__name__)
 
 # How often a worker with nothing to do checks for queued jobs. Domain
@@ -166,12 +168,24 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001 - a failed init must be loud
         logger.exception("worker db init failed", exc_info=e)
         raise
+    # Start the machine-lifetime reconciler (issue #61): the scheduled pass
+    # that destroys machines no live job or served endpoint owns, on its own
+    # thread so a long-running job claim cannot stall it. It runs
+    # independently of any workflow -- the pass does not care whether a job
+    # is being driven, only whether a listed machine has an owner.
+    try:
+        reconciler.start_reconciler_thread()
+    except Exception as e:  # noqa: BLE001 - a reconciler that fails to start must be loud
+        logger.exception("reconciler failed to start", exc_info=e)
+        raise
     stop = threading.Event()
     try:
         run_forever(stop)
     except KeyboardInterrupt:
         logger.info("worker stopping on interrupt")
         stop.set()
+    finally:
+        reconciler.stop_reconciler_thread()
 
 
 if __name__ == "__main__":
