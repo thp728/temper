@@ -71,7 +71,9 @@ from temper_core.models import Models
 
 from . import config, db, storage
 from .chunks import ChunkReader, piped_chunks
+from .correlation import get_correlation_id, set_correlation_id
 from .limits import BUDGET_EXHAUSTED_CODE, RunLimits, guard
+from .logging import get_logger
 from .models import new_models
 from .provider import (
     Provider,
@@ -80,6 +82,33 @@ from .provider import (
     normalize_status,
 )
 from .trainer_build import published_reference
+
+logger = get_logger(__name__)
+
+
+def _bind_correlation_from_job(job_id: str) -> str | None:
+    """Bind the correlation identifier from the job row onto this context.
+
+    The worker re-hydrates the request's identifier from the row before
+    driving the job, so every structured log line the job emits carries the
+    same ``correlation_id`` the request's error response did. Returns the
+    identifier when present, ``None`` when the row predates the migration.
+    """
+    try:
+        job = db.get_job(job_id)
+    except Exception:
+        set_correlation_id(None)
+        return None
+    if job is None:
+        set_correlation_id(None)
+        return None
+    cid = job.get("correlation_id")
+    if isinstance(cid, str) and cid:
+        set_correlation_id(cid)
+        return cid
+    set_correlation_id(None)
+    return None
+
 
 DATASET_TARBALL = "/tmp/dataset.tar.gz"
 # The reference the script carries when the simulated provider is in use
@@ -1800,6 +1829,19 @@ def run_job(
     against; omit it and the real, network-backed resolver is built, mirroring
     the provider.
     """
+    # Bind the request's correlation identifier before anything logs, so
+    # every structured line this job emits carries the same identifier the
+    # request's error response will. A missing correlation is an honest absence
+    # for pre-migration rows, not a redaction.
+    _bind_correlation_from_job(job_id)
+    cid = get_correlation_id()
+    logger.info(
+        "job starting",
+        job_id=job_id,
+        correlation_id=cid,
+        machine_id=None,
+    )
+
     models = models or new_models()
     # Stamped here, so the ceiling counts from the moment the job began rather
     # than from the moment output started.
@@ -1824,6 +1866,13 @@ def run_job(
         try:
             provider = new_provider()
         except OrchestratorError as e:
+            logger.error(
+                "job failed before provisioning",
+                job_id=job_id,
+                correlation_id=get_correlation_id(),
+                error_code=e.code,
+                exc_info=e,
+            )
             _record_actuals(job_id, None, "failed", time.time())
             db.set_state(
                 job_id,
@@ -1837,6 +1886,11 @@ def run_job(
             # Nothing was provisioned, so there is nothing to tear down -- but
             # the job still has to reach a terminal state rather than sit in
             # `queued` forever because the SDK failed to import.
+            logger.exception(
+                "job failed before provisioning: unexpected error",
+                job_id=job_id,
+                correlation_id=get_correlation_id(),
+            )
             _record_actuals(job_id, None, "failed", time.time())
             db.set_state(
                 job_id,
@@ -2092,6 +2146,18 @@ def run_job(
             f"Job finished in {time.time() - wall_started:.0f}s",
         )
         db.set_state(job_id, state, message, **fields)
+        logger.info(
+            "job finished",
+            job_id=job_id,
+            correlation_id=get_correlation_id(),
+            state=state,
+            duration_s=round(time.time() - wall_started, 1),
+        )
     finally:
         if owns_provider:
             provider.close()
+            logger.info(
+                "provider closed",
+                job_id=job_id,
+                correlation_id=get_correlation_id(),
+            )

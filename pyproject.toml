@@ -116,6 +116,14 @@ module = "botocore.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "sentry_sdk.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "structlog.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "temper_core.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true

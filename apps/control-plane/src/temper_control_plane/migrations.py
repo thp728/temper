@@ -298,10 +298,34 @@ def _down_0003(cur: psycopg.Cursor) -> None:
     cur.execute("DROP TABLE endpoints")
 
 
+def _up_0004(cur: psycopg.Cursor) -> None:
+    """Structured logs correlation identifier (spec 008 / issue #52).
+
+    One request produces one identifier that appears on every log line the
+    resulting job emits, and the identifier is surfaced on user-visible
+    errors so a report can be traced. The identifier travels in three
+    places: the request context (``contextvars``), the job row (so a worker
+    that starts later still knows it), and the response header. The row
+    stores it as ``correlation_id`` so a job's own finished record still
+    names the request that created it, and a worker re-hydrates the
+    ``contextvars`` var from the row before driving the job. Existing rows
+    keep ``NULL`` -- a missing correlation is not a redaction, it is an
+    honest absence for runs created before this migration.
+    """
+    cur.execute("ALTER TABLE jobs ADD COLUMN correlation_id TEXT")
+    cur.execute("CREATE INDEX idx_jobs_correlation ON jobs(correlation_id)")
+
+
+def _down_0004(cur: psycopg.Cursor) -> None:
+    cur.execute("DROP INDEX IF EXISTS idx_jobs_correlation")
+    cur.execute("ALTER TABLE jobs DROP COLUMN correlation_id")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     ("0001_baseline", _up_0001, _down_0001),
     ("0002_phase_b_tables", _up_0002, _down_0002),
     ("0003_serving_endpoints", _up_0003, _down_0003),
+    ("0004_correlation_id", _up_0004, _down_0004),
 )
 
 

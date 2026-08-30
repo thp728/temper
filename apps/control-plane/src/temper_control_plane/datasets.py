@@ -22,6 +22,10 @@ from fastapi import HTTPException
 
 from temper_control_plane import config as cfg
 from temper_control_plane import db, remote_datasets, storage
+from temper_control_plane.correlation import (
+    get_correlation_id,
+    set_correlation_id,
+)
 from temper_core import counting, hyperparams, validation
 
 from . import tokenize
@@ -85,7 +89,14 @@ def _validate_in_background(ds_id: str, key: str, total_bytes: int) -> None:
     coded failure rather than leaving the row stuck at "validating" forever.
     """
 
+    # The request's correlation identifier is captured here so the background
+    # thread's structured logs still carry the same story when they emit.
+    _cid = get_correlation_id()
+
     def run() -> None:
+        # Re-bind the request's correlation before doing work that may log.
+        if _cid:
+            set_correlation_id(_cid)
         try:
 
             def on_progress(p) -> None:
@@ -148,7 +159,11 @@ def _count_tokens_in_background(
     only for datasets that passed validation; see `_validate_in_background`.
     """
 
+    _cid = get_correlation_id()
+
     def run() -> None:
+        if _cid:
+            set_correlation_id(_cid)
         try:
             db.begin_token_count(ds_id)
 

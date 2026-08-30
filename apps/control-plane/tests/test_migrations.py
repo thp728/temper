@@ -106,16 +106,27 @@ def test_rolling_back_0002_drops_the_phase_b_tables_and_keeps_the_baseline(
     migrations.migrate_down(empty_database, steps=1)
 
     tables = _table_names(empty_database)
-    # Rolling back the last migration (now 0003_endpoints) drops endpoints
-    # but keeps the baseline and the phase-B tables.
-    assert "endpoints" not in tables
+    # Rolling back the last migration (now 0004_correlation_id) drops only
+    # its column/index but keeps the baseline, phase-B tables and endpoints.
+    # The correlation column is the one migration 0004 adds, so its absence
+    # proves the rollback was scoped; dropping endpoints would mean the
+    # rollback was too broad.
+    assert "endpoints" in tables
     assert "quotes" in tables
     assert "checkpoints" in tables
     assert "jobs" in tables
     assert "datasets" in tables
+    # The 0004 column is gone after its own down.
+    cols = empty_database.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'jobs'"
+    ).fetchall()
+    col_names = {r[0] for r in cols}
+    assert "correlation_id" not in col_names
     assert migrations.applied_ids(empty_database) == [
         "0001_baseline",
         "0002_phase_b_tables",
+        "0003_serving_endpoints",
     ]
 
 

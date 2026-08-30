@@ -385,15 +385,32 @@ def create_job(
     retry_from: str | None = None,
     is_moe: bool | None = None,
     delivery_request: list | None = None,
+    correlation_id: str | None = None,
 ) -> str:
+    """Insert a job row. ``correlation_id`` is the request identifier the job
+    inherits so every log line the job emits carries the same story (issue
+    #52). ``None`` means a job created before that migration or outside a
+    request context -- a missing correlation is an honest absence, not a
+    redaction."""
+    # Fall back to the current context's identifier when the caller did not
+    # name one explicitly -- the request path's middleware already bound it,
+    # so a plain ``jobs.create`` inside a request inherits it without threading
+    # a parameter through every helper.
+    if correlation_id is None:
+        try:
+            from temper_control_plane.correlation import get_correlation_id
+
+            correlation_id = get_correlation_id()
+        except Exception:
+            correlation_id = None
     job_id = new_id("job")
     with connect() as c:
         c.execute(
             "INSERT INTO jobs (id, dataset_id, base_model, base_revision, "
             "hyperparams_json, status, warnings_json, quote_json, "
             "overrides_json, retry_from, is_moe, delivery_request_json, "
-            "created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "correlation_id, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 job_id,
                 dataset_id,
@@ -407,6 +424,7 @@ def create_job(
                 retry_from,
                 int(is_moe) if is_moe is not None else None,
                 json.dumps(delivery_request) if delivery_request else None,
+                correlation_id,
                 time.time(),
             ),
         )

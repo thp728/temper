@@ -25,6 +25,14 @@ dependencies = [
     # not optional: measured at 63 separate connections for one orchestrator
     # test before pooling landed (db.py's own comment explains why).
     "psycopg[binary,pool]>=3.2",
+    # Structured logs with a correlation identifier threaded through
+    # contextvars (spec 008 / issue #52): JSON, machine-readable, every line
+    # carrying the request's identifier through the job and the machine.
+    "structlog>=24.1",
+    # Error reporting is wired as an integration point with no credential set
+    # locally -- present in shape, inert in effect (issue #52). The SDK is
+    # installed and init is called, but without a DSN it does nothing.
+    "sentry-sdk>=2.0",
 ]
 
 [tool.uv.sources]
