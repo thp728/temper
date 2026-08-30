@@ -143,7 +143,8 @@ database, the zero-cost tier seeds a sample dataset and one completed run
 (`samples/sample-chat.jsonl`), so the job list already has a finished job to
 open and download before you upload anything. And it says what it is: **every
 page in this tier carries a demonstration banner**, driven by the same single
-setting, and it cannot be turned off in that mode (ADR-0071).
+setting, and it cannot be turned off in that mode
+([ADR-0071](docs/adr/0071-the-zero-cost-path-is-a-labelled-demonstration-structurally-blind-to-the-transport.md)).
 
 **What the zero-cost tier cannot prove, named plainly.** The simulated machine
 never crosses a connection — it implements the whole compute interface without

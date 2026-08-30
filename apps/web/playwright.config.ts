@@ -116,7 +116,7 @@ export default defineConfig({
       },
     },
     {
-      // The zero-cost tier seeds on a fresh database (ADR-0067), and this
+      // The zero-cost tier seeds on a fresh database (ADR-0071), and this
       // backend resets its database at startup, so every journey now boots
       // into a database that already holds the sample dataset and one
       // completed demo run. Specs locate rows by their own ids, never by

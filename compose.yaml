@@ -43,7 +43,7 @@
 x-backend-url: &backend-url http://control-plane:8000
 
 # The mode, defined once and read by every service that needs it (ADR-0010,
-# ADR-0067): "1" is the zero-cost tier -- the reviewer-facing default -- and
+# ADR-0071): "1" is the zero-cost tier -- the reviewer-facing default -- and
 # "0" the real tier. Flipping to real compute is changing this one line, and
 # all three services move together: the web shell's demonstration marking
 # cannot outlive the provider it describes, because both read this same value.

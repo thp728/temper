@@ -10,7 +10,7 @@ the interface that consumes it lives in the web app. The domain logic sits in
 returns; `apps/worker` claims it and calls `orchestrator.run_job` from a
 separate process (ADR-0066). The request path starts no threads. The one
 exception is the zero-cost tier's boot-time demonstration seed
-(`seed_demo.maybe_seed`, ADR-0067): at startup, on an empty database and only
+(`seed_demo.maybe_seed`, ADR-0071): at startup, on an empty database and only
 in that tier, it drives one canned run through the real `run_job` so the
 reviewer-facing stack has a completed run to inspect immediately. It is
 synchronous, startup-only, spends nothing and crosses no connection, so it
