@@ -50,6 +50,11 @@ property of the database, not a discipline.**
   `db.py` has exactly one place that appends an event (`_append_event`, used
   by `create_job`, `set_state`, `request_cancel`, `claim_next_job` and
   `add_event`), so one statement publishes every event ever recorded.
+  `upsert_progress` and `append_output` publish the same way: the progress
+  and output snapshots that ride the stream (issue #49) are not events, but
+  they must reach a live watcher just as promptly, so they notify the same
+  channel from the same transaction -- the stream re-reads them on the same
+  wake.
 
 - **The channel is named per job** (`job_events_<job_id>`, built once in
   `channel.channel_for` and read by both the publisher and the subscriber, so
@@ -64,25 +69,25 @@ property of the database, not a discipline.**
   subscription, waits for it to confirm its LISTEN, then does its catch-up
   read from the store — the ordering that closes the subscribe/catch-up race
   (an event persisted between the read and the LISTEN would otherwise be
-  missed by both). From then on the stream waits on the channel: every
-  notification wakes it to re-read the store from its cursor and yield
-  whatever is new, so a live event is delivered within a re-read of the
-  moment its transaction commits. The store is the source of the data; the
-  channel is the signal that data may exist. The stream's idle wake (its
-  heartbeat timeout) also re-reads the store — that is the self-healing net,
-  not the delivery mechanism: a channel that dropped while no connection was
-  listening loses nothing, because re-reading an idempotent cursor is the
-  same replay a watcher's own reconnection performs. This is what makes the
-  dropped-connection criterion testable for real: the client's replay is the
-  product, and the channel is only ever an acceleration on top of it.
+  missed by both). From then on the stream is driven by the channel, not by a
+  timer: every notification wakes it to re-read the store from its cursor and
+  yield whatever is new, so a live event is delivered within a re-read of the
+  moment its transaction commits, and **when nothing is written the stream
+  waits and makes no store reads at all** — the channel is the delivery
+  mechanism, not an ornament on a poll. A channel that dropped while no
+  connection was listening loses nothing: a re-established LISTEN raises a
+  reconnect flag the stream re-reads on, which is the same replay a watcher's
+  own reconnection performs. This is what makes the dropped-connection
+  criterion testable for real: the client's replay is the product, and the
+  channel is what makes live events arrive without a poll to wait on.
 
 - **A dropped channel is not a dead stream.** The subscription runs a
   dedicated connection on a daemon thread and reconnects (re-LISTEN) on its
-  own if the connection dies; the stream's next store re-read delivers
-  anything published in the gap. The same property, on the client side, is
-  the acceptance criterion: a watcher whose connection drops replays by its
-  `Last-Event-ID` (or `after`) and receives exactly what it missed, in order,
-  once.
+  own if the connection dies; the stream re-reads the store on the wake that
+  follows, delivering anything published in the gap. The same property, on
+  the client side, is the acceptance criterion: a watcher whose connection
+  drops replays by its `Last-Event-ID` (or `after`) and receives exactly what
+  it missed, in order, once.
 
 - **The subscription is thread-bridged, not an async psycopg connection.**
   psycopg's `AsyncConnection` cannot run on Windows' `ProactorEventLoop`
@@ -92,7 +97,9 @@ property of the database, not a discipline.**
   control plane already uses for all blocking database work (ADR-0006,
   ADR-0064). The thread and its connection are owned by the stream: created
   on enter, stopped and closed on exit, so a dropped connection cleans up
-  after itself.
+  after itself. LISTEN is sticky on a connection, so the thread listens
+  repeatedly on the one it holds and reconnects only when that connection
+  dies.
 
 ## Why the seam held
 
@@ -106,6 +113,16 @@ implementation, which is the same assertion ADR-0066 makes about `run_job`:
 the contract the prior issue pinned is the contract this issue's mechanism
 satisfies. The interface side (ADR-0039's EventSource client) needed no
 change at all: from the browser's seat, nothing about the stream changed.
+
+The new live tests are channel tests *by construction*, not by assertion: the
+poll fallback is gone, so `test_the_stream_carries_live_events_and_ends_
+at_terminal` and `test_two_watchers_on_one_job_both_receive_everything`
+deliver post-catch-up events only if the channel actually wakes the stream —
+there is no timer left to fall back on. And `test_an_idle_stream_reads_no_
+store_and_a_publish_wakes_it` pins the replacement directly: it counts the
+store reads `_job_event_stream` makes and asserts an idle stream makes none
+while a publish wakes it — the pre-change poll-based stream fails that test
+with a read every quarter second.
 
 One thing the seam did not carry: the notification had to be bound into the
 INSERT path itself, which meant `_append_event`'s shape changed from "one
@@ -158,30 +175,36 @@ improves by polling faster.
 
 - Every event recorded anywhere (`db.add_event`, `db.set_state`,
   `request_cancel`, `claim_next_job`, `create_job`) now publishes to its
-  job's channel. The cost is one more statement in the same transaction as
-  the INSERT; the guarantee is that no watcher sees an event before it is
-  durable.
+  job's channel, and so does every progress and output write. The cost is one
+  more statement in the same transaction as each write; the guarantee is that
+  no watcher sees a change before it is durable.
 - The stream endpoint now holds one dedicated PostgreSQL connection per open
   stream (plus one daemon thread). For a live-watch surface this is
   proportionate — streams are long-lived and few — and the connection is
   closed on stream exit. The pool is untouched; a subscription never borrows
   a pooled connection, because LISTEN is a long-lived session state that must
   not be returned to a shared pool.
+- An idle stream makes no store reads at all: the channel is the wake, and a
+  wait that times out reads nothing. The DB cost of a watched-but-quiet job
+  drops from one query per stream per interval to zero, which is the
+  "one query per stream per interval that a channel makes unnecessary when
+  idle" claim made in the alternatives section, now realized.
 - A worker crash mid-job is unaffected: the worker's events stop being
   written (and published) when it dies, exactly as before. The reconciler
   that recovers the stuck row is Spec 010's, as ADR-0066 already records.
 - A notification can be missed while a connection is down (a restart of the
   database, a killed connection) — that is not data loss, because the store
-  is the truth and the stream re-reads it. This is recorded so the two are
-  not confused: the channel optimizes latency; the store guarantees
-  correctness.
+  is the truth and the stream re-reads it on the wake that follows a
+  reconnect. This is recorded so the two are not confused: the channel
+  optimizes latency; the store guarantees correctness.
 - The web interface needed no change: it already consumed the stream through
   EventSource (ADR-0039), and the stream's wire shape is unchanged.
 
 ## Rollback
 
-Revert this issue's commits. `db._append_event` returns to a plain INSERT
-(the NOTIFY disappears), the stream endpoint returns to its store-polling
-loop, and `channel.py` is deleted. No migration, no schema change, and the
-contract the interface consumes (`after`/`Last-Event-ID`, terminal end
-marker) is byte-identical either direction — the seam held on both sides.
+Revert this issue's commits. `db._append_event`, `upsert_progress` and
+`append_output` return to plain writes (the NOTIFY disappears), the stream
+endpoint returns to its store-polling loop, and `channel.py` is deleted. No
+migration, no schema change, and the contract the interface consumes
+(`after`/`Last-Event-ID`, terminal end marker) is byte-identical either
+direction — the seam held on both sides.

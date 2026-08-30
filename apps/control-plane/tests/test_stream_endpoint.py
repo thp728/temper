@@ -8,6 +8,8 @@ the stream ends exactly when the job reaches a terminal state, having
 delivered the terminal transition itself.
 """
 
+import asyncio
+import contextlib
 import json
 import threading
 import time
@@ -320,6 +322,101 @@ def test_a_dropped_connection_replays_exactly_what_it_missed(client, tmp_path):
     # first missed event is the one after the last seen, with nothing lost
     # in between.
     assert missed[0]["id"] == last_seen + 1
+
+
+def test_an_idle_stream_reads_no_store_and_a_publish_wakes_it(
+    isolated, monkeypatch
+):
+    """The channel is the delivery mechanism, not an ornament on a poll
+    (ADR-0067, spec 008's "reads history from the store, then follows the
+    channel"): after the catch-up read, an idle stream makes no store reads,
+    and a persisted-then-published event wakes it to re-read and deliver.
+
+    This is the property that makes the stream a follower of the channel
+    rather than a timer with a shorter interval. It is pinned by counting
+    the store reads `_job_event_stream` performs: an idle wait comfortably
+    longer than `STREAM_WAIT_S` must produce none, which the pre-change
+    poll-based stream would have failed with a read every quarter second.
+    """
+    from temper_control_plane import db, main
+
+    ds_id = db.create_dataset("d.jsonl", "datasets/ds_idle.jsonl", "ds_idle")
+    job_id = db.create_job(ds_id, "qwen3-4b", {})
+
+    reads = {
+        "get_events": 0,
+        "get_job": 0,
+        "get_progress": 0,
+        "get_output": 0,
+    }
+    originals = {name: getattr(db, name) for name in reads}
+
+    def counter(name):
+        def wrapped(*args, **kwargs):
+            reads[name] += 1
+            return originals[name](*args, **kwargs)
+
+        return wrapped
+
+    for name in reads:
+        monkeypatch.setattr(db, name, counter(name))
+
+    class _NeverDisconnected:
+        async def is_disconnected(self):
+            return False
+
+    async def drive():
+        gen = main._job_event_stream(_NeverDisconnected(), job_id, 0)
+        queue: asyncio.Queue[str] = asyncio.Queue()
+
+        async def pump():
+            async for item in gen:
+                await queue.put(item)
+
+        task = asyncio.create_task(pump())
+        try:
+            # The catch-up: history from the store first, delivered once.
+            caught_up = await asyncio.wait_for(queue.get(), 2.0)
+            assert "queued" in caught_up
+            # Wait for the catch-up iteration to finish every read it makes
+            # (progress and output are read after the event is yielded), so
+            # the idle window below starts from a settled snapshot -- not
+            # from a generator still mid-iteration.
+            loop = asyncio.get_running_loop()
+
+            async def settled() -> None:
+                deadline = loop.time() + 2.0
+                while not (
+                    reads["get_progress"] >= 1 and reads["get_output"] >= 1
+                ):
+                    if loop.time() > deadline:
+                        raise AssertionError("the catch-up read never settled")
+                    await asyncio.sleep(0.01)
+
+            await settled()
+            # Idle: a wait longer than the channel wait must produce no store
+            # reads -- the channel is the wake, not a timer.
+            after_catchup = dict(reads)
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(queue.get(), 0.8)
+            assert reads == after_catchup, (
+                "an idle stream kept polling the store instead of waiting "
+                "on the channel"
+            )
+            # A publish (persisted first, NOTIFY in the same transaction)
+            # wakes the stream, which re-reads the store and yields the new
+            # event.
+            db.add_event(job_id, "log", "woken by the channel")
+            got = await asyncio.wait_for(queue.get(), 2.0)
+            assert "woken by the channel" in got
+            assert reads["get_events"] == after_catchup["get_events"] + 1
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            await gen.aclose()
+
+    asyncio.run(drive())
 
 
 def test_the_stream_carries_live_events_and_ends_at_terminal(

@@ -42,6 +42,7 @@ from temper_core import artifacts, delivery
 from temper_core.errors import OrchestratorError
 
 from . import config, migrations, storage
+from .channel import channel_for
 
 # Via config, not a literal: the value two processes (and every test that
 # isolates itself) must agree on is the connection string, defined once here
@@ -614,6 +615,32 @@ def add_event(
         _append_event(c, job_id, kind, message, data)
 
 
+def _notify(conn, job_id: str, payload: str) -> None:
+    """Publish that one job's live data changed, in the caller's transaction.
+
+    Persist-then-publish, as one transaction (ADR-0067, spec 008): the NOTIFY
+    is issued *after* the write it announces, and PostgreSQL delivers a
+    NOTIFY only when its transaction commits -- so a watcher can never
+    receive a notification for a change that is not already durable, and a
+    rolled-back change publishes nothing. The store is the truth; this
+    channel is the notification. The payload is informational (an event id,
+    or a progress/output marker): the stream re-reads the store either way,
+    because the store is the source of the data.
+
+    The payload is bound as a literal, not a server-side parameter:
+    PostgreSQL's NOTIFY does not accept a bind placeholder for its payload,
+    so psycopg's identifier/literal rendering is used to quote both halves.
+    """
+    from psycopg import sql as psycopg_sql
+
+    conn.execute(
+        psycopg_sql.SQL("NOTIFY {} , {}").format(
+            psycopg_sql.Identifier(channel_for(job_id)),
+            psycopg_sql.Literal(payload),
+        )
+    )
+
+
 def _append_event(conn, job_id, kind, message, data=None) -> None:
     row = conn.execute(
         "INSERT INTO events (job_id, ts, kind, message, data_json) "
@@ -626,27 +653,7 @@ def _append_event(conn, job_id, kind, message, data=None) -> None:
             json.dumps(data) if data is not None else None,
         ),
     ).fetchone()
-    # Persist-then-publish, as one transaction (ADR-0067, spec 008): the
-    # NOTIFY is issued *after* the INSERT, in the same transaction, and
-    # PostgreSQL delivers a NOTIFY only when its transaction commits -- so a
-    # watcher can never receive an event that is not already durable, and a
-    # rolled-back event publishes nothing. The store is the truth; this
-    # channel is the notification. The event id rides in the payload so a
-    # listener can name what woke it without a second read.
-    #
-    # The payload is bound as a literal, not a server-side parameter:
-    # PostgreSQL's NOTIFY does not accept a bind placeholder for its payload,
-    # so psycopg's identifier/literal rendering is used to quote both halves.
-    from psycopg import sql as psycopg_sql
-
-    from .channel import channel_for
-
-    conn.execute(
-        psycopg_sql.SQL("NOTIFY {} , {}").format(
-            psycopg_sql.Identifier(channel_for(job_id)),
-            psycopg_sql.Literal(str(row["id"])),
-        )
-    )
+    _notify(conn, job_id, str(row["id"]))
 
 
 # --------------------------------------------------------------------------
@@ -681,6 +688,11 @@ def upsert_progress(
             "eta_s=excluded.eta_s, ts=excluded.ts, message=excluded.message",
             (job_id, phase, done, total, rate, eta_s, ts, message),
         )
+        # Progress is not an event, but it rides the stream (issue #49), so
+        # it publishes to the job's channel like one: the stream re-reads it
+        # when the channel wakes it. Same transaction, same persist-then-
+        # publish rule (ADR-0067).
+        _notify(c, job_id, "progress")
 
 
 def append_output(job_id: str, phase: str, line: str) -> None:
@@ -695,6 +707,9 @@ def append_output(job_id: str, phase: str, line: str) -> None:
             "INSERT INTO job_output (job_id, phase, line) VALUES (%s,%s,%s)",
             (job_id, phase, line),
         )
+        # Retained output rides the stream too (issue #49): publish it like
+        # progress, in the same transaction (ADR-0067).
+        _notify(c, job_id, "output")
 
 
 def get_progress(job_id: str) -> list[dict]:
