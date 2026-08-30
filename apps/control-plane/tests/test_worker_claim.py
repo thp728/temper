@@ -375,7 +375,8 @@ def test_worker_claim_and_run_is_idempotent_via_api(tmp_path, monkeypatch):
         # Second worker finds nothing queued.
         assert run_once() is False
         # Job is terminal, not queued.
-        assert client.get(f"/v1/jobs/{job_id}").json()["status"] == "complete"
+        rec = client.get(f"/v1/jobs/{job_id}").json()
+        assert rec["status"] == "complete", rec
         # A third worker still finds nothing.
         assert run_once() is False
 
