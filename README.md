@@ -164,9 +164,12 @@ docker compose down        # or: just down
 docker compose up          # your datasets and jobs are still there
 ```
 
-**Real compute is one switch away.** Set `TEMPER_FAKE_PROVIDER=0` in
-`compose.yaml` (or delete that line) and put `JL_API_KEY=...` in a `.env` file
-at the repo root. That is the only thing that differs between the modes. (For
+**Real compute is one switch away.** The mode is defined once in `compose.yaml`
+(the `x-zero-cost-mode` anchor near the top), and every service — control
+plane, worker, web shell — reads that one value, so flipping it to `0` moves
+the provider *and* the interface's demonstration marking together. Set it to
+`0` and put `JL_API_KEY=...` in a `.env` file at the repo root. That is the
+only thing that differs between the modes. (For
 the record: a bare process with nothing set lands on the real tier with fault
 injection refused — the safe default. The one-command stack's zero-cost tier
 is an explicit, visible choice in compose.yaml, and it cannot reach real

@@ -37,7 +37,14 @@ rather than as a general caution.**
   web shell — parses it with the same boolean rule (`config._flag` and its
   mirror in `apps/web/src/lib/demo-mode.ts`), so the banner and the provider
   cannot disagree about which mode is in force, and the documented `=0`
-  actually means the real tier.
+  actually means the real tier. In the reviewer-facing one-command stack the
+  value is written once, in a single compose anchor that all three services
+  read (`compose.yaml`), so a flip to the real tier changes one line and
+  cannot desynchronise the marking from the provider. An unrecognised value
+  is refused by the backend at boot — a running stack cannot carry one — and
+  read as the real tier by the shell, which is why the two halves are one
+  parse rule with the refusal policy living where a misconfiguration stops
+  the process rather than mislabels a page.
 
 - **Every page in that tier is marked as a demonstration, and the marking
   cannot be turned off in that mode.** The marking is a server-rendered banner
@@ -83,7 +90,10 @@ those properties: the double crosses no connection and bills nothing, so there
 is no machine to orphan and no spend to watch — which is precisely what the
 worker exists to protect against. It is not the request path, it starts no
 thread, it runs only in the zero-cost tier, and it runs only against an empty
-database. Recorded here rather than hidden.
+database. Recorded here rather than hidden. **This record supersedes the
+control-plane `AGENTS.md` sentence "This process does not run jobs." for this
+one boot-time seed**; the module's own file is amended to say so, so a reader
+who starts there meets the exception where the rule lives.
 
 ## Alternatives considered
 

@@ -42,3 +42,16 @@ test("the marking cannot be turned off in that mode", async ({ page }) => {
   await expect(banner.getByRole("button")).toHaveCount(0);
   await expect(banner.getByRole("link")).toHaveCount(0);
 });
+
+test("the zero-cost tier starts with something to show", async ({ page }) => {
+  // The seed half of spec 012: on a fresh database (the journeys boot the
+  // control plane with TEMPER_DB_RESET) the tier plants a sample dataset and
+  // one completed run, so the job list is never empty on first open. This
+  // pins that the demonstration content itself — not just the marking —
+  // cannot rot, and that it rides under the same banner.
+  await page.goto("/jobs");
+  const row = page.getByRole("row", { name: /sample-chat\.jsonl/ });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("complete");
+  await expect(page.getByLabel("Demonstration mode")).toBeVisible();
+});

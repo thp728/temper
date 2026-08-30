@@ -116,6 +116,11 @@ export default defineConfig({
       },
     },
     {
+      // The zero-cost tier seeds on a fresh database (ADR-0067), and this
+      // backend resets its database at startup, so every journey now boots
+      // into a database that already holds the sample dataset and one
+      // completed demo run. Specs locate rows by their own ids, never by
+      // assuming the list is empty.
       command: `uv run uvicorn temper_control_plane.main:app --port ${backendPort} --log-level warning`,
       cwd: "../..",
       url: `${backendUrl}/health`,
