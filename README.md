@@ -138,6 +138,25 @@ says which tier is in force (`provider: "fake"`) and reports the database and
 the object store **separately**, so a broken dependency reads as a broken
 dependency, not as a broken application.
 
+The stack starts ready to look at: on its first boot against an empty
+database, the zero-cost tier seeds a sample dataset and one completed run
+(`samples/sample-chat.jsonl`), so the job list already has a finished job to
+open and download before you upload anything. And it says what it is: **every
+page in this tier carries a demonstration banner**, driven by the same single
+setting, and it cannot be turned off in that mode
+([ADR-0071](docs/adr/0071-the-zero-cost-path-is-a-labelled-demonstration-structurally-blind-to-the-transport.md)).
+
+**What the zero-cost tier cannot prove, named plainly.** The simulated machine
+never crosses a connection — it implements the whole compute interface without
+moving a byte over one — so the zero-cost tier is **structurally blind to
+transport defects**. That is not a theoretical caution here: the defect that
+broke a real run in this project was a transport defect, a line-ending
+translation applied on the way to the remote shell
+([ADR-0027](docs/adr/0027-the-transport-is-proven-against-a-real-endpoint.md)).
+What this tier proves is the shape of the whole journey; what it cannot prove
+is any claim about reaching and driving a real machine, which is why the real
+tier below exists and why the transport tier exists as a separate proof.
+
 **Data survives a restart.** Datasets, jobs and artifacts live on a named
 volume, so stopping and bringing it back up preserves everything:
 
@@ -146,9 +165,12 @@ docker compose down        # or: just down
 docker compose up          # your datasets and jobs are still there
 ```
 
-**Real compute is one switch away.** Set `TEMPER_FAKE_PROVIDER=0` in
-`compose.yaml` (or delete that line) and put `JL_API_KEY=...` in a `.env` file
-at the repo root. That is the only thing that differs between the modes. (For
+**Real compute is one switch away.** The mode is defined once in `compose.yaml`
+(the `x-zero-cost-mode` anchor near the top), and every service — control
+plane, worker, web shell — reads that one value, so flipping it to `0` moves
+the provider *and* the interface's demonstration marking together. Set it to
+`0` and put `JL_API_KEY=...` in a `.env` file at the repo root. That is the
+only thing that differs between the modes. (For
 the record: a bare process with nothing set lands on the real tier with fault
 injection refused — the safe default. The one-command stack's zero-cost tier
 is an explicit, visible choice in compose.yaml, and it cannot reach real

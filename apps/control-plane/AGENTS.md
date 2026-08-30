@@ -8,7 +8,13 @@ the interface that consumes it lives in the web app. The domain logic sits in
 
 **This process does not run jobs.** `jobs.create` inserts a `queued` row and
 returns; `apps/worker` claims it and calls `orchestrator.run_job` from a
-separate process (ADR-0066). The request path starts no threads.
+separate process (ADR-0066). The request path starts no threads. The one
+exception is the zero-cost tier's boot-time demonstration seed
+(`seed_demo.maybe_seed`, ADR-0071): at startup, on an empty database and only
+in that tier, it drives one canned run through the real `run_job` so the
+reviewer-facing stack has a completed run to inspect immediately. It is
+synchronous, startup-only, spends nothing and crosses no connection, so it
+cannot leave the unowned billing machine ADR-0066's worker exists to prevent.
 
 ## Seams that Phase B depends on
 

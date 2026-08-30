@@ -36,6 +36,7 @@ from temper_control_plane import (
     orchestrator,
     quote,
     remote_datasets,
+    seed_demo,
     storage,
 )
 from temper_control_plane.contracts_models import (
@@ -160,6 +161,13 @@ async def lifespan(_app: FastAPI):
     init_sentry()
     db.init()
     storage.STORE.ensure_ready()
+    # Spec 012's second front door, promoted: when the zero-cost tier boots
+    # against an empty database, plant the sample dataset and one completed
+    # run so the reviewer opens the stack to something to look at, not a
+    # blank page. A no-op in the real tier and on any non-empty database
+    # (seed_demo.py), so it can neither spend nor collide with a human's
+    # history.
+    seed_demo.maybe_seed()
     # Fail loudly at boot rather than four seconds into someone's first job.
     # The zero-cost tier (TEMPER_FAKE_PROVIDER) never needs credentials -- it
     # cannot reach the account by construction -- so the warning is only for

@@ -36,6 +36,9 @@ COPY packages/core packages/core
 # The data files temper_core reads at import (fault surface, trainer defaults,
 # the pinned schema and its tiers) -- the contract travels with the code.
 COPY packages/contracts packages/contracts
+# The zero-cost tier's sample dataset (spec 012): the seeding at startup reads
+# the same checked-in bytes a reviewer can open, so the image can seed it.
+COPY samples samples
 COPY spike spike
 
 RUN uv sync --frozen --no-dev --package temper-control-plane --package temper-worker

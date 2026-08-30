@@ -108,9 +108,19 @@ export default defineConfig({
         ...process.env,
         PORT: String(webPort),
         TEMPER_BACKEND_URL: backendUrl,
+        // The single mode setting, read by the shell's server components too
+        // (ADR-0071): the zero-cost tier's demonstration marking renders only
+        // when this is in force, so a journey that asserts the marking drives
+        // the same switch the backend honours.
+        TEMPER_FAKE_PROVIDER: "1",
       },
     },
     {
+      // The zero-cost tier seeds on a fresh database (ADR-0071), and this
+      // backend resets its database at startup, so every journey now boots
+      // into a database that already holds the sample dataset and one
+      // completed demo run. Specs locate rows by their own ids, never by
+      // assuming the list is empty.
       command: `uv run uvicorn temper_control_plane.main:app --port ${backendPort} --log-level warning`,
       cwd: "../..",
       url: `${backendUrl}/health`,

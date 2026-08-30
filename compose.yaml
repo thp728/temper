@@ -8,13 +8,15 @@
 # them), and the web shell. The worker was empty by design (ADR-0010
 # reserves it for orchestration) and joins this file now that it ships.
 #
-# **The mode.** The control plane defaults to the zero-cost tier
+# **The mode.** The stack defaults to the zero-cost tier
 # (TEMPER_FAKE_PROVIDER=1, the in-package fake provider): a reviewer with no
 # account and no secrets can walk the whole journey -- upload, validate, plan,
 # watch a run complete, download the artifact -- for free. This is spec 012's
-# second front door. Real compute is one switch away: set
-# TEMPER_FAKE_PROVIDER=0 (or delete the line) and put JL_API_KEY in `.env`
-# (mounted below, optional). Nothing else differs between the modes.
+# second front door. Real compute is one switch away: flip the single
+# `x-zero-cost-mode` anchor near the top of this file to "0" (all three
+# services read it, so the web shell's demonstration marking and the backend's
+# provider move together) and put JL_API_KEY in `.env` (mounted below,
+# optional). Nothing else differs between the modes.
 #
 # **Data survives a restart.** PostgreSQL's own data directory and the object
 # store live on named volumes: `docker compose down && docker compose up`
@@ -39,6 +41,13 @@
 # read by both the web image's build (which bakes the /v1 rewrite target into
 # the routes manifest) and its runtime (server-side fetches read it directly).
 x-backend-url: &backend-url http://control-plane:8000
+
+# The mode, defined once and read by every service that needs it (ADR-0010,
+# ADR-0071): "1" is the zero-cost tier -- the reviewer-facing default -- and
+# "0" the real tier. Flipping to real compute is changing this one line, and
+# all three services move together: the web shell's demonstration marking
+# cannot outlive the provider it describes, because both read this same value.
+x-zero-cost-mode: &zero-cost-mode "1"
 
 services:
   # The relational store (issue #43). Its own healthcheck is what
@@ -65,7 +74,7 @@ services:
       context: .
       dockerfile: apps/control-plane/Dockerfile
     environment:
-      TEMPER_FAKE_PROVIDER: "1"
+      TEMPER_FAKE_PROVIDER: *zero-cost-mode
       # The compose network's own hostname for the service above, not
       # localhost: config.py's zero-configuration default points at
       # localhost:5432 for a bare local run (`just db-up`), which is not
@@ -110,7 +119,7 @@ services:
     # unit test calls this command line.
     command: ["python", "-m", "temper_worker"]
     environment:
-      TEMPER_FAKE_PROVIDER: "1"
+      TEMPER_FAKE_PROVIDER: *zero-cost-mode
       TEMPER_DATABASE_URL: postgresql://temper:temper@postgres:5432/temper
     env_file:
       - path: .env
@@ -147,6 +156,12 @@ services:
         TEMPER_BACKEND_URL: *backend-url
     environment:
       TEMPER_BACKEND_URL: *backend-url
+      # The same single mode setting the control plane and the worker read
+      # (ADR-0071): the shell reads it to mark every page as a demonstration,
+      # so the marking is driven by the one switch and cannot be turned off
+      # while that switch is set. All three services read the same compose
+      # anchor, so the banner and the provider cannot disagree.
+      TEMPER_FAKE_PROVIDER: *zero-cost-mode
     depends_on:
       control-plane:
         condition: service_healthy
