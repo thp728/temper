@@ -791,6 +791,74 @@ DEMO_RESULT = {
             }
         ],
     },
+    # The general-capability slice (issue #73): a fixed, versioned slice of
+    # general questions answered by the base model and the chosen checkpoint,
+    # reported as a delta with the sample size and uncertainty stated -- a
+    # smoke test for catastrophic forgetting, never a benchmark. The simulated
+    # machine carries a large-regression example so a journey's finished job
+    # shows the prominent surface; the text is canned (the renderer's
+    # fixture), the real slice runs in the trainer on the warm machine.
+    "capability": {
+        "ok": True,
+        "version": 1,
+        "regression_threshold": 2,
+        "total": 8,
+        "base_correct": 6,
+        "tuned_correct": 4,
+        "base_score": 0.75,
+        "tuned_score": 0.5,
+        "delta": -0.25,
+        "delta_se": 0.164,
+        "large_regression": True,
+        "decoding": {
+            "temperature": 0.7,
+            "max_new_tokens": 128,
+            "do_sample": True,
+        },
+        "selection": {
+            "step": 20,
+            "basis": "best_held_out_loss",
+            "held_out_loss": 0.39,
+            "reason": (
+                "Step 20 has the lowest held-out loss (0.39) of 3 retained "
+                "checkpoint(s)."
+            ),
+        },
+        "rows": [
+            {
+                "prompt": [
+                    {
+                        "role": "user",
+                        "content": "Which planet is the largest in the solar system?",
+                    }
+                ],
+                "domain": "astronomy",
+                "answer": "A",
+                "base": "A",
+                "tuned": "C",
+                "base_parsed": "A",
+                "tuned_parsed": "C",
+                "base_correct": True,
+                "tuned_correct": False,
+            },
+            {
+                "prompt": [
+                    {
+                        "role": "user",
+                        "content": "What is the capital of Japan?",
+                    }
+                ],
+                "domain": "geography",
+                "answer": "C",
+                "base": "C",
+                "tuned": "C",
+                "base_parsed": "C",
+                "tuned_parsed": "C",
+                "base_correct": True,
+                "tuned_correct": True,
+            },
+        ],
+    },
 }
 
 # The hyperparameter through which a journey or an operator asks the simulated

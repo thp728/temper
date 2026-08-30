@@ -90,13 +90,18 @@ LABEL org.opencontainers.image.title="jarvislabs-finetune-trainer" \
 # runs on the warm machine after training; it must ship in the same layer or
 # the container dies at import, before the `finally` that writes result.json.
 #
+# `capability.py` (issue #73) is the general-capability slice -- the smoke
+# test for catastrophic forgetting -- the entrypoint runs on the warm machine
+# right after the comparison; it must ship in the same layer or the container
+# dies at import, before the `finally` that writes result.json.
+#
 # `checkpoint.py` (issue #62) is the best-checkpoint selection rule, read by
 # the control plane's terminal selection and by this entrypoint when it picks
 # which checkpoint the comparison generates from. It lives in packages/core
 # and is flattened into this context like `split.py`, so it must be in the
 # COPY too -- a top-level import, so a missing COPY dies at import, before the
 # `finally` that writes result.json.
-COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py delivery.py trainer-defaults.json axolotl-schema.json fault-surface.json delivery-formats.json comparison.py checkpoint.py /opt/trainer/
+COPY entrypoint.py checkpoints.py thinking.py split.py template_probe.py delivery.py trainer-defaults.json axolotl-schema.json fault-surface.json delivery-formats.json comparison.py capability.py checkpoint.py /opt/trainer/
 
 # Written by the orchestrator, read here. Declared so the contract is visible
 # in `docker inspect` rather than only in the run command.

@@ -710,6 +710,64 @@ class Comparison(BaseModel):
     selection: BestCheckpoint | None = None
 
 
+class CapabilityRow(BaseModel):
+    """One general-capability question and both models' answers (issue #73).
+
+    `prompt` is the question asked (a user message), `domain` names what kind
+    of general knowledge it is, `answer` is the correct option letter, `base`
+    and `tuned` are the two models' replies, `base_parsed`/`tuned_parsed` the
+    option letters those replies were scored as (None when none was named),
+    and `base_correct`/`tuned_correct` whether each side got it right. Each
+    row is legible, so a reader can spot-check the score instead of trusting
+    it."""
+
+    prompt: list[ComparisonTurn]
+    domain: str | None = None
+    answer: str
+    base: str
+    tuned: str
+    base_parsed: str | None = None
+    tuned_parsed: str | None = None
+    base_correct: bool
+    tuned_correct: bool
+
+
+class Capability(BaseModel):
+    """The run's general-capability slice (Spec 011 / issue #73).
+
+    Produced on the warm machine after training and published exactly as the
+    trainer recorded it. This is a smoke test for catastrophic forgetting, not
+    a benchmark: a fixed, versioned slice of general questions answered by the
+    base model and by the tuned model, reported as a delta with its sample
+    size and uncertainty stated. `version` names which slice the numbers came
+    from; `total` is the sample size shown beside the numbers; `base_score` /
+    `tuned_score` are the two sides' fractions correct; `delta` is tuned minus
+    base; `delta_se` is the paired standard error of that delta; and
+    `large_regression` is the recorded flag the interface surfaces
+    prominently -- a tuned model that lost at least the threshold's worth of
+    questions, decided once on the machine, never re-decided in the client.
+    On a failure `reason` names it and the artifact is still delivered."""
+
+    ok: bool
+    version: int = 1
+    # The threshold behind `large_regression`, recorded by the machine (the
+    # one definition lives in the trainer's `capability.py`) so the interface
+    # can say what "large" means without re-deciding it.
+    regression_threshold: int = 0
+    total: int = 0
+    base_correct: int = 0
+    tuned_correct: int = 0
+    base_score: float = 0.0
+    tuned_score: float = 0.0
+    delta: float = 0.0
+    delta_se: float = 0.0
+    large_regression: bool = False
+    decoding: dict[str, Any] = Field(default_factory=dict)
+    rows: list[CapabilityRow] = Field(default_factory=list)
+    reason: str | None = None
+    selection: BestCheckpoint | None = None
+
+
 class JobRecord(BaseModel):
     """A job and the record of what became of it, published typed.
 
@@ -775,6 +833,11 @@ class JobRecord(BaseModel):
     # what it was trained on, untested here rather than refused.
     is_moe: bool | None = None
     comparison: Comparison | None = None
+    # Issue #73: the run's general-capability slice, published exactly as the
+    # machine recorded it -- a smoke test, not a benchmark, with its sample
+    # size, delta and stated uncertainty. A pre-existing row whose result
+    # carries none simply has none published.
+    capability: Capability | None = None
 
 
 class JobList(BaseModel):

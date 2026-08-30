@@ -129,6 +129,30 @@ two outputs are comparable; the interface displays them from the record
 run: a failure is recorded under `comparison` with its reason and the artifact
 is still delivered. See [ADR-0061](../../docs/adr/0061-the-side-by-side-comparison-runs-on-the-warm-machine.md).
 
+## The general-capability slice runs on the warm machine (issue #73)
+
+After the comparison, before result.json is written, the entrypoint answers a
+fixed, versioned slice of general-knowledge questions through the base model
+and through the chosen checkpoint, and records the difference as a delta with
+its sample size and uncertainty stated. It is a **smoke test for catastrophic
+forgetting, not a benchmark**: the slice is small by design (each question
+costs warm-machine time), fixed (the same questions every job), general
+(never the user's task), and versioned (`CAPABILITY_SLICE_VERSION`), and a
+result is reported beside the number of questions it rests on and the standard
+error of the change. A tuned model that loses at least
+`LARGE_REGRESSION_QUESTIONS` questions to the base is flagged
+(`large_regression`, with the threshold recorded) so the interface can surface
+it prominently from the record.
+
+Both eval steps -- the comparison and the capability slice -- **load the two
+models exactly once between them**: the entrypoint selects the checkpoint and
+loads the base + tuned generators, then hands the same pair to both, so the
+paid machine is not asked to load twice for two steps that take moments where
+the weights already are. Either step can fail without failing the run: a
+failure is recorded under its own key (`comparison` / `capability`) with its
+reason and the artifact is still delivered. See
+[ADR-0067](../../docs/adr/0067-the-general-capability-check-is-a-small-slice-whose-limits-are-stated.md).
+
 ## The job specification carries every value
 
 **The trainer resolves nothing.** The control plane resolves every

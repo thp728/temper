@@ -926,6 +926,25 @@ def _with_comparison(job: dict | None) -> dict | None:
     return job
 
 
+def _with_capability(job: dict | None) -> dict | None:
+    """Publish the run's recorded general-capability slice from its result.
+
+    The trainer records the capability slice (issue #73) in result.json; this
+    presents it typed, without recomputing or reshaping anything -- a run's
+    answer is what the machine recorded, and a pre-existing row whose result
+    carries no capability simply has none published. On a failure the
+    trainer's `ok: false` and `reason` travel as recorded, so the interface
+    can say why there is no smoke-test number rather than pretending one
+    exists.
+    """
+    if job is None:
+        return None
+    result = job.get("result")
+    recorded = result.get("capability") if isinstance(result, dict) else None
+    job["capability"] = recorded if isinstance(recorded, dict) else None
+    return job
+
+
 def get_job(job_id: str) -> dict | None:
     with connect() as c:
         r = c.execute("SELECT * FROM jobs WHERE id=%s", (job_id,)).fetchone()
@@ -934,30 +953,32 @@ def get_job(job_id: str) -> dict | None:
             _with_is_moe(
                 _with_warnings(
                     _with_comparison(
-                        _row(
-                            r,
-                            {
-                                "hyperparams_json": "hyperparameters",
-                                "result_json": "result",
-                                "warnings_json": "warnings",
-                                "quote_json": "quote",
-                                "overrides_json": "overrides",
-                                "actuals_json": "actuals",
-                                "checkpoints_json": "checkpoints",
-                                "best_checkpoint_json": "best_checkpoint",
-                                "artifact_json": "artifact_record",
-                                "delivery_request_json": "delivery_request",
-                                "delivery_json": "delivery",
-                                "attempts_json": "attempts",
-                            },
-                            defaults={
-                                "overrides": [],
-                                "checkpoints": [],
-                                "best_checkpoint": None,
-                                "delivery_request": [],
-                                "delivery": [],
-                                "attempts": [],
-                            },
+                        _with_capability(
+                            _row(
+                                r,
+                                {
+                                    "hyperparams_json": "hyperparameters",
+                                    "result_json": "result",
+                                    "warnings_json": "warnings",
+                                    "quote_json": "quote",
+                                    "overrides_json": "overrides",
+                                    "actuals_json": "actuals",
+                                    "checkpoints_json": "checkpoints",
+                                    "best_checkpoint_json": "best_checkpoint",
+                                    "artifact_json": "artifact_record",
+                                    "delivery_request_json": "delivery_request",
+                                    "delivery_json": "delivery",
+                                    "attempts_json": "attempts",
+                                },
+                                defaults={
+                                    "overrides": [],
+                                    "checkpoints": [],
+                                    "best_checkpoint": None,
+                                    "delivery_request": [],
+                                    "delivery": [],
+                                    "attempts": [],
+                                },
+                            )
                         )
                     )
                 )
@@ -1000,28 +1021,30 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
                     _with_is_moe(
                         _with_warnings(
                             _with_comparison(
-                                _row(
-                                    r,
-                                    {
-                                        "hyperparams_json": "hyperparameters",
-                                        "result_json": "result",
-                                        "warnings_json": "warnings",
-                                        "quote_json": "quote",
-                                        "overrides_json": "overrides",
-                                        "actuals_json": "actuals",
-                                        "checkpoints_json": "checkpoints",
-                                        "best_checkpoint_json": "best_checkpoint",
-                                        "artifact_json": "artifact_record",
-                                        "delivery_request_json": "delivery_request",
-                                        "delivery_json": "delivery",
-                                    },
-                                    defaults={
-                                        "overrides": [],
-                                        "checkpoints": [],
-                                        "best_checkpoint": None,
-                                        "delivery_request": [],
-                                        "delivery": [],
-                                    },
+                                _with_capability(
+                                    _row(
+                                        r,
+                                        {
+                                            "hyperparams_json": "hyperparameters",
+                                            "result_json": "result",
+                                            "warnings_json": "warnings",
+                                            "quote_json": "quote",
+                                            "overrides_json": "overrides",
+                                            "actuals_json": "actuals",
+                                            "checkpoints_json": "checkpoints",
+                                            "best_checkpoint_json": "best_checkpoint",
+                                            "artifact_json": "artifact_record",
+                                            "delivery_request_json": "delivery_request",
+                                            "delivery_json": "delivery",
+                                        },
+                                        defaults={
+                                            "overrides": [],
+                                            "checkpoints": [],
+                                            "best_checkpoint": None,
+                                            "delivery_request": [],
+                                            "delivery": [],
+                                        },
+                                    )
                                 )
                             )
                         )
@@ -1132,7 +1155,11 @@ def claim_next_job() -> dict | None:
             },
         )
         return _with_best_checkpoint(
-            _with_artifact(_with_is_moe(_with_warnings(_with_comparison(job))))
+            _with_artifact(
+                _with_is_moe(
+                    _with_warnings(_with_comparison(_with_capability(job)))
+                )
+            )
         )
 
 

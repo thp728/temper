@@ -538,6 +538,122 @@ def test_a_failed_comparison_never_fails_the_run(harness):
     assert comparison["decoding"]["temperature"] == 0.7
 
 
+def test_a_completed_job_publishes_its_general_capability_slice(harness):
+    """Issue #73: the general-capability slice the machine recorded travels in
+    the result document and is published typed -- the sample size beside the
+    numbers, the delta, the stated uncertainty, the recorded large-regression
+    flag and the chosen checkpoint -- so the interface renders the smoke test
+    from the record without recomputing or inventing anything."""
+    capability = {
+        "ok": True,
+        "version": 1,
+        "total": 8,
+        "base_correct": 6,
+        "tuned_correct": 4,
+        "base_score": 0.75,
+        "tuned_score": 0.5,
+        "delta": -0.25,
+        "delta_se": 0.15,
+        "large_regression": True,
+        "decoding": {
+            "temperature": 0.7,
+            "max_new_tokens": 128,
+            "do_sample": True,
+        },
+        "selection": {
+            "step": 20,
+            "basis": "best_held_out_loss",
+            "held_out_loss": 0.39,
+            "reason": "Step 20 has the lowest held-out loss (0.39).",
+        },
+        "rows": [
+            {
+                "prompt": [{"role": "user", "content": "q0"}],
+                "domain": "astronomy",
+                "answer": "A",
+                "base": "A",
+                "tuned": "B",
+                "base_parsed": "A",
+                "tuned_parsed": "B",
+                "base_correct": True,
+                "tuned_correct": False,
+            }
+        ],
+    }
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result={**RESULT, "capability": capability},
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    job_id = harness.run(provider)
+    job = harness.job(job_id)
+    assert job["status"] == "complete"
+    published = job["capability"]
+    assert published is not None
+    assert published["ok"] is True
+    assert published["total"] == capability["total"]
+    assert published["delta"] == capability["delta"]
+    assert published["delta_se"] == capability["delta_se"]
+    assert published["large_regression"] is True
+    assert published["rows"] == capability["rows"]
+    assert published["selection"] == capability["selection"]
+    assert published["reason"] is None
+    # The stored row keeps the raw recorded slice exactly as the machine wrote
+    # it -- the published typed model presents it, never reshapes it.
+    assert harness.stored(job_id)["result"]["capability"] == capability
+
+
+def test_a_failed_capability_slice_never_fails_the_run(harness):
+    """The negative test that protects a paid run (Spec 011): make the
+    capability slice fail -- here the machine recorded it as such -- and the
+    job still reaches its terminal state with the artifact intact and the
+    reason recorded on the published record."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result={
+            **RESULT,
+            "capability": {
+                "ok": False,
+                "version": 1,
+                "decoding": {
+                    "temperature": 0.7,
+                    "max_new_tokens": 128,
+                    "do_sample": True,
+                },
+                "reason": "RuntimeError: the tuned model could not be loaded",
+            },
+        },
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    job_id = harness.run(provider)
+    job = harness.job(job_id)
+    # The run completed, with the artifact verified and delivered.
+    assert job["status"] == "complete"
+    assert job["artifact"] is not None
+    # The failure is recorded, not buried: ok false, with the reason, and the
+    # decoding settings still stated so a reader knows what was attempted.
+    capability = job["capability"]
+    assert capability is not None
+    assert capability["ok"] is False
+    assert "could not be loaded" in capability["reason"]
+    assert capability["decoding"]["temperature"] == 0.7
+
+
+def test_a_row_without_a_capability_slice_publishes_none(harness):
+    """A pre-existing row whose result carries no capability simply has none
+    published -- the slice's absence reads exactly as it did before."""
+    provider = FakeProvider(
+        lines=TRAINING_LINES,
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    job_id = harness.run(provider)
+    job = harness.job(job_id)
+    assert job["status"] == "complete"
+    assert job["comparison"] is None
+    assert job["capability"] is None
+
+
 def test_a_failed_job_records_duration_and_cost_and_no_peak(harness):
     """A run that produced no result records the actuals it can measure and
     no peak: the honest absence, never a guessed number -- a failed run's

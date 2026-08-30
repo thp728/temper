@@ -40,9 +40,11 @@ import threading
 import time
 from collections import deque
 from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
+from typing import IO, Any
 
+import capability as capability_step
 import checkpoints as checkpoint_upload
 import comparison as comparison_step
 from checkpoint import select_best_checkpoint
@@ -1303,12 +1305,78 @@ def load_comparison_generators(
     )
 
 
+@dataclass(frozen=True)
+class WarmModels:
+    """The two loaded generators and the selection they evaluate.
+
+    ``base`` and ``tuned`` are the loaded generators (real transformers/peft
+    models on the machine, doubles in the host suite); ``selection`` is the
+    run's own selection rule's record (issue #62) and ``step`` the checkpoint
+    the tuned side was loaded from. One object, handed to both eval steps, so
+    neither the field list nor the meaning can drift between them.
+    """
+
+    base: Any
+    tuned: Any
+    selection: dict[str, Any]
+    step: int
+
+
+def _load_warm_models(
+    job: dict,
+    cfg: dict,
+    out_dir: Path,
+    *,
+    make_generators=load_comparison_generators,
+) -> tuple[WarmModels | None, str | None, dict[str, Any]]:
+    """Select the checkpoint and load the two generators, or explain why not.
+
+    Shared by the comparison and the general-capability slice so the base and
+    tuned models are loaded exactly once between them on the warm machine
+    (Spec 011's eval runs where the weights already are -- a second load is
+    time on a paid machine for nothing). Returns ``(WarmModels, None,
+    selection_record)`` on success, or ``(None, reason, selection_record)``
+    where ``reason`` is a reader-facing sentence each caller shapes into its
+    own failure record. Loading is guarded here, so a model that will not
+    load becomes a recorded reason rather than a failed run.
+    """
+    selection = select_best_checkpoint(checkpoint_records(out_dir))
+    selection_record = selection.to_dict()
+    if selection.step is None:
+        return None, selection.reason, selection_record
+    chosen_dir = out_dir / "run" / f"checkpoint-{selection.step}"
+    if not chosen_dir.is_dir():
+        return (
+            None,
+            f"the chosen checkpoint (step {selection.step}) was not on the "
+            "machine to evaluate",
+            selection_record,
+        )
+    try:
+        base_gen, tuned_gen = make_generators(
+            job, cfg, chosen_dir, job.get("method") or "qlora"
+        )
+    except Exception as e:  # noqa: BLE001 - the run must survive the extra step
+        return None, f"{type(e).__name__}: {e}", selection_record
+    return (
+        WarmModels(
+            base=base_gen,
+            tuned=tuned_gen,
+            selection=selection_record,
+            step=selection.step,
+        ),
+        None,
+        selection_record,
+    )
+
+
 def run_machine_comparison(
     job: dict,
     cfg: dict,
     out_dir: Path,
     *,
     make_generators=load_comparison_generators,
+    loaded=None,
 ) -> dict:
     """The side-by-side comparison, run on the warm machine after training.
 
@@ -1321,12 +1389,11 @@ def run_machine_comparison(
     the models, and generating -- is guarded, so any failure becomes
     `ok: false` with the reason recorded and the artifact is still delivered
     (Spec 011). `make_generators` is a seam so the host suite can exercise
-    the whole flow without torch; the default is the machine's real loader.
+    the whole flow without torch; `loaded` is the entrypoint's already-loaded
+    generator pair plus its selection, so the comparison and the capability
+    slice share one model load between them on the warm machine.
     """
     decoding = dict(comparison_step.COMPARISON_DECODING)
-    # Set as selection is computed, so a failure that happens after it still
-    # records which checkpoint was being compared.
-    selection_record: dict | None = None
     try:
         eval_path = out_dir / "eval.jsonl"
         if not eval_path.is_file():
@@ -1350,30 +1417,26 @@ def run_machine_comparison(
                 reason="the held-out rows carried no conversations to compare",
             ).to_dict()
 
-        selection = select_best_checkpoint(checkpoint_records(out_dir))
-        selection_record = selection.to_dict()
-        chosen_step = selection.step
-        if chosen_step is None:
-            return comparison_step.ComparisonOutcome(
-                ok=False,
-                decoding=decoding,
-                reason=selection.reason,
-                selection=selection_record,
-            ).to_dict()
-        chosen_dir = out_dir / "run" / f"checkpoint-{chosen_step}"
-        if not chosen_dir.is_dir():
-            return comparison_step.ComparisonOutcome(
-                ok=False,
-                decoding=decoding,
-                reason=(
-                    f"the chosen checkpoint (step {chosen_step}) was not on "
-                    "the machine to compare"
-                ),
-                selection=selection_record,
-            ).to_dict()
+        if loaded is not None:
+            base_gen = loaded.base
+            tuned_gen = loaded.tuned
+            selection_record = loaded.selection
+            chosen_step = loaded.step
+        else:
+            models, reason, selection_record = _load_warm_models(
+                job, cfg, out_dir, make_generators=make_generators
+            )
+            if models is None:
+                return comparison_step.ComparisonOutcome(
+                    ok=False,
+                    decoding=decoding,
+                    reason=reason,
+                    selection=selection_record,
+                ).to_dict()
+            base_gen = models.base
+            tuned_gen = models.tuned
+            chosen_step = models.step
 
-        method = job.get("method") or "qlora"
-        base_gen, tuned_gen = make_generators(job, cfg, chosen_dir, method)
         log(
             f"comparison: {len(conversations)} held-out prompt(s) through the "
             f"base model and the chosen checkpoint (step {chosen_step})"
@@ -1403,8 +1466,137 @@ def run_machine_comparison(
             ok=False,
             decoding=decoding,
             reason=f"{type(e).__name__}: {e}",
-            selection=selection_record,
         ).to_dict()
+
+
+def run_machine_capability(
+    job: dict,
+    cfg: dict,
+    out_dir: Path,
+    *,
+    make_generators=load_comparison_generators,
+    loaded=None,
+) -> dict:
+    """The general-capability slice (Spec 011 / issue #73), run on the warm
+    machine after training.
+
+    A fixed, versioned slice of general-knowledge questions is answered by
+    the base model and by the checkpoint the run's own rule (issue #62) would
+    choose, and the difference is reported as a delta with its sample size and
+    standard error recorded. It is a smoke test for catastrophic forgetting,
+    not a benchmark, and the interface says so from the record. **Never fails
+    the run**: the whole phase -- selecting the checkpoint, loading the
+    models, and answering -- is guarded, so any failure becomes `ok: false`
+    with the reason recorded and the artifact is still delivered (Spec 011).
+    `loaded`, when given, is the entrypoint's already-loaded generator pair
+    plus its selection, so both eval steps load the two models exactly once.
+    """
+    decoding = dict(comparison_step.COMPARISON_DECODING)
+    try:
+        if loaded is not None:
+            base_gen = loaded.base
+            tuned_gen = loaded.tuned
+            selection_record = loaded.selection
+            chosen_step = loaded.step
+        else:
+            models, reason, selection_record = _load_warm_models(
+                job, cfg, out_dir, make_generators=make_generators
+            )
+            if models is None:
+                return capability_step.CapabilityOutcome(
+                    ok=False,
+                    decoding=decoding,
+                    reason=reason,
+                    selection=selection_record,
+                ).to_dict()
+            base_gen = models.base
+            tuned_gen = models.tuned
+            chosen_step = models.step
+
+        log(
+            f"capability: {len(capability_step.CAPABILITY_QUESTIONS)} general "
+            f"question(s) through the base model and the chosen checkpoint "
+            f"(step {chosen_step})"
+        )
+        outcome = capability_step.run_capability_slice(
+            base=base_gen,
+            tuned=tuned_gen,
+            decoding=decoding,
+            selection=selection_record,
+        )
+        if not outcome.ok:
+            # The reason is recorded with the result; the run continues. This
+            # is the "evaluation failure never fails the run" guarantee,
+            # stated where the failure is swallowed.
+            log(
+                "capability slice failed; recorded and the run continues: "
+                f"{outcome.reason}"
+            )
+        return outcome.to_dict()
+    except Exception as e:  # noqa: BLE001 - the run must survive the extra step
+        log(
+            "capability slice failed; recorded and the run continues: "
+            f"{type(e).__name__}: {e}"
+        )
+        return capability_step.CapabilityOutcome(
+            ok=False,
+            decoding=decoding,
+            reason=f"{type(e).__name__}: {e}",
+        ).to_dict()
+
+
+def run_machine_evals(
+    job: dict,
+    cfg: dict,
+    out_dir: Path,
+    *,
+    make_generators=load_comparison_generators,
+) -> tuple[dict, dict]:
+    """Both on-warm-machine eval steps on one shared model load.
+
+    Returns ``(comparison_record, capability_record)``. The base and tuned
+    models are loaded exactly once and handed to both the side-by-side
+    comparison (issue #69) and the general-capability slice (issue #73): the
+    machine is already warm and a second load is time on a paid machine for
+    nothing. **Neither step can fail the run** (Spec 011): a failure to load
+    is recorded under both records, a failure in one step under that step --
+    the artifact is still delivered either way. `make_generators` is a seam so
+    the host suite can exercise the exact wiring without torch.
+    """
+    try:
+        models, load_reason, selection_record = _load_warm_models(
+            job, cfg, out_dir, make_generators=make_generators
+        )
+    except Exception as e:  # noqa: BLE001 - the run must survive the extra step
+        models, load_reason, selection_record = (
+            None,
+            f"{type(e).__name__}: {e}",
+            None,
+        )
+    decoding = dict(comparison_step.COMPARISON_DECODING)
+    if models is None:
+        log(
+            "evaluation could not load the models; recorded under both "
+            f"comparison and capability and the run continues: {load_reason}"
+        )
+        return (
+            comparison_step.ComparisonOutcome(
+                ok=False,
+                decoding=decoding,
+                reason=load_reason,
+                selection=selection_record,
+            ).to_dict(),
+            capability_step.CapabilityOutcome(
+                ok=False,
+                decoding=decoding,
+                reason=load_reason,
+                selection=selection_record,
+            ).to_dict(),
+        )
+    return (
+        run_machine_comparison(job, cfg, out_dir, loaded=models),
+        run_machine_capability(job, cfg, out_dir, loaded=models),
+    )
 
 
 def main() -> int:
@@ -1651,13 +1843,19 @@ def main() -> int:
             raise
         result["template_probe"] = probe_outcome.as_dict()
 
-        # The side-by-side comparison (Spec 011 / issue #69): the same
-        # held-out prompts run through the base model and through the
-        # checkpoint the run's selection rule would choose, on the machine
-        # that is already warm. It is the most directly useful evidence the
-        # platform can produce, and it must never fail the run: a failure is
-        # recorded under `comparison` and the artifact is still delivered.
-        result["comparison"] = run_machine_comparison(job, cfg, OUT_DIR)
+        # The two on-warm-machine eval steps (Spec 011): the side-by-side
+        # comparison (issue #69) and the general-capability slice (issue #73).
+        # The same held-out prompts answered by the base model and by the
+        # checkpoint the run's selection rule would choose, and a fixed slice
+        # of general questions answered by both -- the smoke test for
+        # catastrophic forgetting, never a benchmark. Both load the two models
+        # exactly once between them (they run back to back where the weights
+        # already are), and neither can fail the run: a failure -- including a
+        # failure to load the models -- is recorded under its own key and the
+        # artifact is still delivered.
+        result["comparison"], result["capability"] = run_machine_evals(
+            job, cfg, OUT_DIR
+        )
 
         if result.get("artifact_path"):
             # ADR-0009: when the control plane supplied a scoped write URL, the
