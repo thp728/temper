@@ -1864,16 +1864,32 @@ def _attempt(
     # storage: a request answered with "no adapter will be produced" that then
     # produced one would be the single worst thing this path could tell a user,
     # so what already landed is discarded rather than kept.
+    return _finalize_packaging(job_id, result, plan.method)
+
+
+def _finalize_packaging(
+    job_id: str, result: dict, method: str | None
+) -> tuple[str, str, dict]:
+    """Verify a finished run's outputs from storage and produce the terminal
+    outcome.
+
+    Shared by the fresh path (`_attempt`) and a packaging recovery (issue
+    #68): the machine already wrote its artifact, checkpoints and delivery
+    formats to storage before reporting (ADR-0009, #37, #74), so collection is
+    verify-and-record, safe to run once or again. The result manifest is
+    persisted the moment packaging begins -- not only at the terminal state --
+    so a recovery re-verifies the same run rather than re-running it: a worker
+    killed during collection would otherwise take the run's own manifest with
+    it, the one record that ties the stored artifact to its checksum.
+
+    Cancellation is honoured to the last moment an adapter could appear: an
+    upload that landed before the cancellation was seen is discarded rather
+    than left readable as the deliverable.
+    """
+    cancelled = _cancellation_check(job_id)
     _discard_if_cancelled(job_id, cancelled)
-    # Issue #68: the result manifest is persisted the moment packaging begins,
-    # not only when the job reaches its terminal state. A worker killed during
-    # collection would otherwise take the run's own manifest with it -- the
-    # one record that ties the stored artifact to its checksum -- leaving a
-    # packaging recovery with nothing to re-collect against. Persisting it
-    # here makes packaging resumable and is honest: the run *did* produce this
-    # result document, and the row is its record.
     db.set_state(job_id, "packaging", "Verifying artifact", result_json=result)
-    artifact = _collect_artifact(job_id, result, plan.method)
+    artifact = _collect_artifact(job_id, result, method)
     checkpoints = _collect_checkpoints(job_id, result)
     db.set_checkpoints(job_id, checkpoints)
     # The choice is recorded beside the verified checkpoints, not derived at
@@ -2258,26 +2274,7 @@ def _recover_abandoned(
                 resume_logic.INTERRUPTED_CODE,
                 resume_logic.INTERRUPTED_MESSAGE,
             )
-        cancelled = _cancellation_check(job_id)
-        _discard_if_cancelled(job_id, cancelled)
-        db.set_state(job_id, "packaging", "Verifying artifact")
-        artifact = _collect_artifact(job_id, result, job.get("method"))
-        checkpoints = _collect_checkpoints(job_id, result)
-        db.set_checkpoints(job_id, checkpoints)
-        _record_best_checkpoint(job_id, checkpoints)
-        delivery_records = _collect_delivery(job_id, result)
-        if delivery_records:
-            db.set_delivery(job_id, delivery_records)
-        _discard_if_cancelled(job_id, cancelled)
-        fields: dict = {
-            "result_json": result,
-            "artifact_key": (
-                artifact["weights_key"] if artifact is not None else None
-            ),
-        }
-        if artifact is not None:
-            fields["artifact_json"] = artifact
-        return ("complete", "Training complete", fields)
+        return _finalize_packaging(job_id, result, job.get("method"))
 
     # preparing / training: the run was cut off mid-flight. What survived is
     # in the checkpoint slots; raising the interruption error hands the job to
@@ -2534,10 +2531,30 @@ def run_job(
                         resumed_from=_resumed_step(resume_checkpoint),
                     )
                     if source is None:
-                        # Nothing survived to resume from: the job fails with
-                        # the honest interruption code and the attempts
-                        # recorded, rather than pretending a resumption was
-                        # possible when no checkpoint exists to come back to.
+                        # Nothing survived to resume from. If the run never
+                        # reached training -- a `preparing` job reclaimed after
+                        # its driver died, whose machine was still being set up
+                        # so nothing was produced -- restart the attempt rather
+                        # than fail a run that never started (issue #68). A run
+                        # that did train and lost everything surfaces as
+                        # interrupted, as before.
+                        current = db.get_job(job_id)
+                        if (
+                            current is not None
+                            and current.get("status") == "preparing"
+                        ):
+                            db.add_event(
+                                job_id,
+                                "log",
+                                "Run was interrupted before training began; "
+                                "starting a fresh attempt",
+                                {"code": RECLAIM_RECOVERY_CODE},
+                            )
+                            continue
+                        # The job fails with the honest interruption code and
+                        # the attempts recorded, rather than pretending a
+                        # resumption was possible when no checkpoint exists to
+                        # come back to.
                         outcome = (
                             "failed",
                             str(e),

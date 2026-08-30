@@ -330,6 +330,20 @@ def test_a_worker_killed_during_training_resumes_and_completes(
     assert record["result"] is not None
     assert record["artifact_key"] is not None
     assert record["artifact_record"] is not None
+    # The recovery itself is named in the history: the reclaim event (from the
+    # claim) and the orchestrator's own recovery event both carry their codes.
+    events = db.get_events(job_id)
+    assert any(
+        e.get("data", {}) or {} and e["data"].get("code") == db.RECLAIMED_CODE
+        for e in events
+    ), "the claim's reclaim event is missing"
+    from temper_control_plane import orchestrator as orchestrator_mod
+
+    assert any(
+        (e.get("data") or {}).get("code")
+        == orchestrator_mod.RECLAIM_RECOVERY_CODE
+        for e in events
+    ), "the orchestrator's recovery event is missing"
 
 
 def test_the_recorded_machine_is_destroyed_before_anything_new_provisions(
@@ -371,6 +385,88 @@ def test_the_recorded_machine_is_destroyed_before_anything_new_provisions(
         "recovery provisioned a second machine"
     )
     assert db.get_job(job_id)["status"] == "complete"
+
+
+def test_a_worker_killed_during_preparing_restarts_and_completes(
+    tmp_path, fast_teardown, monkeypatch
+):
+    """A job killed while its machine was still being set up (status
+    `preparing`) has nothing to resume from -- training never started -- so the
+    recovery restarts the attempt rather than failing a run that never began.
+    The interrupted preparing attempt is still recorded with its machine."""
+    from temper_control_plane import main, orchestrator
+    from temper_worker.worker import run_once
+
+    with TestClient(main.app) as client:
+        job_id = _queued_job_via_api(client, tmp_path)
+        _claim_and_set_training(job_id)
+        # Back up: the worker died during preparing, before training started.
+        db.set_state(job_id, "preparing", "Waiting for SSH")
+        assert db.get_job(job_id)["machine_id"] == MACHINE_ID
+        _age_claim(job_id)
+
+    completion = FakeProvider(
+        lines=["[00:00:01] running training"],
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    orig_run = orchestrator.run_job
+    monkeypatch.setattr(
+        orchestrator, "run_job", _patched_run_with(orig_run, completion)
+    )
+    assert run_once() is True
+
+    record = db.get_job(job_id)
+    assert record["status"] == "complete", record
+    attempts = record["attempts"]
+    # Attempt 1: interrupted before training, on the recorded machine.
+    # Attempt 2: a fresh attempt that completed (no `resumed_from` -- nothing
+    # was trained to resume from, so this is a restart, not a resumption).
+    assert len(attempts) == 2
+    assert attempts[0]["outcome"] == "interrupted"
+    assert attempts[0]["machine_id"] == MACHINE_ID
+    assert attempts[1]["outcome"] == "complete"
+    assert attempts[1].get("resumed_from") is None
+    # The recorded machine was destroyed before the fresh attempt provisioned.
+    assert completion.destroyed
+
+
+def test_a_reclaimed_provisioning_job_reprovisions_and_completes(
+    tmp_path, fast_teardown, monkeypatch
+):
+    """A job killed mid-provisioning (status `provisioning`, no machine
+    recorded) resumes by running the attempt again: nothing was created yet,
+    so the recovery provisions exactly one fresh machine and completes."""
+    from temper_control_plane import main, orchestrator
+    from temper_worker.worker import run_once
+
+    with TestClient(main.app) as client:
+        job_id = _queued_job_via_api(client, tmp_path)
+        # The worker died right after claiming: status `provisioning`, no
+        # machine recorded, lease taken.
+        assert db.claim_next_job() is not None
+        assert db.get_job(job_id)["machine_id"] is None
+        _age_claim(job_id)
+
+    completion = FakeProvider(
+        lines=["[00:00:01] running training"],
+        result=RESULT,
+        adapter_bytes=ADAPTER_BYTES,
+    )
+    orig_run = orchestrator.run_job
+    monkeypatch.setattr(
+        orchestrator, "run_job", _patched_run_with(orig_run, completion)
+    )
+    assert run_once() is True
+
+    record = db.get_job(job_id)
+    assert record["status"] == "complete", record
+    # Exactly one machine was provisioned by the recovery: the provisioning
+    # step ran once. The invariant that makes this safe -- a `provisioning`
+    # status never carries a recorded machine -- is what the reclaim relies
+    # on, and is asserted here directly.
+    assert len(completion.created) == 1
+    assert record["attempts"][-1]["outcome"] == "complete"
 
 
 # --- a worker killed during packaging is re-collected, not re-run --------------
