@@ -1,4 +1,4 @@
-# ADR-0067 — An interrupted job resumes from its last checkpoint on a fresh machine
+# ADR-0069 — An interrupted job resumes from its last checkpoint on a fresh machine
 
 - **Status:** accepted
 - **Date:** 2026-08-30
