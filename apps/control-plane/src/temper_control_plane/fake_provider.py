@@ -35,7 +35,9 @@ runs.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import tarfile
 import threading
 import time
 from collections.abc import Iterable, Iterator, Sequence
@@ -203,6 +205,11 @@ class FakeProvider:
         # attempt (firing on every retried machine would turn the
         # demonstration of the recovery into a retry-until-surface loop).
         self._oom_fired = False
+        # Issue #60: whether the `worker_kill` fault has already fired for
+        # this job, for the same reason -- the first machine is killed and
+        # the resumption's fresh machine completes, so the demonstration of
+        # the recovery does not become a resume-until-cap loop.
+        self._kill_fired = False
         # Observable afterwards: the fault this machine was asked to suffer,
         # or None when the surface was off.
         self.fault_applied: str | None = None
@@ -337,6 +344,9 @@ class FakeProvider:
         (`redeem`); the object-store backend's half is proven by the storage
         tier separately. The reported checksum is the true one unless the
         entry overrides it, so a test can make a corrupt upload on purpose.
+        Each checkpoint lands as a tar of its `checkpoint-N/` directory (see
+        `fake_checkpoint_tar`), the same shape the trainer's uploader writes
+        and a resumption parses back.
 
         Returns the records it wrote, so `request_checkpoint` (issue #46) can
         hand the control plane the manifest of an emergency save.
@@ -379,6 +389,19 @@ class FakeProvider:
                 )
                 records.append(record)
                 continue
+            # The checkpoint is shipped as a tar of its `checkpoint-N/`
+            # directory, exactly as the trainer's uploader writes it (issue
+            # #37), because a resumption (#60) parses that shape back: the
+            # control plane reads the surviving slots on an interruption and
+            # must find `trainer_state.json` inside them to know the step.
+            # The reported checksum is over the bytes that actually land, so
+            # verification hashes the same object a resume would parse.
+            tar_bytes = fake_checkpoint_tar(
+                ckpt["step"],
+                payload,
+                loss=ckpt.get("loss"),
+                held_out_loss=ckpt.get("held_out_loss"),
+            )
             from . import storage
             from .storage import WriteGrant
 
@@ -388,7 +411,7 @@ class FakeProvider:
                 expires_at=grants[slot]["expires_at"],
             )
             if isinstance(storage.STORE, storage.FilesystemStorage):
-                storage.STORE.redeem(grant, payload)
+                storage.STORE.redeem(grant, tar_bytes)
             else:
                 raise AssertionError(
                     "the fake machine redeems filesystem grants only; tests "
@@ -397,8 +420,8 @@ class FakeProvider:
             record.update(
                 {
                     "sha256": ckpt.get("sha256")
-                    or hashlib.sha256(payload).hexdigest(),
-                    "bytes": len(payload),
+                    or hashlib.sha256(tar_bytes).hexdigest(),
+                    "bytes": len(tar_bytes),
                     "ok": True,
                 }
             )
@@ -665,6 +688,50 @@ class FakeProvider:
 # every surface that watches a finished job watches the same one.
 
 DEMO_ADAPTER_BYTES = b"demo adapter weights"
+
+
+def fake_checkpoint_tar(
+    step: int,
+    payload: bytes,
+    loss: float | None = None,
+    held_out_loss: float | None = None,
+) -> bytes:
+    """A realistic `checkpoint-N/` tar, as the trainer's uploader writes it.
+
+    The trainer tars the checkpoint directory with `trainer_state.json`
+    (which carries `global_step` and the step's log history) beside the
+    weight files. The fake builds that shape so the resumption path (issue
+    #60) -- which parses the surviving slots on an interruption -- is
+    exercised against the same object shape a real machine would leave:
+    `payload` stands in for the weights file, and the reported losses ride
+    inside the state file exactly as the real uploader reads them at upload
+    time.
+    """
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        base = f"checkpoint-{step}"
+
+        def add(name: str, data: bytes) -> None:
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            info.mode = 0o644
+            tar.addfile(info, io.BytesIO(data))
+
+        history: dict = {"step": step, "epoch": 0.5}
+        if loss is not None:
+            history["loss"] = loss
+        if held_out_loss is not None:
+            history["eval_loss"] = held_out_loss
+        state = {
+            "global_step": step,
+            "log_history": [history] if history.get("loss") is not None else [],
+        }
+        add(
+            f"{base}/trainer_state.json",
+            json.dumps(state, indent=2).encode("utf-8"),
+        )
+        add(f"{base}/model.safetensors", payload)
+    return buf.getvalue()
 
 # The bytes of a delivery format as the simulated machine uploads them (issue
 # #74): opaque, exactly as the adapter's are. The fake PUTs them to the
@@ -1041,14 +1108,28 @@ class SimulatedMachine(FakeProvider):
             # diverged run, exactly what the real trainer produces when its
             # learning rate is sabotaged.
         elif name == "worker_kill":
-            self._lines = [self._narration(name), *DEMO_LINES]
-            # The worker dies before any result document exists; `{}` (not
-            # None) keeps the stream on the path that writes whatever
-            # checkpoints were already produced, then stops it before the
-            # result marker -- exactly what a killed worker looks like: no
-            # artifact, no result, only what had already left the machine.
-            self._result = {}
-            self._stop_without_result = True
+            # The worker dies once per job (issue #60): the first machine is
+            # killed mid-training and the resumption's fresh machine -- which
+            # continues from the checkpoints the first wrote off itself --
+            # fits, exactly as the oom fault's recovery machine does. The
+            # killed worker leaves no result document, only the checkpoints
+            # that had already left the machine.
+            if not self._kill_fired:
+                self._kill_fired = True
+                self._lines = [self._narration(name), *DEMO_LINES]
+                # `{}` (not None) keeps the stream on the path that writes
+                # whatever checkpoints were already produced, then stops it
+                # before the result marker -- exactly what a killed worker
+                # looks like: no artifact, no result, only what had already
+                # left the machine.
+                self._result = {}
+                self._stop_without_result = True
+            else:
+                # The resumption's machine completes normally: the run is
+                # continued, not re-broken.
+                self._lines = list(self._base_lines)
+                self._result = self._base_result
+                self._stop_without_result = False
         else:  # pragma: no cover - guarded by spec_error above
             raise AssertionError(f"unhandled fault {name!r}")
 
