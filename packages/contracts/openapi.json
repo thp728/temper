@@ -481,6 +481,178 @@
         "title": "CalibrationRun",
         "type": "object"
       },
+      "Capability": {
+        "description": "The run's general-capability slice (Spec 011 / issue #73).\n\nProduced on the warm machine after training and published exactly as the\ntrainer recorded it. This is a smoke test for catastrophic forgetting, not\na benchmark: a fixed, versioned slice of general questions answered by the\nbase model and by the tuned model, reported as a delta with its sample\nsize and uncertainty stated. `version` names which slice the numbers came\nfrom; `total` is the sample size shown beside the numbers; `base_score` /\n`tuned_score` are the two sides' fractions correct; `delta` is tuned minus\nbase; `delta_se` is the paired standard error of that delta; and\n`large_regression` is the recorded flag the interface surfaces\nprominently -- a tuned model that lost at least the threshold's worth of\nquestions, decided once on the machine, never re-decided in the client.\nOn a failure `reason` names it and the artifact is still delivered.",
+        "properties": {
+          "base_correct": {
+            "default": 0,
+            "title": "Base Correct",
+            "type": "integer"
+          },
+          "base_score": {
+            "default": 0.0,
+            "title": "Base Score",
+            "type": "number"
+          },
+          "decoding": {
+            "additionalProperties": true,
+            "title": "Decoding",
+            "type": "object"
+          },
+          "delta": {
+            "default": 0.0,
+            "title": "Delta",
+            "type": "number"
+          },
+          "delta_se": {
+            "default": 0.0,
+            "title": "Delta Se",
+            "type": "number"
+          },
+          "large_regression": {
+            "default": false,
+            "title": "Large Regression",
+            "type": "boolean"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "regression_threshold": {
+            "default": 0,
+            "title": "Regression Threshold",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BestCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "tuned_correct": {
+            "default": 0,
+            "title": "Tuned Correct",
+            "type": "integer"
+          },
+          "tuned_score": {
+            "default": 0.0,
+            "title": "Tuned Score",
+            "type": "number"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "Capability",
+        "type": "object"
+      },
+      "CapabilityRow": {
+        "description": "One general-capability question and both models' answers (issue #73).\n\n`prompt` is the question asked (a user message), `domain` names what kind\nof general knowledge it is, `answer` is the correct option letter, `base`\nand `tuned` are the two models' replies, `base_parsed`/`tuned_parsed` the\noption letters those replies were scored as (None when none was named),\nand `base_correct`/`tuned_correct` whether each side got it right. Each\nrow is legible, so a reader can spot-check the score instead of trusting\nit.",
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "base": {
+            "title": "Base",
+            "type": "string"
+          },
+          "base_correct": {
+            "title": "Base Correct",
+            "type": "boolean"
+          },
+          "base_parsed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Parsed"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "prompt": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonTurn"
+            },
+            "title": "Prompt",
+            "type": "array"
+          },
+          "tuned": {
+            "title": "Tuned",
+            "type": "string"
+          },
+          "tuned_correct": {
+            "title": "Tuned Correct",
+            "type": "boolean"
+          },
+          "tuned_parsed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tuned Parsed"
+          }
+        },
+        "required": [
+          "prompt",
+          "answer",
+          "base",
+          "tuned",
+          "base_correct",
+          "tuned_correct"
+        ],
+        "title": "CapabilityRow",
+        "type": "object"
+      },
       "CatalogEntry": {
         "description": "One base model in the curated catalog: what it is, under what terms,\nand pinned to which revision.\n\nEvery field is shown to a user choosing a model -- licence and revision\nare not metadata here; they are part of what the user is agreeing to\ntrain against.",
         "properties": {
@@ -1766,6 +1938,16 @@
             "default": false,
             "title": "Cancel Requested",
             "type": "boolean"
+          },
+          "capability": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Capability"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "checkpoints": {
             "items": {

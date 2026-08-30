@@ -29,6 +29,13 @@ import {
   ratio,
 } from "@/lib/jobs/comparison";
 import { decodingSentence, promptText } from "@/lib/jobs/compare";
+import {
+  changeText,
+  scoreText,
+  tunedModelLabel,
+  uncertaintySentence,
+  weightSentence,
+} from "@/lib/jobs/capability";
 import { lossSeries } from "@/lib/jobs/loss";
 import { heldOutPlateau } from "@/lib/jobs/plateau";
 import type {
@@ -516,6 +523,98 @@ function SideBySideSection({ job }: { job: JobRecord }) {
   );
 }
 
+function CapabilitySection({ job }: { job: JobRecord }) {
+  // The general-capability slice (issue #73): a smoke test for catastrophic
+  // forgetting, not a benchmark. A fixed, versioned slice of general
+  // questions answered by the base model and by the tuned model, reported as
+  // a change with the sample size beside the number and the uncertainty
+  // stated. Everything renders from the published record -- the threshold
+  // behind "large regression" is recorded by the machine and read here, never
+  // re-decided (ADR-0010). A slice that failed is stated with its reason; it
+  // never failed the run, and the page must not dress that as a job failure.
+  const capability = job.capability;
+  if (!capability) return null;
+  const rows = capability.rows ?? [];
+  const decoding = decodingSentence(capability.decoding);
+  const selection = capability.selection;
+  const tunedLabel = tunedModelLabel(selection);
+
+  if (rows.length === 0) {
+    return (
+      <section aria-labelledby="capability-heading" className="space-y-2">
+        <h2 id="capability-heading" className="text-lg font-semibold">
+          General capability
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          No general-capability check was produced for this run.
+          {capability.reason && <span> {capability.reason}</span>}
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section aria-labelledby="capability-heading" className="space-y-3">
+      <div>
+        <h2 id="capability-heading" className="text-lg font-semibold">
+          General capability
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          A smoke test for catastrophic forgetting, not a benchmark. The same
+          fixed set of general questions, answered by the base model and by
+          the model this run produced.
+        </p>
+      </div>
+
+      {capability.large_regression === true && (
+        <Alert variant="destructive">
+          <AlertTitle>Large regression</AlertTitle>
+          <AlertDescription>
+            The tuned model answered at least{" "}
+            {capability.regression_threshold ?? 0} fewer general-knowledge
+            questions correctly than the base model. This can be a sign that
+            fine-tuning degraded general capability.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+        <div>
+          <dt className="text-sm text-muted-foreground">Base model</dt>
+          <dd className="font-medium">
+            {scoreText(capability.base_correct, capability.total)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted-foreground">{tunedLabel}</dt>
+          <dd className="font-medium">
+            {scoreText(capability.tuned_correct, capability.total)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted-foreground">Change</dt>
+          <dd className="font-medium">{changeText(capability)}</dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted-foreground">Sample</dt>
+          <dd className="text-sm">{weightSentence(capability.total)}</dd>
+        </div>
+      </dl>
+
+      <p className="text-sm text-muted-foreground">
+        {uncertaintySentence(capability)} A small sample honestly labelled is
+        a smoke test, not a benchmark.
+      </p>
+      {decoding && (
+        <p className="text-sm text-muted-foreground">{decoding}</p>
+      )}
+      {selection?.reason && (
+        <p className="text-sm text-muted-foreground">{selection.reason}</p>
+      )}
+    </section>
+  );
+}
+
 export default function JobRecordView({
   job,
   events,
@@ -664,6 +763,13 @@ export default function JobRecordView({
           settings recorded. Shown whenever the run recorded one; a failed
           comparison is stated with its reason, never as a failed job. */}
       <SideBySideSection job={job} />
+
+      {/* The general-capability slice (issue #73): a smoke test for
+          catastrophic forgetting, not a benchmark -- the same fixed general
+          questions answered by both models, reported as a change with the
+          sample size and uncertainty stated, and a large regression surfaced
+          prominently from the recorded flag. */}
+      <CapabilitySection job={job} />
 
       {/* Temporary authenticated endpoint (issue #78): try the tuned model
           without downloading anything. The endpoint requires a key (stored

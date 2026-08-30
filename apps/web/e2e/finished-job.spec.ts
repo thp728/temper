@@ -344,6 +344,48 @@ test("a finished job shows the side-by-side comparison of both models", async ({
   await expect(section.getByText(/up to 128 new tokens/)).toBeVisible();
 });
 
+test("a finished job shows the general-capability smoke test, labelled as such", async ({
+  page,
+}) => {
+  // Issue #73: the same fixed set of general questions answered by the base
+  // model and the tuned model, reported as a change with the sample size
+  // beside the number and the uncertainty stated -- a smoke test for
+  // catastrophic forgetting, never a benchmark, and the interface says so. A
+  // large regression (the fake's canned slice has one) is surfaced
+  // prominently from the recorded flag. The simulated machine's result
+  // carries the slice, so the journey asserts the surface renders it (the
+  // slice itself is the trainer's hardware path).
+  await launchFromTheShell(page);
+
+  const section = page.getByRole("region", { name: "General capability" });
+  await expect(section).toBeVisible();
+  // The interface labels it a smoke test, not a benchmark.
+  await expect(
+    section.getByText(/smoke test for catastrophic forgetting, not a benchmark/i),
+  ).toBeVisible();
+  // The sample size sits beside each side's number, and the change and its
+  // uncertainty are stated.
+  await expect(section.getByText("6 of 8 (75%)")).toBeVisible();
+  await expect(section.getByText("4 of 8 (50%)")).toBeVisible();
+  await expect(section.getByText("−2 of 8 (−25%)")).toBeVisible();
+  await expect(
+    section.getByText(/standard error of the change is ±1.2 questions/i),
+  ).toBeVisible();
+  // The tuned side names the checkpoint the run chose (the fake's best, step
+  // 20).
+  await expect(
+    section.getByText("Tuned model (chosen checkpoint, step 20)"),
+  ).toBeVisible();
+  // A large regression is surfaced prominently, with its threshold read from
+  // the record.
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Large regression" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "at least 2 fewer" }),
+  ).toBeVisible();
+});
+
 test("the list survives a small screen", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 720 });
   await page.goto("/jobs");

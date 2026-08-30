@@ -857,3 +857,133 @@ describe("JobRecordView", () => {
     ).toBeNull();
   });
 });
+
+describe("the general-capability slice (issue #73)", () => {
+  const capability = (over: Record<string, unknown> = {}) => ({
+    ok: true,
+    version: 1,
+    regression_threshold: 2,
+    total: 8,
+    base_correct: 6,
+    tuned_correct: 4,
+    base_score: 0.75,
+    tuned_score: 0.5,
+    delta: -0.25,
+    delta_se: 0.152,
+    large_regression: true,
+    decoding: { temperature: 0.7, max_new_tokens: 128, do_sample: true },
+    selection: {
+      step: 20,
+      basis: "best_held_out_loss",
+      reason: "Step 20 has the lowest held-out loss.",
+    },
+    rows: [
+      {
+        prompt: [{ role: "user", content: "Which planet is the largest?" }],
+        domain: "astronomy",
+        answer: "A",
+        base: "A",
+        tuned: "C",
+        base_parsed: "A",
+        tuned_parsed: "C",
+        base_correct: true,
+        tuned_correct: false,
+      },
+    ],
+    ...over,
+  });
+
+  it("labels it a smoke test, shows the sample size beside the numbers, the change and the uncertainty", () => {
+    render(
+      <JobRecordView
+        job={job({ capability: capability() as JobRecord["capability"] })}
+        events={[]}
+      />,
+    );
+    const section = within(
+      screen.getByRole("region", { name: "General capability" }),
+    );
+    // The interface says it is a smoke test, never a benchmark.
+    expect(
+      section.getByText(/smoke test for catastrophic forgetting, not a benchmark/i),
+    ).toBeVisible();
+    // The sample size sits beside each side's number, and the change and its
+    // uncertainty are stated.
+    expect(section.getByText("6 of 8 (75%)")).toBeVisible();
+    expect(section.getByText("4 of 8 (50%)")).toBeVisible();
+    expect(section.getByText("−2 of 8 (−25%)")).toBeVisible();
+    expect(
+      section.getByText(/each is worth 12.5% of the score/i),
+    ).toBeVisible();
+    expect(section.getByText(/standard error of the change is ±1.2 questions/i)).toBeVisible();
+    // The tuned side names the checkpoint the run chose, and the decoding
+    // settings are shown -- recorded, so the numbers are legible.
+    expect(
+      section.getByText("Tuned model (chosen checkpoint, step 20)"),
+    ).toBeVisible();
+    expect(section.getByText(/temperature 0.7/)).toBeVisible();
+  });
+
+  it("surfaces a large regression prominently, from the recorded flag", () => {
+    render(
+      <JobRecordView
+        job={job({ capability: capability() as JobRecord["capability"] })}
+        events={[]}
+      />,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Large regression");
+    // The threshold is read from the record, never re-decided here.
+    expect(alert).toHaveTextContent("at least 2 fewer");
+    expect(
+      screen.getByText(/fine-tuning degraded general capability/i),
+    ).toBeVisible();
+  });
+
+  it("does not claim a regression the record does not flag", () => {
+    render(
+      <JobRecordView
+        job={job({
+          capability: capability({ large_regression: false }) as JobRecord["capability"],
+        })}
+        events={[]}
+      />,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("states a failed slice's reason without dressing it as a failed job", () => {
+    render(
+      <JobRecordView
+        job={job({
+          capability: {
+            ok: false,
+            version: 1,
+            decoding: { temperature: 0.7 },
+            reason: "RuntimeError: the tuned model could not be loaded",
+          } as JobRecord["capability"],
+        })}
+        events={[]}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "General capability" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/No general-capability check was produced/),
+    ).toBeVisible();
+    expect(screen.getByText(/could not be loaded/)).toBeVisible();
+    // The job itself still reads complete -- a failed slice is not a failed
+    // run.
+    expect(
+      screen.getByText("State").nextElementSibling?.textContent,
+    ).toBe("complete");
+  });
+
+  it("shows nothing when the run recorded no capability", () => {
+    render(<JobRecordView job={job()} events={[]} />);
+    expect(
+      screen.queryByRole("heading", { name: "General capability" }),
+    ).toBeNull();
+  });
+});

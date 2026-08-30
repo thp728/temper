@@ -127,6 +127,11 @@ def published_reference() -> str | None:
 # runs on the warm machine after training; it ships in the same layer as the
 # entrypoint, exactly like `checkpoints.py`.
 #
+# `capability.py` (issue #73) is the general-capability slice -- the smoke
+# test for catastrophic forgetting -- the entrypoint runs on the warm machine
+# right after the comparison, reusing the same loaded models; it ships in the
+# same layer as the entrypoint, exactly like `comparison.py`.
+#
 # `checkpoint.py` (issue #62) is the best-checkpoint selection rule. The
 # control plane imports it from `temper_core`; the entrypoint applies the
 # same rule to pick which checkpoint the comparison generates from, so it
@@ -138,6 +143,7 @@ TRAINER_SOURCES = (
     TRAINER_DIR / "checkpoints.py",
     TRAINER_DIR / "delivery.py",
     TRAINER_DIR / "comparison.py",
+    TRAINER_DIR / "capability.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "thinking.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "split.py",
     REPO_ROOT / "packages" / "core" / "src" / "temper_core" / "checkpoint.py",
