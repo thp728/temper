@@ -4,7 +4,7 @@ Spec 008 names the rule this module exists for: **an event is persisted
 before it is published.** The store is the truth and the channel is a
 notification, so a watcher that misses a message, reconnects, or arrives late
 replays from the store by the last identifier it saw and loses nothing
-(ADR-0067).
+(ADR-0070).
 
 The channel is PostgreSQL's LISTEN/NOTIFY, and the persist-then-publish rule
 falls out of it rather than being a discipline: a NOTIFY issued in the same
@@ -26,7 +26,7 @@ affects the other.
 The stream is driven by this channel, not by a timer: when nothing is written
 the stream waits and makes no store reads, and each publish wakes it to
 re-read the store (the truth) from its cursor. The channel is therefore the
-delivery mechanism, not an ornament on a poll (ADR-0067).
+delivery mechanism, not an ornament on a poll (ADR-0070).
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ class EventSubscription:
     re-reads the store on a wake and stays silent on a timeout, which is what
     makes the channel the delivery mechanism rather than a poll. `take_
     reconnected()` reports a re-established LISTEN, so the stream re-reads
-    once to close the gap a dropped channel opens (ADR-0067).
+    once to close the gap a dropped channel opens (ADR-0070).
 
     psycopg's async connection cannot run on Windows' ProactorEventLoop (the
     default uvicorn loop), so the subscription runs a *synchronous* connection
@@ -189,7 +189,7 @@ class EventSubscription:
         """Whether the listener re-established its LISTEN since the last
         check. True after a drop-and-reconnect: the stream re-reads the store
         once to deliver anything published while no connection was listening
-        (lost from the channel, never from the store -- ADR-0067)."""
+        (lost from the channel, never from the store -- ADR-0070)."""
         if self._reconnected.is_set():
             self._reconnected.clear()
             return True

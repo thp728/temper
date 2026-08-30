@@ -950,7 +950,7 @@ def get_events(job_id: str, after: int = 0, limit: int = 500):
 # pushed as they are recorded, ending only at a terminal state -- is what the
 # interface consumes. The channel is the wake; the wait timeout only bounds
 # how quickly an idle stream notices a disconnect or sends its next
-# heartbeat, and an idle stream makes no store reads (ADR-0067).
+# heartbeat, and an idle stream makes no store reads (ADR-0070).
 STREAM_WAIT_S = 0.25
 STREAM_HEARTBEAT_S = 15.0
 
@@ -1036,7 +1036,7 @@ async def _job_event_stream(
     database by the last identifier it saw, which is the same answer the
     polling endpoint gives -- live streaming and durable history are one log,
     not two. The stream *reads history from the store first, then follows the
-    channel* (spec 008, ADR-0067): it subscribes to the job's channel before
+    channel* (spec 008, ADR-0070): it subscribes to the job's channel before
     the first read (so nothing can be persisted-and-notified in a gap the
     read would miss), and every wake after that is a publish on the channel,
     which makes the channel the delivery mechanism rather than an ornament on
@@ -1064,7 +1064,7 @@ async def _job_event_stream(
     blocking read on the event loop would stall every other request for as long
     as a connection stays open, which is exactly the mistake the upload path
     records in its own docstring. The channel subscription runs on its own
-    thread for the same reason (ADR-0067: Windows' event loop cannot run
+    thread for the same reason (ADR-0070: Windows' event loop cannot run
     psycopg's async connection).
     """
     last_send = time.monotonic()

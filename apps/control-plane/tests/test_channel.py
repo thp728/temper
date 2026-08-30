@@ -1,4 +1,4 @@
-"""The event channel: persisted first, published second (ADR-0067).
+"""The event channel: persisted first, published second (ADR-0070).
 
 Spec 008's load-bearing rule -- an event is persisted before it is published;
 the store is the truth and the channel is a notification -- is a property of
@@ -45,7 +45,7 @@ def test_a_rolled_back_event_publishes_nothing(isolated):
         # The subscription starts empty: the `queued` event was published by
         # create_job *before* this connection LISTENed, so it is not queued
         # on the channel -- history lives in the store and is replayed, not
-        # re-notified (ADR-0067).
+        # re-notified (ADR-0070).
         assert list(conn.notifies(timeout=0.2)) == []
 
         # An event whose transaction rolls back must publish nothing: the
@@ -58,7 +58,7 @@ def test_a_rolled_back_event_publishes_nothing(isolated):
         # this event would never know it happened -- which is exactly why the
         # store, not the channel, is the truth, and why replay is by the
         # store: a dropped connection loses nothing because the store never
-        # loses anything (ADR-0067).
+        # loses anything (ADR-0070).
         assert list(conn.notifies(timeout=0.4)) == []
     finally:
         conn.close()

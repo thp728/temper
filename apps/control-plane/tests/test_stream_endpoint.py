@@ -240,7 +240,7 @@ def test_two_watchers_on_one_job_both_receive_everything(client, tmp_path):
         # Both watchers are subscribed while the job is held still, so every
         # event from here on is fanned out to both -- and both replay the
         # history recorded before they connected from the store (the stream
-        # reads history first, then follows the channel; ADR-0067).
+        # reads history first, then follows the channel; ADR-0070).
         provider.resume.set()
         body_first = first.read().decode("utf-8")
         body_second = second.read().decode("utf-8")
@@ -269,7 +269,7 @@ def test_a_dropped_connection_replays_exactly_what_it_missed(client, tmp_path):
     """A connection that is actually dropped mid-stream -- closed, not
     simulated -- replays exactly what it missed, in order, once, on
     reconnecting with its last seen identifier (spec 008's replay-by-last-
-    seen rule; ADR-0067).
+    seen rule; ADR-0070).
 
     The drop is real: the stream is closed while the job is held still, the
     job then runs on to completion out of any connection's sight, and the
@@ -328,7 +328,7 @@ def test_an_idle_stream_reads_no_store_and_a_publish_wakes_it(
     isolated, monkeypatch
 ):
     """The channel is the delivery mechanism, not an ornament on a poll
-    (ADR-0067, spec 008's "reads history from the store, then follows the
+    (ADR-0070, spec 008's "reads history from the store, then follows the
     channel"): after the catch-up read, an idle stream makes no store reads,
     and a persisted-then-published event wakes it to re-read and deliver.
 

@@ -618,7 +618,7 @@ def add_event(
 def _notify(conn, job_id: str, payload: str) -> None:
     """Publish that one job's live data changed, in the caller's transaction.
 
-    Persist-then-publish, as one transaction (ADR-0067, spec 008): the NOTIFY
+    Persist-then-publish, as one transaction (ADR-0070, spec 008): the NOTIFY
     is issued *after* the write it announces, and PostgreSQL delivers a
     NOTIFY only when its transaction commits -- so a watcher can never
     receive a notification for a change that is not already durable, and a
@@ -691,7 +691,7 @@ def upsert_progress(
         # Progress is not an event, but it rides the stream (issue #49), so
         # it publishes to the job's channel like one: the stream re-reads it
         # when the channel wakes it. Same transaction, same persist-then-
-        # publish rule (ADR-0067).
+        # publish rule (ADR-0070).
         _notify(c, job_id, "progress")
 
 
@@ -708,7 +708,7 @@ def append_output(job_id: str, phase: str, line: str) -> None:
             (job_id, phase, line),
         )
         # Retained output rides the stream too (issue #49): publish it like
-        # progress, in the same transaction (ADR-0067).
+        # progress, in the same transaction (ADR-0070).
         _notify(c, job_id, "output")
 
 
