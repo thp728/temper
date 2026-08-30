@@ -110,22 +110,26 @@ machine, rate and outcome, bounded by a resume cap.**
   resumed attempt provisions, so the retry never runs two machines at once —
   the same guarantee the memory recovery already holds.
 
-## The three acceptance criteria that could not be proven here
+## The two acceptance criteria that could not be proven here
 
 Two of issue #60's six criteria are trainer/hardware properties and are
-stated, not claimed:
+documented here as **designed and unexercised, in those words** -- the
+verification clause of spec 010 requires exactly that, not a claim:
 
 - **Optimiser, scheduler and step are restored** is axolotl's behaviour when
   `resume_from_checkpoint` names a full checkpoint directory (proven once in
-  spike 4). This ticket proves the *product* half — the directive reaches
+  spike 4). This ticket proves the *product* half -- the directive reaches
   the trainer, the archive it points at is the checkpoint that was actually
-  written — and the numerical half still needs the hardware tier: interrupt a
-  real job and confirm the resumed run's loss curve is continuous.
+  written -- and the numerical half is unexercised: it needs the hardware
+  tier to interrupt a real job and confirm the resumed run's loss curve is
+  continuous.
 - **A resumed run matches an uninterrupted one within a stated tolerance**
-  is the same hardware property. On the zero-cost tier nothing trains, so
-  nothing can be compared numerically; the honest statement is that a
-  resumption restores the whole checkpoint and therefore does not change the
-  optimisation, and that this must be confirmed by interrupting a real job.
+  is the same hardware property, and it too is unexercised. On the zero-cost
+  tier nothing trains, so nothing can be compared numerically; the honest
+  statement is that a resumption restores the whole checkpoint and therefore
+  does not change the optimisation, and that this must be confirmed by
+  interrupting a real job (a hardware run named in the PR body, owned by the
+  submission's hardware-verification pass).
 
 ## Alternatives considered
 

@@ -441,9 +441,10 @@ def _remote_script(
     # scheduler and step position -- the whole checkpoint directory), so this
     # side only names where the archive was extracted to; the resumed step
     # itself is recorded on the attempt, never smuggled into the trainer spec
-    # as a key it does not know.
+    # as a key it does not know. `resumed_spec` writes the key from the single
+    # definition the trainer reads, so the two cannot drift (ADR-0010).
     if resume_from_checkpoint:
-        job_spec["resume_from_checkpoint"] = resume_from_checkpoint
+        job_spec = resume_logic.resumed_spec(job_spec, resume_from_checkpoint)
     # Issue #74: the frozen delivery request (which formats the launch asked
     # for) rides into the spec so the trainer knows what to produce, and each
     # produced format gets its own scoped write grant, one object per format.
@@ -1240,9 +1241,13 @@ def _discover_interrupted_checkpoints(job_id: str) -> list[dict]:
     and anything that verifies becomes a checkpoint record exactly like a
     machine-reported one -- step, slot, key, checksum, losses -- so a
     resumption can come back to it and the job's checkpoint record is honest
-    even when the run cannot resume. Streaming, never whole (ADR-0010); a
-    slot that does not parse is skipped, because bytes that are not a
-    checkpoint are nothing to resume from.
+    even when the run cannot resume. `verified: True` here means *structural*
+    verification -- the bytes stream end to end, hash deterministically, and
+    parse as a complete checkpoint tar -- because there is no machine-reported
+    manifest to hash against; the meaning is stated, never dressed up as the
+    machine-reported kind. Streaming, never whole (ADR-0010); a slot that
+    does not parse is skipped, because bytes that are not a checkpoint are
+    nothing to resume from.
     """
     records: list[dict] = []
     for slot, key in enumerate(
@@ -2036,10 +2041,13 @@ def _attempt_rate(job: dict) -> dict | None:
     """The billing rate one attempt's machine was provisioned at, or None.
 
     The rate is frozen onto the job row at provisioning (`set_state` with
-    `price_per_hour` and `currency`), so by the time an attempt's outcome is
-    recorded the row carries what that attempt's machine bills at. An attempt
-    that failed before provisioning records None -- honest absence, never a
-    guessed rate.
+    `price_per_hour` and `currency`), and `_record_attempt` runs after the
+    attempt has provisioned -- so the row holds the *just-provisioned* rate
+    when the attempt's record is written, which is the coupling that makes
+    each attempt's `rate` its own machine's. A resumed attempt re-provisions
+    and overwrites the row before it is recorded, so its `rate` is the fresh
+    machine's, not the interrupted one's. An attempt that failed before
+    provisioning records None -- honest absence, never a guessed rate.
     """
     price = job.get("price_per_hour")
     currency = job.get("currency")

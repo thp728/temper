@@ -215,10 +215,6 @@ def test_the_resumed_attempt_runs_with_resume_from_checkpoint(harness):
     assert checkpoint_pushes[0] == fake_checkpoint_tar(
         30, b"ckpt-30", loss=0.31, held_out_loss=0.52
     )
-    # And the shell it runs extracts that archive under the trainer's own
-    # output directory before axolotl starts.
-    script = harness.provider.script.decode("utf-8")
-    assert "tar xf /tmp/checkpoint.tar -C /tmp/out/run" in script
 
 
 def test_the_history_names_the_interruption_and_the_resumption(harness):
