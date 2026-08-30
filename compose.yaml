@@ -148,7 +148,7 @@ services:
     environment:
       TEMPER_BACKEND_URL: *backend-url
       # The same single mode setting the control plane and the worker read
-      # (ADR-0067): the shell reads it to mark every page as a demonstration,
+      # (ADR-0071): the shell reads it to mark every page as a demonstration,
       # so the marking is driven by the one switch and cannot be turned off
       # while that switch is set. All three processes parse it with the same
       # rule, so the banner and the provider cannot disagree.

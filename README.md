@@ -138,6 +138,24 @@ says which tier is in force (`provider: "fake"`) and reports the database and
 the object store **separately**, so a broken dependency reads as a broken
 dependency, not as a broken application.
 
+The stack starts ready to look at: on its first boot against an empty
+database, the zero-cost tier seeds a sample dataset and one completed run
+(`samples/sample-chat.jsonl`), so the job list already has a finished job to
+open and download before you upload anything. And it says what it is: **every
+page in this tier carries a demonstration banner**, driven by the same single
+setting, and it cannot be turned off in that mode (ADR-0071).
+
+**What the zero-cost tier cannot prove, named plainly.** The simulated machine
+never crosses a connection — it implements the whole compute interface without
+moving a byte over one — so the zero-cost tier is **structurally blind to
+transport defects**. That is not a theoretical caution here: the defect that
+broke a real run in this project was a transport defect, a line-ending
+translation applied on the way to the remote shell
+([ADR-0027](docs/adr/0027-the-transport-is-proven-against-a-real-endpoint.md)).
+What this tier proves is the shape of the whole journey; what it cannot prove
+is any claim about reaching and driving a real machine, which is why the real
+tier below exists and why the transport tier exists as a separate proof.
+
 **Data survives a restart.** Datasets, jobs and artifacts live on a named
 volume, so stopping and bringing it back up preserves everything:
 

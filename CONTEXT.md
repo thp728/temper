@@ -168,5 +168,10 @@ The part of the product that makes a failure happen on demand, so a recovery pat
 _Avoid_: fault injection framework, chaos, failure simulation
 
 **Fault spec**:
-The configuration that switches a fault on for one job — the dict form of the `simulated_failure_code` hyperparameter, naming one of the six faults in the surface (`oom`, `divergence`, `worker_kill`, `machine_silent`, `orphan`, `destroy_refused`) and any parameters that pick where it fires. The string form of that hyperparameter is the reserved early-exit affordance from before the surface existed.
+The configuration that switches a fault on for one job - the dict form of the `simulated_failure_code` hyperparameter, naming one of the six faults in the surface (`oom`, `divergence`, `worker_kill`, `machine_silent`, `orphan`, `destroy_refused`) and any parameters that pick where it fires. The string form of that hyperparameter is the reserved early-exit affordance from before the surface existed.
 _Avoid_: fault config, failure recipe, chaos config
+
+**Zero-cost tier**:
+The demonstration mode a reviewer walks without an account or a budget: launched jobs run against the in-package simulated machine, the stack seeds a sample dataset and one completed run on a fresh database, and every page is marked as a demonstration. Selected by the single setting `TEMPER_FAKE_PROVIDER` and nothing else differs between it and the real tier. It proves the shape of the whole journey - upload, validate, choose, launch, watch, collect - and is structurally blind to transport defects, because the simulated machine never crosses a connection; that specific limitation is documented, since a transport defect is what broke a real run here.
+_Avoid_: demo mode, fake mode, fake provider (for the tier), simulation, mock
+

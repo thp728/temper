@@ -109,7 +109,7 @@ export default defineConfig({
         PORT: String(webPort),
         TEMPER_BACKEND_URL: backendUrl,
         // The single mode setting, read by the shell's server components too
-        // (ADR-0067): the zero-cost tier's demonstration marking renders only
+        // (ADR-0071): the zero-cost tier's demonstration marking renders only
         // when this is in force, so a journey that asserts the marking drives
         // the same switch the backend honours.
         TEMPER_FAKE_PROVIDER: "1",

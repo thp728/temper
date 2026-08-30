@@ -244,7 +244,7 @@ def _flag(name: str, default: bool) -> bool:
     an absent or empty value is the default. Anything else refuses loudly,
     like every other reader in this module -- a value the process cannot
     honour is refused rather than silently becoming one of the two booleans
-    (ADR-0067 documents that both halves read this same rule, so the web
+    (ADR-0071 documents that both halves read this same rule, so the web
     shell's banner and the backend's provider can never disagree about which
     mode is in force).
     """
@@ -273,7 +273,7 @@ def _flag(name: str, default: bool) -> bool:
 # a network dependency that costs nothing to remove. Everything else stays
 # real: the same API, the same database, the same orchestrator transitions.
 # Whether real compute is used is this one setting (ADR-0024, ADR-0062,
-# ADR-0067). Every process that reads it -- control plane, worker and the
+# ADR-0071). Every process that reads it -- control plane, worker and the
 # web shell -- parses it the same way (`_flag`), so a `=0` that the backend
 # honours while the shell still believes it is in the zero-cost tier cannot
 # happen, because both read the same string through the same rule.

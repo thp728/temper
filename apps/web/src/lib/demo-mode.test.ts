@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { isZeroCostMode } from "@/lib/demo-mode";
 
-// The mode is one setting read by every process (ADR-0067), and the shell
+// The mode is one setting read by every process (ADR-0071), and the shell
 // parses it with the same rule as the control plane's config reader: an
 // explicit `0`/`false` must read as the real tier, or a deployment that turns
 // the fake off would still have every page marked as a demonstration.

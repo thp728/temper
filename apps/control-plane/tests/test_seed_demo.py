@@ -156,7 +156,7 @@ def test_the_mode_flag_is_parsed_as_a_boolean(monkeypatch, value, expected):
     """`TEMPER_FAKE_PROVIDER` means what it is documented to mean: `=0` is the
     real tier. This is the same rule the web shell's banner reads, so a
     deployment that disables the fake cannot find its pages still marked as a
-    demonstration (ADR-0067)."""
+    demonstration (ADR-0071)."""
     if value:
         monkeypatch.setenv("TEMPER_FAKE_PROVIDER", value)
     else:

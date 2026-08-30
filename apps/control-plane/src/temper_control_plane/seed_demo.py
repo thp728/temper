@@ -26,7 +26,7 @@ what that record removed:
 The seeding is part of the mode, not a separate setting: flipping
 `TEMPER_FAKE_PROVIDER` is what both enables the zero-cost tier and, on a fresh
 database, brings its demonstration with it. Nothing else differs between the
-modes (ADR-0024, ADR-0062, ADR-0067).
+modes (ADR-0024, ADR-0062, ADR-0071).
 """
 
 from __future__ import annotations
