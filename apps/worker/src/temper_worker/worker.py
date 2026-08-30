@@ -34,6 +34,11 @@ touches them. The control plane's lifespan still re-arms timers after a
 restart and sweeps expired endpoints. The worker watches jobs; the
 control plane watches endpoints. Both watch spend and teardown through
 the same confirmed path (ADR-0057) inside ``run_job``.
+
+The worker also hosts the machine-lifetime reconciler (issue #61): a
+scheduled pass on its own thread that destroys machines no live job or
+served endpoint owns. It protects the money, not the job, and runs
+independently of any workflow.
 """
 
 from __future__ import annotations
