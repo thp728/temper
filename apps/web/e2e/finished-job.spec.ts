@@ -369,7 +369,7 @@ test("a finished job shows the general-capability smoke test, labelled as such",
   await expect(section.getByText("4 of 8 (50%)")).toBeVisible();
   await expect(section.getByText("−2 of 8 (−25%)")).toBeVisible();
   await expect(
-    section.getByText(/standard error of the change is ±1.2 questions/i),
+    section.getByText(/standard error of the change is ±1.3 questions/i),
   ).toBeVisible();
   // The tuned side names the checkpoint the run chose (the fake's best, step
   // 20).

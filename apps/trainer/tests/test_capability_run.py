@@ -53,6 +53,18 @@ def correct_letters() -> list[str]:
     return [q["answer"] for q in capability.CAPABILITY_QUESTIONS]
 
 
+def chat_rows(n: int) -> list[dict]:
+    return [
+        {
+            "messages": [
+                {"role": "user", "content": f"q{i}"},
+                {"role": "assistant", "content": f"a{i}"},
+            ]
+        }
+        for i in range(n)
+    ]
+
+
 class StubGenerator:
     def __init__(self, answers: list[str] | None = None, exc=None):
         self._answers = answers
@@ -218,15 +230,62 @@ def test_the_loaded_pair_is_shared_between_the_two_eval_steps(tmp_path: Path):
     )
     assert models is not None
     assert reason is None
+    assert models.step == 20
 
-    base_gen, tuned_gen, selection_record, chosen_step = models
-    assert chosen_step == 20
     result = entrypoint.run_machine_capability(
         complete_job(), {}, tmp_path, loaded=models
     )
     assert result["ok"] is True
-    assert result["selection"] == selection_record
+    assert result["selection"] == models.selection
     # The injected generators answered; a real load would have doubled the
     # generator count -- the shared pair is the point.
-    assert base_gen.calls == len(capability.CAPABILITY_QUESTIONS)
-    assert tuned_gen.calls == len(capability.CAPABILITY_QUESTIONS)
+    assert models.base.calls == len(capability.CAPABILITY_QUESTIONS)
+    assert models.tuned.calls == len(capability.CAPABILITY_QUESTIONS)
+
+
+def test_run_machine_evals_runs_both_steps_on_one_shared_load(tmp_path: Path):
+    """The entrypoint's wiring, pinned: run_machine_evals loads the two
+    models once and hands the same pair to both the comparison and the
+    capability slice. This is the test that guards the shared-load wiring
+    itself -- when the load succeeds both records are ok:true with the same
+    selection, and when it fails both record the same reason rather than the
+    run failing."""
+    (tmp_path / "eval.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in chat_rows(10))
+    )
+    write_checkpoint(tmp_path, 20, loss=0.35, eval_loss=0.39)
+
+    # Stateless doubles (always answer "A"): the two eval steps share one
+    # generator pair, so a call-counted double would drift between the steps
+    # even though a real model would not.
+    loads = {"n": 0}
+
+    def load(job, cfg, chosen_dir, method):
+        loads["n"] += 1
+        return StubGenerator(["A"]), StubGenerator(["A"])
+
+    comparison_record, capability_record = entrypoint.run_machine_evals(
+        complete_job(), {}, tmp_path, make_generators=load
+    )
+    # One model load served both eval steps.
+    assert loads["n"] == 1
+    assert comparison_record["ok"] is True
+    assert capability_record["ok"] is True
+    assert capability_record["selection"]["step"] == 20
+    assert capability_record["total"] == len(capability.CAPABILITY_QUESTIONS)
+    # Both sides answered identically, so the counts agree and there is no
+    # regression flagged -- the wiring ran, it did not invent a signal.
+    assert (
+        capability_record["base_correct"] == capability_record["tuned_correct"]
+    )
+    assert capability_record["large_regression"] is False
+
+    # A load failure is recorded under both records, never a raised run.
+    failing = stub_loaders(base_exc=RuntimeError("out of memory"))
+    comparison_record, capability_record = entrypoint.run_machine_evals(
+        complete_job(), {}, tmp_path, make_generators=failing
+    )
+    assert comparison_record["ok"] is False
+    assert capability_record["ok"] is False
+    assert "out of memory" in capability_record["reason"]
+    assert capability_record["selection"]["step"] == 20

@@ -40,8 +40,9 @@ import threading
 import time
 from collections import deque
 from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
+from typing import IO, Any
 
 import capability as capability_step
 import checkpoints as checkpoint_upload
@@ -1304,24 +1305,40 @@ def load_comparison_generators(
     )
 
 
+@dataclass(frozen=True)
+class WarmModels:
+    """The two loaded generators and the selection they evaluate.
+
+    ``base`` and ``tuned`` are the loaded generators (real transformers/peft
+    models on the machine, doubles in the host suite); ``selection`` is the
+    run's own selection rule's record (issue #62) and ``step`` the checkpoint
+    the tuned side was loaded from. One object, handed to both eval steps, so
+    neither the field list nor the meaning can drift between them.
+    """
+
+    base: Any
+    tuned: Any
+    selection: dict[str, Any]
+    step: int
+
+
 def _load_warm_models(
     job: dict,
     cfg: dict,
     out_dir: Path,
     *,
     make_generators=load_comparison_generators,
-):
+) -> tuple[WarmModels | None, str | None, dict[str, Any]]:
     """Select the checkpoint and load the two generators, or explain why not.
 
     Shared by the comparison and the general-capability slice so the base and
     tuned models are loaded exactly once between them on the warm machine
     (Spec 011's eval runs where the weights already are -- a second load is
-    time on a paid machine for nothing). Returns
-    ``(base_gen, tuned_gen, selection_record, chosen_step)`` on success, or
-    ``(None, reason, selection_record)`` where ``reason`` is a reader-facing
-    sentence each caller shapes into its own failure record. Loading is
-    guarded here, so a model that will not load becomes a recorded reason
-    rather than a failed run.
+    time on a paid machine for nothing). Returns ``(WarmModels, None,
+    selection_record)`` on success, or ``(None, reason, selection_record)``
+    where ``reason`` is a reader-facing sentence each caller shapes into its
+    own failure record. Loading is guarded here, so a model that will not
+    load becomes a recorded reason rather than a failed run.
     """
     selection = select_best_checkpoint(checkpoint_records(out_dir))
     selection_record = selection.to_dict()
@@ -1342,7 +1359,12 @@ def _load_warm_models(
     except Exception as e:  # noqa: BLE001 - the run must survive the extra step
         return None, f"{type(e).__name__}: {e}", selection_record
     return (
-        (base_gen, tuned_gen, selection_record, selection.step),
+        WarmModels(
+            base=base_gen,
+            tuned=tuned_gen,
+            selection=selection_record,
+            step=selection.step,
+        ),
         None,
         selection_record,
     )
@@ -1396,7 +1418,10 @@ def run_machine_comparison(
             ).to_dict()
 
         if loaded is not None:
-            base_gen, tuned_gen, selection_record, chosen_step = loaded
+            base_gen = loaded.base
+            tuned_gen = loaded.tuned
+            selection_record = loaded.selection
+            chosen_step = loaded.step
         else:
             models, reason, selection_record = _load_warm_models(
                 job, cfg, out_dir, make_generators=make_generators
@@ -1408,7 +1433,9 @@ def run_machine_comparison(
                     reason=reason,
                     selection=selection_record,
                 ).to_dict()
-            base_gen, tuned_gen, _, chosen_step = models
+            base_gen = models.base
+            tuned_gen = models.tuned
+            chosen_step = models.step
 
         log(
             f"comparison: {len(conversations)} held-out prompt(s) through the "
@@ -1467,7 +1494,10 @@ def run_machine_capability(
     decoding = dict(comparison_step.COMPARISON_DECODING)
     try:
         if loaded is not None:
-            base_gen, tuned_gen, selection_record, chosen_step = loaded
+            base_gen = loaded.base
+            tuned_gen = loaded.tuned
+            selection_record = loaded.selection
+            chosen_step = loaded.step
         else:
             models, reason, selection_record = _load_warm_models(
                 job, cfg, out_dir, make_generators=make_generators
@@ -1479,7 +1509,9 @@ def run_machine_capability(
                     reason=reason,
                     selection=selection_record,
                 ).to_dict()
-            base_gen, tuned_gen, _, chosen_step = models
+            base_gen = models.base
+            tuned_gen = models.tuned
+            chosen_step = models.step
 
         log(
             f"capability: {len(capability_step.CAPABILITY_QUESTIONS)} general "
@@ -1511,6 +1543,60 @@ def run_machine_capability(
             decoding=decoding,
             reason=f"{type(e).__name__}: {e}",
         ).to_dict()
+
+
+def run_machine_evals(
+    job: dict,
+    cfg: dict,
+    out_dir: Path,
+    *,
+    make_generators=load_comparison_generators,
+) -> tuple[dict, dict]:
+    """Both on-warm-machine eval steps on one shared model load.
+
+    Returns ``(comparison_record, capability_record)``. The base and tuned
+    models are loaded exactly once and handed to both the side-by-side
+    comparison (issue #69) and the general-capability slice (issue #73): the
+    machine is already warm and a second load is time on a paid machine for
+    nothing. **Neither step can fail the run** (Spec 011): a failure to load
+    is recorded under both records, a failure in one step under that step --
+    the artifact is still delivered either way. `make_generators` is a seam so
+    the host suite can exercise the exact wiring without torch.
+    """
+    try:
+        models, load_reason, selection_record = _load_warm_models(
+            job, cfg, out_dir, make_generators=make_generators
+        )
+    except Exception as e:  # noqa: BLE001 - the run must survive the extra step
+        models, load_reason, selection_record = (
+            None,
+            f"{type(e).__name__}: {e}",
+            None,
+        )
+    decoding = dict(comparison_step.COMPARISON_DECODING)
+    if models is None:
+        log(
+            "evaluation could not load the models; recorded under both "
+            f"comparison and capability and the run continues: {load_reason}"
+        )
+        return (
+            comparison_step.ComparisonOutcome(
+                ok=False,
+                decoding=decoding,
+                reason=load_reason,
+                selection=selection_record,
+            ).to_dict(),
+            capability_step.CapabilityOutcome(
+                ok=False,
+                decoding=decoding,
+                reason=load_reason,
+                selection=selection_record,
+            ).to_dict(),
+        )
+    return (
+        run_machine_comparison(job, cfg, out_dir, loaded=models),
+        run_machine_capability(job, cfg, out_dir, loaded=models),
+    )
 
 
 def main() -> int:
@@ -1767,35 +1853,9 @@ def main() -> int:
         # already are), and neither can fail the run: a failure -- including a
         # failure to load the models -- is recorded under its own key and the
         # artifact is still delivered.
-        try:
-            loaded = _load_warm_models(job, cfg, OUT_DIR)
-        except Exception as e:  # noqa: BLE001 - the run must survive the extra step
-            loaded = (None, f"{type(e).__name__}: {e}", None)
-        models, load_reason, selection_record = loaded
-        if models is None:
-            result["comparison"] = comparison_step.ComparisonOutcome(
-                ok=False,
-                decoding=dict(comparison_step.COMPARISON_DECODING),
-                reason=load_reason,
-                selection=selection_record,
-            ).to_dict()
-            result["capability"] = capability_step.CapabilityOutcome(
-                ok=False,
-                decoding=dict(comparison_step.COMPARISON_DECODING),
-                reason=load_reason,
-                selection=selection_record,
-            ).to_dict()
-            log(
-                "evaluation could not load the models; recorded under both "
-                f"comparison and capability and the run continues: {load_reason}"
-            )
-        else:
-            result["comparison"] = run_machine_comparison(
-                job, cfg, OUT_DIR, loaded=loaded
-            )
-            result["capability"] = run_machine_capability(
-                job, cfg, OUT_DIR, loaded=loaded
-            )
+        result["comparison"], result["capability"] = run_machine_evals(
+            job, cfg, OUT_DIR
+        )
 
         if result.get("artifact_path"):
             # ADR-0009: when the control plane supplied a scoped write URL, the

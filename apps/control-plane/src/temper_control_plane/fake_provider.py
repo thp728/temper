@@ -808,7 +808,7 @@ DEMO_RESULT = {
         "base_score": 0.75,
         "tuned_score": 0.5,
         "delta": -0.25,
-        "delta_se": 0.152,
+        "delta_se": 0.164,
         "large_regression": True,
         "decoding": {
             "temperature": 0.7,
