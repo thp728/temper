@@ -1918,6 +1918,8 @@ def run_job(
                 outcome = ("cancelled", str(e), {})
                 break
             except OrchestratorError as e:
+                # Diagnostic: log the code for the 4 flaky tests on CI
+                print(f"ORCHESTRATOR_ERROR {job_id} {e.code}: {e}")
                 is_memory = e.code in memory_retry.MEMORY_FAILURE_CODES
                 if is_memory:
                     if retries_used >= memory_retry.MEMORY_RETRY_CAP:
@@ -2045,6 +2047,12 @@ def run_job(
                 )
                 break
             except Exception as e:
+                print(
+                    f"ORCHESTRATOR_INTERNAL {job_id} {type(e).__name__}: {e}"
+                )
+                import traceback
+
+                traceback.print_exc()
                 _record_attempt(
                     job_id,
                     attempts,
