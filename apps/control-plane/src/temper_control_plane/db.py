@@ -615,8 +615,9 @@ def add_event(
 
 
 def _append_event(conn, job_id, kind, message, data=None) -> None:
-    conn.execute(
-        "INSERT INTO events (job_id, ts, kind, message, data_json) VALUES (%s,%s,%s,%s,%s)",
+    row = conn.execute(
+        "INSERT INTO events (job_id, ts, kind, message, data_json) "
+        "VALUES (%s,%s,%s,%s,%s) RETURNING id",
         (
             job_id,
             time.time(),
@@ -624,6 +625,27 @@ def _append_event(conn, job_id, kind, message, data=None) -> None:
             message,
             json.dumps(data) if data is not None else None,
         ),
+    ).fetchone()
+    # Persist-then-publish, as one transaction (ADR-0067, spec 008): the
+    # NOTIFY is issued *after* the INSERT, in the same transaction, and
+    # PostgreSQL delivers a NOTIFY only when its transaction commits -- so a
+    # watcher can never receive an event that is not already durable, and a
+    # rolled-back event publishes nothing. The store is the truth; this
+    # channel is the notification. The event id rides in the payload so a
+    # listener can name what woke it without a second read.
+    #
+    # The payload is bound as a literal, not a server-side parameter:
+    # PostgreSQL's NOTIFY does not accept a bind placeholder for its payload,
+    # so psycopg's identifier/literal rendering is used to quote both halves.
+    from psycopg import sql as psycopg_sql
+
+    from .channel import channel_for
+
+    conn.execute(
+        psycopg_sql.SQL("NOTIFY {} , {}").format(
+            psycopg_sql.Identifier(channel_for(job_id)),
+            psycopg_sql.Literal(str(row["id"])),
+        )
     )
 
 

@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from temper_control_plane import (
     admission,
+    channel,
     chunks,
     config,
     datasets,
@@ -943,10 +944,11 @@ def get_events(job_id: str, after: int = 0, limit: int = 500):
     }
 
 
-# How often the live stream re-reads the durable log, and how long it may stay
-# silent before sending a keep-alive comment. Both are tuning, not contract:
-# the stream's shape -- events pushed as they are recorded, ending only at a
-# terminal state -- is what the interface consumes.
+# How long the live stream may stay silent before sending a keep-alive
+# comment, and how long it waits on the job's event channel before re-reading
+# the durable log on its own. Both are tuning, not contract: the stream's
+# shape -- events pushed as they are recorded, ending only at a terminal
+# state -- is what the interface consumes.
 STREAM_POLL_S = 0.25
 STREAM_HEARTBEAT_S = 15.0
 
@@ -1027,18 +1029,29 @@ async def _job_event_stream(
     """The job's events, oldest-first, as they are recorded, with the live
     per-phase progress snapshot riding the same connection (issue #49).
 
-    The durable log is the source, never this connection: a visitor returning
-    to the page or a stream that dropped is caught up from the database, which
-    is the same answer the polling endpoint gives -- live streaming and durable
-    history are one log, not two. The loop polls it, because a worker thread
-    writes events and this process has no broker to subscribe to; the poll is
-    one indexed query every quarter second. The stream ends only when the job
-    is terminal -- every event, including the terminal transition itself, is
-    delivered before it closes, which is the interface's cue that the record
-    has stopped changing.
+    The durable store is the source, never this connection: a visitor
+    returning to the page or a stream that dropped is caught up from the
+    database by the last identifier it saw, which is the same answer the
+    polling endpoint gives -- live streaming and durable history are one log,
+    not two. The stream *reads history from the store first, then follows the
+    channel* (spec 008, ADR-0067): it subscribes to the job's event channel
+    before the first read (so nothing can be persisted-and-notified in a gap
+    the read would miss), and each subsequent wake waits on that channel, so
+    a publish is delivered within a re-read of the moment it commits. Each
+    wake re-reads the store from its cursor and emits whatever is new: the
+    store is the truth, the channel is only the signal that new events exist.
+    The idle wake (the heartbeat timeout) re-reads the store too -- that is
+    the self-healing net, not the delivery mechanism: a channel that dropped
+    while no connection was listening loses nothing, because re-reading an
+    idempotent cursor is the same replay a watcher's own reconnection
+    performs (ADR-0067).
+
+    The stream ends only when the job is terminal -- every event, including
+    the terminal transition itself, is delivered before it closes, which is
+    the interface's cue that the record has stopped changing.
 
     Progress rides the same connection as the events (no second channel): each
-    poll also re-reads the per-phase snapshot and emits it whenever it changed
+    wake also re-reads the per-phase snapshot and emits it whenever it changed
     since the last emission, and re-reads the retained output lines, emitting
     any new ones. Progress supersedes rather than accumulates, so the snapshot
     is the whole of it -- the running view replaces its per-phase figures,
@@ -1049,49 +1062,56 @@ async def _job_event_stream(
     DB reads go through `asyncio.to_thread`: they are quick local reads, but a
     blocking read on the event loop would stall every other request for as long
     as a connection stays open, which is exactly the mistake the upload path
-    records in its own docstring.
+    records in its own docstring. The channel subscription runs on its own
+    thread for the same reason (ADR-0067: Windows' event loop cannot run
+    psycopg's async connection).
     """
     last_send = time.monotonic()
     last_progress: list[dict] | None = None
     output_cursor = 0
-    while True:
-        if await request.is_disconnected():
-            return
-        job = await asyncio.to_thread(db.get_job, job_id)
-        if job is None:
-            # The row cannot be absent (the endpoint refused a missing job
-            # before streaming), but a re-read that comes back empty ends the
-            # stream rather than looping on a ghost.
-            return
-        for e in await asyncio.to_thread(
-            db.get_events, job_id, after_id=cursor
-        ):
-            cursor = e["id"]
-            yield _sse_event(e)
-        progress_rows = await asyncio.to_thread(db.get_progress, job_id)
-        if progress_rows != last_progress:
-            last_progress = progress_rows
-            for row in progress_rows:
-                yield _sse_progress(row)
-        for row in await asyncio.to_thread(db.get_output, job_id):
-            if row["id"] > output_cursor:
-                output_cursor = row["id"]
-                yield _sse_output(row)
-        if job["status"] in db.TERMINAL_STATES:
-            # The explicit end marker is the hand-back the interface waits
-            # for. Relying on the connection merely closing would not be
-            # enough: a browser's EventSource does not report a server-initiated
-            # close as CLOSED -- it goes CONNECTING and reconnects, and a page
-            # that only reacted to CLOSED would loop forever against a terminal
-            # job. The marker arrives right after the terminal transition, and
-            # the client reloads into the finished record on it.
-            yield "event: end\n\n"
-            return
-        now = time.monotonic()
-        if now - last_send >= STREAM_HEARTBEAT_S:
-            yield ": heartbeat\n\n"
-            last_send = now
-        await asyncio.sleep(STREAM_POLL_S)
+    async with channel.EventSubscription(job_id) as sub:
+        while True:
+            if await request.is_disconnected():
+                return
+            job = await asyncio.to_thread(db.get_job, job_id)
+            if job is None:
+                # The row cannot be absent (the endpoint refused a missing job
+                # before streaming), but a re-read that comes back empty ends
+                # the stream rather than looping on a ghost.
+                return
+            for e in await asyncio.to_thread(
+                db.get_events, job_id, after_id=cursor
+            ):
+                cursor = e["id"]
+                yield _sse_event(e)
+            progress_rows = await asyncio.to_thread(db.get_progress, job_id)
+            if progress_rows != last_progress:
+                last_progress = progress_rows
+                for row in progress_rows:
+                    yield _sse_progress(row)
+            for row in await asyncio.to_thread(db.get_output, job_id):
+                if row["id"] > output_cursor:
+                    output_cursor = row["id"]
+                    yield _sse_output(row)
+            if job["status"] in db.TERMINAL_STATES:
+                # The explicit end marker is the hand-back the interface waits
+                # for. Relying on the connection merely closing would not be
+                # enough: a browser's EventSource does not report a
+                # server-initiated close as CLOSED -- it goes CONNECTING and
+                # reconnects, and a page that only reacted to CLOSED would
+                # loop forever against a terminal job. The marker arrives
+                # right after the terminal transition, and the client reloads
+                # into the finished record on it.
+                yield "event: end\n\n"
+                return
+            now = time.monotonic()
+            if now - last_send >= STREAM_HEARTBEAT_S:
+                yield ": heartbeat\n\n"
+                last_send = now
+            # Follow the channel: wait until a publish wakes this stream, or
+            # the heartbeat interval passes and the loop re-reads the store
+            # on its own.
+            await sub.wait(STREAM_POLL_S)
 
 
 @app.get("/v1/jobs/{job_id}/stream", tags=["jobs"])

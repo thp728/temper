@@ -16,6 +16,7 @@ import pytest
 from helpers import wait_validated
 
 from temper_control_plane.fake_provider import (
+    DEMO_ADAPTER_BYTES,
     DEMO_LINES,
     DEMO_RESULT,
     FakeProvider,
@@ -178,6 +179,147 @@ def test_last_event_id_header_wins_over_after(client, finished_job_id):
     )
     delivered = _payloads(body)
     assert all(e["id"] > mid for e in delivered)
+
+
+def _paused_live_provider():
+    """A live job's fake that holds still after the image build, so a test
+    can open watchers and act on the run at a known point (issue #57: the
+    two-watcher and dropped-connection tests both need a job they can hold
+    still while connections come and go)."""
+    return FakeProvider(
+        lines=DEMO_LINES,
+        result=DEMO_RESULT,
+        adapter_bytes=DEMO_ADAPTER_BYTES,
+        pause_at_line=2,
+    )
+
+
+def _drive_live_job(client, provider):
+    """Start a job on a daemon thread the way the worker would (issue #51),
+    and return the job id once the provider reports it is paused."""
+    from temper_control_plane import fake_models, orchestrator
+
+    threads: list[threading.Thread] = []
+
+    def start(job_id):
+        t = threading.Thread(
+            target=orchestrator.run_job,
+            args=(job_id, provider, None, fake_models.catalog_models()),
+            daemon=True,
+            name=f"job-{job_id[:8]}",
+        )
+        t.start()
+        threads.append(t)
+
+    job_id = _upload_and_create(client, driver=start)
+    assert provider.wait_until_paused(), "the job never reached its pause"
+    return job_id, threads
+
+
+def test_two_watchers_on_one_job_both_receive_everything(client, tmp_path):
+    """Two streams on one job both deliver the whole history, and neither
+    affects the other (spec 008's story of the second device).
+
+    Both watchers are open while the job is still working -- the same live
+    run, not one after the other -- and each ends on the terminal transition
+    with the full record, identical to the other's and to the store's. A
+    fan-out that shared a cursor or consumed a notification out from under
+    the other watcher would fail this with a gap in one of the two.
+    """
+    provider = _paused_live_provider()
+    job_id, threads = _drive_live_job(client, provider)
+
+    with (
+        client.stream("GET", f"/v1/jobs/{job_id}/stream") as first,
+        client.stream("GET", f"/v1/jobs/{job_id}/stream") as second,
+    ):
+        assert first.status_code == 200
+        assert second.status_code == 200
+        # Both watchers are subscribed while the job is held still, so every
+        # event from here on is fanned out to both -- and both replay the
+        # history recorded before they connected from the store (the stream
+        # reads history first, then follows the channel; ADR-0067).
+        provider.resume.set()
+        body_first = first.read().decode("utf-8")
+        body_second = second.read().decode("utf-8")
+
+    for t in threads:
+        t.join(timeout=5.0)
+
+    page = client.get(f"/v1/jobs/{job_id}/events").json()
+    expected = page["events"]
+    assert expected, "the run recorded no events"
+    # Each watcher got everything, in order, once -- and they agree with each
+    # other (neither affected the other) and with the store (the truth).
+    assert _payloads(body_first) == expected
+    assert _payloads(body_second) == expected
+    assert _ids(body_first) == [e["id"] for e in expected]
+    assert _ids(body_second) == [e["id"] for e in expected]
+    # Both ended on their own: the terminal transition, then the explicit end
+    # marker -- one watcher's end did not close the other.
+    assert _payloads(body_first)[-1]["kind"] == "state"
+    assert _payloads(body_second)[-1]["kind"] == "state"
+    assert "event: end" in body_first
+    assert "event: end" in body_second
+
+
+def test_a_dropped_connection_replays_exactly_what_it_missed(client, tmp_path):
+    """A connection that is actually dropped mid-stream -- closed, not
+    simulated -- replays exactly what it missed, in order, once, on
+    reconnecting with its last seen identifier (spec 008's replay-by-last-
+    seen rule; ADR-0067).
+
+    The drop is real: the stream is closed while the job is held still, the
+    job then runs on to completion out of any connection's sight, and the
+    reconnect asks for everything after the last id the dropped watcher had
+    delivered. The store is the truth, so the gap is filled exactly --
+    nothing re-sent, nothing skipped, nothing doubled.
+    """
+    provider = _paused_live_provider()
+    job_id, threads = _drive_live_job(client, provider)
+
+    # Watch until the image build is done, then drop the connection for real
+    # by closing the stream while the job is still paused.
+    with client.stream("GET", f"/v1/jobs/{job_id}/stream") as r:
+        assert r.status_code == 200
+        seen: list[str] = []
+        for line in r.iter_lines():
+            seen.append(line)
+            if "image built" in "\n".join(seen):
+                break
+    # The connection is closed now. Everything recorded from here on is
+    # genuinely missed by the dropped watcher.
+    last_seen = _ids("\n".join(seen))[-1]
+
+    provider.resume.set()
+    _wait_terminal(client, job_id)
+    for t in threads:
+        t.join(timeout=5.0)
+
+    page = client.get(f"/v1/jobs/{job_id}/events").json()
+    expected = page["events"]
+    missed = [e for e in expected if e["id"] > last_seen]
+    assert missed, (
+        "the job recorded nothing after the drop; the test needs a gap"
+    )
+
+    # Reconnect with the last id the dropped watcher had seen: exactly the
+    # gap, in order, once.
+    body = _stream_body(
+        client,
+        f"/v1/jobs/{job_id}/stream",
+        headers={"Last-Event-ID": str(last_seen)},
+    )
+    delivered = _payloads(body)
+    assert delivered == missed, (
+        "the reconnecting watcher did not receive exactly the events it "
+        "missed, in order, once"
+    )
+    assert _ids(body) == [e["id"] for e in missed]
+    # And the whole history is still continuous from the drop point: the
+    # first missed event is the one after the last seen, with nothing lost
+    # in between.
+    assert missed[0]["id"] == last_seen + 1
 
 
 def test_the_stream_carries_live_events_and_ends_at_terminal(
