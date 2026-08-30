@@ -46,12 +46,18 @@ from temper_control_plane import db, orchestrator
 logger = logging.getLogger(__name__)
 
 # How often a worker with nothing to do checks for queued jobs. Domain
-# constant with derivation, not a deployment setting (ADR-0062): 0.5s is
-# tuning, not contract -- short enough that a user who just launched sees
-# the job leave queued within a heartbeat, long enough that an idle worker
-# does not hammer the database. The value is small by construction and is
-# the same one the tests patch when they need a faster or slower poll.
-WORKER_POLL_INTERVAL_S = 0.5
+# constant with derivation, not a deployment setting (ADR-0062): 1.0s, up
+# from 0.5s after 2026-08-30 CI starvation -- a tight poll is a cost paid
+# on every idle tick, multiplied by worker count. At 6 workers × 0.5s that
+# is 12 qps idle burning CPU and DB connections that validation's own daemon
+# threads also need; at 2 workers × 1.0s (the CI shape after the
+# playwright.config.ts cap) it is 2 qps, a 6x reduction, with queue latency
+# still <1s which is within the "heartbeat" the comment above promises.
+# Short enough that a user who just launched sees the job leave queued
+# within a heartbeat, long enough that an idle worker does not hammer the
+# database. The value is tuning, not contract, and tests patch it directly
+# when they need a faster or slower poll.
+WORKER_POLL_INTERVAL_S = 1.0
 
 
 def run_once() -> bool:

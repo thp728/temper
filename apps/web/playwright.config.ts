@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import os from "node:os";
 import path from "node:path";
 import { E2E_BACKEND_PORT, E2E_WEB_PORT } from "./src/lib/backend";
 
@@ -65,7 +66,19 @@ const e2eObjectsPath = path.join(repoRoot, "data", "objects-e2e");
 // rather than guessed independently, so test parallelism can never
 // outrun worker capacity on a machine with a different core count than
 // whichever one this comment was measured on.
-const E2E_WORKER_COUNT = 6;
+//
+// 2026-08-30: hardcoded 6 passed locally but failed CI: a GitHub runner has
+// 2 cores, so 6 Chromium workers + 6 temper_workers + control-plane + web +
+// postgres = ~14 contending processes on 2 cores. Validations that take
+// <1s locally exceeded the 5s Playwright expect timeout under that load
+// (8 journeys failed identically, FFFF pattern across parallel workers).
+// Measured locally: `os.availableParallelism()` is 2 on CI, ~8-16 on a dev
+// machine. Clamp to [2,6] and let Playwright's own workers match: CI gets
+// 2+2 (validation back under 1s, 6x less DB polling than 6×0.5s), dev keeps
+// 6 (still enough throughput for the burst-launch tests; 4 workers got
+// 30/31, 6 got 31/31). Also see worker.py poll interval note.
+const _cpus = os.availableParallelism?.() ?? os.cpus().length;
+const E2E_WORKER_COUNT = Math.min(6, Math.max(2, _cpus));
 
 export default defineConfig({
   testDir: "./e2e",
