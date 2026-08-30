@@ -391,6 +391,40 @@ describe("JobRecordView", () => {
     ).toBeNull();
   });
 
+  it("does not present a resumed run as a memory recovery", () => {
+    // Issue #60: an interrupted run resumes from its last checkpoint on a
+    // fresh machine, which also makes attempts plural and ends complete --
+    // but its attempts carry no `recovery` record, so it is an interruption
+    // and a continuation, never a memory retry, and the history must not
+    // label it as one.
+    render(
+      <JobRecordView
+        job={job({
+          attempts: [
+            {
+              attempt: 1,
+              outcome: "interrupted",
+              error_code: "interrupted",
+              resumed_from: null,
+              recovery: null,
+            },
+            {
+              attempt: 2,
+              outcome: "complete",
+              error_code: null,
+              resumed_from: 30,
+              recovery: null,
+            },
+          ],
+        })}
+        events={[]}
+      />,
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Memory recovery" }),
+    ).toBeNull();
+  });
+
   it("says an over-long job hit the ceiling, with its code and reason", () => {
     render(
       <JobRecordView

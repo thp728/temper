@@ -1250,13 +1250,19 @@ def test_failure_at_a_stage_fails_the_job_with_its_code(harness, stage, code):
 
 
 def test_a_provider_that_stops_producing_output_fails_the_job(harness):
-    """No result marker means no result, whatever the output said."""
+    """No result marker means no result, whatever the output said: the stream
+    ending without a result document is an interruption (issue #60), named as
+    such -- and with no checkpoint to resume from it surfaces rather than
+    pretending a resumption was possible."""
     provider = FakeProvider(lines=TRAINING_LINES, result=RESULT, stop_after=2)
     job_id = harness.run(provider)
 
     job = harness.job(job_id)
     assert job["status"] == "failed"
-    assert job["error_code"] == "training_failed"
+    assert job["error_code"] == "interrupted"
+    attempts = job["attempts"]
+    assert len(attempts) == 1
+    assert attempts[0]["outcome"] == "interrupted"
     assert provider.destroyed
 
 
@@ -2285,6 +2291,12 @@ def _checkpoint_payloads(*steps: int) -> list[dict]:
     ]
 
 
+def _tar_member(tar_bytes: bytes, name: str) -> bytes:
+    """One member's bytes out of a checkpoint tar."""
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:*") as tar:
+        return tar.extractfile(name).read()
+
+
 def test_the_job_spec_carries_one_scoped_grant_per_checkpoint_slot(harness):
     """Issue #37: the machine receives exactly `CHECKPOINT_RETENTION` write
     grants, each scoped to one checkpoint slot key, each expiring within the
@@ -2338,14 +2350,19 @@ def test_a_completed_job_records_its_verified_checkpoints(harness):
     for record in records:
         assert record["verified"] is True
         assert record["loss"] == 1.0 / record["step"]
-        # The bytes the control plane verified are the bytes that landed.
+        # The bytes the control plane verified are the bytes that landed: a
+        # tar of the checkpoint's directory, exactly what a resumption would
+        # parse back.
         assert (
-            storage.STORE.get(record["key"])
+            _tar_member(
+                storage.STORE.get(record["key"]),
+                f"checkpoint-{record['step']}/model.safetensors",
+            )
             == f"ckpt-{record['step']}".encode()
         )
         assert (
             record["sha256"]
-            == hashlib.sha256(f"ckpt-{record['step']}".encode()).hexdigest()
+            == hashlib.sha256(storage.STORE.get(record["key"])).hexdigest()
         )
 
 
@@ -2647,7 +2664,11 @@ def test_every_retained_checkpoint_is_downloadable_by_step(harness):
         assert r.headers["content-disposition"].endswith(
             f'filename="checkpoint-{step}.tar"'
         )
-        assert r.content == f"ckpt-{step}".encode()
+        # The object served is the checkpoint's own tar, weights inside.
+        assert (
+            _tar_member(r.content, f"checkpoint-{step}/model.safetensors")
+            == f"ckpt-{step}".encode()
+        )
 
 
 def test_downloading_a_step_that_is_not_retained_refuses_with_a_stable_code(

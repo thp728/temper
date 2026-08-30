@@ -44,7 +44,10 @@ ALL_FAULTS = fault_surface.names()
 EXPECTED_OUTCOMES = {
     "oom": ("complete", None),
     "divergence": ("failed", "training_diverged"),
-    "worker_kill": ("failed", "training_failed"),
+    # A killed worker leaves no result document, and the run resumes from the
+    # checkpoints that had already left the machine (issue #60): the fault is
+    # now what demonstrates the resumption, so the job completes.
+    "worker_kill": ("complete", None),
     "machine_silent": ("failed", "gpu_stalled"),
     "destroy_refused": ("complete", None),
     "orphan": ("complete", None),
@@ -275,19 +278,25 @@ def test_divergence_leaves_the_meaningless_loss_in_the_history(harness):
     assert fault_event(harness.messages(job_id), "divergence")
 
 
-def test_a_killed_worker_leaves_no_result_document(harness):
+def test_a_killed_worker_resumes_from_what_had_left_the_machine(harness):
     """A worker killed mid-run produces no result.json -- the honest shape of
-    an interruption, which a resumption (#60) exists to recover from. The
-    fault is named even though the code is the ordinary training_failed."""
+    an interruption -- and the run resumes from the checkpoint the machine had
+    already written off itself before it died (issue #60), on a fresh machine.
+    The fault is still named even though the resumption makes the job
+    complete, so a deliberately broken run is never mistaken for a real one."""
     harness.enable_fake_tier()
     response, job_id = harness.create(
         {"simulated_failure_code": {"name": "worker_kill"}}
     )
     assert response.status_code == 201
     job = harness.job(job_id)
-    assert job["status"] == "failed"
-    assert job["error_code"] == "training_failed"
-    assert job["result"] is None
+    assert job["status"] == "complete"
+    # The history says what actually happened: the first attempt was cut off
+    # and the second is a resumption from the latest checkpoint.
+    attempts = job["attempts"]
+    assert len(attempts) == 2
+    assert attempts[0]["outcome"] == "interrupted"
+    assert attempts[1]["resumed_from"] == 30
     assert fault_event(harness.messages(job_id), "worker_kill")
 
 

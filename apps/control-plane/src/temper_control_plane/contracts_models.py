@@ -657,7 +657,10 @@ class AttemptRecord(BaseModel):
     `spec` is the memory-relevant slice of the resolved spec that attempt ran
     (per-step batch, accumulation, sequence length) -- the frozen record is
     the user's request, and the retried attempts are the platform's answer to
-    a failure."""
+    a failure. A resumed attempt (issue #60) adds `resumed_from`, the step it
+    came back to, and every attempt carries `rate`, the billing rate its own
+    machine was provisioned at -- the history of what actually ran is also
+    the history of what actually billed."""
 
     attempt: int
     outcome: str
@@ -665,6 +668,8 @@ class AttemptRecord(BaseModel):
     machine_id: int | None = None
     spec: dict[str, Any] | None = None
     recovery: dict[str, Any] | None = None
+    resumed_from: int | None = None
+    rate: dict[str, Any] | None = None
 
 
 class ComparisonTurn(BaseModel):

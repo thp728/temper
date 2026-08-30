@@ -137,7 +137,7 @@
         "type": "object"
       },
       "AttemptRecord": {
-        "description": "One execution of a job (issue #35): its own machine, its own spec and\nits own outcome, so the history says what actually happened rather than\none continuous run. A memory failure retries automatically and makes\nattempts plural; the attempt that OOMed carries its `error_code` (the\nfault's `simulated_oom` or a real `training_oom`) and the `recovery` --\nwhich rung fired, what changed, and the effective batch that was\npreserved -- so \"the user is told a recovery happened and what changed\"\nand \"the attempts are recorded\" are both queryable, not just narrated.\n\n`spec` is the memory-relevant slice of the resolved spec that attempt ran\n(per-step batch, accumulation, sequence length) -- the frozen record is\nthe user's request, and the retried attempts are the platform's answer to\na failure.",
+        "description": "One execution of a job (issue #35): its own machine, its own spec and\nits own outcome, so the history says what actually happened rather than\none continuous run. A memory failure retries automatically and makes\nattempts plural; the attempt that OOMed carries its `error_code` (the\nfault's `simulated_oom` or a real `training_oom`) and the `recovery` --\nwhich rung fired, what changed, and the effective batch that was\npreserved -- so \"the user is told a recovery happened and what changed\"\nand \"the attempts are recorded\" are both queryable, not just narrated.\n\n`spec` is the memory-relevant slice of the resolved spec that attempt ran\n(per-step batch, accumulation, sequence length) -- the frozen record is\nthe user's request, and the retried attempts are the platform's answer to\na failure. A resumed attempt (issue #60) adds `resumed_from`, the step it\ncame back to, and every attempt carries `rate`, the billing rate its own\nmachine was provisioned at -- the history of what actually ran is also\nthe history of what actually billed.",
         "properties": {
           "attempt": {
             "title": "Attempt",
@@ -169,6 +169,18 @@
             "title": "Outcome",
             "type": "string"
           },
+          "rate": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
           "recovery": {
             "anyOf": [
               {
@@ -180,6 +192,17 @@
               }
             ],
             "title": "Recovery"
+          },
+          "resumed_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumed From"
           },
           "spec": {
             "anyOf": [

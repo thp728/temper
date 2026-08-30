@@ -12,14 +12,19 @@ import type { JobRecord } from "@/lib/api/generated/client";
 // Deliberately distinct from a divergence retry (ADR-0055): that one is a
 // choice a user makes, never an automatic rerun, and it renders its own
 // control in the failure section. This banner exists only when the job's
-// executions are plural AND the last one completed -- the shape a memory
-// recovery leaves behind. An exhausted recovery (all attempts failed) is a
-// failure, explained by the record's failure section, not a recovery to
-// present as one.
+// executions are plural AND the last one completed AND an attempt actually
+// carried a memory `recovery` -- the shape a memory recovery leaves behind.
+// The last clause is what keeps a resumed run (issue #60) out of this banner:
+// resumption also makes attempts plural and ends complete, but its attempts
+// carry no `recovery` record -- the run was interrupted and continued from a
+// checkpoint, never retried for memory, and must not be presented as one.
+// An exhausted recovery (all attempts failed) is a failure, explained by the
+// record's failure section, not a recovery to present as one.
 export default function MemoryRecovery({ job }: { job: JobRecord }) {
   const attempts = job.attempts ?? [];
   if (attempts.length <= 1) return null;
   if (attempts[attempts.length - 1]?.outcome !== "complete") return null;
+  if (!attempts.some((a) => a.recovery)) return null;
 
   return (
     <Alert data-testid="memory-recovery">

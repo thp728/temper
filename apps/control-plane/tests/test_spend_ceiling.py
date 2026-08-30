@@ -30,6 +30,7 @@ from temper_control_plane.fake_provider import (
     PUBLISHED_IMAGE_REFERENCE,
     FakeProvider,
     completed_run,
+    fake_checkpoint_tar,
     simulated_limits,
 )
 from temper_control_plane.limits import RunLimits
@@ -297,10 +298,13 @@ def test_the_checkpoint_saved_at_the_ceiling_is_retrievable_and_selected(
     assert all(r["verified"] is True for r in records)
     assert harness.stored(job_id)["best_checkpoint"]["step"] == 20
 
-    # Retrieved, not merely written: the bytes come back out of the seam.
+    # Retrieved, not merely written: the bytes come back out of the seam, as
+    # the checkpoint's own tar (the shape a resumption parses back).
     r = harness._client.get(f"/v1/jobs/{job_id}/checkpoints/20")
     assert r.status_code == 200, r.text
-    assert r.content == b"ckpt-20"
+    assert r.content == fake_checkpoint_tar(
+        20, b"ckpt-20", loss=0.5, held_out_loss=0.39
+    )
 
 
 def test_a_ceiling_stop_with_no_checkpoints_records_none_honestly(
