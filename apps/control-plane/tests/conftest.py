@@ -51,6 +51,16 @@ def _postgres_template():
             migrations.migrate_up(conn)
         yield admin_url, template_url
     finally:
+        # Close every pool before the container stops. The last pool a test
+        # created is never evicted (`db._pool` only evicts on a URL change),
+        # so its maintenance worker would otherwise keep retrying to connect
+        # to a dropped database and then a dead container at session end --
+        # the "error connecting in 'pool-N'..." lines after the test run, and
+        # a live worker racing the session-end tmp cleanup on Windows. Closing
+        # against a live container is the clean order.
+        from temper_control_plane import db
+
+        db.close_all_pools()
         container.stop()
 
 

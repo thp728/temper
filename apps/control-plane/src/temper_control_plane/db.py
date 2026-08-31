@@ -144,6 +144,25 @@ def connect():
         yield conn
 
 
+def close_all_pools() -> None:
+    """Close every open connection pool and forget it.
+
+    Test-session teardown calls this before the throwaway container stops
+    (``conftest._postgres_template``). Without it, the last pool a test
+    created is never evicted -- `_pool` only evicts on a URL change -- and
+    its maintenance worker keeps retrying to connect to a database that
+    ``isolated`` has already dropped and a container that is about to stop,
+    logging "error connecting in 'pool-N'..." at the end of every run and
+    racing the session-end tmp cleanup on Windows. In production the pool
+    lives for the process, so nothing calls this there; it exists for clean
+    shutdown.
+    """
+    with _pools_lock:
+        for pool in _pools.values():
+            pool.close()
+        _pools.clear()
+
+
 def init() -> None:
     with connect() as c:
         if config.DB_RESET:
