@@ -37,14 +37,18 @@ def _postgres_template():
         password="temper",  # noqa: S106 - throwaway container, torn down with the session
         dbname="temper",
     )
-    container.start()
-    admin_url = container.get_connection_url(driver=None)
-    with psycopg.connect(admin_url, autocommit=True) as conn:
-        conn.execute("CREATE DATABASE temper_template")
-    template_url = admin_url.rsplit("/", 1)[0] + "/temper_template"
-    with psycopg.connect(template_url) as conn:
-        migrations.migrate_up(conn)
     try:
+        # `start()` creates the container before it starts it, so a failure
+        # here (image pull, docker daemon) still leaves a container that only
+        # the `finally` below can remove. Starting inside the try keeps that
+        # guarantee -- without it, a failed start leaks a "Created" zombie.
+        container.start()
+        admin_url = container.get_connection_url(driver=None)
+        with psycopg.connect(admin_url, autocommit=True) as conn:
+            conn.execute("CREATE DATABASE temper_template")
+        template_url = admin_url.rsplit("/", 1)[0] + "/temper_template"
+        with psycopg.connect(template_url) as conn:
+            migrations.migrate_up(conn)
         yield admin_url, template_url
     finally:
         container.stop()

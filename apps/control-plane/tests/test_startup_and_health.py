@@ -143,8 +143,13 @@ def test_the_system_starts_with_no_configuration_and_no_secrets():
         dbname="temper",
         port=5432,
     ).with_bind_ports(5432, 5432)
-    container.start()
     try:
+        # `start()` creates before it starts, so a bind failure on the fixed
+        # host port (something already on 5432, e.g. `just db-up`) must still
+        # reach `container.stop()` to remove the created-but-never-started
+        # container. Starting inside the try is what makes that true; the
+        # old version leaked a "Created" zombie on every such collision.
+        container.start()
         with psycopg.connect(
             container.get_connection_url(driver=None)
         ) as conn:
