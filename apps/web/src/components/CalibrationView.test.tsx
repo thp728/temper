@@ -4,10 +4,10 @@ import CalibrationView from "@/components/CalibrationView";
 import type { Calibration } from "@/lib/api/generated/client";
 
 // The aggregate view (issue #77): predictions against measurements across
-// runs. The assertions are what an operator reads -- how many runs a figure
+// jobs. The assertions are what an operator reads -- how many jobs a figure
 // rests on, the mean ratio with its bounds (where a systematically wrong
 // estimate shows up), the stage-by-stage reconciliation of the quote's phases
-// with the job's stages, and the runs table that lets an outlier be named.
+// with the job's stages, and the table that lets an outlier be named.
 
 function calibration(): Calibration {
   return {
@@ -77,14 +77,14 @@ function calibration(): Calibration {
 }
 
 describe("CalibrationView", () => {
-  it("states how many runs the comparison rests on", () => {
+  it("states how many jobs the comparison rests on", () => {
     render(<CalibrationView data={calibration()} />);
     expect(
-      screen.getByText(/2 terminal runs have both a frozen quote/),
+      screen.getByText(/2 terminal jobs have both a frozen quote/),
     ).toBeVisible();
-    // Every card reports its own count: "calibrated against N real runs" is
+    // Every card reports its own count: "calibrated against N real jobs" is
     // only as honest as N is visible.
-    expect(screen.getAllByText("Runs compared")).toHaveLength(3);
+    expect(screen.getAllByText("Jobs compared")).toHaveLength(3);
     expect(screen.getAllByText("2").length).toBeGreaterThan(0);
   });
 
@@ -110,20 +110,32 @@ describe("CalibrationView", () => {
     ).toBeVisible();
   });
 
-  it("names each run so an outlier can be pointed at", () => {
+  it("names each job so an outlier can be pointed at", () => {
     render(<CalibrationView data={calibration()} />);
     const row = screen.getByRole("link", { name: "job_a" });
     expect(row).toHaveAttribute("href", "/jobs/job_a");
     expect(screen.getByText("qwen3-4b")).toBeVisible();
   });
 
-  it("says plainly when there is nothing to compare yet", () => {
+  it("says plainly when there is nothing to compare yet, and offers the way in", () => {
     render(
       <CalibrationView
         data={{ count: 0, metrics: {}, phases: [], runs: [] }}
       />,
     );
-    expect(screen.getByText(/No runs to compare yet/)).toBeVisible();
+    // The empty state is the shared panel: heading, copy, and the first
+    // step as the action.
+    expect(
+      screen.getByRole("heading", { name: "Nothing to compare yet" }),
+    ).toBeVisible();
+    expect(screen.getByText(/starts the record/)).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Select a dataset" }),
+    ).toHaveAttribute("href", "/datasets");
+    // Nothing else leaks through: no metric cards, no stage card, no table.
     expect(screen.queryByRole("table")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Stage by stage" }),
+    ).toBeNull();
   });
 });

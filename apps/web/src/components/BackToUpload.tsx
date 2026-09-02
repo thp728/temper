@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 export default function BackToUpload() {
   return (
     <Button variant="outline" asChild>
-      <Link href="/">Back to upload</Link>
+      <Link href="/datasets">Back to upload</Link>
     </Button>
   );
 }

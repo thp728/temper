@@ -65,16 +65,19 @@ describe("JobsView", () => {
 
   it("says so when there are no jobs yet, and offers the way in", () => {
     render(<JobsView jobs={[]} datasetNames={{}} />);
-    expect(screen.getByText(/no jobs yet/i)).toBeVisible();
+    // The empty state is the shared panel: heading, copy, and the first
+    // step as the action.
+    expect(screen.getByRole("heading", { name: "No jobs yet" })).toBeVisible();
+    expect(screen.getByText(/newest first, with its status beside it/)).toBeVisible();
     expect(
-      screen.getByRole("link", { name: /upload a dataset/i }),
-    ).toHaveAttribute("href", "/");
+      screen.getByRole("link", { name: /select a dataset/i }),
+    ).toHaveAttribute("href", "/datasets");
   });
 
   it("renders the list as a table with column headers", () => {
     render(<JobsView jobs={[job()]} datasetNames={{}} />);
     expect(screen.getByRole("table")).toBeVisible();
-    for (const header of ["Job", "Outcome", "Base model", "Dataset", "Created"]) {
+    for (const header of ["Job", "Status", "Base model", "Dataset", "Created"]) {
       expect(screen.getByRole("columnheader", { name: header })).toBeVisible();
     }
   });

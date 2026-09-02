@@ -486,8 +486,8 @@ describe("JobRecordView", () => {
 
   it("compares what was predicted against what happened on a finished job", () => {
     // Issue #77: a finished job shows each metric's prediction against the
-    // measured figure, marked measured or derived, with a link to the
-    // aggregate.
+    // measured figure, marked measured or derived. The calibration aggregate
+    // is kept at /calibration but not linked from here (see top comment there).
     render(
       <JobRecordView
         job={job({
@@ -521,10 +521,11 @@ describe("JobRecordView", () => {
     expect(screen.getByText("5.31 GB")).toBeVisible();
     // The measured stages are shown, marked as the run's own.
     expect(screen.getByText("packaging")).toBeVisible();
-    // The aggregate is one link away.
+    // The calibration aggregate is kept at /calibration for direct access but
+    // no longer linked from the job record (see CalibrationView.tsx top comment).
     expect(
-      screen.getByRole("link", { name: "Predictions vs actuals across runs" }),
-    ).toHaveAttribute("href", "/calibration");
+      screen.queryByRole("link", { name: "Predictions vs actuals across runs" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not claim a comparison when the job has no actuals", () => {

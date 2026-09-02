@@ -1,16 +1,25 @@
 import Link from "next/link";
+import { Inbox } from "lucide-react";
+import EmptyStatePanel from "@/components/EmptyStatePanel";
+import StatusPill from "@/components/StatusPill";
+import { Button } from "@/components/ui/button";
 import { formatTimestamp } from "@/lib/jobs/display";
 import type { JobRecord } from "@/lib/api/generated/client";
 
 // The jobs list (#14's screen, ported): every job, newest first, each with
 // its outcome beside it and a link to its full record -- the event history,
 // and the artifact when there is one. Static HTML; nothing on it needs
-// JavaScript, exactly as the page it replaces.
+// JavaScript, exactly as the page it replaces. The status renders through the
+// same pill the dashboard uses, so one status has one look on both screens.
+
+// The way a text link reads: the accent for emphasis, a step lighter on
+// hover, never an underline.
+const LINK = "text-primary transition-colors hover:text-primary-hover";
 
 function Outcome({ job }: { job: JobRecord }) {
   return (
     <>
-      <span>{job.status}</span>
+      <StatusPill status={job.status} />
       {job.error_code && (
         // A failure names its stable code in the list itself: finding the
         // job and learning what happened are one step, not two.
@@ -35,30 +44,28 @@ export default function JobsView({
         <h1 id="jobs-heading" className="text-2xl font-semibold">
           Jobs
         </h1>
-        <p>
-          No jobs yet.{" "}
-          <Link href="/" className="underline hover:no-underline">
-            Upload a dataset
-          </Link>{" "}
-          to start one.
-        </p>
+        <EmptyStatePanel
+          icon={Inbox}
+          heading="No jobs yet"
+          headingAs="h2"
+          action={
+            <Button asChild>
+              <Link href="/datasets">Select a dataset</Link>
+            </Button>
+          }
+        >
+          Every job you launch appears here, newest first, with its status
+          beside it.
+        </EmptyStatePanel>
       </section>
     );
   }
 
   return (
     <section aria-labelledby="jobs-heading" className="space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 id="jobs-heading" className="text-2xl font-semibold">
-          Jobs
-        </h1>
-        <Link
-          href="/calibration"
-          className="text-sm text-muted-foreground underline hover:no-underline"
-        >
-          Predictions vs actuals across runs
-        </Link>
-      </div>
+      <h1 id="jobs-heading" className="text-2xl font-semibold">
+        Jobs
+      </h1>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <caption className="pb-2 text-left text-muted-foreground">
@@ -68,7 +75,7 @@ export default function JobsView({
           <thead>
             <tr className="border-b text-left">
               <th scope="col" className="py-2 pr-3 font-medium">Job</th>
-              <th scope="col" className="py-2 pr-3 font-medium">Outcome</th>
+              <th scope="col" className="py-2 pr-3 font-medium">Status</th>
               <th scope="col" className="py-2 pr-3 font-medium">Base model</th>
               <th scope="col" className="py-2 pr-3 font-medium">Dataset</th>
               <th scope="col" className="py-2 font-medium">Created</th>
@@ -78,10 +85,7 @@ export default function JobsView({
             {jobs.map((job) => (
               <tr key={job.id} className="border-b">
                 <td className="py-2 pr-3">
-                  <Link
-                    href={`/jobs/${job.id}`}
-                    className="underline hover:no-underline"
-                  >
+                  <Link href={`/jobs/${job.id}`} className={LINK}>
                     {job.id}
                   </Link>
                 </td>

@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Geist } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import DemoBanner from "@/components/DemoBanner";
+import Sidebar from "@/components/Sidebar";
 import { cn } from "@/lib/utils";
 import { isZeroCostMode } from "@/lib/demo-mode";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 // The demonstration marking is read at request time, never baked at build
 // time: the compose image builds once and the reviewer's `docker compose up`
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: {
     default: "Temper",
-    template: "%s · Temper",
+    template: "%s - Temper",
   },
   description: "Fine-tuning platform. Dataset in, artifact out.",
 };
@@ -27,36 +28,19 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const zeroCost = isZeroCostMode();
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
+    <html
+      lang="en"
+      className={cn("dark font-sans", geist.variable, geistMono.variable)}
+      style={{ colorScheme: "dark" }}
+    >
       <body className="flex min-h-screen flex-col bg-background text-foreground antialiased">
         {zeroCost ? <DemoBanner /> : null}
-        <header className="border-b bg-card">
-          <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3">
-            <Link
-              href="/"
-              className="text-lg font-semibold tracking-tight hover:underline"
-            >
-              Temper
-            </Link>
-            <nav aria-label="Main" className="flex items-center gap-1">
-              <Link
-                href="/jobs"
-                className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Jobs
-              </Link>
-              <Link
-                href="/"
-                className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Upload a dataset
-              </Link>
-            </nav>
-          </div>
-        </header>
-        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-          {children}
-        </main>
+        <div className="flex flex-1">
+          <Sidebar />
+          <main className="w-full min-w-0 flex-1 px-4 py-8 md:px-8">
+            <div className="mx-auto w-full max-w-[1200px]">{children}</div>
+          </main>
+        </div>
       </body>
     </html>
   );

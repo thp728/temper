@@ -1,5 +1,16 @@
+// Removed from nav tree: the calibration aggregate is predictor observability
+// (predicted vs measured per metric/phase, issue #77 / ADR-0037), not direct
+// end-user value. The per-job "Prediction vs what happened" on the finished
+// record already answers a user's "did my quote match?" question. The aggregate
+// stays as a component and at /calibration for internal/operator use (kept
+// intact, not linked from dashboard, job list or job record) — dashboard now
+// shows Spend & time instead, which directly helps budgeting and planning.
+
 import Link from "next/link";
-import { formatDuration, formatTimestamp } from "@/lib/jobs/display";
+import { Scale } from "lucide-react";
+import EmptyStatePanel from "@/components/EmptyStatePanel";
+import { Button } from "@/components/ui/button";
+import { formatDuration } from "@/lib/jobs/display";
 import { formatGigabytes, formatRatio } from "@/lib/jobs/comparison";
 import type {
   Calibration,
@@ -9,9 +20,9 @@ import type {
 } from "@/lib/api/generated/client";
 
 // The aggregate view (issue #77): predictions against measurements across
-// runs, so a systematically wrong estimate is visible rather than absorbed
+// jobs, so a systematically wrong estimate is visible rather than absorbed
 // into a better-looking average. Each roll reports its own count, so
-// "calibrated against N real runs" is only as honest as N is visible.
+// "calibrated against N real jobs" is only as honest as N is visible.
 //
 // The ratio is actual over predicted midpoint: 1.0 means the prediction
 // matched on average, above 1 the actuals ran over it, below 1 under it.
@@ -22,7 +33,7 @@ import type {
 
 function metricSentence(m: CalibrationMetric): string {
   if (m.mean_ratio == null) {
-    return "No comparable runs yet.";
+    return "No comparable jobs yet.";
   }
   if (m.mean_ratio > 1.05) {
     return `On average the actual ran ${formatRatio(m.mean_ratio)} the prediction — the estimate under-predicted.`;
@@ -48,7 +59,7 @@ function MetricCard({
     <div className="rounded-lg border bg-card p-4">
       <h3 className="font-medium">{title}</h3>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-        <dt className="text-muted-foreground">Runs compared</dt>
+        <dt className="text-muted-foreground">Jobs compared</dt>
         <dd>{metric.count}</dd>
         {predicted != null && (
           <>
@@ -105,10 +116,7 @@ function RunRow({ run }: { run: CalibrationRun }) {
   return (
     <tr className="border-b">
       <td className="py-2 pr-3">
-        <Link
-          href={`/jobs/${run.job_id}`}
-          className="underline hover:no-underline"
-        >
+        <Link href={`/jobs/${run.job_id}`} className="text-primary transition-colors hover:text-primary-hover">
           {run.job_id}
         </Link>
       </td>
@@ -146,8 +154,8 @@ export default function CalibrationView({ data }: { data: Calibration }) {
         <p className="mt-2 text-muted-foreground">
           {data.count}{" "}
           {data.count === 1
-            ? "terminal run has"
-            : "terminal runs have"}{" "}
+            ? "terminal job has"
+            : "terminal jobs have"}{" "}
           both a frozen quote and measured actuals. Each figure states its
           basis: predicted figures are estimates, duration and peak memory are
           measured, and cost is derived from measured duration at the frozen
@@ -158,14 +166,19 @@ export default function CalibrationView({ data }: { data: Calibration }) {
       </div>
 
       {data.count === 0 ? (
-        <p>
-          No runs to compare yet.{" "}
-          <Link href="/" className="underline hover:no-underline">
-            Upload a dataset
-          </Link>{" "}
-          and launch a job — recording starts with the first run, not the
-          last.
-        </p>
+        <EmptyStatePanel
+          icon={Scale}
+          heading="Nothing to compare yet"
+          headingAs="h2"
+          action={
+            <Button asChild>
+              <Link href="/datasets">Select a dataset</Link>
+            </Button>
+          }
+        >
+          The first job you finish starts the record — its quote is checked
+          against what actually happened.
+        </EmptyStatePanel>
       ) : (
         <div className="grid gap-4 sm:grid-cols-3">
           <MetricCard
@@ -205,7 +218,10 @@ export default function CalibrationView({ data }: { data: Calibration }) {
         </div>
       )}
 
-      {data.phases.length > 0 && (
+      {/* The API emits skeleton phase rows (count 0, null means) even on an
+          empty database; a stage row with no counted job carries no
+          information, so the card is gated like the metric cards above. */}
+      {data.count > 0 && data.phases.length > 0 && (
         <div className="rounded-lg border bg-card p-4">
           <h2 className="text-lg font-semibold">Stage by stage</h2>
           <dl className="mt-2 divide-y divide-border">
@@ -227,7 +243,7 @@ export default function CalibrationView({ data }: { data: Calibration }) {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <caption className="pb-2 text-left text-muted-foreground">
-              Every compared run, so an outlier can be named rather than
+              Every compared job, so an outlier can be named rather than
               pointed at.
             </caption>
             <thead>
