@@ -6,6 +6,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+const HF_PREFIX = "https://huggingface.co/";
 import { importDatasetV1DatasetsImportPost } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
@@ -63,14 +65,19 @@ export default function ImportForm() {
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="import-repo">Public repository</Label>
-        <Input
-          ref={repoRef}
-          id="import-repo"
-          name="repo"
-          type="text"
-          placeholder="e.g. open-r1/OpenR1-Math-220k"
-          className="cursor-text"
-        />
+        <div className="flex h-9 items-stretch overflow-hidden rounded-md border border-input bg-muted/50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50">
+          <span className="flex shrink-0 items-center border-r border-input px-3 text-sm text-muted-foreground select-none">
+            {HF_PREFIX}
+          </span>
+          <input
+            ref={repoRef}
+            id="import-repo"
+            name="repo"
+            type="text"
+            placeholder="meta-llama/Llama-3.2-3B-Instruct"
+            className="min-w-0 flex-1 bg-transparent px-3 text-base text-foreground placeholder:text-muted-foreground outline-none md:text-sm"
+          />
+        </div>
         <p className="text-sm text-muted-foreground">
           A public dataset repository. Rows are fetched and validated exactly
           like an upload — nothing gets a shortcut for arriving over a

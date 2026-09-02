@@ -7,6 +7,7 @@
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: var(--font-sans);
+    --font-mono: var(--font-mono);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -24,6 +25,7 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-success: var(--success);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-muted-foreground: var(--muted-foreground);
@@ -31,6 +33,7 @@
     --color-secondary-foreground: var(--secondary-foreground);
     --color-secondary: var(--secondary);
     --color-primary-foreground: var(--primary-foreground);
+    --color-primary-hover: var(--primary-hover);
     --color-primary: var(--primary);
     --color-popover-foreground: var(--popover-foreground);
     --color-popover: var(--popover);
@@ -48,24 +51,31 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
+    /* The canvas sits a step below card white, warmed toward the amber
+       accent, so a card actually lifts off the page instead of merging
+       into it — the elevation cue borders alone weren't giving it. */
+    --background: oklch(0.965 0.006 55);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
+    /* GPU-amber: the one accent, reserved for the primary action, focus
+       rings, and the cost/stakes readout — everything else stays neutral. */
+    --primary: oklch(0.74 0.15 55);
+    --primary-foreground: oklch(0.18 0.03 55);
+    --primary-hover: oklch(0.74 0.15 55);
+    --secondary: oklch(0.95 0.005 55);
     --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
+    --muted: oklch(0.95 0.005 55);
+    --muted-foreground: oklch(0.5 0.008 55);
+    --accent: oklch(0.95 0.005 55);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --success: #27a644;
+    --border: oklch(0.89 0.006 55);
+    --input: oklch(0.89 0.006 55);
+    --ring: oklch(0.74 0.15 55);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -83,24 +93,33 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    /* Linear's marketing canvas (DESIGN.md): #010102 near-pure black with a
+       faint blue tint, a surface ladder for lift, hairline borders, and one
+       chromatic accent — lavender-blue, spent only on the primary action,
+       focus ring, and link emphasis. */
+    --background: #010102;
+    --foreground: #f7f8f8;
+    --card: #09090b;
+    --card-foreground: #f7f8f8;
+    --popover: #141516;
+    --popover-foreground: #f7f8f8;
+    --primary: #5e6ad2;
+    --primary-foreground: #ffffff;
+    /* The design system's lighter lavender for link hover (DESIGN.md
+       primary-hover): on a near-black canvas a hover state reads as a step
+       lighter, never darker. */
+    --primary-hover: #828fff;
+    --secondary: #09090b;
+    --secondary-foreground: #f7f8f8;
+    --muted: #09090b;
+    --muted-foreground: #8a8f98;
+    --accent: #141516;
+    --accent-foreground: #f7f8f8;
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --success: #27a644;
+    --border: #23252a;
+    --input: #23252a;
+    --ring: #5e69d1;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -125,5 +144,8 @@
     }
   html {
     @apply font-sans;
+    }
+  code, kbd, samp, pre {
+    @apply font-mono;
     }
 }

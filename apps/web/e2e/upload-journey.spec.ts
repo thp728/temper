@@ -109,7 +109,7 @@ test("the journey is keyboard-reachable and survives a small screen", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 720 });
-  await page.goto("/");
+  await page.goto("/datasets");
 
   // Every control carries an accessible name.
   await expect(page.getByLabel("Dataset file (.jsonl)")).toBeVisible();
@@ -118,8 +118,9 @@ test("the journey is keyboard-reachable and survives a small screen", async ({
 
   // The controls are reachable by keyboard alone: tab from the page's start
   // until the action has focus. The cap is a failure guard, not an assertion
-  // about the page -- the header carries two links before the form.
-  const maxTabStops = 6;
+  // about the page -- the sidebar carries the brand link, four nav items and
+  // the new-job action before the form.
+  const maxTabStops = 8;
   for (let i = 0; i < maxTabStops && !(await submit.evaluate((el) => el === document.activeElement)); i++) {
     await page.keyboard.press("Tab");
   }
@@ -140,7 +141,7 @@ test("the journey is keyboard-reachable and survives a small screen", async ({
 // split resolves to nothing.
 
 async function importRepo(page: Page, repo: string) {
-  await page.goto("/");
+  await page.goto("/datasets");
   await page.getByLabel("Public repository").fill(repo);
   await page.getByRole("button", { name: "Import and validate" }).click();
 }

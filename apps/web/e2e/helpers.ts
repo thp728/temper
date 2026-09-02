@@ -28,7 +28,7 @@ function jsonl(rows: object[]): string {
 }
 
 async function upload(page: Page, filePath: string) {
-  await page.goto("/");
+  await page.goto("/datasets");
   await page.getByLabel("Dataset file (.jsonl)").setInputFiles(filePath);
   await page.getByRole("button", { name: "Upload and validate" }).click();
 }

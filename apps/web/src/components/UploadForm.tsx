@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { uploadDatasetV1DatasetsPost } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
@@ -19,6 +18,7 @@ export default function UploadForm() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [refusal, setRefusal] = useState<ApiError | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,14 +48,25 @@ export default function UploadForm() {
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="dataset-file">Dataset file (.jsonl)</Label>
-        <Input
-          ref={inputRef}
-          id="dataset-file"
-          name="file"
-          type="file"
-          accept=".jsonl,.json"
-          className="cursor-pointer py-2"
-        />
+        <div className="relative flex h-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-input bg-muted/30 text-center transition-colors hover:border-primary/50 hover:bg-muted/50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50">
+          <input
+            ref={inputRef}
+            id="dataset-file"
+            name="file"
+            type="file"
+            accept=".jsonl,.json"
+            className="absolute inset-0 cursor-pointer opacity-0"
+            onChange={(event) =>
+              setFileName(event.target.files?.[0]?.name ?? null)
+            }
+          />
+          <span className="pointer-events-none font-mono text-xs font-medium tracking-wide text-foreground">
+            {fileName ?? "Choose a .jsonl file"}
+          </span>
+          <span className="pointer-events-none text-xs text-muted-foreground">
+            {fileName ? "Click to choose a different file" : "Click to browse"}
+          </span>
+        </div>
         <p className="text-sm text-muted-foreground">
           Chat-format JSONL: one JSON object per line with a{" "}
           <code className="rounded bg-muted px-1">messages</code> list.

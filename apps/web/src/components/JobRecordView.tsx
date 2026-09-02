@@ -354,17 +354,9 @@ function ComparisonSection({ job }: { job: JobRecord }) {
 
   return (
     <section aria-labelledby="comparison-heading" className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="comparison-heading" className="text-lg font-semibold">
-          Prediction vs what happened
-        </h2>
-        <Link
-          href="/calibration"
-          className="text-sm text-muted-foreground underline hover:no-underline"
-        >
-          Predictions vs actuals across runs
-        </Link>
-      </div>
+      <h2 id="comparison-heading" className="text-lg font-semibold">
+        Prediction vs what happened
+      </h2>
       <p className="text-sm text-muted-foreground">
         What this job was predicted to take, against what it actually took.
         The predicted figures are estimates; the duration and peak memory are

@@ -165,11 +165,11 @@ test("a finished job compares its prediction against what happened, and the aggr
   // The run's own stages are shown, measured from its state transitions.
   await expect(page.getByText("packaging")).toBeVisible();
 
-  // The aggregate is one link away, and this run is in it -- an outlier can
-  // be named rather than pointed at.
-  await page
-    .getByRole("link", { name: "Predictions vs actuals across runs" })
-    .click();
+  // The calibration aggregate is kept at /calibration for direct/internal
+  // access (delinked from the job record's nav tree — see CalibrationView.tsx
+  // top comment). Navigate directly and verify this run is in it — an outlier
+  // can be named rather than pointed at.
+  await page.goto("/calibration");
   await expect(page).toHaveURL(/\/calibration$/);
   await expect(
     page.getByRole("heading", { name: "Predictions vs what happened" }),
