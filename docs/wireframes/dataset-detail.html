@@ -1,0 +1,777 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Dataset Detail - Temper Platform</title>
+    <!-- Material Symbols -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <!-- Google Fonts: Geist & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <!-- Tailwind Config injected from system prompt instructions -->
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-background": "#e5e1e6",
+              hairline: "#23252a",
+              "ink-primary": "#f7f8f8",
+              "tertiary-fixed-dim": "#ffb867",
+              "surface-4": "#191a1b",
+              "on-primary-fixed": "#000965",
+              "on-primary-fixed-variant": "#2e3aa2",
+              "on-primary": "#121f8b",
+              "inverse-primary": "#4854bb",
+              "primary-container": "#5e6ad2",
+              "secondary-fixed-dim": "#bdc2ff",
+              "ink-subtle": "#8a8f98",
+              "tertiary-fixed": "#ffddbb",
+              "surface-container-lowest": "#0e0e11",
+              "surface-variant": "#353438",
+              "surface-3": "#18191a",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "secondary-container": "#2f3ca9",
+              "on-secondary-fixed": "#000964",
+              "surface-tint": "#bdc2ff",
+              "on-surface": "#e5e1e6",
+              "surface-bright": "#39393c",
+              error: "#ffb4ab",
+              tertiary: "#ffb867",
+              "hairline-strong": "#34343a",
+              "tertiary-container": "#a56500",
+              "on-primary-container": "#fdfaff",
+              "surface-container-highest": "#353438",
+              "outline-variant": "#454652",
+              "on-tertiary-fixed": "#2b1700",
+              "on-surface-variant": "#c6c5d5",
+              "on-tertiary-fixed-variant": "#673d00",
+              "on-tertiary": "#482900",
+              "inverse-surface": "#e5e1e6",
+              "inverse-on-surface": "#313034",
+              background: "#131316",
+              outline: "#908f9e",
+              "surface-1": "#0f1011",
+              surface: "#131316",
+              "on-secondary-container": "#abb3ff",
+              "surface-container-low": "#1c1b1f",
+              "ink-muted": "#d0d6e0",
+              success: "#27a644",
+              "surface-2": "#141516",
+              secondary: "#bdc2ff",
+              "primary-fixed-dim": "#bdc2ff",
+              "on-secondary": "#0e1d90",
+              "secondary-fixed": "#dfe0ff",
+              "surface-container": "#201f23",
+              "surface-container-high": "#2a292d",
+              primary: "#bdc2ff",
+              "surface-dim": "#131316",
+              "on-tertiary-container": "#fffaf8",
+              "on-error-container": "#ffdad6",
+              "primary-fixed": "#dfe0ff",
+              "error-container": "#93000a",
+              "on-error": "#690005",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              md: "16px",
+              xs: "8px",
+              section: "96px",
+              base: "4px",
+              xl: "32px",
+              lg: "24px",
+              sm: "12px",
+            },
+            fontFamily: {
+              "headline-md": ["Geist", "sans-serif"],
+              eyebrow: ["Geist", "sans-serif"],
+              "display-lg": ["Geist", "sans-serif"],
+              "display-xl": ["Geist", "sans-serif"],
+              "label-mono": ["JetBrains Mono", "monospace"],
+              "body-default": ["Geist", "sans-serif"],
+            },
+            fontSize: {
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "0px",
+                  fontWeight: "400",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      /* Syntax highlighting overrides */
+      .syntax-key {
+        color: theme("colors.secondary");
+      }
+      .syntax-string {
+        color: theme("colors.tertiary-fixed-dim");
+      }
+      .syntax-punctuation {
+        color: theme("colors.ink-subtle");
+      }
+
+      /* Custom scrollbar for data preview */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: theme("colors.surface-1");
+      }
+      ::-webkit-scrollbar-thumb {
+        background: theme("colors.hairline-strong");
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: theme("colors.outline-variant");
+      }
+    </style>
+  </head>
+  <body
+    class="bg-[#010102] text-on-background font-body-default text-body-default h-screen w-full overflow-hidden flex flex-col md:flex-row antialiased"
+  >
+    <!-- JSON Component: SideNavBar -->
+    <nav
+      class="hidden md:flex flex-col h-screen w-64 border-r border-hairline bg-surface-1 py-xl flex-shrink-0 z-20"
+    >
+      <!-- Header -->
+      <div class="px-lg mb-xl flex items-center gap-sm">
+        <div
+          class="w-8 h-8 rounded bg-primary-container flex items-center justify-center text-on-primary-container font-headline-md text-headline-md font-bold"
+        >
+          T
+        </div>
+        <div>
+          <h1
+            class="font-headline-md text-headline-md font-semibold text-ink-primary text-[20px]"
+          >
+            Temper
+          </h1>
+          <p
+            class="font-label-mono text-label-mono text-ink-subtle text-[11px]"
+          >
+            v2.4.0-stable
+          </p>
+        </div>
+      </div>
+      <!-- CTA -->
+      <div class="px-lg mb-lg">
+        <button
+          class="w-full bg-primary-container text-on-primary-container rounded-DEFAULT py-sm px-md font-eyebrow text-eyebrow transition-colors duration-150 ease-out hover:bg-inverse-primary flex items-center justify-center gap-xs"
+        >
+          <span class="material-symbols-outlined text-[18px]">add</span>
+          New Experiment
+        </button>
+      </div>
+      <!-- Main Nav Tabs -->
+      <div class="flex-1 overflow-y-auto px-xs">
+        <ul class="space-y-[2px]">
+          <!-- Dashboard -->
+          <li>
+            <a
+              class="flex items-center gap-sm px-md py-sm rounded-DEFAULT text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3 font-label-mono text-label-mono"
+              href="#"
+            >
+              <span class="material-symbols-outlined" data-icon="dashboard"
+                >dashboard</span
+              >
+              <span>Dashboard</span>
+            </a>
+          </li>
+          <!-- Models -->
+          <li>
+            <a
+              class="flex items-center gap-sm px-md py-sm rounded-DEFAULT text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3 font-label-mono text-label-mono"
+              href="#"
+            >
+              <span class="material-symbols-outlined" data-icon="model_training"
+                >model_training</span
+              >
+              <span>Models</span>
+            </a>
+          </li>
+          <!-- Datasets (Active) -->
+          <li>
+            <a
+              class="flex items-center gap-sm px-md py-sm rounded-DEFAULT bg-surface-2 text-ink-primary border-l-2 border-primary transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3 font-label-mono text-label-mono"
+              href="#"
+            >
+              <span class="material-symbols-outlined" data-icon="database"
+                >database</span
+              >
+              <span>Datasets</span>
+            </a>
+          </li>
+          <!-- Training -->
+          <li>
+            <a
+              class="flex items-center gap-sm px-md py-sm rounded-DEFAULT text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3 font-label-mono text-label-mono"
+              href="#"
+            >
+              <span class="material-symbols-outlined" data-icon="science"
+                >science</span
+              >
+              <span>Training</span>
+            </a>
+          </li>
+          <!-- Deployments -->
+          <li>
+            <a
+              class="flex items-center gap-sm px-md py-sm rounded-DEFAULT text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3 font-label-mono text-label-mono"
+              href="#"
+            >
+              <span class="material-symbols-outlined" data-icon="rocket_launch"
+                >rocket_launch</span
+              >
+              <span>Deployments</span>
+            </a>
+          </li>
+          <!-- Settings -->
+          <li>
+            <a
+              class="flex items-center gap-sm px-md py-sm rounded-DEFAULT text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3 font-label-mono text-label-mono"
+              href="#"
+            >
+              <span class="material-symbols-outlined" data-icon="settings"
+                >settings</span
+              >
+              <span>Settings</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+      <!-- Footer Tabs -->
+      <div class="px-xs mt-auto pt-lg">
+        <ul class="space-y-[2px]">
+          <li>
+            <a
+              class="flex items-center gap-sm px-md py-sm rounded-DEFAULT text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3 font-label-mono text-label-mono"
+              href="#"
+            >
+              <span class="material-symbols-outlined" data-icon="menu_book"
+                >menu_book</span
+              >
+              <span>Documentation</span>
+            </a>
+          </li>
+          <li>
+            <a
+              class="flex items-center gap-sm px-md py-sm rounded-DEFAULT text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3 font-label-mono text-label-mono"
+              href="#"
+            >
+              <span class="material-symbols-outlined" data-icon="help_outline"
+                >help_outline</span
+              >
+              <span>Support</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col min-w-0 h-screen bg-[#010102]">
+      <!-- JSON Component: TopAppBar -->
+      <header
+        class="flex justify-between items-center px-lg w-full h-16 border-b border-hairline bg-surface flex-shrink-0 z-10"
+      >
+        <!-- Left: Breadcrumbs -->
+        <div class="flex items-center gap-sm">
+          <span
+            class="hidden font-headline-md text-headline-md font-semibold text-ink-primary"
+            >Temper</span
+          >
+          <nav
+            class="flex items-center gap-xs font-label-mono text-label-mono text-ink-subtle"
+          >
+            <a
+              class="hover:text-ink-primary transition-all duration-150 ease-out"
+              href="#"
+              >Datasets</a
+            >
+            <span class="text-hairline-strong">/</span>
+            <span class="text-ink-primary font-semibold"
+              >instruction-tuning-v2.jsonl</span
+            >
+          </nav>
+        </div>
+        <!-- Right: Actions & Links -->
+        <div class="flex items-center gap-lg">
+          <!-- Navigation Links -->
+          <nav
+            class="hidden lg:flex items-center gap-md font-label-mono text-label-mono text-ink-subtle"
+          >
+            <a
+              class="hover:text-ink-primary transition-all duration-150 ease-out active:scale-95"
+              href="#"
+              >Docs</a
+            >
+            <a
+              class="hover:text-ink-primary transition-all duration-150 ease-out active:scale-95"
+              href="#"
+              >API</a
+            >
+            <a
+              class="hover:text-ink-primary transition-all duration-150 ease-out active:scale-95"
+              href="#"
+              >Changelog</a
+            >
+          </nav>
+          <div class="h-6 w-px bg-hairline hidden lg:block"></div>
+          <!-- Primary/Secondary Actions -->
+          <div class="flex items-center gap-sm">
+            <button
+              class="px-md py-xs rounded-DEFAULT border border-hairline bg-transparent text-ink-primary font-eyebrow text-eyebrow hover:bg-surface-2 hover:border-hairline-strong transition-all duration-150 ease-out active:scale-95"
+            >
+              Save Draft
+            </button>
+            <button
+              class="px-md py-xs rounded-DEFAULT bg-primary-container text-on-primary-container font-eyebrow text-eyebrow hover:bg-inverse-primary transition-all duration-150 ease-out active:scale-95 shadow-none"
+            >
+              Deploy Model
+            </button>
+          </div>
+          <!-- Icon Actions -->
+          <div class="flex items-center gap-sm text-ink-subtle">
+            <button
+              class="w-8 h-8 flex items-center justify-center rounded-DEFAULT hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 ease-out active:scale-95"
+            >
+              <span class="material-symbols-outlined" data-icon="notifications"
+                >notifications</span
+              >
+            </button>
+            <button
+              class="w-8 h-8 flex items-center justify-center rounded-DEFAULT hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 ease-out active:scale-95"
+            >
+              <span class="material-symbols-outlined" data-icon="account_circle"
+                >account_circle</span
+              >
+            </button>
+          </div>
+        </div>
+      </header>
+      <!-- Page Canvas -->
+      <div class="flex-1 overflow-y-auto">
+        <div
+          class="max-w-[1200px] mx-auto w-full px-lg md:px-lg py-xl flex flex-col gap-xl"
+        >
+          <!-- 1. Header Section -->
+          <section
+            class="flex flex-col md:flex-row md:items-start justify-between gap-md"
+          >
+            <div class="flex flex-col gap-sm">
+              <div class="flex items-center gap-md">
+                <h2 class="font-headline-md text-headline-md text-ink-primary">
+                  instruction-tuning-v2.jsonl
+                </h2>
+                <!-- Status Badge -->
+                <div
+                  class="flex items-center gap-xs px-xs py-[2px] rounded-DEFAULT bg-success/10 border border-success/20"
+                >
+                  <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
+                  <span
+                    class="font-label-mono text-label-mono text-success text-[11px] font-medium uppercase tracking-wider"
+                    >Ready</span
+                  >
+                </div>
+              </div>
+              <p
+                class="font-body-default text-body-default text-ink-subtle max-w-2xl"
+              >
+                Curated dataset of highly complex instruction-following examples
+                designed for finetuning intermediate-sized language models on
+                domain-specific logic tasks.
+              </p>
+            </div>
+            <div class="flex items-center gap-sm shrink-0">
+              <button
+                class="px-md py-xs rounded-DEFAULT border border-hairline bg-transparent text-ink-primary font-eyebrow text-eyebrow hover:bg-surface-2 hover:border-hairline-strong transition-all duration-150 ease-out flex items-center gap-xs"
+              >
+                <span class="material-symbols-outlined text-[16px]">edit</span>
+                Edit Metadata
+              </button>
+              <button
+                class="px-md py-xs rounded-DEFAULT border border-hairline bg-transparent text-error font-eyebrow text-eyebrow hover:bg-error/10 hover:border-error/30 transition-all duration-150 ease-out flex items-center gap-xs"
+              >
+                <span class="material-symbols-outlined text-[16px]"
+                  >archive</span
+                >
+                Archive
+              </button>
+            </div>
+          </section>
+          <!-- 2. Metadata Grid -->
+          <section class="grid grid-cols-2 md:grid-cols-4 gap-md">
+            <!-- Format -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs relative overflow-hidden group"
+            >
+              <div
+                class="absolute inset-x-0 top-0 h-px bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"
+              ></div>
+              <div class="flex items-center gap-xs text-ink-subtle mb-sm">
+                <span class="material-symbols-outlined text-[18px]">code</span>
+                <span
+                  class="font-label-mono text-label-mono uppercase tracking-wider text-[11px]"
+                  >Format</span
+                >
+              </div>
+              <div class="font-headline-md text-headline-md text-ink-primary">
+                JSONL
+              </div>
+            </div>
+            <!-- Size -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs relative overflow-hidden group"
+            >
+              <div
+                class="absolute inset-x-0 top-0 h-px bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"
+              ></div>
+              <div class="flex items-center gap-xs text-ink-subtle mb-sm">
+                <span class="material-symbols-outlined text-[18px]"
+                  >hard_drive</span
+                >
+                <span
+                  class="font-label-mono text-label-mono uppercase tracking-wider text-[11px]"
+                  >Size</span
+                >
+              </div>
+              <div class="font-headline-md text-headline-md text-ink-primary">
+                1.2 GB
+              </div>
+            </div>
+            <!-- Samples -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs relative overflow-hidden group"
+            >
+              <div
+                class="absolute inset-x-0 top-0 h-px bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"
+              ></div>
+              <div class="flex items-center gap-xs text-ink-subtle mb-sm">
+                <span class="material-symbols-outlined text-[18px]"
+                  >list_alt</span
+                >
+                <span
+                  class="font-label-mono text-label-mono uppercase tracking-wider text-[11px]"
+                  >Samples</span
+                >
+              </div>
+              <div class="font-headline-md text-headline-md text-ink-primary">
+                45,000
+              </div>
+            </div>
+            <!-- Tokens -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs relative overflow-hidden group"
+            >
+              <div
+                class="absolute inset-x-0 top-0 h-px bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"
+              ></div>
+              <div class="flex items-center gap-xs text-ink-subtle mb-sm">
+                <span class="material-symbols-outlined text-[18px]">token</span>
+                <span
+                  class="font-label-mono text-label-mono uppercase tracking-wider text-[11px]"
+                  >Token Count</span
+                >
+              </div>
+              <div class="font-headline-md text-headline-md text-ink-primary">
+                12.4M
+              </div>
+            </div>
+          </section>
+          <!-- 3. Data Preview & 4. Usage History Bento Layout -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-lg mb-section">
+            <!-- Data Preview (Takes up 2/3 width on desktop) -->
+            <section
+              class="lg:col-span-2 bg-surface-1 border border-hairline rounded-xl overflow-hidden flex flex-col relative shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+            >
+              <!-- Panel Header -->
+              <div
+                class="flex items-center justify-between p-sm border-b border-hairline bg-surface/50"
+              >
+                <div class="flex items-center gap-sm">
+                  <span
+                    class="material-symbols-outlined text-ink-subtle text-[18px]"
+                    >preview</span
+                  >
+                  <h3 class="font-eyebrow text-eyebrow text-ink-primary">
+                    Data Preview
+                  </h3>
+                </div>
+                <div class="flex gap-xs">
+                  <button
+                    class="px-sm py-xs rounded border border-hairline text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors font-label-mono text-[11px]"
+                  >
+                    Copy JSON
+                  </button>
+                  <button
+                    class="px-sm py-xs rounded border border-hairline text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors font-label-mono text-[11px]"
+                  >
+                    Download Chunk
+                  </button>
+                </div>
+              </div>
+              <!-- JSON Content -->
+              <div
+                class="flex-1 bg-surface-2 p-md overflow-auto font-label-mono text-label-mono text-sm leading-relaxed relative"
+              >
+                <!-- Line numbers simulated with flex layout -->
+                <div class="flex">
+                  <div
+                    class="w-8 shrink-0 text-hairline-strong text-right pr-sm select-none flex flex-col"
+                  >
+                    <span>1</span>
+                    <span>2</span>
+                    <span>3</span>
+                    <span>4</span>
+                    <span>5</span>
+                    <span>6</span>
+                    <span>7</span>
+                    <span>8</span>
+                    <span>9</span>
+                    <span>10</span>
+                    <span>11</span>
+                    <span>12</span>
+                    <span>13</span>
+                  </div>
+                  <div class="flex-1 text-ink-muted whitespace-pre">
+                    <span class="syntax-punctuation">{</span>
+                    <span class="syntax-key">"id"</span
+                    ><span class="syntax-punctuation">:</span>
+                    <span class="syntax-string">"req_a8f92b"</span
+                    ><span class="syntax-punctuation">,</span>
+                    <span class="syntax-key">"system_prompt"</span
+                    ><span class="syntax-punctuation">:</span>
+                    <span class="syntax-string"
+                      >"You are an expert system architect analyzing distributed
+                      database topologies."</span
+                    ><span class="syntax-punctuation">,</span>
+                    <span class="syntax-key">"conversations"</span
+                    ><span class="syntax-punctuation">:</span>
+                    <span class="syntax-punctuation">[</span>
+                    <span class="syntax-punctuation">{</span>
+                    <span class="syntax-key">"role"</span
+                    ><span class="syntax-punctuation">:</span>
+                    <span class="syntax-string">"user"</span
+                    ><span class="syntax-punctuation">,</span>
+                    <span class="syntax-key">"content"</span
+                    ><span class="syntax-punctuation">:</span>
+                    <span class="syntax-string"
+                      >"Explain the tradeoffs between Raft and Paxos in
+                      high-latency wide area networks."</span
+                    >
+                    <span class="syntax-punctuation">},</span>
+                    <span class="syntax-punctuation">{</span>
+                    <span class="syntax-key">"role"</span
+                    ><span class="syntax-punctuation">:</span>
+                    <span class="syntax-string">"assistant"</span
+                    ><span class="syntax-punctuation">,</span>
+                    <span class="syntax-key">"content"</span
+                    ><span class="syntax-punctuation">:</span>
+                    <span class="syntax-string"
+                      >"When evaluating consensus protocols for high-latency
+                      WANs..."</span
+                    >
+                    <span class="syntax-punctuation">}</span>
+                    <span class="syntax-punctuation">]</span>
+                    <span class="syntax-punctuation">}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <!-- Usage History (Takes up 1/3 width on desktop) -->
+            <section
+              class="bg-surface-1 border border-hairline rounded-xl overflow-hidden flex flex-col relative shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+            >
+              <div
+                class="flex items-center justify-between p-sm border-b border-hairline bg-surface/50"
+              >
+                <div class="flex items-center gap-sm">
+                  <span
+                    class="material-symbols-outlined text-ink-subtle text-[18px]"
+                    >history</span
+                  >
+                  <h3 class="font-eyebrow text-eyebrow text-ink-primary">
+                    Recent Jobs
+                  </h3>
+                </div>
+              </div>
+              <div class="flex-1 overflow-auto">
+                <ul class="divide-y divide-hairline">
+                  <!-- Job Item 1 -->
+                  <li
+                    class="p-md hover:bg-surface-2 transition-colors duration-150 cursor-pointer group"
+                  >
+                    <div class="flex items-center justify-between mb-xs">
+                      <span
+                        class="font-label-mono text-label-mono text-primary-container"
+                        >job-992a4f</span
+                      >
+                      <span class="font-label-mono text-[11px] text-ink-subtle"
+                        >2 hours ago</span
+                      >
+                    </div>
+                    <div class="flex items-center gap-sm mb-xs">
+                      <span
+                        class="material-symbols-outlined text-[14px] text-ink-subtle"
+                        >model_training</span
+                      >
+                      <span
+                        class="font-body-default text-[13px] text-ink-primary"
+                        >Llama-3-8B-Base</span
+                      >
+                    </div>
+                    <div class="flex items-center gap-xs">
+                      <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
+                      <span
+                        class="font-label-mono text-[11px] text-success uppercase"
+                        >Completed</span
+                      >
+                    </div>
+                  </li>
+                  <!-- Job Item 2 -->
+                  <li
+                    class="p-md hover:bg-surface-2 transition-colors duration-150 cursor-pointer group"
+                  >
+                    <div class="flex items-center justify-between mb-xs">
+                      <span
+                        class="font-label-mono text-label-mono text-primary-container"
+                        >job-7b88c1</span
+                      >
+                      <span class="font-label-mono text-[11px] text-ink-subtle"
+                        >Yesterday</span
+                      >
+                    </div>
+                    <div class="flex items-center gap-sm mb-xs">
+                      <span
+                        class="material-symbols-outlined text-[14px] text-ink-subtle"
+                        >model_training</span
+                      >
+                      <span
+                        class="font-body-default text-[13px] text-ink-primary"
+                        >Mistral-7B-v0.2</span
+                      >
+                    </div>
+                    <div class="flex items-center gap-xs">
+                      <div class="w-1.5 h-1.5 rounded-full bg-error"></div>
+                      <span
+                        class="font-label-mono text-[11px] text-error uppercase"
+                        >Failed</span
+                      >
+                    </div>
+                  </li>
+                  <!-- Job Item 3 -->
+                  <li
+                    class="p-md hover:bg-surface-2 transition-colors duration-150 cursor-pointer group"
+                  >
+                    <div class="flex items-center justify-between mb-xs">
+                      <span
+                        class="font-label-mono text-label-mono text-primary-container"
+                        >job-11x09p</span
+                      >
+                      <span class="font-label-mono text-[11px] text-ink-subtle"
+                        >Oct 12, 2023</span
+                      >
+                    </div>
+                    <div class="flex items-center gap-sm mb-xs">
+                      <span
+                        class="material-symbols-outlined text-[14px] text-ink-subtle"
+                        >model_training</span
+                      >
+                      <span
+                        class="font-body-default text-[13px] text-ink-primary"
+                        >Temper-Internal-V1</span
+                      >
+                    </div>
+                    <div class="flex items-center gap-xs">
+                      <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
+                      <span
+                        class="font-label-mono text-[11px] text-success uppercase"
+                        >Completed</span
+                      >
+                    </div>
+                  </li>
+                </ul>
+              </div>
+              <div
+                class="p-sm border-t border-hairline bg-surface/50 text-center"
+              >
+                <button
+                  class="font-label-mono text-[11px] text-ink-subtle hover:text-primary transition-colors"
+                >
+                  View All History →
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

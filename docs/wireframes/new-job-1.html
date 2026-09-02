@@ -1,0 +1,1021 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Temper - Select Model &amp; Dataset</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "tertiary-container": "#a56500",
+              "inverse-on-surface": "#313034",
+              "tertiary-fixed-dim": "#ffb867",
+              "surface-container-lowest": "#0e0e11",
+              "on-error": "#690005",
+              "surface-container-highest": "#353438",
+              "ink-primary": "#f7f8f8",
+              primary: "#bdc2ff",
+              hairline: "#23252a",
+              "surface-tint": "#bdc2ff",
+              "surface-dim": "#131316",
+              "ink-subtle": "#8a8f98",
+              "on-primary-fixed": "#000965",
+              background: "#131316",
+              "on-surface": "#e5e1e6",
+              "on-secondary-fixed": "#000964",
+              "primary-fixed": "#dfe0ff",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "inverse-surface": "#e5e1e6",
+              "on-primary": "#121f8b",
+              "surface-4": "#191a1b",
+              "inverse-primary": "#4854bb",
+              tertiary: "#ffb867",
+              "on-surface-variant": "#c6c5d5",
+              "surface-1": "#0f1011",
+              "surface-container-high": "#2a292d",
+              "on-tertiary-fixed-variant": "#673d00",
+              "secondary-fixed": "#dfe0ff",
+              "surface-2": "#141516",
+              "error-container": "#93000a",
+              surface: "#131316",
+              "surface-variant": "#353438",
+              "tertiary-fixed": "#ffddbb",
+              "ink-muted": "#d0d6e0",
+              "outline-variant": "#454652",
+              error: "#ffb4ab",
+              "on-primary-container": "#fdfaff",
+              "on-secondary": "#0e1d90",
+              success: "#27a644",
+              "surface-container": "#201f23",
+              outline: "#908f9e",
+              "secondary-fixed-dim": "#bdc2ff",
+              "surface-container-low": "#1c1b1f",
+              "on-background": "#e5e1e6",
+              "hairline-strong": "#34343a",
+              "surface-3": "#18191a",
+              "primary-container": "#5e6ad2",
+              "on-primary-fixed-variant": "#2e3aa2",
+              secondary: "#bdc2ff",
+              "surface-bright": "#39393c",
+              "on-tertiary-fixed": "#2b1700",
+              "on-tertiary-container": "#fffaf8",
+              "on-secondary-container": "#abb3ff",
+              "primary-fixed-dim": "#bdc2ff",
+              "on-tertiary": "#482900",
+              "on-error-container": "#ffdad6",
+              "secondary-container": "#2f3ca9",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              xs: "8px",
+              sm: "12px",
+              xl: "32px",
+              md: "16px",
+              base: "4px",
+              lg: "24px",
+              section: "96px",
+            },
+            fontFamily: {
+              "display-xl": ["Geist"],
+              "label-mono": ["JetBrains Mono"],
+              eyebrow: ["Geist"],
+              "display-lg": ["Geist"],
+              "body-default": ["Geist"],
+              "headline-md": ["Geist"],
+            },
+            fontSize: {
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                { lineHeight: "1.50", letterSpacing: "0px", fontWeight: "400" },
+              ],
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background-color: #010102;
+        color: #f7f8f8;
+        font-family: "Geist", sans-serif;
+      }
+      .material-symbols-outlined {
+        font-variation-settings:
+          "FILL" 0,
+          "wght" 300,
+          "GRAD" 0,
+          "opsz" 24;
+      }
+      .glass-panel {
+        background: rgba(15, 16, 17, 0.7);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid #23252a;
+      }
+      .stepper-line {
+        width: 2px;
+        height: 100%;
+        background: #23252a;
+        position: absolute;
+        left: 15px;
+        top: 32px;
+        z-index: -1;
+      }
+      .stepper-item.active .stepper-circle {
+        background: #5e6ad2;
+        border-color: #5e6ad2;
+        color: white;
+      }
+      .stepper-item.completed .stepper-circle {
+        background: #141516;
+        border-color: #5e6ad2;
+        color: #5e6ad2;
+      }
+      .stepper-circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #141516;
+        border: 1px solid #23252a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      /* Custom scrollbar for webkit */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #2a292d;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #353438;
+      }
+
+      .model-card {
+        transition: all 150ms ease-out;
+      }
+      .model-card:hover {
+        border-color: #34343a;
+        background: #141516;
+      }
+      .model-card.selected {
+        border-color: #5e6ad2;
+        background: rgba(94, 106, 210, 0.05);
+      }
+      .model-card.selected::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 0;
+        height: 0;
+        border-style: solid;
+        border-width: 0 40px 40px 0;
+        border-color: transparent #5e6ad2 transparent transparent;
+      }
+      .model-card.selected .check-icon {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        z-index: 10;
+        color: white;
+        font-size: 16px;
+      }
+
+      .dataset-row {
+        transition: all 150ms ease-out;
+      }
+      .dataset-row:hover {
+        background: #141516;
+      }
+      .dataset-row.selected {
+        background: rgba(94, 106, 210, 0.1);
+        border-left: 2px solid #5e6ad2;
+      }
+
+      .inner-glow {
+        box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+      }
+    </style>
+  </head>
+  <body
+    class="antialiased min-h-screen flex overflow-hidden selection:bg-primary-container selection:text-white"
+  >
+    <!-- SideNavBar -->
+    <nav
+      class="hidden md:flex flex-col h-screen w-64 border-r border-hairline bg-surface-1 py-xl flex-shrink-0 relative z-20"
+    >
+      <div class="px-lg mb-8 flex items-center gap-3">
+        <div
+          class="w-8 h-8 rounded bg-primary-container flex items-center justify-center text-white inner-glow"
+        >
+          <span class="material-symbols-outlined text-sm">rocket_launch</span>
+        </div>
+        <div>
+          <h1
+            class="font-headline-md text-[20px] font-semibold text-ink-primary leading-none"
+          >
+            Temper
+          </h1>
+          <span
+            class="font-label-mono text-label-mono text-ink-subtle block mt-1"
+            >v2.4.0-stable</span
+          >
+        </div>
+      </div>
+      <div class="px-lg mb-6">
+        <button
+          class="w-full bg-primary-container hover:bg-inverse-primary text-white font-body-default text-[14px] font-medium py-2 px-4 rounded-lg transition-colors duration-150 ease-out flex items-center justify-center gap-2 inner-glow"
+        >
+          <span class="material-symbols-outlined text-[18px]">add</span>
+          New Experiment
+        </button>
+      </div>
+      <ul class="flex-1 px-4 space-y-1">
+        <li>
+          <a
+            class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[20px]">dashboard</span>
+            <span class="font-label-mono text-label-mono">Dashboard</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[20px]"
+              >model_training</span
+            >
+            <span class="font-label-mono text-label-mono">Models</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[20px]">database</span>
+            <span class="font-label-mono text-label-mono">Datasets</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-2 text-ink-primary border-l-2 border-primary transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[20px] text-primary"
+              >science</span
+            >
+            <span class="font-label-mono text-label-mono">Training</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[20px]"
+              >rocket_launch</span
+            >
+            <span class="font-label-mono text-label-mono">Deployments</span>
+          </a>
+        </li>
+        <li>
+          <a
+            class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-[20px]">settings</span>
+            <span class="font-label-mono text-label-mono">Settings</span>
+          </a>
+        </li>
+      </ul>
+      <div class="px-4 mt-auto space-y-1">
+        <a
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[20px]">menu_book</span>
+          <span class="font-label-mono text-label-mono">Documentation</span>
+        </a>
+        <a
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150 ease-out cursor-pointer active:bg-surface-3"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[20px]"
+            >help_outline</span
+          >
+          <span class="font-label-mono text-label-mono">Support</span>
+        </a>
+      </div>
+    </nav>
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <!-- Header -->
+      <header
+        class="h-16 border-b border-hairline flex items-center justify-between px-lg flex-shrink-0 z-10 glass-panel"
+      >
+        <div class="flex items-center gap-4">
+          <h2
+            class="font-headline-md text-[20px] text-ink-primary font-semibold"
+          >
+            New Finetuning Run
+          </h2>
+          <div class="h-4 w-px bg-hairline"></div>
+          <span class="font-label-mono text-label-mono text-ink-subtle"
+            >ft-run-7b-instruct-001</span
+          >
+        </div>
+        <div class="flex items-center gap-3">
+          <button
+            class="text-ink-subtle hover:text-ink-primary transition-colors"
+          >
+            <span class="material-symbols-outlined">more_horiz</span>
+          </button>
+          <button
+            class="text-ink-subtle hover:text-ink-primary transition-colors"
+          >
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      </header>
+      <!-- Stepper & Content Layout -->
+      <div class="flex-1 flex overflow-hidden">
+        <!-- Stepper Sidebar -->
+        <aside
+          class="w-64 border-r border-hairline p-lg hidden lg:block overflow-y-auto"
+        >
+          <div class="relative">
+            <div class="stepper-line"></div>
+            <div class="stepper-item active relative z-10 flex gap-4 mb-8">
+              <div class="stepper-circle">1</div>
+              <div>
+                <h3 class="font-body-default text-ink-primary font-medium">
+                  Model &amp; Dataset
+                </h3>
+                <p class="font-label-mono text-[11px] text-ink-subtle mt-1">
+                  Select base and data
+                </p>
+              </div>
+            </div>
+            <div class="stepper-item relative z-10 flex gap-4 mb-8">
+              <div class="stepper-circle">2</div>
+              <div>
+                <h3 class="font-body-default text-ink-subtle font-medium">
+                  Hyperparameters
+                </h3>
+                <p class="font-label-mono text-[11px] text-ink-subtle mt-1">
+                  Epochs, LR, batch size
+                </p>
+              </div>
+            </div>
+            <div class="stepper-item relative z-10 flex gap-4 mb-8">
+              <div class="stepper-circle">3</div>
+              <div>
+                <h3 class="font-body-default text-ink-subtle font-medium">
+                  Compute Setup
+                </h3>
+                <p class="font-label-mono text-[11px] text-ink-subtle mt-1">
+                  Select hardware
+                </p>
+              </div>
+            </div>
+            <div class="stepper-item relative z-10 flex gap-4">
+              <div class="stepper-circle">
+                <span class="material-symbols-outlined text-[16px]">flag</span>
+              </div>
+              <div>
+                <h3 class="font-body-default text-ink-subtle font-medium">
+                  Review &amp; Launch
+                </h3>
+              </div>
+            </div>
+          </div>
+        </aside>
+        <!-- Scrollable Content Canvas -->
+        <div
+          class="flex-1 overflow-y-auto p-lg lg:p-xl custom-scrollbar relative"
+        >
+          <div class="max-w-4xl mx-auto space-y-12 pb-32">
+            <!-- Section 1: Base Model -->
+            <section>
+              <div class="mb-6 flex justify-between items-end">
+                <div>
+                  <h3
+                    class="font-headline-md text-[24px] text-ink-primary mb-1"
+                  >
+                    Select Base Model
+                  </h3>
+                  <p class="font-body-default text-[14px] text-ink-subtle">
+                    Choose a foundation model to fine-tune.
+                  </p>
+                </div>
+                <div class="relative">
+                  <span
+                    class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-ink-subtle text-[18px]"
+                    >search</span
+                  >
+                  <input
+                    class="bg-surface-1 border border-hairline rounded-lg pl-9 pr-4 py-1.5 font-label-mono text-label-mono text-ink-primary focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all w-64 placeholder:text-ink-subtle"
+                    placeholder="Search models..."
+                    type="text"
+                  />
+                </div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <!-- Model Card 1 (Selected) -->
+                <div
+                  class="model-card selected relative bg-surface-1 border border-hairline rounded-xl p-5 cursor-pointer inner-glow overflow-hidden"
+                  onclick="selectCard(this, 'model')"
+                >
+                  <span class="material-symbols-outlined check-icon hidden"
+                    >check</span
+                  >
+                  <div class="flex items-start justify-between mb-4">
+                    <div
+                      class="w-10 h-10 rounded-lg bg-surface-2 border border-hairline flex items-center justify-center"
+                    >
+                      <span
+                        class="material-symbols-outlined text-primary text-[20px]"
+                        >smart_toy</span
+                      >
+                    </div>
+                    <div class="flex gap-1">
+                      <span
+                        class="px-2 py-0.5 rounded bg-surface-2 border border-hairline font-label-mono text-[10px] text-ink-subtle"
+                        >Meta</span
+                      >
+                    </div>
+                  </div>
+                  <h4
+                    class="font-body-default text-[16px] font-medium text-ink-primary mb-1"
+                  >
+                    Llama-3-8B-Instruct
+                  </h4>
+                  <p
+                    class="font-label-mono text-[11px] text-ink-subtle mb-4 h-8 overflow-hidden text-ellipsis"
+                  >
+                    Highly capable 8B parameter model optimized for instruction
+                    following.
+                  </p>
+                  <div
+                    class="grid grid-cols-2 gap-2 border-t border-hairline pt-3"
+                  >
+                    <div>
+                      <div
+                        class="font-label-mono text-[10px] text-ink-subtle mb-0.5"
+                      >
+                        Parameters
+                      </div>
+                      <div class="font-label-mono text-[12px] text-ink-primary">
+                        8.0B
+                      </div>
+                    </div>
+                    <div>
+                      <div
+                        class="font-label-mono text-[10px] text-ink-subtle mb-0.5"
+                      >
+                        Context
+                      </div>
+                      <div class="font-label-mono text-[12px] text-ink-primary">
+                        8k tokens
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Model Card 2 -->
+                <div
+                  class="model-card relative bg-surface-1 border border-hairline rounded-xl p-5 cursor-pointer inner-glow overflow-hidden"
+                  onclick="selectCard(this, 'model')"
+                >
+                  <span class="material-symbols-outlined check-icon hidden"
+                    >check</span
+                  >
+                  <div class="flex items-start justify-between mb-4">
+                    <div
+                      class="w-10 h-10 rounded-lg bg-surface-2 border border-hairline flex items-center justify-center"
+                    >
+                      <span
+                        class="material-symbols-outlined text-ink-subtle text-[20px]"
+                        >smart_toy</span
+                      >
+                    </div>
+                    <div class="flex gap-1">
+                      <span
+                        class="px-2 py-0.5 rounded bg-surface-2 border border-hairline font-label-mono text-[10px] text-ink-subtle"
+                        >Mistral</span
+                      >
+                    </div>
+                  </div>
+                  <h4
+                    class="font-body-default text-[16px] font-medium text-ink-primary mb-1"
+                  >
+                    Mistral-7B-v0.2
+                  </h4>
+                  <p
+                    class="font-label-mono text-[11px] text-ink-subtle mb-4 h-8 overflow-hidden text-ellipsis"
+                  >
+                    Fast, efficient 7B model with strong reasoning capabilities.
+                  </p>
+                  <div
+                    class="grid grid-cols-2 gap-2 border-t border-hairline pt-3"
+                  >
+                    <div>
+                      <div
+                        class="font-label-mono text-[10px] text-ink-subtle mb-0.5"
+                      >
+                        Parameters
+                      </div>
+                      <div class="font-label-mono text-[12px] text-ink-primary">
+                        7.3B
+                      </div>
+                    </div>
+                    <div>
+                      <div
+                        class="font-label-mono text-[10px] text-ink-subtle mb-0.5"
+                      >
+                        Context
+                      </div>
+                      <div class="font-label-mono text-[12px] text-ink-primary">
+                        32k tokens
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Model Card 3 -->
+                <div
+                  class="model-card relative bg-surface-1 border border-hairline rounded-xl p-5 cursor-pointer inner-glow overflow-hidden"
+                  onclick="selectCard(this, 'model')"
+                >
+                  <span class="material-symbols-outlined check-icon hidden"
+                    >check</span
+                  >
+                  <div class="flex items-start justify-between mb-4">
+                    <div
+                      class="w-10 h-10 rounded-lg bg-surface-2 border border-hairline flex items-center justify-center"
+                    >
+                      <span
+                        class="material-symbols-outlined text-ink-subtle text-[20px]"
+                        >smart_toy</span
+                      >
+                    </div>
+                    <div class="flex gap-1">
+                      <span
+                        class="px-2 py-0.5 rounded bg-surface-2 border border-hairline font-label-mono text-[10px] text-ink-subtle"
+                        >Google</span
+                      >
+                    </div>
+                  </div>
+                  <h4
+                    class="font-body-default text-[16px] font-medium text-ink-primary mb-1"
+                  >
+                    Gemma-2b-it
+                  </h4>
+                  <p
+                    class="font-label-mono text-[11px] text-ink-subtle mb-4 h-8 overflow-hidden text-ellipsis"
+                  >
+                    Lightweight instruction-tuned model for edge devices.
+                  </p>
+                  <div
+                    class="grid grid-cols-2 gap-2 border-t border-hairline pt-3"
+                  >
+                    <div>
+                      <div
+                        class="font-label-mono text-[10px] text-ink-subtle mb-0.5"
+                      >
+                        Parameters
+                      </div>
+                      <div class="font-label-mono text-[12px] text-ink-primary">
+                        2.5B
+                      </div>
+                    </div>
+                    <div>
+                      <div
+                        class="font-label-mono text-[10px] text-ink-subtle mb-0.5"
+                      >
+                        Context
+                      </div>
+                      <div class="font-label-mono text-[12px] text-ink-primary">
+                        8k tokens
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <!-- Section 2: Dataset -->
+            <section>
+              <div class="mb-6 flex justify-between items-end">
+                <div>
+                  <h3
+                    class="font-headline-md text-[24px] text-ink-primary mb-1"
+                  >
+                    Select Training Dataset
+                  </h3>
+                  <p class="font-body-default text-[14px] text-ink-subtle">
+                    Choose the dataset to use for fine-tuning.
+                  </p>
+                </div>
+                <div class="flex gap-3">
+                  <button
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-hairline bg-surface-1 text-ink-primary font-label-mono text-[12px] hover:bg-surface-2 transition-colors"
+                  >
+                    <span class="material-symbols-outlined text-[16px]"
+                      >upload_file</span
+                    >
+                    Upload
+                  </button>
+                  <div class="relative">
+                    <span
+                      class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-ink-subtle text-[18px]"
+                      >search</span
+                    >
+                    <input
+                      class="bg-surface-1 border border-hairline rounded-lg pl-9 pr-4 py-1.5 font-label-mono text-label-mono text-ink-primary focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all w-64 placeholder:text-ink-subtle"
+                      placeholder="Search datasets..."
+                      type="text"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div
+                class="border border-hairline rounded-xl overflow-hidden bg-surface-1 inner-glow"
+              >
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="border-b border-hairline bg-surface-2">
+                      <th
+                        class="py-3 px-4 font-label-mono text-[11px] text-ink-subtle font-medium uppercase tracking-wider w-10"
+                      ></th>
+                      <th
+                        class="py-3 px-4 font-label-mono text-[11px] text-ink-subtle font-medium uppercase tracking-wider"
+                      >
+                        Name
+                      </th>
+                      <th
+                        class="py-3 px-4 font-label-mono text-[11px] text-ink-subtle font-medium uppercase tracking-wider"
+                      >
+                        Size
+                      </th>
+                      <th
+                        class="py-3 px-4 font-label-mono text-[11px] text-ink-subtle font-medium uppercase tracking-wider"
+                      >
+                        Samples
+                      </th>
+                      <th
+                        class="py-3 px-4 font-label-mono text-[11px] text-ink-subtle font-medium uppercase tracking-wider text-right"
+                      >
+                        Last Modified
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      class="dataset-row selected border-b border-hairline cursor-pointer"
+                      onclick="selectRow(this)"
+                    >
+                      <td class="py-3 px-4 text-center">
+                        <div
+                          class="w-4 h-4 rounded-full border border-primary-container flex items-center justify-center bg-primary-container"
+                        >
+                          <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                        </div>
+                      </td>
+                      <td class="py-3 px-4">
+                        <div class="flex items-center gap-2">
+                          <span
+                            class="material-symbols-outlined text-[16px] text-ink-subtle"
+                            >description</span
+                          >
+                          <span
+                            class="font-label-mono text-[13px] text-ink-primary"
+                            >instruction-tuning-v2.jsonl</span
+                          >
+                        </div>
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle"
+                      >
+                        45.2 MB
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle"
+                      >
+                        125,000
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle text-right"
+                      >
+                        2 hrs ago
+                      </td>
+                    </tr>
+                    <tr
+                      class="dataset-row border-b border-hairline cursor-pointer"
+                      onclick="selectRow(this)"
+                    >
+                      <td class="py-3 px-4 text-center">
+                        <div
+                          class="w-4 h-4 rounded-full border border-outline-variant flex items-center justify-center radio-inner"
+                        ></div>
+                      </td>
+                      <td class="py-3 px-4">
+                        <div class="flex items-center gap-2">
+                          <span
+                            class="material-symbols-outlined text-[16px] text-ink-subtle"
+                            >medical_information</span
+                          >
+                          <span
+                            class="font-label-mono text-[13px] text-ink-primary"
+                            >medical-qa-corpus</span
+                          >
+                        </div>
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle"
+                      >
+                        1.2 GB
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle"
+                      >
+                        3,400,000
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle text-right"
+                      >
+                        Yesterday
+                      </td>
+                    </tr>
+                    <tr
+                      class="dataset-row border-b border-hairline cursor-pointer"
+                      onclick="selectRow(this)"
+                    >
+                      <td class="py-3 px-4 text-center">
+                        <div
+                          class="w-4 h-4 rounded-full border border-outline-variant flex items-center justify-center radio-inner"
+                        ></div>
+                      </td>
+                      <td class="py-3 px-4">
+                        <div class="flex items-center gap-2">
+                          <span
+                            class="material-symbols-outlined text-[16px] text-ink-subtle"
+                            >code</span
+                          >
+                          <span
+                            class="font-label-mono text-[13px] text-ink-primary"
+                            >code-assist-delta</span
+                          >
+                        </div>
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle"
+                      >
+                        230 MB
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle"
+                      >
+                        850,000
+                      </td>
+                      <td
+                        class="py-3 px-4 font-label-mono text-[12px] text-ink-subtle text-right"
+                      >
+                        3 days ago
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+        <!-- Run Summary Sidebar -->
+        <aside
+          class="w-80 border-l border-hairline bg-surface-1 flex flex-col hidden xl:flex"
+        >
+          <div class="p-lg border-b border-hairline">
+            <h3
+              class="font-body-default text-[16px] font-medium text-ink-primary"
+            >
+              Run Summary
+            </h3>
+          </div>
+          <div class="p-lg flex-1 overflow-y-auto custom-scrollbar space-y-6">
+            <div>
+              <h4
+                class="font-label-mono text-[11px] text-ink-subtle uppercase tracking-wider mb-3"
+              >
+                Selected Model
+              </h4>
+              <div
+                class="flex items-center gap-3 bg-surface-2 p-3 rounded-lg border border-hairline"
+              >
+                <div
+                  class="w-8 h-8 rounded bg-surface-3 flex items-center justify-center"
+                >
+                  <span
+                    class="material-symbols-outlined text-[16px] text-primary"
+                    >smart_toy</span
+                  >
+                </div>
+                <div>
+                  <div
+                    class="font-label-mono text-[13px] text-ink-primary"
+                    id="summary-model"
+                  >
+                    Llama-3-8B-Instruct
+                  </div>
+                  <div class="font-label-mono text-[10px] text-ink-subtle">
+                    8.0B Params • 8k Context
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <h4
+                class="font-label-mono text-[11px] text-ink-subtle uppercase tracking-wider mb-3"
+              >
+                Selected Dataset
+              </h4>
+              <div
+                class="flex items-center gap-3 bg-surface-2 p-3 rounded-lg border border-hairline"
+              >
+                <div
+                  class="w-8 h-8 rounded bg-surface-3 flex items-center justify-center"
+                >
+                  <span
+                    class="material-symbols-outlined text-[16px] text-tertiary"
+                    >description</span
+                  >
+                </div>
+                <div>
+                  <div
+                    class="font-label-mono text-[13px] text-ink-primary truncate w-48"
+                    id="summary-dataset"
+                  >
+                    instruction-tuning-v2.jsonl
+                  </div>
+                  <div class="font-label-mono text-[10px] text-ink-subtle">
+                    125,000 samples
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="pt-6 border-t border-hairline">
+              <div class="flex justify-between items-center mb-2">
+                <span class="font-label-mono text-[12px] text-ink-subtle"
+                  >Est. Duration</span
+                >
+                <span class="font-label-mono text-[12px] text-ink-primary"
+                  >~4.5 hrs</span
+                >
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="font-label-mono text-[12px] text-ink-subtle"
+                  >Est. Cost</span
+                >
+                <span
+                  class="font-label-mono text-[14px] text-primary font-medium"
+                  >$12.45</span
+                >
+              </div>
+            </div>
+          </div>
+          <div class="p-lg border-t border-hairline bg-surface-1">
+            <button
+              class="w-full bg-primary-container hover:bg-inverse-primary text-white font-body-default text-[14px] font-medium py-2.5 px-4 rounded-lg transition-colors duration-150 ease-out inner-glow flex items-center justify-center gap-2"
+            >
+              Continue to Hyperparameters
+              <span class="material-symbols-outlined text-[18px]"
+                >arrow_forward</span
+              >
+            </button>
+          </div>
+        </aside>
+      </div>
+    </main>
+    <script>
+      function selectCard(element, type) {
+        // Remove selected class from all cards in this section
+        const cards = element.parentElement.querySelectorAll(".model-card");
+        cards.forEach((card) => {
+          card.classList.remove("selected");
+          card.querySelector(".check-icon").classList.add("hidden");
+        });
+
+        // Add selected class to clicked card
+        element.classList.add("selected");
+        element.querySelector(".check-icon").classList.remove("hidden");
+
+        // Update summary
+        if (type === "model") {
+          const title = element.querySelector("h4").innerText;
+          document.getElementById("summary-model").innerText = title;
+        }
+      }
+
+      function selectRow(element) {
+        // Remove selected from all rows
+        const rows = element.parentElement.querySelectorAll(".dataset-row");
+        rows.forEach((row) => {
+          row.classList.remove("selected");
+          const radio = row.querySelector("td:first-child > div");
+          radio.className =
+            "w-4 h-4 rounded-full border border-outline-variant flex items-center justify-center radio-inner";
+          radio.innerHTML = "";
+        });
+
+        // Add selected to clicked row
+        element.classList.add("selected");
+        const radio = element.querySelector("td:first-child > div");
+        radio.className =
+          "w-4 h-4 rounded-full border border-primary-container flex items-center justify-center bg-primary-container";
+        radio.innerHTML =
+          '<div class="w-1.5 h-1.5 bg-white rounded-full"></div>';
+
+        // Update summary
+        const name = element.querySelector(
+          "td:nth-child(2) span:last-child",
+        ).innerText;
+        document.getElementById("summary-dataset").innerText = name;
+      }
+    </script>
+  </body>
+</html>

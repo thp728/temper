@@ -1,0 +1,576 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Temper AI - Run Terminal State</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container": "#201f23",
+              "surface-container-lowest": "#0e0e11",
+              "surface-container-low": "#1c1b1f",
+              tertiary: "#ffb867",
+              "on-tertiary": "#482900",
+              "on-error": "#690005",
+              "ink-subtle": "#8a8f98",
+              "hairline-strong": "#34343a",
+              "surface-3": "#18191a",
+              "on-secondary-container": "#abb3ff",
+              "primary-fixed-dim": "#bdc2ff",
+              "on-tertiary-fixed-variant": "#673d00",
+              "on-secondary": "#0e1d90",
+              surface: "#131316",
+              "surface-variant": "#353438",
+              "surface-container-highest": "#353438",
+              "tertiary-fixed": "#ffddbb",
+              "on-background": "#e5e1e6",
+              "outline-variant": "#454652",
+              "secondary-fixed-dim": "#bdc2ff",
+              primary: "#bdc2ff",
+              hairline: "#23252a",
+              "surface-tint": "#bdc2ff",
+              "surface-4": "#191a1b",
+              "surface-bright": "#39393c",
+              "on-secondary-fixed": "#000964",
+              "tertiary-fixed-dim": "#ffb867",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "surface-1": "#0f1011",
+              "surface-container-high": "#2a292d",
+              "on-tertiary-container": "#fffaf8",
+              "ink-primary": "#f7f8f8",
+              "tertiary-container": "#a56500",
+              "error-container": "#93000a",
+              "secondary-fixed": "#dfe0ff",
+              success: "#27a644",
+              "inverse-on-surface": "#313034",
+              "on-primary-fixed": "#000965",
+              "on-primary-fixed-variant": "#2e3aa2",
+              secondary: "#bdc2ff",
+              outline: "#908f9e",
+              "inverse-primary": "#4854bb",
+              "on-surface-variant": "#c6c5d5",
+              "surface-2": "#141516",
+              error: "#ffb4ab",
+              "on-error-container": "#ffdad6",
+              "inverse-surface": "#e5e1e6",
+              "ink-muted": "#d0d6e0",
+              "on-primary-container": "#fdfaff",
+              background: "#131316",
+              "on-tertiary-fixed": "#2b1700",
+              "secondary-container": "#2f3ca9",
+              "on-primary": "#121f8b",
+              "primary-fixed": "#dfe0ff",
+              "primary-container": "#5e6ad2",
+              "on-surface": "#e5e1e6",
+              "surface-dim": "#131316",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              base: "4px",
+              sm: "12px",
+              lg: "24px",
+              md: "16px",
+              section: "96px",
+              xl: "32px",
+              xs: "8px",
+            },
+            fontFamily: {
+              "display-lg": ["Geist"],
+              "body-default": ["Geist"],
+              "headline-md": ["Geist"],
+              "display-xl": ["Geist"],
+              "label-mono": ["JetBrains Mono"],
+              eyebrow: ["Geist"],
+            },
+            fontSize: {
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                { lineHeight: "1.50", letterSpacing: "0px", fontWeight: "400" },
+              ],
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-background text-ink-primary font-body-default min-h-screen flex selection:bg-primary-container selection:text-on-primary-container"
+  >
+    <!-- SideNavBar (Shared Component) -->
+    <nav
+      class="bg-surface-1 text-primary fixed left-0 top-0 h-screen w-64 flex flex-col py-md border-r border-hairline z-40 hidden md:flex"
+    >
+      <!-- Header -->
+      <div class="px-md mb-xl flex items-center gap-sm">
+        <div
+          class="w-8 h-8 rounded bg-surface-3 flex items-center justify-center border border-hairline"
+        >
+          <span
+            class="material-symbols-outlined text-primary text-xl"
+            data-icon="terminal"
+            >terminal</span
+          >
+        </div>
+        <div>
+          <h1
+            class="font-headline-md text-headline-md text-ink-primary text-[20px]"
+          >
+            Temper AI
+          </h1>
+          <p
+            class="font-label-mono text-label-mono text-ink-subtle text-[11px] uppercase tracking-wider mt-1"
+          >
+            Production Cluster
+          </p>
+        </div>
+      </div>
+      <!-- CTA -->
+      <div class="px-md mb-lg">
+        <button
+          class="w-full bg-primary-container text-on-primary-container hover:bg-primary transition-colors duration-150 rounded-lg py-2 px-4 flex items-center justify-center gap-2 font-medium"
+        >
+          <span class="material-symbols-outlined text-sm" data-icon="add"
+            >add</span
+          >
+          New Run
+        </button>
+      </div>
+      <!-- Main Nav -->
+      <div class="flex-1 px-sm space-y-1">
+        <a
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 opacity-80 hover:opacity-100 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="dashboard"
+            >dashboard</span
+          >
+          Dashboard
+        </a>
+        <a
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 opacity-80 hover:opacity-100 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="database"
+            >database</span
+          >
+          Datasets
+        </a>
+        <a
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-primary bg-surface-2 border-r-2 border-primary font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="rocket_launch"
+            >rocket_launch</span
+          >
+          Jobs
+        </a>
+        <a
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 opacity-80 hover:opacity-100 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="account_tree"
+            >account_tree</span
+          >
+          Models
+        </a>
+      </div>
+      <!-- Footer Nav -->
+      <div class="px-sm space-y-1 mt-auto">
+        <a
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 opacity-80 hover:opacity-100 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="settings"
+            >settings</span
+          >
+          Settings
+        </a>
+        <a
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 opacity-80 hover:opacity-100 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="description"
+            >description</span
+          >
+          Documentation
+        </a>
+      </div>
+    </nav>
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col md:ml-64 w-full">
+      <!-- TopNavBar (Shared Component - Mobile only for this layout) -->
+      <header
+        class="bg-background text-primary flex justify-between items-center w-full px-lg h-16 sticky top-0 z-50 border-b border-hairline md:hidden"
+      >
+        <div class="flex items-center gap-3">
+          <span
+            class="material-symbols-outlined cursor-pointer text-ink-primary"
+            data-icon="menu"
+            >menu</span
+          >
+          <span
+            class="font-headline-md text-headline-md font-bold text-ink-primary text-xl"
+            >Temper</span
+          >
+        </div>
+        <div class="flex gap-4">
+          <span
+            class="material-symbols-outlined cursor-pointer hover:bg-surface-2 transition-colors duration-150 rounded p-1"
+            data-icon="notifications"
+            >notifications</span
+          >
+          <span
+            class="material-symbols-outlined cursor-pointer hover:bg-surface-2 transition-colors duration-150 rounded p-1"
+            data-icon="settings"
+            >settings</span
+          >
+        </div>
+      </header>
+      <!-- Page Content -->
+      <div
+        class="p-lg lg:p-xl xl:px-section max-w-[1600px] mx-auto w-full flex-1 flex flex-col gap-lg"
+      >
+        <!-- Header Section -->
+        <div
+          class="flex flex-col md:flex-row md:items-end justify-between gap-md border-b border-hairline pb-lg"
+        >
+          <div>
+            <div class="flex items-center gap-sm mb-2">
+              <a
+                class="text-ink-subtle hover:text-ink-primary font-label-mono text-label-mono flex items-center gap-1 transition-colors"
+                href="#"
+              >
+                <span
+                  class="material-symbols-outlined text-sm"
+                  data-icon="arrow_back"
+                  >arrow_back</span
+                >
+                Back to Jobs
+              </a>
+              <span class="text-hairline-strong">/</span>
+              <span class="text-ink-muted font-label-mono text-label-mono"
+                >job_ft_llama3_8b_instruct_v2</span
+              >
+            </div>
+            <div class="flex items-center gap-md">
+              <h2 class="font-headline-md text-headline-md">
+                Llama-3-8B Finetune
+              </h2>
+              <div
+                class="flex items-center gap-2 bg-success/10 px-2 py-1 rounded border border-success/20"
+              >
+                <div
+                  class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"
+                ></div>
+                <span
+                  class="font-label-mono text-label-mono text-success text-[11px] uppercase tracking-wider"
+                  >Succeeded</span
+                >
+              </div>
+            </div>
+            <p class="text-ink-subtle mt-2">
+              Completed on Oct 24, 2023 at 14:32 UTC • Ran for 4h 12m
+            </p>
+          </div>
+          <div class="flex items-center gap-sm">
+            <button
+              class="px-4 py-2 rounded-lg border border-hairline text-ink-primary hover:bg-surface-2 transition-colors font-medium flex items-center gap-2"
+            >
+              <span
+                class="material-symbols-outlined text-sm"
+                data-icon="download"
+                >download</span
+              >
+              Export Model
+            </button>
+            <button
+              class="px-4 py-2 rounded-lg bg-primary-container text-on-primary-container hover:bg-primary transition-colors font-medium flex items-center gap-2"
+            >
+              <span
+                class="material-symbols-outlined text-sm"
+                data-icon="rocket_launch"
+                >rocket_launch</span
+              >
+              Deploy to Inference
+            </button>
+          </div>
+        </div>
+        <!-- Metrics Bento Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+          <!-- Metric 1 -->
+          <div
+            class="bg-surface-1 border border-hairline rounded-xl p-md relative overflow-hidden group"
+          >
+            <div class="absolute inset-x-0 top-0 h-px bg-white/5"></div>
+            <h3 class="font-label-mono text-label-mono text-ink-subtle mb-1">
+              MMLU Score (5-shot)
+            </h3>
+            <div class="flex items-end gap-3 mt-2">
+              <span class="text-3xl font-semibold tracking-tight">68.4%</span>
+              <div class="flex items-center text-success mb-1">
+                <span
+                  class="material-symbols-outlined text-sm"
+                  data-icon="trending_up"
+                  >trending_up</span
+                >
+                <span class="font-label-mono text-label-mono text-[12px]"
+                  >+4.2%</span
+                >
+              </div>
+            </div>
+            <p class="text-ink-muted text-sm mt-2">Baseline: 64.2%</p>
+          </div>
+          <!-- Metric 2 -->
+          <div
+            class="bg-surface-1 border border-hairline rounded-xl p-md relative overflow-hidden"
+          >
+            <div class="absolute inset-x-0 top-0 h-px bg-white/5"></div>
+            <h3 class="font-label-mono text-label-mono text-ink-subtle mb-1">
+              Final Perplexity
+            </h3>
+            <div class="flex items-end gap-3 mt-2">
+              <span class="text-3xl font-semibold tracking-tight">3.14</span>
+              <div class="flex items-center text-success mb-1">
+                <span
+                  class="material-symbols-outlined text-sm"
+                  data-icon="trending_down"
+                  >trending_down</span
+                >
+                <span class="font-label-mono text-label-mono text-[12px]"
+                  >-1.82</span
+                >
+              </div>
+            </div>
+            <p class="text-ink-muted text-sm mt-2">Validation loss converged</p>
+          </div>
+          <!-- Metric 3 -->
+          <div
+            class="bg-surface-1 border border-hairline rounded-xl p-md relative overflow-hidden"
+          >
+            <div class="absolute inset-x-0 top-0 h-px bg-white/5"></div>
+            <h3 class="font-label-mono text-label-mono text-ink-subtle mb-1">
+              Training Cost
+            </h3>
+            <div class="flex items-end gap-3 mt-2">
+              <span class="text-3xl font-semibold tracking-tight">$42.50</span>
+            </div>
+            <p class="text-ink-muted text-sm mt-2">8x H100 (4h 12m)</p>
+          </div>
+        </div>
+        <!-- Terminal Component -->
+        <div
+          class="flex-1 flex flex-col bg-surface-1 border border-hairline rounded-xl overflow-hidden min-h-[400px]"
+        >
+          <!-- Terminal Header -->
+          <div
+            class="bg-surface-2 border-b border-hairline px-md py-3 flex items-center justify-between"
+          >
+            <div class="flex items-center gap-4">
+              <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-hairline-strong"></div>
+                <div class="w-3 h-3 rounded-full bg-hairline-strong"></div>
+                <div class="w-3 h-3 rounded-full bg-hairline-strong"></div>
+              </div>
+              <span class="font-label-mono text-label-mono text-ink-subtle"
+                >run_logs.txt</span
+              >
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="relative">
+                <span
+                  class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-ink-subtle text-sm"
+                  data-icon="search"
+                  >search</span
+                >
+                <input
+                  class="bg-surface-3 border-hairline focus:border-primary-container focus:ring-1 focus:ring-primary-container/50 text-ink-primary font-label-mono text-[12px] rounded pl-8 py-1 w-48 transition-all"
+                  placeholder="Filter logs..."
+                  type="text"
+                />
+              </div>
+              <button
+                class="p-1.5 text-ink-subtle hover:text-ink-primary hover:bg-surface-3 rounded transition-colors"
+                title="Download Logs"
+              >
+                <span
+                  class="material-symbols-outlined text-sm"
+                  data-icon="download"
+                  >download</span
+                >
+              </button>
+            </div>
+          </div>
+          <!-- Terminal Body -->
+          <div
+            class="flex-1 p-md overflow-y-auto font-label-mono text-label-mono text-[12px] leading-relaxed bg-[#0a0a0c] text-ink-muted scrollbar-hide"
+          >
+            <div class="space-y-1">
+              <div class="text-ink-subtle">
+                [2023-10-24 10:20:01] INFO: Initializing distributed training
+                environment...
+              </div>
+              <div class="text-ink-subtle">
+                [2023-10-24 10:20:05] INFO: Loaded model meta-llama/Llama-3-8B
+                on 8 GPUs.
+              </div>
+              <div class="text-ink-subtle">
+                [2023-10-24 10:21:12] INFO: Dataset 'custom_instruct_v2' loaded
+                (145,200 examples).
+              </div>
+              <br />
+              <div>
+                <span class="text-tertiary">Epoch 1/3</span> - Step 100/4537 -
+                loss: 2.451 - lr: 2.0e-5
+              </div>
+              <div>
+                <span class="text-tertiary">Epoch 1/3</span> - Step 500/4537 -
+                loss: 1.892 - lr: 1.8e-5
+              </div>
+              <div>
+                <span class="text-tertiary">Epoch 1/3</span> - Step 1000/4537 -
+                loss: 1.654 - lr: 1.5e-5
+              </div>
+              <div class="text-ink-subtle">
+                [2023-10-24 11:45:22] INFO: Running validation...
+              </div>
+              <div class="text-primary-fixed-dim">
+                Validation loss: 1.542 | Perplexity: 4.67
+              </div>
+              <br />
+              <div>
+                <span class="text-tertiary">Epoch 2/3</span> - Step 2000/4537 -
+                loss: 1.421 - lr: 1.0e-5
+              </div>
+              <div>
+                <span class="text-tertiary">Epoch 2/3</span> - Step 3000/4537 -
+                loss: 1.315 - lr: 7.5e-6
+              </div>
+              <div class="text-ink-subtle">
+                [2023-10-24 13:10:45] INFO: Running validation...
+              </div>
+              <div class="text-primary-fixed-dim">
+                Validation loss: 1.284 | Perplexity: 3.61
+              </div>
+              <br />
+              <div>
+                <span class="text-tertiary">Epoch 3/3</span> - Step 4000/4537 -
+                loss: 1.189 - lr: 2.5e-6
+              </div>
+              <div>
+                <span class="text-tertiary">Epoch 3/3</span> - Step 4537/4537 -
+                loss: 1.142 - lr: 0.0e-0
+              </div>
+              <div class="text-ink-subtle">
+                [2023-10-24 14:25:10] INFO: Final validation step...
+              </div>
+              <div class="text-primary-fixed-dim">
+                Final Validation loss: 1.144 | Final Perplexity: 3.14
+              </div>
+              <br />
+              <div class="text-success">
+                [2023-10-24 14:30:00] SUCCESS: Training completed successfully.
+              </div>
+              <div class="text-ink-subtle">
+                [2023-10-24 14:31:15] INFO: Running final evaluation suite
+                (MMLU)...
+              </div>
+              <div class="text-primary-fixed-dim">
+                MMLU Score (5-shot): 68.4% (+4.2% vs baseline)
+              </div>
+              <div class="text-success">
+                [2023-10-24 14:32:00] SUCCESS: Model weights saved to
+                s3://temper-models/llama3-8b-instruct-v2/final
+              </div>
+              <div class="animate-pulse mt-4">_</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <style>
+      /* Hide scrollbar for cleaner terminal look */
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+    </style>
+  </body>
+</html>

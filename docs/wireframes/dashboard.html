@@ -1,0 +1,669 @@
+<!doctype html>
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Temper Dashboard</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-error-container": "#ffdad6",
+              "primary-fixed-dim": "#bdc2ff",
+              "primary-fixed": "#dfe0ff",
+              "error-container": "#93000a",
+              "on-surface": "#e5e1e6",
+              "tertiary-fixed": "#ffddbb",
+              "secondary-fixed-dim": "#bdc2ff",
+              "primary-container": "#5e6ad2",
+              background: "#131316",
+              "on-tertiary-fixed": "#2b1700",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "surface-2": "#141516",
+              "inverse-surface": "#e5e1e6",
+              "on-secondary-container": "#abb3ff",
+              "surface-1": "#0f1011",
+              "on-primary-fixed-variant": "#2e3aa2",
+              "on-primary-fixed": "#000965",
+              "surface-4": "#191a1b",
+              "outline-variant": "#454652",
+              "tertiary-fixed-dim": "#ffb867",
+              "on-surface-variant": "#c6c5d5",
+              "ink-primary": "#f7f8f8",
+              success: "#27a644",
+              "ink-muted": "#d0d6e0",
+              "surface-container-low": "#1c1b1f",
+              primary: "#bdc2ff",
+              outline: "#908f9e",
+              "surface-dim": "#131316",
+              "on-tertiary-fixed-variant": "#673d00",
+              "ink-subtle": "#8a8f98",
+              "surface-tint": "#bdc2ff",
+              "tertiary-container": "#a56500",
+              "inverse-on-surface": "#313034",
+              "on-primary-container": "#fdfaff",
+              "on-secondary-fixed": "#000964",
+              "on-secondary": "#0e1d90",
+              "on-tertiary-container": "#fffaf8",
+              hairline: "#23252a",
+              "inverse-primary": "#4854bb",
+              "surface-variant": "#353438",
+              "on-tertiary": "#482900",
+              "on-primary": "#121f8b",
+              "surface-container-high": "#2a292d",
+              "surface-container-lowest": "#0e0e11",
+              error: "#ffb4ab",
+              "hairline-strong": "#34343a",
+              "on-background": "#e5e1e6",
+              "surface-bright": "#39393c",
+              "surface-3": "#18191a",
+              "surface-container": "#201f23",
+              "on-error": "#690005",
+              tertiary: "#ffb867",
+              surface: "#131316",
+              "secondary-fixed": "#dfe0ff",
+              secondary: "#bdc2ff",
+              "surface-container-highest": "#353438",
+              "secondary-container": "#2f3ca9",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              sm: "12px",
+              md: "16px",
+              section: "96px",
+              xs: "8px",
+              lg: "24px",
+              base: "4px",
+              xl: "32px",
+            },
+            fontFamily: {
+              eyebrow: ["Geist"],
+              "label-mono": ["JetBrains Mono"],
+              "display-lg": ["Geist"],
+              "body-default": ["Geist"],
+              "headline-md": ["Geist"],
+              "display-xl": ["Geist"],
+            },
+            fontSize: {
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                { lineHeight: "1.50", letterSpacing: "0px", fontWeight: "400" },
+              ],
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-background text-ink-primary font-body-default text-body-default min-h-screen flex selection:bg-primary-container selection:text-on-primary-container"
+  >
+    <aside
+      class="fixed left-0 top-0 h-screen w-64 flex flex-col py-md bg-surface-1 dark:bg-surface-1 border-r border-hairline z-40 hidden md:flex"
+    >
+      <div class="px-md mb-xl flex items-center gap-sm">
+        <div
+          class="w-8 h-8 rounded bg-primary-container flex items-center justify-center shrink-0"
+        >
+          <span
+            class="material-symbols-outlined text-on-primary-container text-[18px]"
+            >temp_preferences_custom</span
+          >
+        </div>
+        <div>
+          <h1
+            class="font-headline-md text-[18px] text-ink-primary tracking-tight font-bold leading-none"
+          >
+            Temper AI
+          </h1>
+          <p class="font-eyebrow text-eyebrow text-ink-subtle mt-1">
+            Production Cluster
+          </p>
+        </div>
+      </div>
+      <nav class="flex-1 px-sm space-y-1">
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-primary bg-surface-2 border-r-2 border-primary font-label-mono text-label-mono opacity-100 transition-all duration-150"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="dashboard"
+            style="font-variation-settings: &quot;FILL&quot; 1"
+            >dashboard</span
+          >
+          <span class="">Dashboard</span>
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono opacity-80 hover:opacity-100"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="database"
+            >database</span
+          >
+          <span class="">Datasets</span>
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono opacity-80 hover:opacity-100"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="rocket_launch"
+            >rocket_launch</span
+          >
+          <span class="">Jobs</span>
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono opacity-80 hover:opacity-100"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="account_tree"
+            >account_tree</span
+          >
+          <span class="">Models</span>
+        </a>
+      </nav>
+      <div class="px-sm mt-auto mb-lg">
+        <button
+          class="w-full flex items-center justify-center gap-sm py-2 bg-primary-container text-on-primary-container rounded-lg font-eyebrow text-eyebrow font-bold hover:bg-primary transition-colors duration-150"
+        >
+          <span class="material-symbols-outlined text-[16px]">add</span>
+          New Run
+        </button>
+      </div>
+      <nav class="px-sm space-y-1">
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono opacity-80 hover:opacity-100"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="settings"
+            >settings</span
+          >
+          <span class="">Settings</span>
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono opacity-80 hover:opacity-100"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="description"
+            >description</span
+          >
+          <span class="">Documentation</span>
+        </a>
+      </nav>
+    </aside>
+    <div class="flex-1 md:ml-64 flex flex-col min-h-screen">
+      <header
+        class="flex justify-between items-center w-full px-lg h-16 sticky top-0 z-30 bg-background dark:bg-background border-b border-hairline transition-transform duration-150"
+      >
+        <div class="flex items-center gap-lg hidden md:flex">
+          <a
+            class="text-ink-muted font-medium font-body-default text-body-default hover:bg-surface-2 transition-colors duration-150 px-2 py-1 rounded"
+            href="#"
+            >Docs</a
+          >
+          <a
+            class="text-ink-muted font-medium font-body-default text-body-default hover:bg-surface-2 transition-colors duration-150 px-2 py-1 rounded"
+            href="#"
+            >API</a
+          >
+          <a
+            class="text-ink-muted font-medium font-body-default text-body-default hover:bg-surface-2 transition-colors duration-150 px-2 py-1 rounded"
+            href="#"
+            >Support</a
+          >
+        </div>
+        <div class="flex-1 md:hidden">
+          <span
+            class="font-headline-md text-headline-md font-bold text-ink-primary tracking-tight"
+            >Temper</span
+          >
+        </div>
+        <div class="flex items-center gap-md">
+          <button
+            class="p-1 rounded text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150"
+          >
+            <span
+              class="material-symbols-outlined text-[20px]"
+              data-icon="notifications"
+              >notifications</span
+            >
+          </button>
+          <button
+            class="p-1 rounded text-ink-subtle hover:text-ink-primary hover:bg-surface-2 transition-colors duration-150"
+          >
+            <span
+              class="material-symbols-outlined text-[20px]"
+              data-icon="settings"
+              >settings</span
+            >
+          </button>
+          <div
+            class="w-8 h-8 rounded-full bg-surface-3 border border-hairline overflow-hidden shrink-0 ml-sm cursor-pointer hover:border-hairline-strong transition-colors"
+          >
+            <img
+              alt="User profile"
+              class="w-full h-full object-cover"
+              data-alt="A macro shot of a sleek, dark metallic server blade with glowing cyan and purple fiber optic cables. The lighting is low-key, dramatic, and highly technical, emphasizing precision engineering. The mood is futuristic and secure, fitting a high-performance AI enterprise platform avatar."
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDChU1NsBwWJL_ArMuAqt8Vv7BXvRughu7Isj7yahyw8SyjM-R9G_Qy5Z0zTcOKonOeWfwhQRKcg3UJCM8IoJByncMQat_be8_y89_sXTCkkjmEtbmNikVlY2wtuE9Qxar6nyU44Ql-KMEERjV_TWKxjtwi3U6z3q_iNiBB9wjHGfkKW6AbQfsV20jtY--JY5f-QAw3nsAnf8DyWSgSTyqorsXIbIUc519gB0dzA9B7VUXGqfzl9v1QEg"
+            />
+          </div>
+        </div>
+      </header>
+      <main
+        class="flex-1 p-lg md:p-xl max-w-[1200px] w-full mx-auto space-y-section"
+      >
+        <section>
+          <div
+            class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-lg gap-4"
+          >
+            <div>
+              <h2
+                class="font-headline-md text-headline-md font-bold text-ink-primary tracking-tight"
+              >
+                Active Training Jobs
+              </h2>
+              <p
+                class="font-body-default text-body-default text-ink-muted mt-1"
+              >
+                Monitor real-time LLM finetuning progress across your cluster.
+              </p>
+            </div>
+            <button
+              class="shrink-0 flex items-center gap-xs px-md py-2 bg-primary-container text-on-primary-container rounded-lg font-eyebrow text-eyebrow font-bold hover:bg-primary transition-colors duration-150"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >play_arrow</span
+              >
+              New Finetuning Run
+            </button>
+          </div>
+          <div
+            class="bg-surface-1 border border-hairline rounded-lg overflow-hidden"
+          >
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="border-b border-hairline bg-surface-2">
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium whitespace-nowrap"
+                    >
+                      Job ID
+                    </th>
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium whitespace-nowrap"
+                    >
+                      Model
+                    </th>
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium whitespace-nowrap"
+                    >
+                      Status
+                    </th>
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium w-1/3 min-w-[200px]"
+                    >
+                      Progress
+                    </th>
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium text-right whitespace-nowrap"
+                    >
+                      Elapsed
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="font-label-mono text-label-mono text-ink-muted">
+                  <tr
+                    class="border-b border-hairline hover:bg-surface-2/50 transition-colors group"
+                  >
+                    <td
+                      class="py-md px-md text-ink-primary group-hover:text-primary transition-colors cursor-pointer"
+                    >
+                      run-7a9b2c
+                    </td>
+                    <td class="py-md px-md">Llama-3-8B-Instruct</td>
+                    <td class="py-md px-md">
+                      <div
+                        class="inline-flex items-center gap-2 px-2 py-1 rounded bg-success/10 border border-success/20 text-success"
+                      >
+                        <span
+                          class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"
+                        ></span>
+                        <span
+                          class="text-[11px] uppercase tracking-wider font-bold"
+                          >Training</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md">
+                      <div class="flex items-center gap-3">
+                        <div
+                          class="w-full h-1.5 bg-surface-3 rounded-full overflow-hidden"
+                        >
+                          <div
+                            class="h-full bg-primary-container w-[68%] rounded-full relative"
+                          >
+                            <div
+                              class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"
+                            ></div>
+                          </div>
+                        </div>
+                        <span class="text-[11px] text-ink-subtle w-8 text-right"
+                          >68%</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md text-right text-ink-subtle">
+                      04h 12m
+                    </td>
+                  </tr>
+                  <tr
+                    class="border-b border-hairline hover:bg-surface-2/50 transition-colors group"
+                  >
+                    <td
+                      class="py-md px-md text-ink-primary group-hover:text-primary transition-colors cursor-pointer"
+                    >
+                      run-3f1e8d
+                    </td>
+                    <td class="py-md px-md">Mistral-7B-v0.2</td>
+                    <td class="py-md px-md">
+                      <div
+                        class="inline-flex items-center gap-2 px-2 py-1 rounded bg-tertiary/10 border border-tertiary/20 text-tertiary"
+                      >
+                        <span
+                          class="w-1.5 h-1.5 rounded-full bg-tertiary"
+                        ></span>
+                        <span
+                          class="text-[11px] uppercase tracking-wider font-bold"
+                          >Queued</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md">
+                      <div class="flex items-center gap-3">
+                        <div
+                          class="w-full h-1.5 bg-surface-3 rounded-full overflow-hidden"
+                        >
+                          <div
+                            class="h-full bg-tertiary w-[0%] rounded-full"
+                          ></div>
+                        </div>
+                        <span class="text-[11px] text-ink-subtle w-8 text-right"
+                          >0%</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md text-right text-ink-subtle">--</td>
+                  </tr>
+                  <tr class="hover:bg-surface-2/50 transition-colors group">
+                    <td
+                      class="py-md px-md text-ink-primary group-hover:text-primary transition-colors cursor-pointer"
+                    >
+                      run-9c4d1a
+                    </td>
+                    <td class="py-md px-md">Phi-3-Mini-4K</td>
+                    <td class="py-md px-md">
+                      <div
+                        class="inline-flex items-center gap-2 px-2 py-1 rounded bg-surface-3 border border-hairline-strong text-ink-subtle"
+                      >
+                        <span
+                          class="w-1.5 h-1.5 rounded-full bg-ink-subtle"
+                        ></span>
+                        <span
+                          class="text-[11px] uppercase tracking-wider font-bold"
+                          >Completed</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md">
+                      <div class="flex items-center gap-3">
+                        <div
+                          class="w-full h-1.5 bg-surface-3 rounded-full overflow-hidden"
+                        >
+                          <div
+                            class="h-full bg-ink-subtle w-[100%] rounded-full"
+                          ></div>
+                        </div>
+                        <span class="text-[11px] text-ink-subtle w-8 text-right"
+                          >100%</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md text-right text-ink-subtle">
+                      12h 45m
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        <section>
+          <div class="mb-lg">
+            <h3
+              class="font-headline-md text-[20px] font-bold text-ink-primary tracking-tight"
+            >
+              Experiment Leaderboard
+            </h3>
+            <p class="font-body-default text-body-default text-ink-muted mt-1">
+              Compare performance across your 3 most recent checkpoints.
+            </p>
+          </div>
+          <div
+            class="bg-surface-1 border border-hairline rounded-lg overflow-hidden"
+          >
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="border-b border-hairline bg-surface-2">
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium whitespace-nowrap"
+                    >
+                      Checkpoint
+                    </th>
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium whitespace-nowrap"
+                    >
+                      MMLU Score
+                    </th>
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium whitespace-nowrap"
+                    >
+                      Final Perplexity
+                    </th>
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium whitespace-nowrap"
+                    >
+                      Training Time
+                    </th>
+                    <th
+                      class="py-sm px-md font-eyebrow text-eyebrow text-ink-subtle font-medium text-right"
+                    >
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="font-label-mono text-label-mono text-ink-muted">
+                  <tr
+                    class="border-b border-hairline hover:bg-surface-2/50 transition-colors group"
+                  >
+                    <td class="py-md px-md">
+                      <div class="flex flex-col">
+                        <span class="text-ink-primary font-bold"
+                          >Llama-3-8B-v2</span
+                        >
+                        <span class="text-[11px] text-ink-subtle"
+                          >ckpt-4500</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md">
+                      <div class="flex items-center gap-1">
+                        <span class="text-ink-primary">78.4</span>
+                        <span class="text-[11px] text-success flex items-center"
+                          ><span class="material-symbols-outlined text-[14px]"
+                            >arrow_drop_up</span
+                          >+2.1</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md text-ink-primary">3.82</td>
+                    <td class="py-md px-md">14h 22m</td>
+                    <td class="py-md px-md text-right">
+                      <span
+                        class="px-2 py-0.5 rounded bg-primary-container/20 text-primary text-[11px] font-bold uppercase tracking-wider"
+                        >Best</span
+                      >
+                    </td>
+                  </tr>
+                  <tr
+                    class="border-b border-hairline hover:bg-surface-2/50 transition-colors group"
+                  >
+                    <td class="py-md px-md">
+                      <div class="flex flex-col">
+                        <span class="text-ink-primary font-bold"
+                          >Mistral-7B-Base</span
+                        >
+                        <span class="text-[11px] text-ink-subtle"
+                          >ckpt-1200</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md">
+                      <div class="flex items-center gap-1">
+                        <span class="text-ink-primary">64.2</span>
+                        <span
+                          class="text-[11px] text-tertiary flex items-center"
+                          ><span class="material-symbols-outlined text-[14px]"
+                            >arrow_drop_down</span
+                          >-0.4</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md text-ink-primary">4.15</td>
+                    <td class="py-md px-md">08h 45m</td>
+                    <td class="py-md px-md text-right">
+                      <span
+                        class="px-2 py-0.5 rounded bg-surface-3 text-ink-subtle text-[11px] font-bold uppercase tracking-wider"
+                        >Stable</span
+                      >
+                    </td>
+                  </tr>
+                  <tr class="hover:bg-surface-2/50 transition-colors group">
+                    <td class="py-md px-md">
+                      <div class="flex flex-col">
+                        <span class="text-ink-primary font-bold"
+                          >Phi-3-Mini</span
+                        >
+                        <span class="text-[11px] text-ink-subtle"
+                          >ckpt-800</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md">
+                      <div class="flex items-center gap-1">
+                        <span class="text-ink-primary">68.9</span>
+                        <span class="text-[11px] text-success flex items-center"
+                          ><span class="material-symbols-outlined text-[14px]"
+                            >arrow_drop_up</span
+                          >+1.2</span
+                        >
+                      </div>
+                    </td>
+                    <td class="py-md px-md text-ink-primary">4.02</td>
+                    <td class="py-md px-md">04h 12m</td>
+                    <td class="py-md px-md text-right">
+                      <span
+                        class="px-2 py-0.5 rounded bg-surface-3 text-ink-subtle text-[11px] font-bold uppercase tracking-wider"
+                        >Stable</span
+                      >
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <style>
+      @keyframes shimmer {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(100%);
+        }
+      }
+    </style>
+  </body>
+</html>

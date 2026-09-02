@@ -1,0 +1,577 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Review and Launch - Temper AI</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container": "#201f23",
+              "surface-container-lowest": "#0e0e11",
+              "surface-container-low": "#1c1b1f",
+              tertiary: "#ffb867",
+              "on-tertiary": "#482900",
+              "on-error": "#690005",
+              "ink-subtle": "#8a8f98",
+              "hairline-strong": "#34343a",
+              "surface-3": "#18191a",
+              "on-secondary-container": "#abb3ff",
+              "primary-fixed-dim": "#bdc2ff",
+              "on-tertiary-fixed-variant": "#673d00",
+              "on-secondary": "#0e1d90",
+              surface: "#131316",
+              "surface-variant": "#353438",
+              "surface-container-highest": "#353438",
+              "tertiary-fixed": "#ffddbb",
+              "on-background": "#e5e1e6",
+              "outline-variant": "#454652",
+              "secondary-fixed-dim": "#bdc2ff",
+              primary: "#bdc2ff",
+              hairline: "#23252a",
+              "surface-tint": "#bdc2ff",
+              "surface-4": "#191a1b",
+              "surface-bright": "#39393c",
+              "on-secondary-fixed": "#000964",
+              "tertiary-fixed-dim": "#ffb867",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "surface-1": "#0f1011",
+              "surface-container-high": "#2a292d",
+              "on-tertiary-container": "#fffaf8",
+              "ink-primary": "#f7f8f8",
+              "tertiary-container": "#a56500",
+              "error-container": "#93000a",
+              "secondary-fixed": "#dfe0ff",
+              success: "#27a644",
+              "inverse-on-surface": "#313034",
+              "on-primary-fixed": "#000965",
+              "on-primary-fixed-variant": "#2e3aa2",
+              secondary: "#bdc2ff",
+              outline: "#908f9e",
+              "inverse-primary": "#4854bb",
+              "on-surface-variant": "#c6c5d5",
+              "surface-2": "#141516",
+              error: "#ffb4ab",
+              "on-error-container": "#ffdad6",
+              "inverse-surface": "#e5e1e6",
+              "ink-muted": "#d0d6e0",
+              "on-primary-container": "#fdfaff",
+              background: "#131316",
+              "on-tertiary-fixed": "#2b1700",
+              "secondary-container": "#2f3ca9",
+              "on-primary": "#121f8b",
+              "primary-fixed": "#dfe0ff",
+              "primary-container": "#5e6ad2",
+              "on-surface": "#e5e1e6",
+              "surface-dim": "#131316",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              base: "4px",
+              sm: "12px",
+              lg: "24px",
+              md: "16px",
+              section: "96px",
+              xl: "32px",
+              xs: "8px",
+            },
+            fontFamily: {
+              "display-lg": ["Geist"],
+              "body-default": ["Geist"],
+              "headline-md": ["Geist"],
+              "display-xl": ["Geist"],
+              "label-mono": ["JetBrains Mono"],
+              eyebrow: ["Geist"],
+            },
+            fontSize: {
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "0px",
+                  fontWeight: "400",
+                },
+              ],
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-background text-on-background font-body-default min-h-screen flex flex-col"
+  >
+    <!-- TopNavBar -->
+    <header
+      class="flex justify-between items-center w-full px-lg h-16 sticky top-0 z-50 bg-background dark:bg-background border-b border-hairline flat no shadows"
+    >
+      <div class="flex items-center gap-lg">
+        <span
+          class="font-headline-md text-headline-md font-bold text-ink-primary"
+          >Temper</span
+        >
+        <div class="hidden md:flex gap-md">
+          <a
+            class="text-ink-muted font-medium hover:bg-surface-2 transition-colors duration-150 px-3 py-1 rounded"
+            href="#"
+            >Docs</a
+          >
+          <a
+            class="text-ink-muted font-medium hover:bg-surface-2 transition-colors duration-150 px-3 py-1 rounded"
+            href="#"
+            >API</a
+          >
+          <a
+            class="text-ink-muted font-medium hover:bg-surface-2 transition-colors duration-150 px-3 py-1 rounded"
+            href="#"
+            >Support</a
+          >
+        </div>
+      </div>
+      <div class="flex items-center gap-md">
+        <button
+          class="p-xs hover:bg-surface-2 rounded-full transition-colors duration-150"
+        >
+          <span class="material-symbols-outlined text-ink-muted"
+            >notifications</span
+          >
+        </button>
+        <button
+          class="p-xs hover:bg-surface-2 rounded-full transition-colors duration-150"
+        >
+          <span class="material-symbols-outlined text-ink-muted">settings</span>
+        </button>
+        <img
+          alt="User profile"
+          class="w-8 h-8 rounded-full border border-hairline object-cover ml-2"
+          data-alt="A clean, minimalist abstract avatar image featuring geometric shapes in muted dark tones. High contrast edges, sharp vector style graphic suitable for a tech platform profile picture."
+          src="https://lh3.googleusercontent.com/aida-public/AB6AXuBd6Lvc4CxDGZ_szKcWI_3IRCgsV47SyaMxYWEOSji9pcS0kn9pT414NopHhP3xD5_hgvNUhFFi6cbabI7j0Hhs_DGIDYrd8FRMPbQZsduT9oVlqVif6HdgGCpXfoJED_H62g6N3u8zCx-pG7vM11WYihwhpMRTq1h0gGAfahxzsALpYbKwNTwhEU7YtZ2Gv-HGtZ-c2QsagR2xFMzeC33RQNpbeGBIiA-zsYappS46anuQBw6YQ0b-tw"
+        />
+      </div>
+    </header>
+    <div class="flex flex-1">
+      <!-- Left Sidebar: Progress Wizard -->
+      <aside
+        class="w-64 border-r border-hairline bg-surface-1 p-lg hidden md:flex flex-col gap-xl"
+      >
+        <div>
+          <h3
+            class="font-eyebrow text-eyebrow text-ink-muted uppercase tracking-wider mb-lg"
+          >
+            Run Configuration
+          </h3>
+          <div class="flex flex-col gap-md relative">
+            <!-- Vertical Line connecting steps -->
+            <div class="absolute left-3 top-4 bottom-4 w-px bg-hairline"></div>
+            <!-- Step 1: Model -->
+            <div class="flex items-start gap-md relative z-10">
+              <div
+                class="w-6 h-6 rounded-full bg-success flex items-center justify-center shrink-0 border border-hairline-strong shadow-sm mt-0.5"
+              >
+                <span
+                  class="material-symbols-outlined text-surface-container-lowest text-[14px]"
+                  >check</span
+                >
+              </div>
+              <div>
+                <p class="font-body-default text-body-default text-ink-muted">
+                  Model Selection
+                </p>
+                <p class="font-label-mono text-label-mono text-ink-subtle mt-1">
+                  Llama-3-8B-Instruct
+                </p>
+              </div>
+            </div>
+            <!-- Step 2: Hyperparameters -->
+            <div class="flex items-start gap-md relative z-10">
+              <div
+                class="w-6 h-6 rounded-full bg-success flex items-center justify-center shrink-0 border border-hairline-strong shadow-sm mt-0.5"
+              >
+                <span
+                  class="material-symbols-outlined text-surface-container-lowest text-[14px]"
+                  >check</span
+                >
+              </div>
+              <div>
+                <p class="font-body-default text-body-default text-ink-muted">
+                  Hyperparameters
+                </p>
+                <p class="font-label-mono text-label-mono text-ink-subtle mt-1">
+                  LoRA, 3 Epochs
+                </p>
+              </div>
+            </div>
+            <!-- Step 3: Dataset -->
+            <div class="flex items-start gap-md relative z-10">
+              <div
+                class="w-6 h-6 rounded-full bg-success flex items-center justify-center shrink-0 border border-hairline-strong shadow-sm mt-0.5"
+              >
+                <span
+                  class="material-symbols-outlined text-surface-container-lowest text-[14px]"
+                  >check</span
+                >
+              </div>
+              <div>
+                <p class="font-body-default text-body-default text-ink-muted">
+                  Dataset
+                </p>
+                <p class="font-label-mono text-label-mono text-ink-subtle mt-1">
+                  Instruction Set
+                </p>
+              </div>
+            </div>
+            <!-- Step 4: Compute -->
+            <div class="flex items-start gap-md relative z-10">
+              <div
+                class="w-6 h-6 rounded-full bg-success flex items-center justify-center shrink-0 border border-hairline-strong shadow-sm mt-0.5"
+              >
+                <span
+                  class="material-symbols-outlined text-surface-container-lowest text-[14px]"
+                  >check</span
+                >
+              </div>
+              <div>
+                <p class="font-body-default text-body-default text-ink-muted">
+                  Compute
+                </p>
+                <p class="font-label-mono text-label-mono text-ink-subtle mt-1">
+                  8x H100 Cluster
+                </p>
+              </div>
+            </div>
+            <!-- Step 5: Review -->
+            <div class="flex items-start gap-md relative z-10">
+              <div
+                class="w-6 h-6 rounded-full bg-surface-2 border-2 border-primary flex items-center justify-center shrink-0 mt-0.5"
+              >
+                <div class="w-2 h-2 rounded-full bg-primary"></div>
+              </div>
+              <div>
+                <p
+                  class="font-body-default text-body-default text-primary font-medium"
+                >
+                  Review &amp; Launch
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button
+          class="mt-auto flex items-center gap-sm text-ink-subtle hover:text-ink-primary transition-colors duration-150 font-label-mono text-label-mono p-sm -ml-sm rounded hover:bg-surface-2"
+        >
+          <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+          Back to Compute
+        </button>
+      </aside>
+      <!-- Main Content Canvas -->
+      <main
+        class="flex-1 p-lg md:p-xl overflow-y-auto max-w-5xl mx-auto w-full flex gap-xl flex-col lg:flex-row"
+      >
+        <!-- Summary Area -->
+        <div class="flex-1 flex flex-col gap-lg">
+          <header class="mb-md">
+            <h1 class="font-headline-md text-headline-md text-ink-primary">
+              Review Configuration
+            </h1>
+            <p class="text-ink-subtle mt-sm">
+              Verify your finetuning parameters before launching the cluster.
+            </p>
+          </header>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+            <!-- Model Summary Card -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md relative overflow-hidden group"
+            >
+              <div
+                class="absolute top-0 inset-x-0 h-px bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+              ></div>
+              <div class="flex items-center gap-sm mb-md">
+                <span class="material-symbols-outlined text-primary"
+                  >account_tree</span
+                >
+                <h3
+                  class="font-eyebrow text-eyebrow text-ink-primary uppercase tracking-wider"
+                >
+                  Base Model
+                </h3>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="font-label-mono text-label-mono text-ink-muted"
+                  >Identifier</span
+                >
+                <span
+                  class="font-label-mono text-label-mono text-ink-primary bg-surface-2 px-2 py-1 rounded border border-hairline"
+                  >Llama-3-8B-Instruct</span
+                >
+              </div>
+            </div>
+            <!-- Dataset Summary Card -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md relative overflow-hidden group"
+            >
+              <div
+                class="absolute top-0 inset-x-0 h-px bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+              ></div>
+              <div class="flex items-center gap-sm mb-md">
+                <span class="material-symbols-outlined text-primary"
+                  >database</span
+                >
+                <h3
+                  class="font-eyebrow text-eyebrow text-ink-primary uppercase tracking-wider"
+                >
+                  Training Data
+                </h3>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="font-label-mono text-label-mono text-ink-muted"
+                  >Source</span
+                >
+                <span
+                  class="font-label-mono text-label-mono text-ink-primary bg-surface-2 px-2 py-1 rounded border border-hairline"
+                  >Instruction Tuning Set</span
+                >
+              </div>
+              <div
+                class="flex items-center justify-between mt-sm pt-sm border-t border-hairline"
+              >
+                <span class="font-label-mono text-label-mono text-ink-muted"
+                  >Samples</span
+                >
+                <span class="font-label-mono text-label-mono text-ink-primary"
+                  >~45,000</span
+                >
+              </div>
+            </div>
+          </div>
+          <!-- Hyperparameters Detail Card -->
+          <div
+            class="bg-surface-1 border border-hairline rounded-lg p-lg relative overflow-hidden"
+          >
+            <div class="absolute top-0 inset-x-0 h-px bg-white/5"></div>
+            <div
+              class="flex items-center gap-sm mb-lg border-b border-hairline pb-md"
+            >
+              <span class="material-symbols-outlined text-primary">tune</span>
+              <h3
+                class="font-eyebrow text-eyebrow text-ink-primary uppercase tracking-wider"
+              >
+                Hyperparameters
+              </h3>
+              <span
+                class="ml-auto font-label-mono text-label-mono text-ink-subtle bg-surface-2 px-2 py-1 rounded border border-hairline text-xs"
+                >Method: LoRA</span
+              >
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-lg">
+              <div>
+                <p
+                  class="font-label-mono text-label-mono text-ink-subtle mb-xs"
+                >
+                  Learning Rate
+                </p>
+                <p class="font-body-default text-body-default text-ink-primary">
+                  2e-5
+                </p>
+              </div>
+              <div>
+                <p
+                  class="font-label-mono text-label-mono text-ink-subtle mb-xs"
+                >
+                  Epochs
+                </p>
+                <p class="font-body-default text-body-default text-ink-primary">
+                  3
+                </p>
+              </div>
+              <div>
+                <p
+                  class="font-label-mono text-label-mono text-ink-subtle mb-xs"
+                >
+                  Batch Size
+                </p>
+                <p class="font-body-default text-body-default text-ink-primary">
+                  8
+                </p>
+              </div>
+              <div>
+                <p
+                  class="font-label-mono text-label-mono text-ink-subtle mb-xs"
+                >
+                  Max Sequence
+                </p>
+                <p class="font-body-default text-body-default text-ink-primary">
+                  4096
+                </p>
+              </div>
+            </div>
+          </div>
+          <!-- Compute Detail Card -->
+          <div
+            class="bg-surface-1 border border-hairline rounded-lg p-lg relative overflow-hidden"
+          >
+            <div class="absolute top-0 inset-x-0 h-px bg-white/5"></div>
+            <div
+              class="flex items-center gap-sm mb-lg border-b border-hairline pb-md"
+            >
+              <span class="material-symbols-outlined text-primary">memory</span>
+              <h3
+                class="font-eyebrow text-eyebrow text-ink-primary uppercase tracking-wider"
+              >
+                Compute Cluster
+              </h3>
+            </div>
+            <div class="flex items-center gap-lg">
+              <div
+                class="w-12 h-12 rounded bg-surface-2 border border-hairline flex items-center justify-center shrink-0"
+              >
+                <span class="material-symbols-outlined text-ink-primary"
+                  >rocket_launch</span
+                >
+              </div>
+              <div class="flex-1">
+                <h4
+                  class="font-body-default text-body-default text-ink-primary"
+                >
+                  8x H100 Tensor Core GPU
+                </h4>
+                <p class="font-label-mono text-label-mono text-ink-subtle mt-1">
+                  High-performance cluster for LLM finetuning
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Right Sidebar: Cost Summary & Action -->
+        <aside class="w-full lg:w-80 flex flex-col gap-md">
+          <div
+            class="bg-surface-1 border border-hairline rounded-lg p-lg sticky top-24"
+          >
+            <h3
+              class="font-eyebrow text-eyebrow text-ink-primary uppercase tracking-wider mb-lg border-b border-hairline pb-sm"
+            >
+              Estimated Cost
+            </h3>
+            <div class="flex flex-col gap-sm mb-lg">
+              <div class="flex justify-between items-center">
+                <span class="font-label-mono text-label-mono text-ink-muted"
+                  >Compute (8x H100)</span
+                >
+                <span class="font-label-mono text-label-mono text-ink-primary"
+                  >$32.40/hr</span
+                >
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="font-label-mono text-label-mono text-ink-muted"
+                  >Estimated Duration</span
+                >
+                <span class="font-label-mono text-label-mono text-ink-primary"
+                  >~4.5 hrs</span
+                >
+              </div>
+              <div class="flex justify-between items-center text-ink-subtle">
+                <span class="font-label-mono text-label-mono text-ink-muted"
+                  >Storage</span
+                >
+                <span class="font-label-mono text-label-mono text-ink-primary"
+                  >$0.05/GB/mo</span
+                >
+              </div>
+            </div>
+            <div
+              class="border-t border-hairline pt-md mb-xl flex justify-between items-center"
+            >
+              <span
+                class="font-body-default text-body-default text-ink-primary font-medium"
+                >Total Estimate</span
+              >
+              <span
+                class="font-headline-md text-headline-md text-ink-primary text-xl"
+                >~$145.80</span
+              >
+            </div>
+            <button
+              class="w-full bg-primary-container text-white font-body-default text-body-default font-medium py-3 px-4 rounded-lg hover:opacity-90 transition-opacity duration-150 flex items-center justify-center gap-sm"
+            >
+              Launch Run
+              <span
+                class="material-symbols-outlined text-[20px]"
+                style="font-variation-settings: &quot;FILL&quot; 1"
+                >rocket_launch</span
+              >
+            </button>
+            <p
+              class="font-label-mono text-label-mono text-ink-subtle text-center mt-md text-xs"
+            >
+              By launching, you agree to our
+              <a class="text-primary hover:underline" href="#"
+                >Terms of Service</a
+              >. Billing begins upon cluster provisioning.
+            </p>
+          </div>
+        </aside>
+      </main>
+    </div>
+  </body>
+</html>

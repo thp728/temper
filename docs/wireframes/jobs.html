@@ -1,0 +1,616 @@
+<!doctype html>
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Temper AI - Jobs</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container": "#201f23",
+              "surface-container-lowest": "#0e0e11",
+              "surface-container-low": "#1c1b1f",
+              tertiary: "#ffb867",
+              "on-tertiary": "#482900",
+              "on-error": "#690005",
+              "ink-subtle": "#8a8f98",
+              "hairline-strong": "#34343a",
+              "surface-3": "#18191a",
+              "on-secondary-container": "#abb3ff",
+              "primary-fixed-dim": "#bdc2ff",
+              "on-tertiary-fixed-variant": "#673d00",
+              "on-secondary": "#0e1d90",
+              surface: "#131316",
+              "surface-variant": "#353438",
+              "surface-container-highest": "#353438",
+              "tertiary-fixed": "#ffddbb",
+              "on-background": "#e5e1e6",
+              "outline-variant": "#454652",
+              "secondary-fixed-dim": "#bdc2ff",
+              primary: "#bdc2ff",
+              hairline: "#23252a",
+              "surface-tint": "#bdc2ff",
+              "surface-4": "#191a1b",
+              "surface-bright": "#39393c",
+              "on-secondary-fixed": "#000964",
+              "tertiary-fixed-dim": "#ffb867",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "surface-1": "#0f1011",
+              "surface-container-high": "#2a292d",
+              "on-tertiary-container": "#fffaf8",
+              "ink-primary": "#f7f8f8",
+              "tertiary-container": "#a56500",
+              "error-container": "#93000a",
+              "secondary-fixed": "#dfe0ff",
+              success: "#27a644",
+              "inverse-on-surface": "#313034",
+              "on-primary-fixed": "#000965",
+              "on-primary-fixed-variant": "#2e3aa2",
+              secondary: "#bdc2ff",
+              outline: "#908f9e",
+              "inverse-primary": "#4854bb",
+              "on-surface-variant": "#c6c5d5",
+              "surface-2": "#141516",
+              error: "#ffb4ab",
+              "on-error-container": "#ffdad6",
+              "inverse-surface": "#e5e1e6",
+              "ink-muted": "#d0d6e0",
+              "on-primary-container": "#fdfaff",
+              background: "#131316",
+              "on-tertiary-fixed": "#2b1700",
+              "secondary-container": "#2f3ca9",
+              "on-primary": "#121f8b",
+              "primary-fixed": "#dfe0ff",
+              "primary-container": "#5e6ad2",
+              "on-surface": "#e5e1e6",
+              "surface-dim": "#131316",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              base: "4px",
+              sm: "12px",
+              lg: "24px",
+              md: "16px",
+              section: "96px",
+              xl: "32px",
+              xs: "8px",
+            },
+            fontFamily: {
+              "display-lg": ["Geist"],
+              "body-default": ["Geist"],
+              "headline-md": ["Geist"],
+              "display-xl": ["Geist"],
+              "label-mono": ["JetBrains Mono"],
+              eyebrow: ["Geist"],
+            },
+            fontSize: {
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                { lineHeight: "1.50", letterSpacing: "0px", fontWeight: "400" },
+              ],
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background-color: theme("colors.background");
+        color: theme("colors.on-background");
+        font-family: "Geist", sans-serif;
+      }
+    </style>
+  </head>
+  <body class="antialiased min-h-screen flex w-full">
+    <!-- SideNavBar -->
+    <nav
+      class="fixed left-0 top-0 h-screen w-64 flex flex-col py-md bg-surface-1 dark:bg-surface-1 text-primary dark:text-primary border-r border-hairline z-50 bg-surface-container-lowest"
+    >
+      <!-- Header -->
+      <div class="px-md mb-xl flex items-center gap-sm">
+        <div
+          class="w-8 h-8 rounded bg-surface-3 flex items-center justify-center border border-hairline"
+        >
+          <img
+            alt="Workspace Logo"
+            class="w-5 h-5 object-contain"
+            data-alt="A minimalist tech logo resembling an abstract letter T constructed from precise geometric shapes, rendered in solid white against a dark background, reflecting a modern engineering platform aesthetic."
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_ieASEvne5CrcDzgMppnfqjpXjWlmlmXudrWCQE9kNfRtJYgFP1awBLDwYOZffWuggsP045amIwJYw7y0dlrKOGl18JjatDGfaGBVZLEbnJ9oTcwme0Kb1K-bySK2mdJjlGiX7G2JgC7XRZGs2tA7UEDC-tA2jHtdlXZLkLKKOX7OLTp0dgyWTqzU0pJCMF7V0ldGHGRl-bwVRqJI3ze_G0qDnB6rsC8awNeQoIFWM5cZrDJxwZe82g"
+          />
+        </div>
+        <div>
+          <h2 class="font-headline-md text-[18px] text-ink-primary font-bold">
+            Temper AI
+          </h2>
+          <p class="font-label-mono text-[11px] text-ink-subtle">
+            Production Cluster
+          </p>
+        </div>
+      </div>
+      <!-- Main Nav -->
+      <div class="flex-1 px-sm space-y-1">
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="dashboard"
+            >dashboard</span
+          >
+          Dashboard
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="database"
+            >database</span
+          >
+          Datasets
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-primary bg-surface-2 border-r-2 border-primary font-label-mono text-label-mono font-medium"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="rocket_launch"
+            >rocket_launch</span
+          >
+          Jobs
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="account_tree"
+            >account_tree</span
+          >
+          Models
+        </a>
+      </div>
+      <!-- CTA -->
+      <div class="px-sm mb-lg">
+        <button
+          class="w-full bg-primary-container text-white hover:bg-inverse-primary transition-colors duration-150 rounded py-2 font-eyebrow text-eyebrow flex items-center justify-center gap-xs"
+        >
+          <span class="material-symbols-outlined text-[16px]">add</span>
+          New Run
+        </button>
+      </div>
+      <!-- Footer Nav -->
+      <div class="px-sm space-y-1 border-t border-hairline pt-md">
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="settings"
+            >settings</span
+          >
+          Settings
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-2 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            data-icon="description"
+            >description</span
+          >
+          Documentation
+        </a>
+      </div>
+    </nav>
+    <!-- Main Content Canvas -->
+    <main class="ml-64 flex-1 p-lg max-w-[1200px] mx-auto w-full bg-surface-1">
+      <!-- Page Header & Filters -->
+      <header
+        class="flex flex-col md:flex-row md:items-end justify-between gap-md mb-lg"
+      >
+        <div>
+          <h1 class="font-headline-md text-headline-md text-ink-primary mb-xs">
+            Job History
+          </h1>
+          <p class="font-body-default text-body-default text-ink-subtle">
+            Manage and monitor your model finetuning runs.
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-sm">
+          <!-- Search -->
+          <div class="relative">
+            <span
+              class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-ink-subtle text-[18px]"
+              >search</span
+            >
+            <input
+              class="bg-surface-1 border border-hairline rounded pl-9 pr-sm py-1.5 font-body-default text-sm text-ink-primary focus:outline-none focus:border-primary-container/50 focus:ring-1 focus:ring-primary-container/50 placeholder:text-ink-subtle/50 w-64"
+              placeholder="Search by Job ID..."
+              type="text"
+            />
+          </div>
+          <!-- Status Filter -->
+          <button
+            class="bg-surface-1 border border-hairline hover:bg-surface-2 hover:border-hairline-strong transition-all duration-150 rounded px-sm py-1.5 flex items-center gap-xs font-body-default text-sm text-ink-primary"
+          >
+            <span class="material-symbols-outlined text-[16px] text-ink-subtle"
+              >filter_list</span
+            >
+            Status: All
+            <span
+              class="material-symbols-outlined text-[16px] text-ink-subtle ml-xs"
+              >expand_more</span
+            >
+          </button>
+          <!-- Model Filter -->
+          <button
+            class="bg-surface-1 border border-hairline hover:bg-surface-2 hover:border-hairline-strong transition-all duration-150 rounded px-sm py-1.5 flex items-center gap-xs font-body-default text-sm text-ink-primary"
+          >
+            <span class="material-symbols-outlined text-[16px] text-ink-subtle"
+              >model_training</span
+            >
+            Model: Any
+            <span
+              class="material-symbols-outlined text-[16px] text-ink-subtle ml-xs"
+              >expand_more</span
+            >
+          </button>
+        </div>
+      </header>
+      <!-- Data Table Container -->
+      <div
+        class="border border-hairline rounded-lg overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] bg-surface-2"
+      >
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-hairline bg-surface-3">
+                <th
+                  class="px-md py-3 font-eyebrow text-[12px] text-ink-subtle font-medium tracking-wider"
+                >
+                  Job ID
+                </th>
+                <th
+                  class="px-md py-3 font-eyebrow text-[12px] text-ink-subtle font-medium tracking-wider"
+                >
+                  Status
+                </th>
+                <th
+                  class="px-md py-3 font-eyebrow text-[12px] text-ink-subtle font-medium tracking-wider"
+                >
+                  Base Model
+                </th>
+                <th
+                  class="px-md py-3 font-eyebrow text-[12px] text-ink-subtle font-medium tracking-wider"
+                >
+                  Dataset
+                </th>
+                <th
+                  class="px-md py-3 font-eyebrow text-[12px] text-ink-subtle font-medium tracking-wider"
+                >
+                  Created
+                </th>
+                <th
+                  class="px-md py-3 font-eyebrow text-[12px] text-ink-subtle font-medium tracking-wider text-right"
+                >
+                  Duration
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-hairline">
+              <!-- Row 1: Running -->
+              <tr
+                class="hover:bg-surface-2 transition-colors duration-150 group"
+              >
+                <td class="px-md py-3 whitespace-nowrap">
+                  <div class="flex items-center gap-xs">
+                    <span
+                      class="font-label-mono text-label-mono text-primary group-hover:text-primary-container transition-colors"
+                      >ft-492a8c1</span
+                    >
+                    <button
+                      class="text-ink-subtle hover:text-ink-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <span class="material-symbols-outlined text-[14px]"
+                        >content_copy</span
+                      >
+                    </button>
+                  </div>
+                </td>
+                <td class="px-md py-3 whitespace-nowrap">
+                  <div
+                    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-tertiary/10 border border-tertiary/20"
+                  >
+                    <div
+                      class="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse"
+                    ></div>
+                    <span class="font-label-mono text-[11px] text-tertiary"
+                      >Running</span
+                    >
+                  </div>
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-body-default text-sm text-ink-primary"
+                >
+                  Llama-3-70b-Instruct
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-body-default text-sm text-ink-subtle flex items-center gap-xs"
+                >
+                  <span class="material-symbols-outlined text-[14px]"
+                    >dataset</span
+                  >
+                  corp-docs-v4.jsonl
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-label-mono text-[12px] text-ink-subtle"
+                >
+                  2 mins ago
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-label-mono text-[12px] text-ink-primary text-right tabular-nums"
+                >
+                  00:02:14
+                </td>
+              </tr>
+              <!-- Row 2: Success -->
+              <tr
+                class="hover:bg-surface-2 transition-colors duration-150 group"
+              >
+                <td class="px-md py-3 whitespace-nowrap">
+                  <div class="flex items-center gap-xs">
+                    <span
+                      class="font-label-mono text-label-mono text-ink-primary"
+                      >ft-8b3e9f2</span
+                    >
+                    <button
+                      class="text-ink-subtle hover:text-ink-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <span class="material-symbols-outlined text-[14px]"
+                        >content_copy</span
+                      >
+                    </button>
+                  </div>
+                </td>
+                <td class="px-md py-3 whitespace-nowrap">
+                  <div
+                    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success/10 border border-success/20"
+                  >
+                    <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
+                    <span class="font-label-mono text-[11px] text-success"
+                      >Completed</span
+                    >
+                  </div>
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-body-default text-sm text-ink-primary"
+                >
+                  Mistral-7B-v0.2
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-body-default text-sm text-ink-subtle flex items-center gap-xs"
+                >
+                  <span class="material-symbols-outlined text-[14px]"
+                    >dataset</span
+                  >
+                  chat-logs-q3.csv
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-label-mono text-[12px] text-ink-subtle"
+                >
+                  4 hrs ago
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-label-mono text-[12px] text-ink-primary text-right tabular-nums"
+                >
+                  01:45:12
+                </td>
+              </tr>
+              <!-- Row 3: Failed -->
+              <tr
+                class="hover:bg-surface-2 transition-colors duration-150 group"
+              >
+                <td class="px-md py-3 whitespace-nowrap">
+                  <div class="flex items-center gap-xs">
+                    <span
+                      class="font-label-mono text-label-mono text-ink-primary"
+                      >ft-1a7c5d0</span
+                    >
+                    <button
+                      class="text-ink-subtle hover:text-ink-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <span class="material-symbols-outlined text-[14px]"
+                        >content_copy</span
+                      >
+                    </button>
+                  </div>
+                </td>
+                <td class="px-md py-3 whitespace-nowrap">
+                  <div
+                    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-error/10 border border-error/20"
+                  >
+                    <div class="w-1.5 h-1.5 rounded-full bg-error"></div>
+                    <span class="font-label-mono text-[11px] text-error"
+                      >Failed</span
+                    >
+                  </div>
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-body-default text-sm text-ink-primary"
+                >
+                  Gemma-2b-it
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-body-default text-sm text-ink-subtle flex items-center gap-xs"
+                >
+                  <span class="material-symbols-outlined text-[14px]"
+                    >dataset</span
+                  >
+                  eval-set-beta.parquet
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-label-mono text-[12px] text-ink-subtle"
+                >
+                  Yesterday
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-label-mono text-[12px] text-ink-primary text-right tabular-nums"
+                >
+                  00:12:05
+                </td>
+              </tr>
+              <!-- Row 4: Success -->
+              <tr
+                class="hover:bg-surface-2 transition-colors duration-150 group"
+              >
+                <td class="px-md py-3 whitespace-nowrap">
+                  <div class="flex items-center gap-xs">
+                    <span
+                      class="font-label-mono text-label-mono text-ink-primary"
+                      >ft-9d2f4e1</span
+                    >
+                    <button
+                      class="text-ink-subtle hover:text-ink-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <span class="material-symbols-outlined text-[14px]"
+                        >content_copy</span
+                      >
+                    </button>
+                  </div>
+                </td>
+                <td class="px-md py-3 whitespace-nowrap">
+                  <div
+                    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success/10 border border-success/20"
+                  >
+                    <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
+                    <span class="font-label-mono text-[11px] text-success"
+                      >Completed</span
+                    >
+                  </div>
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-body-default text-sm text-ink-primary"
+                >
+                  Llama-3-8b
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-body-default text-sm text-ink-subtle flex items-center gap-xs"
+                >
+                  <span class="material-symbols-outlined text-[14px]"
+                    >dataset</span
+                  >
+                  support-tickets.jsonl
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-label-mono text-[12px] text-ink-subtle"
+                >
+                  Oct 12, 2023
+                </td>
+                <td
+                  class="px-md py-3 whitespace-nowrap font-label-mono text-[12px] text-ink-primary text-right tabular-nums"
+                >
+                  03:20:44
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Pagination Footer -->
+        <div
+          class="border-t border-hairline bg-surface-1 px-md py-sm flex items-center justify-between"
+        >
+          <p class="font-label-mono text-[12px] text-ink-subtle">
+            Showing 1-4 of 124 jobs
+          </p>
+          <div class="flex items-center gap-2">
+            <button
+              class="p-1 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary disabled:opacity-50"
+              disabled=""
+            >
+              <span class="material-symbols-outlined text-[20px]"
+                >chevron_left</span
+              >
+            </button>
+            <button
+              class="p-1 rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary"
+            >
+              <span class="material-symbols-outlined text-[20px]"
+                >chevron_right</span
+              >
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

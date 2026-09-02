@@ -1,0 +1,548 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Dataset Manager - Temper</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-error-container": "#ffdad6",
+              "primary-fixed-dim": "#bdc2ff",
+              "primary-fixed": "#dfe0ff",
+              "error-container": "#93000a",
+              "on-surface": "#e5e1e6",
+              "tertiary-fixed": "#ffddbb",
+              "secondary-fixed-dim": "#bdc2ff",
+              "primary-container": "#5e6ad2",
+              background: "#131316",
+              "on-tertiary-fixed": "#2b1700",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "surface-2": "#141516",
+              "inverse-surface": "#e5e1e6",
+              "on-secondary-container": "#abb3ff",
+              "surface-1": "#0f1011",
+              "on-primary-fixed-variant": "#2e3aa2",
+              "on-primary-fixed": "#000965",
+              "surface-4": "#191a1b",
+              "outline-variant": "#454652",
+              "tertiary-fixed-dim": "#ffb867",
+              "on-surface-variant": "#c6c5d5",
+              "ink-primary": "#f7f8f8",
+              success: "#27a644",
+              "ink-muted": "#d0d6e0",
+              "surface-container-low": "#1c1b1f",
+              primary: "#bdc2ff",
+              outline: "#908f9e",
+              "surface-dim": "#131316",
+              "on-tertiary-fixed-variant": "#673d00",
+              "ink-subtle": "#8a8f98",
+              "surface-tint": "#bdc2ff",
+              "tertiary-container": "#a56500",
+              "inverse-on-surface": "#313034",
+              "on-primary-container": "#fdfaff",
+              "on-secondary-fixed": "#000964",
+              "on-secondary": "#0e1d90",
+              "on-tertiary-container": "#fffaf8",
+              hairline: "#23252a",
+              "inverse-primary": "#4854bb",
+              "surface-variant": "#353438",
+              "on-tertiary": "#482900",
+              "on-primary": "#121f8b",
+              "surface-container-high": "#2a292d",
+              "surface-container-lowest": "#0e0e11",
+              error: "#ffb4ab",
+              "hairline-strong": "#34343a",
+              "on-background": "#e5e1e6",
+              "surface-bright": "#39393c",
+              "surface-3": "#18191a",
+              "surface-container": "#201f23",
+              "on-error": "#690005",
+              tertiary: "#ffb867",
+              surface: "#131316",
+              "secondary-fixed": "#dfe0ff",
+              secondary: "#bdc2ff",
+              "surface-container-highest": "#353438",
+              "secondary-container": "#2f3ca9",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              sm: "12px",
+              md: "16px",
+              section: "96px",
+              xs: "8px",
+              lg: "24px",
+              base: "4px",
+              xl: "32px",
+            },
+            fontFamily: {
+              eyebrow: ["Geist"],
+              "label-mono": ["JetBrains Mono"],
+              "display-lg": ["Geist"],
+              "body-default": ["Geist"],
+              "headline-md": ["Geist"],
+              "display-xl": ["Geist"],
+            },
+            fontSize: {
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                { lineHeight: "1.50", letterSpacing: "0px", fontWeight: "400" },
+              ],
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-background text-ink-primary font-body-default min-h-screen flex selection:bg-primary-container selection:text-white"
+  >
+    <!-- SideNavBar -->
+    <nav
+      class="bg-surface-1 dark:bg-surface-1 border-r border-hairline fixed left-0 top-0 h-screen w-64 flex flex-col py-md z-40 hidden md:flex"
+    >
+      <!-- Header -->
+      <div class="px-md mb-xl flex items-center gap-sm">
+        <div
+          class="w-8 h-8 rounded bg-primary-container flex items-center justify-center shrink-0"
+        >
+          <span class="material-symbols-outlined text-white text-[18px]"
+            >rocket</span
+          >
+        </div>
+        <div>
+          <h1
+            class="font-headline-md text-[18px] font-bold text-ink-primary leading-tight tracking-tight"
+          >
+            Temper AI
+          </h1>
+          <p class="font-label-mono text-[11px] text-ink-subtle">
+            Production Cluster
+          </p>
+        </div>
+      </div>
+      <!-- Main Navigation -->
+      <div class="flex-1 flex flex-col gap-xs px-sm">
+        <a
+          class="flex items-center gap-sm px-sm py-[8px] rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]">dashboard</span>
+          <span class="font-label-mono text-label-mono">Dashboard</span>
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-[8px] rounded text-primary bg-surface-2 border-r-2 border-primary"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            style="font-variation-settings: &quot;FILL&quot; 1"
+            >database</span
+          >
+          <span class="font-label-mono text-label-mono font-medium"
+            >Datasets</span
+          >
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-[8px] rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]"
+            >rocket_launch</span
+          >
+          <span class="font-label-mono text-label-mono">Jobs</span>
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-[8px] rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]"
+            >account_tree</span
+          >
+          <span class="font-label-mono text-label-mono">Models</span>
+        </a>
+      </div>
+      <!-- Footer Navigation -->
+      <div
+        class="mt-auto px-sm flex flex-col gap-xs pb-sm border-b border-hairline mb-sm"
+      >
+        <a
+          class="flex items-center gap-sm px-sm py-[8px] rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]">settings</span>
+          <span class="font-label-mono text-label-mono">Settings</span>
+        </a>
+        <a
+          class="flex items-center gap-sm px-sm py-[8px] rounded text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]">description</span>
+          <span class="font-label-mono text-label-mono">Documentation</span>
+        </a>
+      </div>
+      <!-- CTA -->
+      <div class="px-sm">
+        <button
+          class="w-full bg-primary-container text-white font-label-mono text-[13px] py-[8px] rounded hover:bg-[#6c77df] transition-colors duration-150 flex items-center justify-center gap-xs"
+        >
+          <span class="material-symbols-outlined text-[16px]">add</span>
+          New Run
+        </button>
+      </div>
+    </nav>
+    <!-- Main Content Wrapper -->
+    <main class="flex-1 flex flex-col min-h-screen md:ml-64 w-full">
+      <!-- TopNavBar (Mobile Only for Navigation, but we keep the structure for Actions) -->
+      <header
+        class="bg-background dark:bg-background border-b border-hairline flex justify-between items-center w-full px-lg h-16 sticky top-0 z-50"
+      >
+        <div class="flex items-center gap-md">
+          <!-- Mobile Menu Trigger -->
+          <button class="md:hidden text-ink-muted hover:text-ink-primary">
+            <span class="material-symbols-outlined">menu</span>
+          </button>
+          <div
+            class="font-headline-md text-[20px] font-bold text-ink-primary tracking-tight hidden md:block"
+          >
+            Datasets
+          </div>
+          <div
+            class="font-headline-md text-[20px] font-bold text-ink-primary tracking-tight md:hidden"
+          >
+            Temper
+          </div>
+        </div>
+        <div class="flex items-center gap-lg hidden md:flex">
+          <a
+            class="text-ink-muted font-medium hover:bg-surface-2 transition-colors duration-150 px-2 py-1 rounded text-[14px]"
+            href="#"
+            >Docs</a
+          >
+          <a
+            class="text-ink-muted font-medium hover:bg-surface-2 transition-colors duration-150 px-2 py-1 rounded text-[14px]"
+            href="#"
+            >API</a
+          >
+          <a
+            class="text-ink-muted font-medium hover:bg-surface-2 transition-colors duration-150 px-2 py-1 rounded text-[14px]"
+            href="#"
+            >Support</a
+          >
+        </div>
+        <div class="flex items-center gap-sm">
+          <button
+            class="w-8 h-8 rounded-full hover:bg-surface-2 flex items-center justify-center text-ink-muted transition-colors duration-150"
+          >
+            <span class="material-symbols-outlined text-[20px]"
+              >notifications</span
+            >
+          </button>
+          <button
+            class="w-8 h-8 rounded-full hover:bg-surface-2 flex items-center justify-center text-ink-muted transition-colors duration-150"
+          >
+            <span class="material-symbols-outlined text-[20px]">settings</span>
+          </button>
+          <div
+            class="w-8 h-8 rounded-full bg-surface-3 border border-hairline overflow-hidden ml-2 cursor-pointer"
+          >
+            <img
+              alt="User profile"
+              class="w-full h-full object-cover"
+              data-alt="A macro shot of a sleek, dark metallic surface with subtle glowing blue circuitry lines, minimalist and high-tech, fitting a dark mode technical aesthetic, crisp lighting, deep shadows."
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuA5L-2LoD0zUplqHD4bcvmQE-JG3Qf_c0hEgf-hctOK73iekthOpz-m8aZ7pvasQC6RniZr8JvsmLO2T99SXbAgCO0xP9xty4ia_LY340MWPs0UoMsMsV8fGbFG4KO25Zckp-c1bJ6Ne9wIo9jX4u0ebQNwoxheEwfULq_q2Kut1qeR7ZL_1W4i6E2_WLnUGnLxfJ7_CWLll2N1I61dmhPisw0gEYUvQfHNU61QawiTetuDELqcOcjwpQ"
+            />
+          </div>
+        </div>
+      </header>
+      <!-- Canvas -->
+      <div
+        class="flex-1 p-md md:p-lg max-w-[1200px] mx-auto w-full flex flex-col gap-xl"
+      >
+        <!-- Action Bar -->
+        <div
+          class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-md"
+        >
+          <div>
+            <h2 class="font-body-default text-[16px] text-ink-muted">
+              Manage and prepare your raw data for fine-tuning jobs.
+            </h2>
+          </div>
+          <div class="flex items-center gap-sm w-full sm:w-auto">
+            <div class="relative flex-1 sm:flex-none">
+              <span
+                class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-ink-subtle text-[18px]"
+                >search</span
+              >
+              <input
+                class="w-full sm:w-64 bg-surface-1 border border-hairline rounded pl-10 pr-3 py-1.5 text-[14px] text-ink-primary focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all placeholder:text-ink-subtle"
+                placeholder="Search datasets..."
+                type="text"
+              />
+            </div>
+            <button
+              class="bg-primary-container text-white font-label-mono text-[13px] px-md py-1.5 rounded hover:bg-[#6c77df] transition-colors duration-150 flex items-center gap-2 shrink-0"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >upload_file</span
+              >
+              Import Dataset
+            </button>
+          </div>
+        </div>
+        <!-- Upload Area -->
+        <div
+          class="w-full bg-surface-2 border-2 border-dashed border-hairline-strong rounded-xl p-xl flex flex-col items-center justify-center gap-md hover:border-primary/50 transition-colors duration-300 cursor-pointer group"
+        >
+          <div
+            class="w-16 h-16 rounded-full bg-surface-3 flex items-center justify-center group-hover:scale-110 transition-transform duration-300"
+          >
+            <span
+              class="material-symbols-outlined text-[32px] text-ink-muted group-hover:text-primary transition-colors"
+              >cloud_upload</span
+            >
+          </div>
+          <div class="text-center">
+            <p class="font-headline-md text-[18px] text-ink-primary mb-1">
+              Drop files to upload
+            </p>
+            <p class="font-label-mono text-ink-subtle text-[12px]">
+              Supports JSONL, CSV, Parquet up to 5GB.
+            </p>
+          </div>
+        </div>
+        <!-- Datasets Grid -->
+        <div>
+          <h3
+            class="font-eyebrow text-ink-muted uppercase tracking-wider mb-sm"
+          >
+            Recent Datasets
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-md">
+            <!-- Card 1 -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md hover:border-hairline-strong transition-colors relative group"
+            >
+              <div
+                class="absolute inset-x-0 top-0 h-[1px] bg-white/[0.02] rounded-t-lg"
+              ></div>
+              <div class="flex justify-between items-start mb-4">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="material-symbols-outlined text-primary text-[20px]"
+                    >dataset</span
+                  >
+                  <h4
+                    class="font-body-default font-medium text-ink-primary truncate max-w-[180px]"
+                  >
+                    Instruction Tuning Set v2
+                  </h4>
+                </div>
+                <button
+                  class="text-ink-subtle hover:text-ink-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >more_vert</span
+                  >
+                </button>
+              </div>
+              <div
+                class="flex flex-col gap-2 font-label-mono text-[12px] text-ink-subtle"
+              >
+                <div class="flex justify-between items-center">
+                  <span>Format</span>
+                  <span
+                    class="text-ink-primary bg-surface-3 px-2 py-0.5 rounded border border-hairline"
+                    >JSONL</span
+                  >
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Rows</span>
+                  <span class="text-ink-primary">124,500</span>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Size</span>
+                  <span class="text-ink-primary">452 MB</span>
+                </div>
+                <div
+                  class="flex justify-between items-center mt-2 pt-2 border-t border-hairline"
+                >
+                  <span>Updated</span>
+                  <span>2 hrs ago</span>
+                </div>
+              </div>
+            </div>
+            <!-- Card 2 -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md hover:border-hairline-strong transition-colors relative group"
+            >
+              <div
+                class="absolute inset-x-0 top-0 h-[1px] bg-white/[0.02] rounded-t-lg"
+              ></div>
+              <div class="flex justify-between items-start mb-4">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="material-symbols-outlined text-tertiary-fixed-dim text-[20px]"
+                    >table</span
+                  >
+                  <h4
+                    class="font-body-default font-medium text-ink-primary truncate max-w-[180px]"
+                  >
+                    Math Reasoning 50k
+                  </h4>
+                </div>
+                <button
+                  class="text-ink-subtle hover:text-ink-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >more_vert</span
+                  >
+                </button>
+              </div>
+              <div
+                class="flex flex-col gap-2 font-label-mono text-[12px] text-ink-subtle"
+              >
+                <div class="flex justify-between items-center">
+                  <span>Format</span>
+                  <span
+                    class="text-ink-primary bg-surface-3 px-2 py-0.5 rounded border border-hairline"
+                    >CSV</span
+                  >
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Rows</span>
+                  <span class="text-ink-primary">50,000</span>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Size</span>
+                  <span class="text-ink-primary">120 MB</span>
+                </div>
+                <div
+                  class="flex justify-between items-center mt-2 pt-2 border-t border-hairline"
+                >
+                  <span>Updated</span>
+                  <span>Yesterday</span>
+                </div>
+              </div>
+            </div>
+            <!-- Card 3 -->
+            <div
+              class="bg-surface-1 border border-hairline rounded-lg p-md hover:border-hairline-strong transition-colors relative group"
+            >
+              <div
+                class="absolute inset-x-0 top-0 h-[1px] bg-white/[0.02] rounded-t-lg"
+              ></div>
+              <div class="flex justify-between items-start mb-4">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="material-symbols-outlined text-primary text-[20px]"
+                    >data_object</span
+                  >
+                  <h4
+                    class="font-body-default font-medium text-ink-primary truncate max-w-[180px]"
+                  >
+                    Code Gen Base
+                  </h4>
+                </div>
+                <button
+                  class="text-ink-subtle hover:text-ink-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >more_vert</span
+                  >
+                </button>
+              </div>
+              <div
+                class="flex flex-col gap-2 font-label-mono text-[12px] text-ink-subtle"
+              >
+                <div class="flex justify-between items-center">
+                  <span>Format</span>
+                  <span
+                    class="text-ink-primary bg-surface-3 px-2 py-0.5 rounded border border-hairline"
+                    >Parquet</span
+                  >
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Rows</span>
+                  <span class="text-ink-primary">1.2M</span>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Size</span>
+                  <span class="text-ink-primary">3.2 GB</span>
+                </div>
+                <div
+                  class="flex justify-between items-center mt-2 pt-2 border-t border-hairline"
+                >
+                  <span>Updated</span>
+                  <span>3 days ago</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,675 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Temper - Model Explorer</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-error-container": "#ffdad6",
+              "primary-fixed-dim": "#bdc2ff",
+              "primary-fixed": "#dfe0ff",
+              "error-container": "#93000a",
+              "on-surface": "#e5e1e6",
+              "tertiary-fixed": "#ffddbb",
+              "secondary-fixed-dim": "#bdc2ff",
+              "primary-container": "#5e6ad2",
+              background: "#131316",
+              "on-tertiary-fixed": "#2b1700",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "surface-2": "#141516",
+              "inverse-surface": "#e5e1e6",
+              "on-secondary-container": "#abb3ff",
+              "surface-1": "#0f1011",
+              "on-primary-fixed-variant": "#2e3aa2",
+              "on-primary-fixed": "#000965",
+              "surface-4": "#191a1b",
+              "outline-variant": "#454652",
+              "tertiary-fixed-dim": "#ffb867",
+              "on-surface-variant": "#c6c5d5",
+              "ink-primary": "#f7f8f8",
+              success: "#27a644",
+              "ink-muted": "#d0d6e0",
+              "surface-container-low": "#1c1b1f",
+              primary: "#bdc2ff",
+              outline: "#908f9e",
+              "surface-dim": "#131316",
+              "on-tertiary-fixed-variant": "#673d00",
+              "ink-subtle": "#8a8f98",
+              "surface-tint": "#bdc2ff",
+              "tertiary-container": "#a56500",
+              "inverse-on-surface": "#313034",
+              "on-primary-container": "#fdfaff",
+              "on-secondary-fixed": "#000964",
+              "on-secondary": "#0e1d90",
+              "on-tertiary-container": "#fffaf8",
+              hairline: "#23252a",
+              "inverse-primary": "#4854bb",
+              "surface-variant": "#353438",
+              "on-tertiary": "#482900",
+              "on-primary": "#121f8b",
+              "surface-container-high": "#2a292d",
+              "surface-container-lowest": "#0e0e11",
+              error: "#ffb4ab",
+              "hairline-strong": "#34343a",
+              "on-background": "#e5e1e6",
+              "surface-bright": "#39393c",
+              "surface-3": "#18191a",
+              "surface-container": "#201f23",
+              "on-error": "#690005",
+              tertiary: "#ffb867",
+              surface: "#131316",
+              "secondary-fixed": "#dfe0ff",
+              secondary: "#bdc2ff",
+              "surface-container-highest": "#353438",
+              "secondary-container": "#2f3ca9",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              sm: "12px",
+              md: "16px",
+              section: "96px",
+              xs: "8px",
+              lg: "24px",
+              base: "4px",
+              xl: "32px",
+            },
+            fontFamily: {
+              eyebrow: ["Geist"],
+              "label-mono": ["JetBrains Mono"],
+              "display-lg": ["Geist"],
+              "body-default": ["Geist"],
+              "headline-md": ["Geist"],
+              "display-xl": ["Geist"],
+            },
+            fontSize: {
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                { lineHeight: "1.50", letterSpacing: "0px", fontWeight: "400" },
+              ],
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background-color: theme("colors.background");
+        color: theme("colors.ink-primary");
+      }
+      .hairline-border {
+        border: 1px solid theme("colors.hairline");
+      }
+      .hairline-border-b {
+        border-bottom: 1px solid theme("colors.hairline");
+      }
+      .hairline-border-r {
+        border-right: 1px solid theme("colors.hairline");
+      }
+      .glass-panel {
+        background: rgba(15, 16, 17, 0.7);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid theme("colors.hairline");
+      }
+      .chart-bar {
+        background-color: theme("colors.primary-container");
+      }
+      .chart-bar-alt {
+        background-color: theme("colors.surface-3");
+      }
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body class="flex h-screen overflow-hidden antialiased">
+    <!-- SideNavBar -->
+    <nav
+      class="fixed left-0 top-0 h-screen w-64 flex flex-col py-md bg-surface-1 dark:bg-surface-1 border-r border-hairline z-40"
+    >
+      <div class="px-md mb-xl flex items-center gap-xs">
+        <div
+          class="w-8 h-8 rounded bg-primary-container flex items-center justify-center"
+        >
+          <span
+            class="material-symbols-outlined text-on-primary-container text-[18px]"
+            style="font-variation-settings: &quot;FILL&quot; 1"
+            >dataset</span
+          >
+        </div>
+        <div>
+          <h1
+            class="font-headline-md text-headline-md text-ink-primary text-sm font-bold tracking-tight"
+          >
+            Temper AI
+          </h1>
+          <p
+            class="font-label-mono text-label-mono text-ink-subtle text-[10px]"
+          >
+            Production Cluster
+          </p>
+        </div>
+      </div>
+      <div class="px-md mb-lg">
+        <button
+          class="w-full bg-primary-container text-on-primary-container font-eyebrow text-eyebrow rounded-lg py-sm px-md flex items-center justify-center gap-xs hover:bg-opacity-90 transition-colors duration-150"
+        >
+          <span class="material-symbols-outlined text-[16px]">add</span>
+          New Run
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto px-xs space-y-1">
+        <a
+          class="flex items-center gap-md px-md py-sm rounded-md text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]">dashboard</span>
+          Dashboard
+        </a>
+        <a
+          class="flex items-center gap-md px-md py-sm rounded-md text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]">database</span>
+          Datasets
+        </a>
+        <a
+          class="flex items-center gap-md px-md py-sm rounded-md text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]"
+            >rocket_launch</span
+          >
+          Jobs
+        </a>
+        <a
+          class="flex items-center gap-md px-md py-sm rounded-md text-primary bg-surface-2 border-r-2 border-primary font-label-mono text-label-mono opacity-80"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined text-[18px]"
+            style="font-variation-settings: &quot;FILL&quot; 1"
+            >account_tree</span
+          >
+          Models
+        </a>
+      </div>
+      <div class="px-xs mt-auto space-y-1">
+        <a
+          class="flex items-center gap-md px-md py-sm rounded-md text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]">settings</span>
+          Settings
+        </a>
+        <a
+          class="flex items-center gap-md px-md py-sm rounded-md text-ink-subtle hover:bg-surface-2 hover:text-ink-primary transition-all duration-150 font-label-mono text-label-mono"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[18px]">description</span>
+          Documentation
+        </a>
+      </div>
+    </nav>
+    <!-- Main Content -->
+    <main
+      class="flex-1 ml-64 flex flex-col h-screen overflow-hidden bg-background"
+    >
+      <!-- Top Action Bar -->
+      <header
+        class="h-16 flex justify-between items-center w-full px-lg sticky top-0 z-50 bg-background dark:bg-background border-b border-hairline"
+      >
+        <div class="flex items-center gap-md">
+          <span class="font-eyebrow text-eyebrow text-ink-subtle"
+            >Models / Llama-3-8B-Instruct / Comparison</span
+          >
+        </div>
+        <div class="flex items-center gap-sm">
+          <button
+            class="px-md py-xs rounded border border-hairline text-ink-primary font-eyebrow text-eyebrow hover:bg-surface-2 transition-colors duration-150 flex items-center gap-xs"
+          >
+            <span class="material-symbols-outlined text-[16px]">download</span>
+            Export Model
+          </button>
+          <button
+            class="px-md py-xs rounded bg-primary-container text-white font-eyebrow text-eyebrow hover:bg-opacity-90 transition-colors duration-150 flex items-center gap-xs shadow-sm"
+          >
+            <span class="material-symbols-outlined text-[16px]"
+              >rocket_launch</span
+            >
+            Deploy to Inference
+          </button>
+        </div>
+      </header>
+      <!-- Canvas -->
+      <div class="flex-1 overflow-y-auto p-lg">
+        <div class="mb-lg flex items-end justify-between">
+          <div>
+            <h2
+              class="font-headline-md text-headline-md font-semibold text-ink-primary tracking-tight"
+            >
+              Model Comparison
+            </h2>
+            <p class="font-body-default text-body-default text-ink-muted mt-1">
+              Comparing evaluation metrics and generation quality across
+              checkpoints.
+            </p>
+          </div>
+        </div>
+        <!-- Comparison Grid -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-lg h-full pb-xl">
+          <!-- Model A Panel -->
+          <div class="flex flex-col gap-md">
+            <!-- Header Card -->
+            <div
+              class="bg-surface-1 hairline-border rounded-lg p-md relative overflow-hidden group"
+            >
+              <div class="absolute inset-x-0 top-0 h-px bg-white/5"></div>
+              <div class="flex justify-between items-start mb-md">
+                <div>
+                  <div class="flex items-center gap-xs mb-1">
+                    <span
+                      class="status-dot bg-success shadow-[0_0_8px_rgba(39,166,68,0.5)]"
+                    ></span>
+                    <span
+                      class="font-label-mono text-label-mono text-success bg-success/10 px-1 rounded-sm text-[10px] uppercase"
+                      >Baseline</span
+                    >
+                  </div>
+                  <h3
+                    class="font-eyebrow text-eyebrow text-lg text-ink-primary"
+                  >
+                    llama-3-8b-instruct-v1.0
+                  </h3>
+                  <p
+                    class="font-label-mono text-label-mono text-ink-subtle text-xs mt-1"
+                  >
+                    Checkpoint: 45,000 steps
+                  </p>
+                </div>
+                <div class="text-right">
+                  <span
+                    class="font-label-mono text-label-mono text-ink-subtle text-xs"
+                    >Run ID:</span
+                  >
+                  <span
+                    class="font-label-mono text-label-mono text-ink-primary text-xs ml-1"
+                    >run-7a9b2c</span
+                  >
+                </div>
+              </div>
+            </div>
+            <!-- Metrics Bento -->
+            <div class="grid grid-cols-2 gap-md flex-none">
+              <div class="bg-surface-1 hairline-border rounded-lg p-md">
+                <span
+                  class="font-eyebrow text-eyebrow text-ink-muted text-xs block mb-2"
+                  >Eval Perplexity</span
+                >
+                <div class="flex items-end gap-sm">
+                  <span
+                    class="font-headline-md text-headline-md text-ink-primary font-medium"
+                    >3.42</span
+                  >
+                  <span
+                    class="font-label-mono text-label-mono text-ink-subtle text-xs mb-1"
+                    >-</span
+                  >
+                </div>
+              </div>
+              <div class="bg-surface-1 hairline-border rounded-lg p-md">
+                <span
+                  class="font-eyebrow text-eyebrow text-ink-muted text-xs block mb-2"
+                  >MMLU (5-shot)</span
+                >
+                <div class="flex items-end gap-sm">
+                  <span
+                    class="font-headline-md text-headline-md text-ink-primary font-medium"
+                    >68.4%</span
+                  >
+                  <span
+                    class="font-label-mono text-label-mono text-ink-subtle text-xs mb-1"
+                    >-</span
+                  >
+                </div>
+              </div>
+            </div>
+            <!-- Loss Chart Card -->
+            <div
+              class="bg-surface-1 hairline-border rounded-lg p-md flex-1 min-h-[240px] flex flex-col"
+            >
+              <div class="flex justify-between items-center mb-md">
+                <span
+                  class="font-eyebrow text-eyebrow text-ink-muted text-xs uppercase tracking-wider"
+                  >Training Loss</span
+                >
+                <span
+                  class="material-symbols-outlined text-ink-subtle text-[16px]"
+                  >show_chart</span
+                >
+              </div>
+              <!-- Pseudo Chart Area -->
+              <div
+                class="flex-1 relative w-full h-full border-b border-l border-hairline/50 p-2 flex items-end"
+              >
+                <!-- SVG Sparkline placeholder -->
+                <svg
+                  class="absolute inset-0 w-full h-full text-primary-container/20"
+                  preserveaspectratio="none"
+                  viewbox="0 0 100 100"
+                >
+                  <path
+                    d="M0,80 Q20,75 40,60 T80,40 T100,20 L100,100 L0,100 Z"
+                    fill="currentColor"
+                  ></path>
+                  <path
+                    d="M0,80 Q20,75 40,60 T80,40 T100,20"
+                    fill="none"
+                    stroke="theme('colors.primary-container')"
+                    stroke-width="2"
+                  ></path>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <!-- Model B Panel -->
+          <div class="flex flex-col gap-md">
+            <!-- Header Card -->
+            <div
+              class="bg-surface-2 hairline-border rounded-lg p-md relative overflow-hidden group shadow-[0_0_20px_rgba(94,106,210,0.05)] border-primary-container/30"
+            >
+              <div class="absolute inset-x-0 top-0 h-px bg-white/10"></div>
+              <div class="flex justify-between items-start mb-md">
+                <div>
+                  <div class="flex items-center gap-xs mb-1">
+                    <span
+                      class="status-dot bg-primary-container shadow-[0_0_8px_rgba(94,106,210,0.5)]"
+                    ></span>
+                    <span
+                      class="font-label-mono text-label-mono text-primary-container bg-primary-container/10 px-1 rounded-sm text-[10px] uppercase"
+                      >Candidate</span
+                    >
+                  </div>
+                  <h3
+                    class="font-eyebrow text-eyebrow text-lg text-ink-primary"
+                  >
+                    llama-3-8b-instruct-v1.1-ft
+                  </h3>
+                  <p
+                    class="font-label-mono text-label-mono text-ink-subtle text-xs mt-1"
+                  >
+                    Checkpoint: 60,000 steps
+                  </p>
+                </div>
+                <div class="text-right">
+                  <span
+                    class="font-label-mono text-label-mono text-ink-subtle text-xs"
+                    >Run ID:</span
+                  >
+                  <span
+                    class="font-label-mono text-label-mono text-primary text-xs ml-1"
+                    >run-9f1e4d</span
+                  >
+                </div>
+              </div>
+            </div>
+            <!-- Metrics Bento -->
+            <div class="grid grid-cols-2 gap-md flex-none">
+              <div
+                class="bg-surface-2 hairline-border rounded-lg p-md border-primary-container/20"
+              >
+                <span
+                  class="font-eyebrow text-eyebrow text-ink-muted text-xs block mb-2"
+                  >Eval Perplexity</span
+                >
+                <div class="flex items-end gap-sm">
+                  <span
+                    class="font-headline-md text-headline-md text-ink-primary font-medium"
+                    >2.85</span
+                  >
+                  <span
+                    class="font-label-mono text-label-mono text-success text-xs mb-1 flex items-center"
+                    ><span class="material-symbols-outlined text-[14px]"
+                      >arrow_downward</span
+                    >
+                    0.57</span
+                  >
+                </div>
+              </div>
+              <div
+                class="bg-surface-2 hairline-border rounded-lg p-md border-primary-container/20"
+              >
+                <span
+                  class="font-eyebrow text-eyebrow text-ink-muted text-xs block mb-2"
+                  >MMLU (5-shot)</span
+                >
+                <div class="flex items-end gap-sm">
+                  <span
+                    class="font-headline-md text-headline-md text-ink-primary font-medium"
+                    >72.1%</span
+                  >
+                  <span
+                    class="font-label-mono text-label-mono text-success text-xs mb-1 flex items-center"
+                    ><span class="material-symbols-outlined text-[14px]"
+                      >arrow_upward</span
+                    >
+                    3.7%</span
+                  >
+                </div>
+              </div>
+            </div>
+            <!-- Loss Chart Card -->
+            <div
+              class="bg-surface-2 hairline-border rounded-lg p-md flex-1 min-h-[240px] flex flex-col border-primary-container/20"
+            >
+              <div class="flex justify-between items-center mb-md">
+                <span
+                  class="font-eyebrow text-eyebrow text-ink-muted text-xs uppercase tracking-wider"
+                  >Training Loss</span
+                >
+                <span
+                  class="material-symbols-outlined text-primary-container text-[16px]"
+                  >show_chart</span
+                >
+              </div>
+              <!-- Pseudo Chart Area -->
+              <div
+                class="flex-1 relative w-full h-full border-b border-l border-hairline/50 p-2 flex items-end"
+              >
+                <svg
+                  class="absolute inset-0 w-full h-full text-primary-container/30"
+                  preserveaspectratio="none"
+                  viewbox="0 0 100 100"
+                >
+                  <path
+                    d="M0,80 Q20,70 40,45 T80,25 T100,10 L100,100 L0,100 Z"
+                    fill="url(#grad)"
+                  ></path>
+                  <path
+                    d="M0,80 Q20,70 40,45 T80,25 T100,10"
+                    fill="none"
+                    stroke="theme('colors.primary-container')"
+                    stroke-width="2"
+                  ></path>
+                  <defs>
+                    <lineargradient id="grad" x1="0%" x2="0%" y1="0%" y2="100%">
+                      <stop
+                        offset="0%"
+                        style="
+                          stop-color: theme(
+                            &quot;colors.primary-container&quot;
+                          );
+                          stop-opacity: 0.4;
+                        "
+                      ></stop>
+                      <stop
+                        offset="100%"
+                        style="
+                          stop-color: theme(
+                            &quot;colors.primary-container&quot;
+                          );
+                          stop-opacity: 0;
+                        "
+                      ></stop>
+                    </lineargradient>
+                  </defs>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Version History / Changelog -->
+        <div class="mt-xl">
+          <h3
+            class="font-eyebrow text-eyebrow text-ink-primary mb-md uppercase tracking-wider text-xs"
+          >
+            Run History &amp; Performance Delta
+          </h3>
+          <div class="bg-surface-1 hairline-border rounded-lg overflow-hidden">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-surface-2 border-b border-hairline">
+                  <th
+                    class="py-sm px-md font-label-mono text-label-mono text-ink-subtle text-xs font-normal"
+                  >
+                    Date
+                  </th>
+                  <th
+                    class="py-sm px-md font-label-mono text-label-mono text-ink-subtle text-xs font-normal"
+                  >
+                    Version ID
+                  </th>
+                  <th
+                    class="py-sm px-md font-label-mono text-label-mono text-ink-subtle text-xs font-normal"
+                  >
+                    Dataset
+                  </th>
+                  <th
+                    class="py-sm px-md font-label-mono text-label-mono text-ink-subtle text-xs font-normal"
+                  >
+                    Delta (MMLU)
+                  </th>
+                  <th
+                    class="py-sm px-md font-label-mono text-label-mono text-ink-subtle text-xs font-normal text-right"
+                  >
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="font-label-mono text-label-mono text-sm">
+                <tr
+                  class="border-b border-hairline hover:bg-surface-2/50 transition-colors"
+                >
+                  <td class="py-md px-md text-ink-muted">2023-10-25 14:32</td>
+                  <td class="py-md px-md text-primary">v1.1-ft-60k</td>
+                  <td class="py-md px-md text-ink-primary">
+                    Instruct-v4-filtered
+                  </td>
+                  <td class="py-md px-md text-success flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[14px]"
+                      >arrow_upward</span
+                    >
+                    3.7%
+                  </td>
+                  <td class="py-md px-md text-right">
+                    <button class="text-ink-subtle hover:text-ink-primary">
+                      <span class="material-symbols-outlined text-[18px]"
+                        >more_horiz</span
+                      >
+                    </button>
+                  </td>
+                </tr>
+                <tr
+                  class="border-b border-hairline hover:bg-surface-2/50 transition-colors"
+                >
+                  <td class="py-md px-md text-ink-muted">2023-10-24 09:15</td>
+                  <td class="py-md px-md text-ink-primary">v1.0-45k</td>
+                  <td class="py-md px-md text-ink-primary">Instruct-v3-base</td>
+                  <td
+                    class="py-md px-md text-ink-subtle flex items-center gap-1"
+                  >
+                    -
+                  </td>
+                  <td class="py-md px-md text-right">
+                    <button class="text-ink-subtle hover:text-ink-primary">
+                      <span class="material-symbols-outlined text-[18px]"
+                        >more_horiz</span
+                      >
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
