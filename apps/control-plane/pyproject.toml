@@ -29,6 +29,17 @@ dependencies = [
     # contextvars (spec 008 / issue #52): JSON, machine-readable, every line
     # carrying the request's identifier through the job and the machine.
     "structlog>=24.1",
+    # Parquet is how Hugging Face publishes a dataset in bulk, and reading it
+    # is what replaced paginating the viewer's preview endpoint (ADR-0073).
+    # Not available transitively -- checked before adding it. pyarrow is the
+    # reference implementation and the one HF's own conversion writes with,
+    # and its `iter_batches` reader is what keeps an import's memory bounded
+    # by a batch rather than a file. It lands here, beside the other things
+    # that touch Hugging Face, and not in `temper_core`, which stays free of
+    # dependencies. It is a large wheel (~40 MB); one import path is a thin
+    # reason for that, and reading Parquet correctly by hand is not a thing
+    # anyone should do.
+    "pyarrow>=17",
     # Error reporting is wired as an integration point with no credential set
     # locally -- present in shape, inert in effect (issue #52). The SDK is
     # installed and init is called, but without a DSN it does nothing.

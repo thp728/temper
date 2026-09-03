@@ -113,6 +113,7 @@ repository becomes public at submission.
 | [0070](0070-events-are-persisted-before-published-and-replay-by-last-seen.md) | Events are persisted before they are published, and watchers replay by last-seen identifier | accepted | 2026-08-30 |
 | [0071](0071-the-zero-cost-path-is-a-labelled-demonstration-structurally-blind-to-the-transport.md) | The zero-cost path is a labelled demonstration, seeded and structurally blind to the transport — a single setting selects it, every page is marked, and the limitation is named | accepted | 2026-08-30 |
 | [0072](0072-durable-execution-recovers-the-job-while-the-reconciler-protects-the-money.md) | Durable execution recovers the job while the reconciler protects the money — a claim lease, a step cursor, and recovery that never stacks machines | accepted | 2026-08-31 |
+| [0073](0073-a-bulk-import-reads-parquet-not-the-preview-endpoint.md) | A bulk import reads Parquet, not the preview endpoint — `/rows` is generated on demand and throttled, the shards sit in the published Resolvers bucket, and `/rows` stays as the fallback for an unconverted split | accepted | 2026-09-03 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

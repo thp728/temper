@@ -116,6 +116,13 @@ module = "botocore.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# Same again for the Parquet reader the dataset import runs on (ADR-0073):
+# pyarrow ships no py.typed marker. Its own stubs are a separate, partial
+# package; the seam's surface is typed either way.
+module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "sentry_sdk.*"
 ignore_missing_imports = true
 
