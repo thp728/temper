@@ -746,7 +746,7 @@
         "tier": "known_but_unsupported"
       },
       "attn_implementation": {
-        "reason": "attn_implementation: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "attn_implementation: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "auto_find_batch_size": {
@@ -1022,7 +1022,7 @@
         "tier": "known_but_unsupported"
       },
       "eager_attention": {
-        "reason": "eager_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "eager_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "early_stopping_patience": {
@@ -1106,27 +1106,27 @@
         "tier": "known_but_unsupported"
       },
       "flash_attn_cross_entropy": {
-        "reason": "flash_attn_cross_entropy: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "flash_attn_cross_entropy: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "flash_attn_d512": {
-        "reason": "flash_attn_d512: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "flash_attn_d512: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "flash_attn_fuse_mlp": {
-        "reason": "flash_attn_fuse_mlp: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "flash_attn_fuse_mlp: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "flash_attn_rms_norm": {
-        "reason": "flash_attn_rms_norm: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "flash_attn_rms_norm: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "flash_optimum": {
-        "reason": "flash_optimum: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "flash_optimum: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "flex_attention": {
-        "reason": "flex_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "flex_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "flex_attn_compile_kwargs": {
@@ -1166,7 +1166,7 @@
         "tier": "known_but_unsupported"
       },
       "fused_attn_kernel": {
-        "reason": "fused_attn_kernel: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "fused_attn_kernel: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "gc_collect_steps": {
@@ -1178,7 +1178,7 @@
         "tier": "known_but_unsupported"
       },
       "gemma4_hybrid_attn_impl": {
-        "reason": "gemma4_hybrid_attn_impl: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "gemma4_hybrid_attn_impl: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "generate_samples": {
@@ -1222,27 +1222,27 @@
         "tier": "known_but_unsupported"
       },
       "gradio_max_new_tokens": {
-        "reason": "gradio_max_new_tokens: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "reason": "gradio_max_new_tokens: a Gradio demo server, which is serving (Spec 011), and out of scope here. Training config should not also be the platform's demo surface.",
         "tier": "known_but_unsupported"
       },
       "gradio_server_name": {
-        "reason": "gradio_server_name: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "reason": "gradio_server_name: a Gradio demo server, which is serving (Spec 011), and out of scope here. Training config should not also be the platform's demo surface.",
         "tier": "known_but_unsupported"
       },
       "gradio_server_port": {
-        "reason": "gradio_server_port: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "reason": "gradio_server_port: a Gradio demo server, which is serving (Spec 011), and out of scope here. Training config should not also be the platform's demo surface.",
         "tier": "known_but_unsupported"
       },
       "gradio_share": {
-        "reason": "gradio_share: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "reason": "gradio_share: a Gradio demo server, which is serving (Spec 011), and out of scope here. Training config should not also be the platform's demo surface.",
         "tier": "known_but_unsupported"
       },
       "gradio_temperature": {
-        "reason": "gradio_temperature: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "reason": "gradio_temperature: a Gradio demo server, which is serving (Spec 011), and out of scope here. Training config should not also be the platform's demo surface.",
         "tier": "known_but_unsupported"
       },
       "gradio_title": {
-        "reason": "gradio_title: a Gradio demo server, which is serving (Spec 011) - out of scope here. Training config should not also be the platform's demo surface.",
+        "reason": "gradio_title: a Gradio demo server, which is serving (Spec 011), and out of scope here. Training config should not also be the platform's demo surface.",
         "tier": "known_but_unsupported"
       },
       "greater_is_better": {
@@ -1294,15 +1294,15 @@
         "tier": "known_but_unsupported"
       },
       "is_falcon_derived_model": {
-        "reason": "is_falcon_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice - and offering it would invite a user to contradict the model they picked.",
+        "reason": "is_falcon_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice, and offering it would invite a user to contradict the model they picked.",
         "tier": "known_but_unsupported"
       },
       "is_llama_derived_model": {
-        "reason": "is_llama_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice - and offering it would invite a user to contradict the model they picked.",
+        "reason": "is_llama_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice, and offering it would invite a user to contradict the model they picked.",
         "tier": "known_but_unsupported"
       },
       "is_mistral_derived_model": {
-        "reason": "is_mistral_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice - and offering it would invite a user to contradict the model they picked.",
+        "reason": "is_mistral_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice, and offering it would invite a user to contradict the model they picked.",
         "tier": "known_but_unsupported"
       },
       "is_preprocess": {
@@ -1310,7 +1310,7 @@
         "tier": "known_but_unsupported"
       },
       "is_qwen_derived_model": {
-        "reason": "is_qwen_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice - and offering it would invite a user to contradict the model they picked.",
+        "reason": "is_qwen_derived_model: a legacy architecture hint. It is superseded by auto-detection from the model config, so it is derived from the base model rather than a user choice, and offering it would invite a user to contradict the model they picked.",
         "tier": "known_but_unsupported"
       },
       "jagged_restart_anneal_steps": {
@@ -1354,7 +1354,7 @@
         "tier": "known_but_unsupported"
       },
       "llama4_linearized_experts": {
-        "reason": "llama4_linearized_experts: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "llama4_linearized_experts: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "load_best_model_at_end": {
@@ -1774,7 +1774,7 @@
         "tier": "known_but_unsupported"
       },
       "ring_attn_func": {
-        "reason": "ring_attn_func: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "ring_attn_func: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "rl": {
@@ -1802,7 +1802,7 @@
         "tier": "known_but_unsupported"
       },
       "sage_attention": {
-        "reason": "sage_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "sage_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "sample_packing_bin_size": {
@@ -1842,23 +1842,23 @@
         "tier": "known_but_unsupported"
       },
       "scaling_softmax": {
-        "reason": "scaling_softmax: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "scaling_softmax: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "scaling_softmax_bias": {
-        "reason": "scaling_softmax_bias: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "scaling_softmax_bias: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "scaling_softmax_factor": {
-        "reason": "scaling_softmax_factor: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "scaling_softmax_factor: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "sdp_attention": {
-        "reason": "sdp_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "sdp_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "sdpa_varlen": {
-        "reason": "sdpa_varlen: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "sdpa_varlen: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       },
       "selective_checkpointing": {
@@ -1870,7 +1870,7 @@
         "tier": "known_but_unsupported"
       },
       "shrink_embeddings": {
-        "reason": "shrink_embeddings: a real memory lever on large-vocabulary models and a genuine candidate for exposure, but it changes the embedding matrix so the resulting adapter no longer matches the base model at serving time - a job that succeeds and produces an unusable artifact. Not offered until that failure is guarded.",
+        "reason": "shrink_embeddings: a real memory lever on large-vocabulary models and a genuine candidate for exposure, but it changes the embedding matrix so the resulting adapter no longer matches the base model at serving time, giving a job that succeeds and produces an unusable artifact. Not offered until that failure is guarded.",
         "tier": "known_but_unsupported"
       },
       "shuffle_before_merging_datasets": {
@@ -2106,7 +2106,7 @@
         "tier": "known_but_unsupported"
       },
       "xformers_attention": {
-        "reason": "xformers_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job - exactly the failure the predictor exists to prevent.",
+        "reason": "xformers_attention: an attention/kernel implementation detail. Kernels are derived from the measured hardware, not chosen: one that is unavailable on the provisioned card fails at model load, minutes into a paid job, which is exactly the failure the predictor exists to prevent.",
         "tier": "known_but_unsupported"
       }
     }

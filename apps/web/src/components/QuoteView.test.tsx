@@ -106,7 +106,7 @@ describe("QuoteView", () => {
 
   it("labels itself an estimate that never blocks", () => {
     render(<QuoteView quote={quote()} />);
-    expect(screen.getByText(/An estimate, not a guarantee/i)).toBeVisible();
+    expect(screen.getByText(/An estimate rather than a guarantee/i)).toBeVisible();
     expect(screen.getByText(/never blocks a launch/i)).toBeVisible();
   });
 

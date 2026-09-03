@@ -10,8 +10,8 @@ destroyed as unowned failed with a reason.
 
 The distinction that shapes every decision here is the one Spec 010 draws
 between durable execution and the reconciler. Durable execution recovers
-*the job*: a machine owned by a live job — even a job whose worker crashed
-and is waiting for resumption (#60) — is *matched* and left alone, because
+*the job*: a machine owned by a live job; even a job whose worker crashed
+and is waiting for resumption (#60); is *matched* and left alone, because
 recovering that job is the resumption path's job, not this pass's. This pass
 protects *the money*: it assumes nothing about whether orchestration is
 healthy and asks only whether a billing machine has an owner. The two defend
@@ -28,7 +28,7 @@ Teardown uses the same confirmed destroy the orchestrator's ``_teardown``
 does (``confirmed_destroy``, ADR-0057): retry a refused destroy, then
 require consecutive absent listings, treating ``destroying`` as not yet
 confirmed. A machine in ``destroying`` is therefore never issued a second
-destroy by this pass — that is the double-destroy ADR-0057 exists to stop.
+destroy by this pass; that is the double-destroy ADR-0057 exists to stop.
 
 The schedule is a daemon thread in the worker process (ADR-0010 hosts the
 reconciler beside the claim loop), started by ``worker.main`` and stopping
@@ -47,9 +47,9 @@ logger = get_logger(__name__)
 
 # How often the scheduled pass runs. Domain constant with derivation, not a
 # deployment setting (ADR-0062): it must be short enough that a machine with
-# no owner is found long before it bills for anything a human would notice —
+# no owner is found long before it bills for anything a human would notice;
 # a machine bills per minute, so a thirty-second cadence bounds an orphan's
-# unbilled window to well under a minute — and long enough that an idle pass
+# unbilled window to well under a minute, and long enough that an idle pass
 # does not hammer the provider's listing API on every tick. The serving
 # sweep (ADR-0065) uses five seconds because an endpoint is a *warm* machine
 # the user is interacting with; this pass guards cold job machines, where
@@ -74,7 +74,7 @@ ORPHANED_MACHINE_MESSAGE = (
 # the pass and the tests so an operator reading the table sees a stable set
 # of labels. `destroyed` means the destroy was confirmed absent across
 # consecutive observations (ADR-0057); `destroy_unconfirmed` means the
-# provider refused it and the machine is still billing — the STRAY case;
+# provider refused it and the machine is still billing; the STRAY case;
 # `skipped_destroying` means the provider reported it mid-destroy and a
 # second destroy would be the double-destroy ADR-0057 exists to stop.
 ACTION_DESTROYED = "destroyed"
@@ -91,14 +91,14 @@ def _destroy_orphan(
     uses (`confirmed_destroy`, ADR-0057): retry a refused destroy, escalate
     loudly, then require consecutive absent listings. Each step is recorded on
     the owner job's own history when the machine has an owner, and every
-    outcome lands one row in the reconciliation log — a destroyed orphan is
+    outcome lands one row in the reconciliation log; a destroyed orphan is
     an event, never a silent removal.
 
     After a *confirmed* destroy, any job row that still names this machine as
     its current machine and is not terminal is marked failed: a job that
     claims a machine the reconciler has just destroyed as unowned would
     otherwise sit non-terminal forever. This is the branch the "rather than
-    left running forever" clause exists for — reachable in the real world by
+    left running forever" clause exists for, reachable in the real world by
     the record-first race, where a worker records its machine_id onto a live
     row in the same instant the reconciler is acting on the unowned machine,
     and exercised deterministically in the reconciler tests.
@@ -107,7 +107,7 @@ def _destroy_orphan(
     is still billing) does not mark any job failed: the machine is still
     there, so a job that names it has not lost it, and telling the job
     otherwise would be a lie. The reconciliation log records it as
-    `destroy_unconfirmed` — the STRAY case an operator must act on — and a
+    `destroy_unconfirmed`; the STRAY case an operator must act on, and a
     later pass, or manual removal, takes over.
     """
     from temper_control_plane import db
@@ -164,7 +164,7 @@ def _destroy_orphan(
     for owner in owners:
         if owner["status"] in db.TERMINAL_STATES:
             # A terminal owner is a leak from a teardown that failed; its
-            # destruction is already on its history. Nothing to fail — the
+            # destruction is already on its history. Nothing to fail; the
             # row is already terminal, and marking a complete job failed
             # would be a lie.
             continue

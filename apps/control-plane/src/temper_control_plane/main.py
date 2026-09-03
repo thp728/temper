@@ -47,6 +47,7 @@ from temper_control_plane.contracts_models import (
     DatasetImportRequest,
     DatasetList,
     DatasetRecord,
+    DatasetRenameRequest,
     DecisionOverride,
     EndpointCreated,
     EndpointPreview,
@@ -557,18 +558,21 @@ def import_dataset(req: DatasetImportRequest):
     The reference is resolved before anything is stored, and a reference that
     cannot be fetched -- repository missing, configuration unnamed, split
     absent, split empty -- is refused with its reason as a coded 400, never
-    left to fail mid-fetch. The rows are then streamed from the repository
-    into storage with the upload size ceiling enforced along the way, and the
-    dataset validates through the *same* background path an upload uses --
-    same schema detection, same line-numbered errors, same thinking-mode
-    detection. Nothing gets a shortcut for arriving over a network, and an
-    imported dataset that fails validation is stored with its report like any
-    other.
+    left to fail mid-fetch. That resolution is the only network call this
+    handler waits on: the rows themselves are fetched from a third party that
+    can be arbitrarily slow (issue: "dataset import from HF"), so streaming
+    them into storage, enforcing the size ceiling, and validating all run in
+    the background (status `importing`, then `validating`) -- the *same*
+    background path an upload uses past its own fetch, same schema
+    detection, same line-numbered errors, same thinking-mode detection.
+    Nothing gets a shortcut for arriving over a network, and an imported
+    dataset that fails to fetch, or fails validation, is stored with its
+    report like any other.
 
-    Like an upload, this answers 202 with the dataset's id while validation
-    runs; progress and the report land on `GET /v1/datasets/{id}`. The
-    handler is a worker-pool `def` because the fetch-and-store leg is
-    synchronous and CPU/IO-bound (ADR-0006).
+    This answers 202 with the dataset's id once the reference resolves;
+    progress and the report land on `GET /v1/datasets/{id}`. The handler is a
+    worker-pool `def` because `resolve()` is synchronous and IO-bound
+    (ADR-0006).
     """
     try:
         ds_id, filename, status = datasets.import_dataset(
@@ -598,6 +602,39 @@ def get_dataset(dataset_id: str):
     if not ds:
         raise HTTPException(404, "No such dataset.")
     return ds
+
+
+@app.patch(
+    "/v1/datasets/{dataset_id}",
+    tags=["datasets"],
+    response_model=DatasetRecord,
+)
+def rename_dataset(dataset_id: str, req: DatasetRenameRequest):
+    """Rename a dataset. The only field a dataset can be updated with --
+    the stored object never moves, this changes what it is called.
+
+    Refused (404) if it does not exist, and refused (400,
+    `unsupported_extension`) the same way an upload's own name is: the
+    product only ever ingests JSONL.
+    """
+    return datasets.rename_dataset(dataset_id, req.filename)
+
+
+@app.delete(
+    "/v1/datasets/{dataset_id}",
+    tags=["datasets"],
+    status_code=204,
+)
+def delete_dataset(dataset_id: str):
+    """Delete a dataset: the stored object, then the row.
+
+    Refused (404) if it does not exist, and refused (409, `dataset_in_use`)
+    if any job was launched against it -- a completed job's record must keep
+    being able to say what it trained on, so the data it points at does not
+    disappear out from under it. There is no undo: the object is gone, not
+    archived.
+    """
+    datasets.delete_dataset(dataset_id)
 
 
 # ---------------------------------------------------------------------------
@@ -850,7 +887,7 @@ def cancel_job(job_id: str):
     The request records the user's decision; the thread running the job sees it
     within a poll interval, destroys the machine and ends the job `cancelled`.
     So this returns the state the job is in *now*, which is usually still a
-    working one — reporting `cancelled` here would claim a teardown that has
+    working one; reporting `cancelled` here would claim a teardown that has
     not happened yet, and teardown is the whole point of cancelling.
 
     Repeating it succeeds quietly: a double-clicked button is not an error.

@@ -146,7 +146,7 @@ describe("JobRecordView", () => {
               format: "merged",
               kind: "merged_model",
               what_for:
-                "The base model with your trained change built into its full weights — serve it directly.",
+                "The base model with your trained change built into its full weights. Serve it directly.",
               members: ["merged.tar.gz"],
               loading: "A complete model; load it directly.",
             },
@@ -154,7 +154,7 @@ describe("JobRecordView", () => {
               format: "quantised",
               kind: "quantised_local",
               what_for:
-                "A compact local-inference version of the merged model — run it on your own machine.",
+                "A compact local-inference version of the merged model. Run it on your own machine.",
               members: ["quantised.gguf"],
               loading: "A local-inference format for llama.cpp.",
             },
@@ -166,13 +166,13 @@ describe("JobRecordView", () => {
     // Each format is offered by what it is for, in plain language, with a
     // per-format download that carries the `format` query parameter.
     expect(screen.getByText("merged")).toBeVisible();
-    expect(screen.getByText(/serve it directly/)).toBeVisible();
+    expect(screen.getByText(/Serve it directly/)).toBeVisible();
     expect(screen.getByRole("link", { name: "Download merged" })).toHaveAttribute(
       "href",
       "/v1/jobs/job_abc123def456/artifact?format=merged",
     );
     expect(screen.getByText("quantised")).toBeVisible();
-    expect(screen.getByText(/run it on your own machine/)).toBeVisible();
+    expect(screen.getByText(/Run it on your own machine/)).toBeVisible();
     expect(
       screen.getByRole("link", { name: "Download quantised" }),
     ).toHaveAttribute(
@@ -460,7 +460,7 @@ describe("JobRecordView", () => {
 
     // The decision is stated in the outcome section...
     expect(
-      screen.getByText(/that is what cancelling means here/i),
+      screen.getByText(/which is what cancelling means here/i),
     ).toBeVisible();
     // ...and the history records it in the same words the run recorded.
     expect(screen.getByRole("log")).toHaveTextContent(

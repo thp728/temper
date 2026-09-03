@@ -4,7 +4,7 @@ import DemoBanner from "@/components/DemoBanner";
 
 // Spec 012's honesty rule, at the component level: the marking says what the
 // mode is and what it cannot do, and there is no way to turn it off from the
-// page — a banner a visitor can dismiss is a banner that can be missing from
+// page; a banner a visitor can dismiss is a banner that can be missing from
 // the screenshot meant to prove the mode was labelled.
 
 describe("DemoBanner", () => {

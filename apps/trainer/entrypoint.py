@@ -400,7 +400,7 @@ def _on_sigterm(signum, frame) -> None:
     path rather than a silent death. The narration goes to the stream so the
     run's history says what happened.
     """
-    log("SIGTERM received — saving a final checkpoint and exiting")
+    log("SIGTERM received, saving a final checkpoint and exiting")
     raise GracefulStop()
 
 
@@ -1911,7 +1911,7 @@ def main() -> int:
         # the control plane's to decide. The finally below ships the final
         # checkpoint and writes result.json, which is the whole point of the
         # request.
-        log("ordered stop — finalizing and writing result.json")
+        log("ordered stop, finalizing and writing result.json")
         return 0
     except Exception as e:
         result["error"] = f"{type(e).__name__}: {e}"

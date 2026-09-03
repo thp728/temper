@@ -199,12 +199,12 @@ function preview(overrides: Partial<JobSpecPreview> = {}): JobSpecPreview {
       {
         id: "merged",
         what_for:
-          "The base model with your trained change built into its full weights — serve it directly.",
+          "The base model with your trained change built into its full weights. Serve it directly.",
       },
       {
         id: "quantised",
         what_for:
-          "A compact local-inference version of the merged model — run it on your own machine.",
+          "A compact local-inference version of the merged model. Run it on your own machine.",
       },
     ],
     ...overrides,

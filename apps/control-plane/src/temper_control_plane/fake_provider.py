@@ -10,7 +10,7 @@ What it can be told to do, because these are the paths worth testing:
 * stop producing output part-way through;
 * space its lines out in time, so that a test can tell output arriving while
   a job is working from output arriving once it has finished;
-* fail at any stage, with a chosen error code — or with an exception nobody
+* fail at any stage, with a chosen error code, or with an exception nobody
   anticipated;
 * fail the destroy call a chosen number of times, and go on being listed
   afterwards;
@@ -18,13 +18,13 @@ What it can be told to do, because these are the paths worth testing:
   from here and is not the same thing as a stream that stops;
 * hold still at a named stage or after a chosen number of lines, so that a
   test can act on a job at a known point in its run rather than sleeping and
-  hoping — the difference between cancelling during the image build and
+  hoping; the difference between cancelling during the image build and
   cancelling during training is minutes on a real machine and microseconds
   here, and only a pause makes the two distinguishable.
 * suffer a fault from the surface (issue #24): when a job spec's
   `simulated_failure_code` is a dict naming one of the six faults, the
-  machine makes it happen — exhausting memory, diverging, dying mid-run,
-  going silent, leaving an orphan, or refusing a destroy — so a recovery can
+  machine makes it happen, exhausting memory, diverging, dying mid-run,
+  going silent, leaving an orphan, or refusing a destroy, so a recovery can
   be watched rather than argued about. Off by default: no dict, no fault.
 
 It ships with a clock for the same reason: the limits that catch a silent job
@@ -114,7 +114,7 @@ def simulated_limits(
 
     `step` is how much simulated time one trip round the guard's loop costs.
     `poll_interval_s` is how long the guard will really block before looking at
-    the clock again — small here only so that simulated time, which moves when
+    the clock again, small here only so that simulated time, which moves when
     the clock is read, moves quickly in real time too. It is not a limit.
 
     Already started, because a test asking about a limit is asking about a job
@@ -160,7 +160,7 @@ class FakeProvider:
         # then go absent for good. `list_sequence` lets a test script the
         # exact ids (or Machines) returned per `list_machines` call, and
         # `destroying_for` makes the fake report `destroying` for N calls
-        # after a successful destroy before becoming absent — the two
+        # after a successful destroy before becoming absent; the two
         # mechanisms that let the confirmation rule be exercised without
         # hardware.
         list_sequence: Sequence[Sequence[object]] | None = None,
@@ -567,7 +567,7 @@ class FakeProvider:
         """The actual machines the provider bills, with lifecycle status.
 
         A destroyed machine can still be reported as `destroying` for a
-        configurable number of listings before becoming absent — the
+        configurable number of listings before becoming absent; the
         eventual-consistency window the confirmation rule must survive
         (spec 010, spike/teardown.py C17). A scripted `list_sequence`
         overrides everything, so a test can make the provider read absent
@@ -604,9 +604,10 @@ class FakeProvider:
                     )
                 else:
                     raise ValueError(f"bad list_sequence entry {item!r}")
-            # Orphans are still appended unless the sequence already names them
-            # — a sequence that wants to hide orphans can just include them
-            # explicitly, and one that wants to show them does not need to.
+            # Orphans are still appended unless the sequence already names
+            # them. A sequence that wants to hide orphans can just include
+            # them explicitly, and one that wants to show them does not
+            # need to.
             return out
 
         ids: list[int] = []
@@ -636,7 +637,7 @@ class FakeProvider:
                 ids.append(MACHINE_ID)
                 statuses[MACHINE_ID] = "running"
 
-        # Orphans are always running and never destroying — they are the
+        # Orphans are always running and never destroying; they are the
         # reconciler's (#61) fixture, not the teardown's.
         for oid in self._orphan_ids:
             if oid not in ids:

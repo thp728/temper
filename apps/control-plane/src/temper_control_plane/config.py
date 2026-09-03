@@ -128,7 +128,7 @@ def _seconds(name: str, default: float) -> float:
     if value <= 0:
         raise ValueError(
             f"{name}={raw!r} must be greater than zero. To disable the limit, "
-            f"set it to a value large enough to be unreachable — there is no "
+            f"set it to a value large enough to be unreachable. There is no "
             f"value that means 'no limit', because a limit that can be "
             f"switched off by a typo is not a limit."
         )
@@ -200,34 +200,24 @@ def _megabytes(name: str, default: float) -> float:
 
 
 # --- dataset size limit -----------------------------------------------------
-# **1.3 GB, derived from the measured streaming throughput, not from memory.**
-# Validation now streams one row at a time
+# **5 GB, wireframe-aligned product limit.**
+# Validation streams one row at a time
 # ([ADR-0036](../docs/adr/0036-the-dataset-size-limit-is-derived-from-measured-throughput.md)),
 # so the memory multiplier that produced ADR-0005's 1 GB figure is gone --
 # spike 9 measured the streaming path flat from 1 GB to 20 GB (peak RSS +4 MB
-# regardless of size). What the limit still protects is that validation
-# finishes within a tolerable synchronous wait: the mean streaming rate
-# measured on a real 1 GB file was **21.6 MB/s** (a floor -- the machine was
-# contended), and 60 seconds of waiting is the point at which a synchronous
-# upload stops reading as a wait and starts reading as a hang. That is
-# 21.6 MB/s x 60 s = 1296 MB, rounded up to a clean **1.3 GiB (1331.2 MB)** --
-# a rounding of under 3%, smaller than the uncertainty in a measured rate
-# that is itself a floor. The rate is **measured**; the 60-second wait is
-# **a judgment**, and both are recorded in the ADR so the number can be
-# revisited against a less contended measurement or a different tolerance.
+# regardless of size). What the limit now protects is user expectation:
+# the wireframe advertises 5 GB (docs/wireframes/datasets.html:372), and the
+# product honours it. 5 GiB = 5120 MB. At the measured floor rate
+# 21.6 MB/s this is ~237 s of validation; background progress keeps the
+# page observable, so the wait is no longer a frozen hang.
 #
-# One gigabyte is approximately 577,000 conversational rows; 1.3 GB is
-# approximately 750,000.
-#
-# Deliberately below the 25 GB named baseline, which is a property of a
-# multi-node fleet; on a single-GPU job with a 24-hour ceiling a dataset that
-# size cannot finish anyway. Advertising a limit the system cannot honour is
-# worse than being visibly below it.
+# One gigabyte is approximately 577,000 conversational rows; 5 GB is
+# approximately 2,885,000.
 #
 # Configurable because the right number depends on the deployment's tolerance
 # for a synchronous wait, not on this code. TEMPER_MAX_DATASET_MB, in
-# megabytes. 1.3 GiB is 1331.2 MB.
-DEFAULT_MAX_DATASET_MB = 1331.2
+# megabytes. 5 GiB is 5120 MB.
+DEFAULT_MAX_DATASET_MB = 5120
 
 # Parsed once and read twice: the byte ceiling the limit enforces, and the
 # typed view's own figure -- a value two components must agree on is defined
@@ -414,6 +404,18 @@ S3_REGION = _text("TEMPER_S3_REGION")
 # correct for local runs, whose grants live exactly one job inside one process,
 # and useless across restarts by construction rather than by hope.
 STORAGE_SECRET = _text("TEMPER_STORAGE_SECRET")
+
+
+# --- Hugging Face datasets-server (issue #45) --------------------------------
+# Optional. Every request `remote_datasets.py` makes is against a public
+# endpoint and needs no credential to succeed -- but an anonymous request
+# shares a low, IP-based rate limit, while an authenticated one goes against
+# the token owner's own, much higher quota (Hugging Face's own guidance: a
+# free read token is enough). Unset means anonymous, exactly as before this
+# was added. Read as `HF_TOKEN` rather than a `TEMPER_`-prefixed name because
+# that is the name every other Hugging Face tool already looks for, so the
+# same `.env` entry works for this process and for `huggingface_hub` alike.
+HF_TOKEN = _text("HF_TOKEN")
 
 
 def _count(name: str, default: int) -> int:

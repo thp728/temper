@@ -1,11 +1,11 @@
 """Classify one line of a machine's output into an event.
 
-A pure function over a string. No I/O, no database, no framework imports — so
+A pure function over a string. No I/O, no database, no framework imports, so
 it can be tested against real training output directly, and so Phase B can move
 what calls it without moving what it does.
 
 The job is narrow: the training framework says everything it knows in prose,
-and a few of those numbers — loss, epoch, step — are the ones a user watching a
+and a few of those numbers, namely loss, epoch and step, are the ones a user watching a
 job is actually asking about. Lifting them into structured fields at the moment
 the line is read means a chart is a read-only addition later rather than a
 second pass over the text, and text is the worst thing to build a chart on: it
@@ -13,7 +13,7 @@ changes whenever the framework changes its mind about formatting, and by then
 the job is over and the line is gone.
 
 **Two kinds of log dict are promoted.** Once per logging step, transformers'
-progress callback writes the training log dict as a Python repr —
+progress callback writes the training log dict as a Python repr;
 ``{'loss': 1.9042, 'grad_norm': 3.99, 'learning_rate': 4.5e-05, 'epoch': 0.13}``.
 A payload counts as that line only if it carries a `'loss'` key, and the quotes
 are load-bearing: evaluation writes `'eval_loss'` and the end-of-training
@@ -31,19 +31,19 @@ live view charts the two together. `'train_loss'` stays a log line: it is a
 summary of the run, not a point in either series.
 
 **Grad norm, learning rate and throughput are deliberately not promoted.** Each
-is diagnostic rather than progress — a user watching a job wants to know how far
+is diagnostic rather than progress; a user watching a job wants to know how far
 through it is and whether the model is learning; a learning-rate schedule is
 something you read afterwards, when it went wrong. They stay in log output, and
 promoting one later is a change to this file alone.
 
 **Progress is promoted, not filtered (issue #49).** The machine's loudest
-output — docker's layer-pull lines and the model-download bars, hundreds per
-pull — was slated to be filtered at classification so it never became events, a
+output, meaning docker's layer-pull lines and the model-download bars,
+hundreds per pull, was slated to be filtered at classification so it never became events, a
 plan that discards evidence. Those lines carry bytes-so-far and bytes-total:
 the noise *is* the progress data. They are promoted into a `progress` record
 carrying phase and bytes, which supersedes rather than accumulates, while the
 raw lines are retained as collapsed detail so nothing is discarded. The phase
-that dominates a large job — downloading weights — gains the signal it
+that dominates a large job, downloading weights, gains the signal it
 currently lacks entirely. See `temper_core.progress`.
 
 **The progress bar was rejected as a source of the step number, and that is a
@@ -55,7 +55,7 @@ training bar does not. That is true and it is not enough: transformers builds
 the **evaluation** bar without a description either, and this trainer sets
 `val_set_size` to 0.05 by default, so an eval bar is drawn every epoch and is
 textually identical to the training bar. Promoting it would have walked the step
-counter backwards once per epoch and changed the total underneath it — a false
+counter backwards once per epoch and changed the total underneath it; a false
 metric, which is worse than a missing one, because a user reading a chart cannot
 tell that the number came from a line that only looked like a measurement. So a
 step is promoted only when the framework states it as a field. Getting it
@@ -93,7 +93,7 @@ EVAL_FLOAT_FIELDS = (("eval_loss", "held_out_loss"), ("epoch", "epoch"))
 STEP_FIELDS = ("step", "global_step")
 
 # A number as Python prints one: optional sign, optional decimals, optional
-# exponent. `nan` and `inf` deliberately do not match — a non-finite loss is
+# exponent. `nan` and `inf` deliberately do not match; a non-finite loss is
 # real information but it is not a point on a chart, and it survives in the log
 # line either way. The other fields on that line are still promoted.
 _NUMBER = r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"
@@ -200,7 +200,7 @@ class Event:
     """One classified line: what kind of event it is, and what it carried.
 
     `message` is always the original line. Structuring the numbers must not
-    cost the reader the line they arrived in — the prose is what makes an
+    cost the reader the line they arrived in; the prose is what makes an
     unexpected number explicable.
     """
 

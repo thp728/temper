@@ -1,4 +1,4 @@
-"""The feasibility warning — spec 002, issue #10.
+"""The feasibility warning. Spec 002, issue #10.
 
 The size limit and the duration ceiling answer different questions and do not
 reconcile: 1 GB is within memory and far beyond what finishes in 24 hours.
@@ -8,9 +8,9 @@ warning.
 
 Two seams, per the spec's testing decisions:
 
-* the estimate itself, as pure functions over numbers — no I/O, no framework,
+* the estimate itself, as pure functions over numbers, no I/O, no framework,
   so it survives the Phase B migration unchanged;
-* job creation, through the HTTP seam — a dataset that plainly cannot finish
+* job creation, through the HTTP seam; a dataset that plainly cannot finish
   yields a warning **and a launched job**, never a refusal.
 """
 

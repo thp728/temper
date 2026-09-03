@@ -11,13 +11,13 @@
       "id": "merged",
       "kind": "merged_model",
       "conversion": "merge",
-      "what_for": "The base model with the trained change built into its full weights at full precision - one self-contained model you can serve directly, without composing pieces at load time."
+      "what_for": "The base model with the trained change built into its full weights at full precision. One self-contained model you can serve directly, without composing pieces at load time."
     },
     {
       "id": "quantised",
       "kind": "quantised_local",
       "conversion": "quantise",
-      "what_for": "A compact local-inference version of the merged model - the 'run it on your own machine' format, smaller than the merged model, loaded by a local runtime such as llama.cpp."
+      "what_for": "A compact local-inference version of the merged model, the 'run it on your own machine' format. Smaller than the merged model, and loaded by a local runtime such as llama.cpp."
     }
   ]
 }

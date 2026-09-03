@@ -3,7 +3,7 @@
 // end-user value. The per-job "Prediction vs what happened" on the finished
 // record already answers a user's "did my quote match?" question. The aggregate
 // stays as a component and at /calibration for internal/operator use (kept
-// intact, not linked from dashboard, job list or job record) — dashboard now
+// intact, not linked from dashboard, job list or job record); dashboard now
 // shows Spend & time instead, which directly helps budgeting and planning.
 
 import Link from "next/link";
@@ -36,10 +36,10 @@ function metricSentence(m: CalibrationMetric): string {
     return "No comparable jobs yet.";
   }
   if (m.mean_ratio > 1.05) {
-    return `On average the actual ran ${formatRatio(m.mean_ratio)} the prediction — the estimate under-predicted.`;
+    return `On average the actual ran ${formatRatio(m.mean_ratio)} the prediction, so the estimate under-predicted.`;
   }
   if (m.mean_ratio < 0.95) {
-    return `On average the actual ran ${formatRatio(m.mean_ratio)} the prediction — the estimate over-predicted.`;
+    return `On average the actual ran ${formatRatio(m.mean_ratio)} the prediction, so the estimate over-predicted.`;
   }
   return "On average the actual matched the prediction.";
 }
@@ -159,7 +159,7 @@ export default function CalibrationView({ data }: { data: Calibration }) {
           both a frozen quote and measured actuals. Each figure states its
           basis: predicted figures are estimates, duration and peak memory are
           measured, and cost is derived from measured duration at the frozen
-          rate. The ratio is actual over predicted midpoint — a systematically
+          rate. The ratio is actual over predicted midpoint, so a systematically
           wrong estimate shows up as a mean ratio away from 1 rather than
           being absorbed into a better-looking average.
         </p>
@@ -176,7 +176,7 @@ export default function CalibrationView({ data }: { data: Calibration }) {
             </Button>
           }
         >
-          The first job you finish starts the record — its quote is checked
+          The first job you finish starts the record. Its quote is checked
           against what actually happened.
         </EmptyStatePanel>
       ) : (

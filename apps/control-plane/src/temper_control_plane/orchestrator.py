@@ -4,7 +4,7 @@ This is `spike/spike4.py` made durable. The sequence is unchanged because it is
 proven; what is added is a job row, state transitions, and events.
 
 Everything that touches the compute provider goes through the injected
-`Provider` protocol — one seam, so the whole money-spending path can be
+`Provider` protocol, one seam, so the whole money-spending path can be
 exercised with a fake and no GPU. The default is the real one, so callers that
 do not care about testing pass nothing.
 
@@ -24,7 +24,7 @@ each learned the expensive way:
   `limits.py`: silence beyond the stall timeout and elapsed time beyond the
   duration ceiling. They are circuit breakers against a wedged job on a billing
   machine, not a cap on what a user may legitimately train, and they replace a
-  single wall-clock constant that no code path ever read — a control that looks
+  single wall-clock constant that no code path ever read; a control that looks
   implemented and is not is worse than none at all.
 * **Cancellation is destructive, and is checked where it can be honoured.**
   The user's request sets a flag on the job row; this path reads it at every
@@ -387,7 +387,7 @@ def _remote_script(
     redirections between the training framework and the user, and while any one
     of them stood the others bought nothing: output written to `/tmp/run.log`
     reaches the control plane when the run ends, which is the silence this
-    channel exists to remove — and the machine is destroyed immediately after,
+    channel exists to remove, and the machine is destroyed immediately after,
     taking the file with it.
 
     The container's output goes to **stderr**, which the provider folds into the
@@ -543,12 +543,12 @@ def _consume(job_id: str, lines) -> dict:
     structured fields, a layer-pull or model-download line becomes a `progress`
     record (issue #49), and everything else becomes a `log` event. Classifying
     here rather than when the log is read is what makes a chart possible later
-    without re-parsing prose — by then the job is over and the format the line
+    without re-parsing prose, by then the job is over and the format the line
     was written in is whatever the framework happened to use that day.
 
     Progress is promoted, not filtered (issue #49): a progress line updates the
-    phase's record — one superseding row per phase, with the rate measured live
-    between readings — and the raw line is retained as the job's collapsed
+    phase's record, one superseding row per phase, with the rate measured live
+    between readings, and the raw line is retained as the job's collapsed
     detail, so the hundreds of lines a pull produces never flood the event log
     and nothing is discarded. The events table therefore holds no progress
     rows; the log/metric/state/error history is what stays small enough for a
@@ -1311,8 +1311,8 @@ def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
     """Save what a spend-ceiling stop can save: the machine's own checkpoints.
 
     Issue #46's ordered shutdown is checkpoint, terminate, destroy. The
-    checkpoint half is issue #37's point — the machine writes checkpoints off
-    itself as it trains — so the control plane asks it to report them
+    checkpoint half is issue #37's point; the machine writes checkpoints off
+    itself as it trains, so the control plane asks it to report them
     (`request_checkpoint`), records what it can verify, and lets the
     held-out-loss selection (ADR-0049) see the result: a checkpoint written at
     the ceiling must be visible to that selection, not stored somewhere it
@@ -1320,8 +1320,8 @@ def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
 
     Best-effort and bounded, and **failure-isolated**: this runs in the middle
     of the budget_exhausted handling, so nothing it does may prevent the job
-    reaching its terminal state. A machine that does not answer — it is, after
-    all, the machine that has gone wrong — records nothing and the shutdown
+    reaching its terminal state. A machine that does not answer, being after
+    all the machine that has gone wrong, records nothing and the shutdown
     proceeds regardless: an unresponsive trainer cannot be asked to save, and
     the record says so rather than claiming a checkpoint it does not have. A
     recording step that itself fails (a malformed manifest, a storage error)
@@ -1331,7 +1331,7 @@ def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
     db.add_event(
         job_id,
         "log",
-        "Spend ceiling reached — requesting an emergency checkpoint before "
+        "Spend ceiling reached, requesting an emergency checkpoint before "
         "shutdown",
     )
     manifest = None
@@ -1348,7 +1348,7 @@ def _emergency_checkpoint(provider: Provider, machine, job_id: str) -> None:
         db.add_event(
             job_id,
             "log",
-            "No checkpoints were saved at the ceiling — the machine reported "
+            "No checkpoints were saved at the ceiling; the machine reported "
             "none",
         )
         return
@@ -1380,7 +1380,7 @@ def confirmed_destroy(
 
     A destroy call that returns cleanly is a claim. The evidence is the machine
     no longer being listed, and a machine that is still listed is billing right
-    now — so it is reported as an error an operator cannot miss.
+    now, so it is reported as an error an operator cannot miss.
 
     The listing itself is eventually consistent (spec 010, spike/teardown.py
     C17): after a destroy the provider can report absent, then reappear as
@@ -1389,7 +1389,7 @@ def confirmed_destroy(
     consecutive absent listings, and a machine reported as `destroying` is
     treated as not yet confirmed rather than as a stray. A `destroy` the
     provider refuses is retried `DESTROY_ATTEMPTS` times and, when exhausted,
-    escalated as a loud error — an orphaned GPU bills until someone notices.
+    escalated as a loud error; an orphaned GPU bills until someone notices.
 
     `record(kind, message, data=None)` is how one line of what happened is
     written wherever the caller's history lives: a job's event log for
@@ -1401,7 +1401,7 @@ def confirmed_destroy(
     Returns True when the machine was confirmed absent across consecutive
     observations, False when the confirmation window expired with the machine
     still listed (the STRAY case). Callers that only care about the side
-    effect — `_teardown` — ignore it; the reconciler records it.
+    effect, meaning `_teardown`, ignore it, and the reconciler records it.
     """
     last_exc: Exception | None = None
     destroyed = False
@@ -1423,11 +1423,11 @@ def confirmed_destroy(
         record(
             "error",
             f"Machine {machine.machine_id} destroy refused after "
-            f"{DESTROY_ATTEMPTS} attempts: {last_exc}; still billing — "
+            f"{DESTROY_ATTEMPTS} attempts: {last_exc}; still billing, "
             f"manual removal required",
         )
     # Confirmation: require consecutive absent observations. `destroying`
-    # is not absent — it is still billing and still present, so it resets
+    # is not absent; it is still billing and still present, so it resets
     # the counter rather than being counted as a stray.
     consecutive_absent = 0
     start = time.time()
@@ -1455,7 +1455,7 @@ def confirmed_destroy(
             elif status == "destroying":
                 record(
                     "log",
-                    f"Machine {machine.machine_id} still destroying — "
+                    f"Machine {machine.machine_id} still destroying, "
                     f"not yet confirmed",
                 )
                 consecutive_absent = 0
@@ -1470,7 +1470,7 @@ def confirmed_destroy(
         time.sleep(TEARDOWN_CONFIRM_INTERVAL_S)
     record(
         "error",
-        f"STRAY MACHINE {machine.machine_id} still listed — "
+        f"STRAY MACHINE {machine.machine_id} still listed. "
         f"destroy it manually, it is billing",
     )
     return False
@@ -1481,7 +1481,7 @@ def _teardown(provider: Provider, job_id: str, machine) -> None:
 
     A destroy call that returns cleanly is a claim. The evidence is the machine
     no longer being listed, and a machine that is still listed is billing right
-    now — so it is reported as an error an operator cannot miss. The retry,
+    now, so it is reported as an error an operator cannot miss. The retry,
     escalation and consecutive-absence confirmation rules live in
     `confirmed_destroy`, defined once and shared with the reconciler (issue
     #61) so the two cannot drift (ADR-0057); this wrapper records the outcome
@@ -1523,7 +1523,7 @@ def _cancellation_check(job_id: str):
 
     Shaped as a check rather than a signal because the request and the run are
     on different threads and nothing connects them but the row: the job asks,
-    it is not told. Cheap enough to ask often — one indexed read by primary key
+    it is not told. Cheap enough to ask often, one indexed read by primary key
     against a local file, once per stage boundary and once per trip round the
     streaming loop.
     """
@@ -1553,7 +1553,7 @@ def _attempt(
     event log before the job reports that it is finished.
 
     `machines` is the caller's handle on anything created, appended to the
-    moment it exists — a machine that exists but was never recorded is a
+    moment it exists; a machine that exists but was never recorded is a
     machine nobody destroys.
     """
     job = db.require_job(job_id)

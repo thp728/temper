@@ -258,7 +258,7 @@ export default function QuoteView({
             Cost and time estimate
           </h2>
           <p className="text-sm text-muted-foreground">
-            An estimate, not a guarantee — it never blocks a launch.
+            An estimate rather than a guarantee. It never blocks a launch.
           </p>
         </div>
 
@@ -348,7 +348,7 @@ export default function QuoteView({
                 + "and the rest recomputes; the configuration below is what a "
                 + "launch would freeze."
               : "These are the decisions Temper made for you, and the "
-                + "alternatives that lost — the configuration this job froze."}
+                + "alternatives that lost, the configuration this job froze."}
           </p>
           {refusal && (
             <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">

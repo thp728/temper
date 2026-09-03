@@ -90,7 +90,7 @@ class Harness:
         The inline form above cannot answer this ticket's question: output that
         appears only once a job has finished is indistinguishable from output
         that appeared while it was working, unless the test reads mid-flight.
-        It is also the only form in which a job can be cancelled at all — a
+        It is also the only form in which a job can be cancelled at all; a
         request that cancels one has to arrive while it is running.
 
         Issue #51: the request path no longer starts threads, so this harness
@@ -970,7 +970,7 @@ def pushed_dataset_bytes(provider) -> bytes:
     """What arrived at the far end of the transport, as the machine sees it.
 
     Scans everything that was pushed for an archive carrying the dataset,
-    rather than assuming which push or which member name — the assertion is
+    rather than assuming which push or which member name; the assertion is
     about the bytes, not about the container they travelled in.
     """
     found = []
@@ -1362,7 +1362,7 @@ def test_an_empty_artifact_upload_is_refused_as_corrupt(harness):
 def test_missing_credentials_fail_the_job_before_anything_is_provisioned(
     harness, monkeypatch
 ):
-    """No provider passed means the real one — which refuses without a key."""
+    """No provider passed means the real one, which refuses without a key."""
     from temper_control_plane import config, orchestrator
 
     monkeypatch.setattr(config, "provider_credentials_present", lambda: False)
@@ -1499,7 +1499,7 @@ def test_each_event_is_stamped_when_its_line_was_read(harness):
     """Every event used to carry the same timestamp.
 
     They were all written after the remote command returned, so the record
-    could not say how long anything took — which is a second failure on top of
+    could not say how long anything took, which is a second failure on top of
     the silence, and the one that survives into the job's history.
 
     The gap is caused, not hoped for. Holding the producer at line two pins

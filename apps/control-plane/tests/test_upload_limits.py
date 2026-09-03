@@ -1,4 +1,4 @@
-"""Upload size limits, responsiveness and progress — spec 002 + spec 006.
+"""Upload size limits, responsiveness and progress. Spec 002 and spec 006.
 
 Two defects, one root: nothing larger than 7.5 KB was ever uploaded, so size
 was never considered. These tests pin the fixes, as they now stand:

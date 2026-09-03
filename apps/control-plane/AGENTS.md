@@ -51,9 +51,9 @@ construction. Detection lives here and mirrors `trainer/thinking.py`.
 
 **CPU-bound work stays off the event loop.** Validation costs roughly 80 ms per megabyte, and an
 `async def` handler doing it synchronously freezes every request, not just its own. See
-[ADR-0006](../docs/adr/0006-validation-runs-off-the-event-loop.md). The same reasoning is why the S3
+[ADR-0006](../../docs/adr/0006-validation-runs-off-the-event-loop.md). The same reasoning is why the S3
 client runs in a threadpool rather than blocking a handler
-([ADR-0011](../docs/adr/0011-one-command-runs-every-task-and-one-defines-green.md)).
+([ADR-0011](../../docs/adr/0011-one-command-runs-every-task-and-one-defines-green.md)).
 
 **The control plane resolves; the trainer applies (#83).** The job spec written at launch carries
 `hyperparams.effective(overrides)` whole; the trainer holds no defaults and resolves nothing -- one
@@ -71,7 +71,7 @@ without the trainer learning to read it would fail every launch on the machine.
 The provider is stubbed suite-wide. `conftest.py` refuses any attempt to construct a real client,
 because a suite that can reach the billing account by accident eventually does. Pass `FakeProvider`.
 
-The one exception is the transport tier ([ADR-0027](../docs/adr/0027-the-transport-is-proven-against-a-real-endpoint.md)):
+The one exception is the transport tier ([ADR-0027](../../docs/adr/0027-the-transport-is-proven-against-a-real-endpoint.md)):
 `test_transport_endpoint.py` drives `JarvisLabsProvider.push_stream/fetch_stream/stream`
 against a local in-process
 SSH endpoint, built with `object.__new__` so no client — and no credential path — is ever constructed.

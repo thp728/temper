@@ -3,7 +3,7 @@
 Every interaction with the platform that supplies machines goes through one
 protocol. Before this existed the orchestrator built its own client and shelled
 out directly, which meant the only way to exercise the money-spending path was
-to spend money — so it was never exercised at all.
+to spend money, so it was never exercised at all.
 
 Two properties of the default implementation were learned expensively and must
 not regress:
@@ -99,7 +99,7 @@ def container_name(job_id: str) -> str:
     """The container's name for one job, defined once and read twice.
 
     The remote script names the container it runs with this (issue #46) and
-    the spend ceiling's emergency checkpoint signals it with the same name —
+    the spend ceiling's emergency checkpoint signals it with the same name;
     a value two components must agree on is defined once and read, never
     retyped. If the two drifted, the emergency checkpoint would silently
     signal nothing and a machine that could have saved its checkpoints would
@@ -149,11 +149,11 @@ class Machine:
     """A GPU host provisioned for one job.
 
     `handle` is how the implementation reaches the machine and is opaque to
-    everything outside it — the SSH implementation stores a command, a push
+    everything outside it; the SSH implementation stores a command, a push
     transport would store a URL. Nothing in the orchestrator reads it.
 
     `status` is the provider's view of the machine's lifecycle. A machine
-    that is still billing but mid-destroy reports `destroying` — this is
+    that is still billing but mid-destroy reports `destroying`; this is
     what the eventual-consistency observation is about (spec 010, C17):
     after a destroy the listing can read absent, then reappear as
     destroying, then go absent for good. Treating `destroying` as gone
@@ -227,8 +227,8 @@ class Provider(Protocol):
 
         The spend-ceiling's emergency checkpoint (issue #46): the control
         plane asks the machine to wrap up, and the machine answers with the
-        checkpoint manifest — the shape `result.json`'s `checkpoints` carries,
-        one record per checkpoint with its step, slot, loss and checksum — or
+        checkpoint manifest; the shape `result.json`'s `checkpoints` carries,
+        one record per checkpoint with its step, slot, loss and checksum, or
         None when it has nothing to report. Best-effort and bounded: a machine
         that does not respond returns None rather than blocking the shutdown.
         """
@@ -338,7 +338,7 @@ class JarvisLabsProvider:
         `Running` from the provider is a claim about the machine, not about
         reachability: measured, SSH refuses for ~40s after the status flips.
         Authentication failures are reported separately from unreachability
-        because the fixes are unrelated — one means wait or reprovision, the
+        because the fixes are unrelated, one means wait or reprovision, the
         other means the agent is not holding the key.
         """
         t0 = time.time()
@@ -594,9 +594,9 @@ class JarvisLabsProvider:
     ) -> list[dict] | None:
         """The spend-ceiling's emergency checkpoint (issue #46), real machine.
 
-        The trainer is asked to finalize gracefully — a SIGTERM to the named
+        The trainer is asked to finalize gracefully; a SIGTERM to the named
         container, which the trainer converts into "save a final checkpoint
-        and write result.json" — and this then polls result.json for the
+        and write result.json", and this then polls result.json for the
         manifest it reports. Bounded by `EMERGENCY_CHECKPOINT_TIMEOUT_S`: a
         machine that never answers (the machine that has gone wrong) returns
         None and the ceiling stop proceeds without a final checkpoint rather

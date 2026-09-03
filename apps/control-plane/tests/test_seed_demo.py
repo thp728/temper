@@ -5,7 +5,7 @@ tier against an empty database and a reviewer finds a sample dataset and one
 completed run already there. These tests pin the three properties that make
 that honest:
 
-* seeding happens only in the zero-cost tier, and only on an empty database —
+* seeding happens only in the zero-cost tier, and only on an empty database;
   it must never plant a fake run into a database a human is using, and never
   run in a mode where a launched job costs money;
 * the seeded run is complete and shaped exactly like a run the journeys
@@ -44,8 +44,8 @@ def _upload_bytes(rows) -> bytes:
 
 
 def test_the_checked_in_sample_dataset_is_valid_chat_jsonl():
-    """The file a reviewer opens is the file the seeding stores — one
-    definition, so the two cannot drift — and it is a usable chat dataset."""
+    """The file a reviewer opens is the file the seeding stores, one
+    definition, so the two cannot drift, and it is a usable chat dataset."""
     raw = seed_demo.SAMPLE_DATASET_PATH.read_bytes()
     assert raw.startswith(b'{"messages":')
     rows = [json.loads(line) for line in raw.decode("utf-8").splitlines()]
@@ -84,7 +84,7 @@ def test_seeding_plants_a_valid_sample_dataset_and_a_completed_run(
     job = jobs[0]
     assert job["status"] == "complete", job
     assert job["dataset_id"] == ds["id"]
-    # A frozen quote and measured actuals — the record of a real run, not a
+    # A frozen quote and measured actuals; the record of a real run, not a
     # hand-written row.
     assert job["quote"] is not None
     assert job["actuals"] is not None

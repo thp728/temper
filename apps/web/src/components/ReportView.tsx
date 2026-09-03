@@ -206,7 +206,7 @@ export default function ReportView({ record }: { record: DatasetRecord }) {
       {report.preview.length > 0 && (
         <section aria-labelledby="preview-heading">
           <h2 id="preview-heading" className="text-lg font-semibold">
-            Preview — how your first rows were understood
+            Preview: how your first rows were understood
           </h2>
           <div className="mt-3 space-y-3">
             {report.preview.map((row, i) => (

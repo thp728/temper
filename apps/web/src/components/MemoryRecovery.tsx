@@ -32,9 +32,9 @@ export default function MemoryRecovery({ job }: { job: JobRecord }) {
       <AlertDescription className="space-y-3">
         <p>
           This job ran out of device memory during training and was retried
-          automatically. The effective batch was preserved — the per-step
-          batch was halved and accumulation doubled — so your training did not
-          change. This is a memory recovery, not a divergence retry: a
+          automatically. The effective batch was preserved: the per-step
+          batch was halved and accumulation doubled, so your training did not
+          change. This is a memory recovery rather than a divergence retry, and a
           diverging run offers a half-rate retry as a choice instead.
         </p>
         <ul className="divide-y divide-border rounded border bg-card">

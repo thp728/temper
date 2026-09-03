@@ -2,12 +2,12 @@
 
 Three controls with different meanings and different outcomes:
 
-* **A stall** — no output for the configured period. The job is not obviously
+* **A stall**: no output for the configured period. The job is not obviously
   broken; it has gone quiet, and a quiet job on a billing machine is
   indistinguishable from a wedged one until somebody looks.
-* **The duration ceiling** — the job has run longer than any legitimate run on
+* **The duration ceiling**: the job has run longer than any legitimate run on
   this catalog should, whether or not it is still talking.
-* **The spend ceiling** — the job has cost more than any single job should,
+* **The spend ceiling**: the job has cost more than any single job should,
   however fast it is talking. This is the one issue #46 adds, and it is a
   different control from the other two: it is a cap on *money*, so an
   expensive machine is stopped sooner than a cheap one at the same ceiling.
@@ -31,13 +31,13 @@ cost.
 **The spend ceiling is enforced from outside the training process.** The
 training process is the container on the machine; these checks run in the
 control plane, and the spend they measure is elapsed wall clock times the
-price the job froze at provisioning — never anything the trainer reports. A
+price the job froze at provisioning, never anything the trainer reports. A
 process that has stopped responding cannot enforce its own limit, so a
 machine that goes silent (and keeps billing) still trips the ceiling, because
 the measurement does not depend on it answering.
 
 The guard sits between the provider's line iterator and everything that reads
-it, so it works for any transport — the enforcement lives here rather than in
+it, so it works for any transport; the enforcement lives here rather than in
 the SSH implementation, and a push transport inherits it unchanged.
 
 **Time is a parameter.** The clock is injected so that a fifteen-minute
@@ -80,7 +80,7 @@ BUDGET_EXHAUSTED_CODE = "budget_exhausted"
 class RunLimits:
     """The limits, plus how the guard perceives time.
 
-    `poll_interval_s` is not a limit — it is how long the guard is willing to
+    `poll_interval_s` is not a limit; it is how long the guard is willing to
     block before looking at the clock again. It exists because the clock is
     injected and the queue's wait is not: with real time the two agree, and a
     test that drives a fake clock needs the guard to come up for air.
@@ -98,13 +98,13 @@ class RunLimits:
     # When the job began, by this object's own clock. `None` until `start()`
     # stamps it. It lives here rather than travelling alongside as a second
     # argument so that the origin and the clock measuring from it cannot come
-    # from two different places — which is the one way this could silently
+    # from two different places, which is the one way this could silently
     # measure nothing at all.
     started: float | None = None
     # The spend ceiling (issue #46), as a cost in the account currency's
     # minor unit, and the rate to derive elapsed spend from. Both are `None`
     # until `with_spend` configures them after provisioning, which is also
-    # what makes the default "no spend ceiling" — every existing caller
+    # what makes the default "no spend ceiling"; every existing caller
     # constructs a `RunLimits` without them and is unchanged.
     spend_ceiling_minor: int | None = None
     price_per_hour: float | None = None
@@ -134,7 +134,7 @@ class RunLimits:
 
         Called once provisioning chose a machine and froze its price, so the
         ceiling becomes enforceable as a wall-clock deadline derived from the
-        job's own rate — the same derivation `temper_core.actuals` uses for
+        job's own rate; the same derivation `temper_core.actuals` uses for
         the measured cost. An unenforceable combination (a currency the quote
         has no minor unit for, a non-positive rate or ceiling) is refused with
         a coded error before anything is provisioned, rather than silently
@@ -217,8 +217,8 @@ class RunLimits:
         """Raise if the ceiling has passed. Callable between stages.
 
         The guard below can only notice the ceiling while it is reading lines.
-        A job spends time before that — provisioning, waiting for SSH, pushing
-        sources — so the boundary between stages is checked too. What is still
+        A job spends time before that, in provisioning, waiting for SSH and pushing
+        sources, so the boundary between stages is checked too. What is still
         not interruptible is the inside of a single provider call; those carry
         their own timeouts, and saying so is more useful than implying this
         covers them.
@@ -289,7 +289,7 @@ def guard(
     is how cancellation gets a hearing: this loop is the only thing running
     while a job trains, and it comes round whether or not a line arrived, so a
     request to stop is noticed within a poll interval even on a silent stream.
-    The guard does not know what the check is for — it does not import the
+    The guard does not know what the check is for; it does not import the
     database, and it does not decide what stopping means. That keeps the two
     limits here and the user's decision elsewhere, which is right, because one
     of the three ends the job `failed` and the other does not.
@@ -301,7 +301,7 @@ def guard(
     provisioning against the first line's grace period would quietly shorten
     the stall timeout by however long the machine took to arrive.
 
-    The source is drained on its own thread because reading it is what blocks —
+    The source is drained on its own thread because reading it is what blocks;
     there is no way to ask a plain iterator whether the next item is late. When
     a limit trips, that thread is left where it is rather than reached into:
     closing a generator another thread is executing is not something Python

@@ -303,7 +303,7 @@ export default function RunningJobView({
             <AlertDescription>
               <p>
                 Loss is spiking well above its recent average. This is shown as
-                a warning rather than an abort — it may be early divergence.
+                a warning rather than an abort, because it may be early divergence.
                 Consider lowering the learning rate if it continues.
               </p>
               <p className="text-xs text-muted-foreground">{instability.message}</p>

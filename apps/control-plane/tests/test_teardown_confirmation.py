@@ -1,7 +1,7 @@
 """Teardown is confirmed across consecutive observations (issue #34).
 
 Spec 010 / spike/teardown.py C17: after a destroy the provider's listing is
-eventually consistent — the machine reads absent, then reappears as
+eventually consistent; the machine reads absent, then reappears as
 `destroying`, then goes absent for good. A single absent observation is not
 proof; confirmation requires consecutive absences, and `destroying` is
 treated as not yet confirmed rather than as a stray. A destroy the provider
@@ -203,7 +203,7 @@ def test_a_destroy_the_provider_refuses_is_retried(harness):
 
 def test_a_machine_that_cannot_be_destroyed_is_recorded_loudly(harness):
     """When retries are exhausted the machine is recorded loudly rather than
-    silently forgotten — an orphaned GPU bills until someone notices."""
+    silently forgotten; an orphaned GPU bills until someone notices."""
     provider = FakeProvider(
         lines=["[00:00:00] running"],
         result={"ok": True, "stage": "train", "artifact_path": None},

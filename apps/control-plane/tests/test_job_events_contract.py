@@ -126,7 +126,7 @@ def test_where_a_limit_still_applies_the_page_says_what_it_shows_and_the_full_re
     and oldest-first LIMIT 500 hid the artifact verification, machine destruction
     and completion. Promoting progress (#49) collapses that flood into two
     superseding progress rows, so a typical run now sits at ~21 events and the
-    truncation no longer occurs — the measurement in the PR body shows
+    truncation no longer occurs; the measurement in the PR body shows
     before ≈ 600 (real) / ≈ 31 (simulated) vs after 21. This test exercises
     the remaining guardrail: where the limit *still* applies the cut is stated,
     not silent, and the tail is reachable.
@@ -192,7 +192,7 @@ def test_where_a_limit_still_applies_the_page_says_what_it_shows_and_the_full_re
             f"/v1/jobs/{job_id}/events", params={"after": first["last_id"]}
         ).json()["events"]
     )
-    # The tail is not hidden — paged with after.
+    # The tail is not hidden, paged with after.
     second = client.get(
         f"/v1/jobs/{job_id}/events", params={"after": first["last_id"]}
     ).json()

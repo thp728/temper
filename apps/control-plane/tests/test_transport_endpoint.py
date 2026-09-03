@@ -1,7 +1,7 @@
 """The transport tier: the real provider driven against a real endpoint.
 
-The defect that cost this project a real run — line endings translated on the
-way to a remote shell — lived exactly between the fake provider and the real
+The defect that cost this project a real run, line endings translated on the
+way to a remote shell, lived exactly between the fake provider and the real
 one. The fake never crosses a connection and is structurally blind to it; the
 local-process tests in `test_provider.py` cross pipes but not a connection.
 
@@ -65,7 +65,7 @@ def test_a_clean_script_runs_without_newline_translation(machine):
     This is the test that carries the regression criterion: against the
     pre-fix implementation the script crossed stdin in text mode, picked up
     a carriage return per line, and the endpoint answered with
-    command-not-found errors instead of echoes — failing here, and failing
+    command-not-found errors instead of echoes, failing here, and failing
     in production before any job trained.
     """
     provider, endpoint = machine

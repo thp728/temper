@@ -6,7 +6,7 @@ reviewer to go and invent a dataset. So when the zero-cost tier boots against
 an empty database, this module plants a sample dataset and one completed run.
 
 The completed run is **not hand-written into the database.** It is a real
-`orchestrator.run_job` against the in-package fake provider — the same call
+`orchestrator.run_job` against the in-package fake provider; the same call
 the worker makes, the same state machine, the same events, the same artifact
 verification and teardown. That is the only way the seeded record is
 guaranteed to look exactly like a run a reviewer would drive themselves,
@@ -15,7 +15,7 @@ is the one deliberate exception, and it is scoped so it cannot reintroduce
 what that record removed:
 
 * it runs in the zero-cost tier only (`TEMPER_FAKE_PROVIDER`), where the
-  double crosses no connection and bills nothing — there is no machine to
+  double crosses no connection and bills nothing; there is no machine to
   orphan and no spend to watch, which is precisely what ADR-0066's worker
   exists to protect against;
 * it runs at startup, synchronously, once, against an empty database, so the
@@ -124,7 +124,7 @@ def _seed_completed_run(ds_id: str) -> str:
 
     The quote is computed through the same path the launch screen uses, the
     job is created through the one shared creation path, and the run is driven
-    by the same `run_job` the worker calls — so the finished record carries
+    by the same `run_job` the worker calls, so the finished record carries
     every shape a real run carries (quote frozen, actuals measured, artifact
     verified, teardown confirmed).
     """
@@ -151,7 +151,7 @@ def maybe_seed() -> None:
 
     Does nothing unless the zero-cost tier is in force and the database is
     empty. Failures are logged and swallowed: a broken seed must not take the
-    stack down with it — the zero-cost tier still works without its demo, it
+    stack down with it; the zero-cost tier still works without its demo, it
     just starts empty.
     """
     if not config.FAKE_PROVIDER:

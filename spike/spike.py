@@ -1,4 +1,4 @@
-"""Phase 0 vertical spike — JarvisLabs provisioning probe.
+"""Phase 0 vertical spike: the JarvisLabs provisioning probe.
 
 Proves, or disproves, the provider assumptions that everything else in
 reference-technical-architecture.md is built on top of. Its §32 names

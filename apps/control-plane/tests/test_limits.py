@@ -248,7 +248,7 @@ def test_a_limit_that_cannot_be_honoured_stops_the_process(monkeypatch, raw):
     """Refused loudly, not quietly replaced by the default.
 
     `TEMPER_STALL_TIMEOUT_S=15m` is the realistic typo, and falling back would
-    leave an operator believing a limit was in force that was not — the same
+    leave an operator believing a limit was in force that was not; the same
     shape as the unread constant this work deleted, and less visible, because
     there would be nothing wrong in the source to find.
     """

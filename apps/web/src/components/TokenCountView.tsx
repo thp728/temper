@@ -91,7 +91,7 @@ export default function TokenCountView({
           <Alert role="status" className="mt-0">
             <AlertTitle>Counting tokens…</AlertTitle>
             <AlertDescription>
-              The count lands on this report when it finishes — validation is
+              The count lands on this report when it finishes. Validation is
               already complete, so this does not hold anything up.
             </AlertDescription>
           </Alert>
@@ -128,7 +128,7 @@ export default function TokenCountView({
       <Alert role="status" className="mt-0">
         <AlertTitle>Token count unavailable</AlertTitle>
         <AlertDescription>
-          The count could not be produced this time. You can still proceed —
+          The count could not be produced this time. You can still proceed, and
           the quote will show the count as unknown.
         </AlertDescription>
       </Alert>

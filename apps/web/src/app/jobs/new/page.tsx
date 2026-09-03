@@ -48,7 +48,7 @@ export default async function NewJobPage({
       <Refusal
         heading="Choose a base model"
         code="no_dataset"
-        message="No dataset was given. Upload one first — its validation report decides whether a job can start at all."
+        message="No dataset was given. Upload one first, because its validation report decides whether a job can start at all."
       />
     );
   }

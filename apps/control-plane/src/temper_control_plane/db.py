@@ -198,27 +198,79 @@ def ping() -> None:
 
 
 def create_dataset(
-    filename: str, object_key: str, ds_id: str | None = None
+    filename: str,
+    object_key: str,
+    ds_id: str | None = None,
+    status: str = "validating",
 ) -> str:
     """Insert a dataset row. `ds_id` lets the caller own the id -- the upload
-    path derives the key from it, so the id must exist before the row."""
+    path derives the key from it, so the id must exist before the row.
+
+    `status` defaults to "validating" (an upload's bytes are already in
+    hand, so the row goes straight to that phase). An import passes
+    "importing": its bytes are not in hand yet, and fetching them from a
+    third party is the phase that can be slow (issue: "dataset import from
+    HF"), so it gets its own status the page can watch before validation
+    even starts -- see `begin_validating`."""
     ds_id = ds_id or new_id("ds")
+    now = time.time()
     with connect() as c:
         c.execute(
-            "INSERT INTO datasets (id, filename, object_key, created_at, status)"
-            " VALUES (%s,%s,%s,%s,%s)",
-            (ds_id, filename, object_key, time.time(), "validating"),
+            "INSERT INTO datasets "
+            "(id, filename, object_key, created_at, updated_at, status)"
+            " VALUES (%s,%s,%s,%s,%s,%s)",
+            (ds_id, filename, object_key, now, now, status),
         )
     return ds_id
 
 
-def delete_dataset(ds_id: str) -> None:
-    """Remove a dataset row whose object never made it into storage.
+def rename_dataset(ds_id: str, filename: str) -> None:
+    """Change a dataset's display name and stamp `updated_at`. The stored
+    object and its key are untouched -- `filename` is metadata, not the
+    address the bytes live under."""
+    with connect() as c:
+        c.execute(
+            "UPDATE datasets SET filename=%s, updated_at=%s WHERE id=%s",
+            (filename, time.time(), ds_id),
+        )
 
-    Used only by the ingest path to clean up after a mid-stream refusal --
-    an upload refused once its true size is known has no object behind it, so
-    nothing but the row is left to remove. Deleting a dataset that reached a
-    report is not this function's contract.
+
+def begin_validating(ds_id: str) -> None:
+    """The fetch phase (import only) is done; validation is about to start.
+
+    Clears the fetch's own progress so the page does not show a stale byte
+    count while validation's progress starts fresh -- the same reset
+    `begin_token_count` does at its own phase boundary."""
+    with connect() as c:
+        c.execute(
+            "UPDATE datasets SET status=%s, progress_json=NULL WHERE id=%s",
+            ("validating", ds_id),
+        )
+
+
+def count_jobs_for_dataset(ds_id: str) -> int:
+    """How many jobs were launched against this dataset -- the guard a
+    user-requested delete checks before removing anything. `jobs.dataset_id`
+    is `NOT NULL REFERENCES datasets(id)` with no `ON DELETE` clause, so the
+    database would refuse the delete outright if this were skipped; checking
+    first is what turns that into a coded, explained refusal instead of a
+    raw constraint violation."""
+    with connect() as c:
+        row = c.execute(
+            "SELECT COUNT(*) AS n FROM jobs WHERE dataset_id=%s", (ds_id,)
+        ).fetchone()
+    return row["n"] if row else 0
+
+
+def delete_dataset(ds_id: str) -> None:
+    """Remove a dataset row and nothing else -- the caller owns the object in
+    storage.
+
+    Two callers: the ingest path, cleaning up after a mid-stream refusal (an
+    upload refused once its true size is known has no object behind it, so
+    there is nothing else to remove), and a user-requested delete
+    (`main.delete_dataset`), which has already checked
+    `count_jobs_for_dataset` and deletes the stored object itself first.
     """
     with connect() as c:
         c.execute("DELETE FROM datasets WHERE id=%s", (ds_id,))
@@ -577,7 +629,7 @@ def request_cancel(job_id: str, note: str = "Cancellation requested") -> str:
     """Ask a job to stop. Says what it found, and never raises for it.
 
     Returns one of `accepted`, `already_cancelling`, `terminal` or `missing`.
-    Strings rather than exceptions because none of the four is exceptional —
+    Strings rather than exceptions because none of the four is exceptional;
     they are the four honest answers to the request, and each maps to a
     different thing to tell the user.
 

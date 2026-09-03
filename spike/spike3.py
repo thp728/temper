@@ -1,4 +1,4 @@
-"""Spike 3 — firewall, a real QLoRA run, checkpoint/resume, adapter integrity.
+"""Spike 3: firewall, a real QLoRA run, checkpoint/resume, adapter integrity.
 
 Spike 1 proved a VM has Docker and a GPU. Spike 2 proved the orchestrator can
 bootstrap it over SSH and that ports on a VM are reachable -- because nothing
@@ -57,7 +57,7 @@ TRAINABLE_PCT_MAX = 1.5
 
 
 def run_bootstrap(ssh_command: str, model: str, f: Findings) -> dict | None:
-    header("SSH-DRIVEN BOOTSTRAP — firewall, install, QLoRA")
+    header("SSH-DRIVEN BOOTSTRAP: firewall, install, QLoRA")
     script = Path(__file__).parent / "bootstrap3.sh"
     if not script.exists():
         f.record("bootstrap3.sh present", False, str(script))
@@ -111,7 +111,7 @@ def test_port_blocked(public_ip: str, rep: dict, f: Findings) -> None:
     chain rule, and separately checks the loopback-bound port as the mitigation
     that needs no firewall at all.
     """
-    header(f"C12 — PORT {TEST_PORT} SHOULD NOW BE BLOCKED")
+    header(f"C12: PORT {TEST_PORT} SHOULD NOW BE BLOCKED")
     for label, port, expect_blocked in (
         ("published port (DOCKER-USER rule)", TEST_PORT, True),
         ("loopback-bound port", TEST_PORT + 1, True),
@@ -124,7 +124,7 @@ def test_port_blocked(public_ip: str, rep: dict, f: Findings) -> None:
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             reachable, detail = False, str(getattr(e, "reason", e))
         f.record(
-            f"blocked from outside — {label}",
+            f"blocked from outside: {label}",
             expect_blocked and not reachable,
             f"{url} {'REACHABLE ' + detail if reachable else 'unreachable (' + detail + ')'}",
         )
@@ -139,7 +139,7 @@ def test_port_blocked(public_ip: str, rep: dict, f: Findings) -> None:
         print("  ufw is not a firewall for containers.")
     if rep.get("loopback_bound_port_ok"):
         print(
-            "  The loopback-bound container answered on 127.0.0.1 — so binding"
+            "  The loopback-bound container answered on 127.0.0.1, so binding"
         )
         print("  to loopback keeps a service working locally while never")
         print(
@@ -157,7 +157,7 @@ def interpret(rep: dict, f: Findings) -> None:
         if s > 90:
             print("  >90s of pure setup on EVERY cold run. That is the")
             print("  argument for baking a purpose-built image rather than")
-            print("  installing at boot — build it once, pull it by digest.")
+            print("  installing at boot. Build it once, pull it by digest.")
 
     dropped = tr.get("sftconfig_dropped")
     if dropped:
@@ -166,7 +166,7 @@ def interpret(rep: dict, f: Findings) -> None:
             f"{', '.join(dropped)}"
         )
         print("  TRL 1.x no longer inherits TrainingArguments. Those defaults")
-        print("  cannot be expressed on this version — which is exactly the")
+        print("  cannot be expressed on this version, which is exactly the")
         print("  dependency drift a pinned image exists to prevent.")
 
     if rep.get("train_ok") and tr:
@@ -181,7 +181,7 @@ def interpret(rep: dict, f: Findings) -> None:
         )
         if tr.get("tokens_per_second"):
             print(
-                f"  {tr['tokens_per_second']} tokens/sec — feeds the MFU "
+                f"  {tr['tokens_per_second']} tokens/sec, feeds the MFU "
                 "constant, the softest number in the cost model"
             )
         tp = tr.get("trainable_pct")
@@ -262,7 +262,7 @@ def main() -> int:
                 f"{r.vram}GB",
             )
 
-            header(f"PROVISIONING — {gpu}, vm, {STORAGE_GB} GB")
+            header(f"PROVISIONING: {gpu}, vm, {STORAGE_GB} GB")
             t0 = time.time()
             instance = client.instances.create(
                 gpu_type=gpu,

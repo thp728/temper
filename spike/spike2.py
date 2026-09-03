@@ -1,4 +1,4 @@
-"""Spike 2 — prove the SSH-driven bootstrap, the replacement for C11.
+"""Spike 2: prove the SSH-driven bootstrap, the replacement for C11.
 
 Spike 1 established that a JarvisLabs VM has Docker, a GPU, and egress, but
 that startup scripts are silently ignored on --vm instances. So the bootstrap

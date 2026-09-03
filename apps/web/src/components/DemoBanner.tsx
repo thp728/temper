@@ -2,7 +2,7 @@
 // interface, on every page it serves, and the marking cannot be turned off in
 // that mode. This is that marking. It is server-rendered by the root layout,
 // so a screenshot of any page includes it, and there is deliberately no
-// dismiss control — a banner a visitor can dismiss is a banner that can be
+// dismiss control; a banner a visitor can dismiss is a banner that can be
 // missing from the very screenshot meant to prove the mode was labelled.
 export default function DemoBanner() {
   return (

@@ -39,7 +39,7 @@ export default function EventLog({
       });
       // The page is the next oldest-first window; append in order so the
       // history stays chronological. `total` travels on every page, so keep it
-      // fresh in case the job grew — though a terminal job's total is frozen.
+      // fresh in case the job grew, though a terminal job's total is frozen.
       setEvents((prev) => [...prev, ...page.events]);
       setTotal(page.total);
     } catch (e) {
@@ -67,7 +67,7 @@ export default function EventLog({
           : events.length === 0
             ? "No events yet"
             : `Showing ${events.length} events`}
-        {hasMore ? " — paginated (limit 500). The full record remains reachable." : ""}
+        {hasMore ? " (paginated, limit 500). The full record remains reachable." : ""}
       </p>
       <div
         role="log"

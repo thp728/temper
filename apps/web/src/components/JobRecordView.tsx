@@ -262,7 +262,7 @@ function InstabilityBanner({ events }: { events: JobEvent[] }) {
       <AlertDescription>
         <p>
           Loss is spiking well above its recent average. This is shown as a
-          warning rather than an abort — it may be early divergence. Consider
+          warning rather than an abort, because it may be early divergence. Consider
           lowering the learning rate if it continues.
         </p>
         <p className="text-xs text-muted-foreground">
@@ -283,8 +283,8 @@ function CancelledSection() {
           as one, with no error code and no destructive framing, because a
           decision presented as a defect teaches users not to cancel. */}
       <p>
-        This job was cancelled at your request. No artifact was produced —
-        that is what cancelling means here, not a failure of the job.
+        This job was cancelled at your request. No artifact was produced,
+        which is what cancelling means here rather than a failure of the job.
       </p>
     </section>
   );
@@ -376,7 +376,7 @@ function ComparisonSection({ job }: { job: JobRecord }) {
           actualNote="measured"
           sentence={
             durationRatio != null
-              ? `Took ${formatRatio(durationRatio)} the midpoint of its predicted range — ${directionLabel(durationDir)}.`
+              ? `Took ${formatRatio(durationRatio)} the midpoint of its predicted range, ${directionLabel(durationDir)}.`
               : "The run measured no duration to compare."
           }
         />
@@ -407,7 +407,7 @@ function ComparisonSection({ job }: { job: JobRecord }) {
           actualNote="derived from measured duration × frozen rate"
           sentence={
             costRatio != null
-              ? `The derived cost was ${formatRatio(costRatio)} the midpoint of its predicted range — ${directionLabel(costDir)}.`
+              ? `The derived cost was ${formatRatio(costRatio)} the midpoint of its predicted range, ${directionLabel(costDir)}.`
               : "No cost could be derived for this run."
           }
         />
@@ -661,14 +661,14 @@ export default function JobRecordView({
         {job.is_moe && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
             <p className="text-sm font-medium text-amber-900">
-              Mixture-of-experts — untested here
+              Mixture-of-experts, untested here
             </p>
             <p className="mt-1 text-sm text-amber-800">
               This model is a mixture-of-experts architecture, which is untested
               here: expert routing changes LoRA target-module selection, memory
               scales with total rather than active parameters, and routing
               interacts poorly with small-batch adapters. It is usable and
-              labelled untested — curation is a default, not a boundary.
+              labelled untested, because curation is a default rather than a boundary.
             </p>
           </div>
         )}

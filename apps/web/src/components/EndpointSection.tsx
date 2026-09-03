@@ -225,7 +225,7 @@ export default function EndpointSection({
           </dl>
           {created?.api_key && (
             <Alert>
-              <AlertTitle>API key — shown once</AlertTitle>
+              <AlertTitle>API key, shown once</AlertTitle>
               <AlertDescription className="space-y-2">
                 <p className="break-all">
                   <code className="rounded bg-muted px-1">{created.api_key}</code>
@@ -240,7 +240,7 @@ export default function EndpointSection({
           <p className="text-xs text-muted-foreground">
             This endpoint extends its idle expiry on each use (idle {formatDuration(endpoint.idle_timeout_s)}),
             but still stops at the hard ceiling ({formatDuration(endpoint.max_lifetime_s)} from creation) even
-            if you keep using it — a busy endpoint cannot be kept alive forever.
+            if you keep using it, because a busy endpoint cannot be kept alive forever.
           </p>
           {isExpired ? (
             <p className="text-sm text-muted-foreground">
@@ -337,8 +337,8 @@ export default function EndpointSection({
         )}
         <p className="text-xs text-muted-foreground">
           The endpoint carries its own expiry from the moment it starts, extends on use, and stops
-          itself via a timer — the forgotten warm machine is the loudest complaint against the
-          commercial baseline, so stopping itself is the feature, not a convenience. A busy endpoint
+          itself via a timer. The forgotten warm machine is the loudest complaint against the
+          commercial baseline, so stopping itself is the feature rather than a convenience. A busy endpoint
           still dies at the hard ceiling even if you keep using it.
         </p>
         <Button onClick={onStart} disabled={loading || !isComplete}>

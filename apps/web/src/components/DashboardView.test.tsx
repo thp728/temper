@@ -189,7 +189,7 @@ describe("DashboardView", () => {
     );
     render(<DashboardView now={NOW} jobs={activeJobs} />);
 
-    // Page 1: newest 5 — 11,10,09,08,07
+    // Page 1: newest 5 = 11,10,09,08,07
     expect(screen.getByTestId("active-jobs-pagination-info")).toHaveTextContent(
       "Showing 1–5 of 12 · Page 1 of 3",
     );

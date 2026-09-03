@@ -53,7 +53,7 @@ control plane's address from one definition, `src/lib/backend.ts`.
   stream ends only at a terminal state and the page reloads into the
   server-rendered record. See
   [ADR-0023](../../docs/adr/0023-the-interface-consumes-a-client-generated-from-the-api-contract.md)
-  and [ADR-0034](../../docs/adr/0034-the-running-job-surface-consumes-a-server-pushed-event-stream.md).
+  and [ADR-0034](../../docs/adr/0039-the-running-job-surface-consumes-a-server-pushed-event-stream.md).
 - The browser journeys drive launches with `TEMPER_FAKE_PROVIDER=1`, which the
   control plane honours by substituting its own FakeProvider. Playwright sets
   it for the backend it boots, and every launch journey refuses to run unless

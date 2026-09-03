@@ -50,7 +50,7 @@ export default function LossChart({
   if (all.length === 0) {
     return (
       <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-        No loss measured yet — it appears here as the run goes.
+        No loss measured yet. It appears here as the run goes.
       </div>
     );
   }

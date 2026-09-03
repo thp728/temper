@@ -35,7 +35,7 @@ export default function DivergenceRetry({ job }: { job: JobRecord }) {
   return (
     <div className="space-y-2 rounded border bg-card p-3">
       <p className="text-sm text-muted-foreground">
-        This run diverged — the loss became meaningless. You can retry once at half the learning
+        This run diverged, and the loss became meaningless. You can retry once at half the learning
         rate as a choice, not an automatic rerun, because a diverging run usually means the data or
         the rate is wrong and repeating it is rarely the answer.
       </p>

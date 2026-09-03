@@ -100,14 +100,14 @@ const EXPLANATIONS: Record<string, string> = {
   gpu_max_duration_exceeded:
     "The job was stopped by a safety limit: it ran past the maximum duration a single job may use.",
   training_diverged:
-    "Training diverged — the loss became meaningless (NaN or exploding) and the run was stopped early so you are not billed for hours that cannot produce anything. Try a lower learning rate or check your data. A single retry at half the learning rate is available as a choice.",
+    "Training diverged, and the loss became meaningless (NaN or exploding) and the run was stopped early so you are not billed for hours that cannot produce anything. Try a lower learning rate or check your data. A single retry at half the learning rate is available as a choice.",
   training_instability:
-    "Training instability detected — loss is spiking well above its recent average. This may be early divergence; the run is continuing, but the signal is worth watching and a lower learning rate may help if it continues.",
+    "Training instability detected: loss is spiking well above its recent average. This may be early divergence; the run is continuing, but the signal is worth watching and a lower learning rate may help if it continues.",
   // Issue #35: an out-of-memory failure is a memory recovery's business, not
   // a divergence abort. The stable codes keep the two distinguishable on the
   // page, and this explanation says what a genuine exhaustion means.
   training_oom:
-    "The job ran out of device memory during training. It was retried automatically with the effective batch preserved — the per-step batch was halved and accumulation doubled, so your training did not change.",
+    "The job ran out of device memory during training. It was retried automatically with the effective batch preserved: the per-step batch was halved and accumulation doubled, so your training did not change.",
   memory_retries_exhausted:
     "The job ran out of device memory repeatedly, and every memory reduction the platform can apply was tried (per-step batch, gradient checkpointing, sequence length, more capable hardware). The last attempt still did not fit, so the run was stopped rather than retried forever. The attempts are recorded on this job. Try a smaller configuration, a shorter sequence length, or a model that predicts a smaller peak.",
 };

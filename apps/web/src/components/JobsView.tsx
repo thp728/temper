@@ -69,7 +69,7 @@ export default function JobsView({
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <caption className="pb-2 text-left text-muted-foreground">
-            Every job, newest first. Each links to its full record — the event
+            Every job, newest first. Each links to its full record: the event
             history, and the artifact when there is one.
           </caption>
           <thead>

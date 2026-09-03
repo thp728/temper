@@ -147,7 +147,7 @@ def no_real_provider(monkeypatch):
     def refuse():
         raise AssertionError(
             "A test tried to construct a real provider client. Pass a "
-            "FakeProvider instead — the real one costs money."
+            "FakeProvider instead; the real one costs money."
         )
 
     monkeypatch.setattr(

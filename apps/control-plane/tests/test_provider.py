@@ -10,7 +10,7 @@ A local process crosses pipes but not a connection, so what a real connection
 does to bytes is covered one tier up, in `test_transport_endpoint.py`, where
 the same provider methods are driven against a live SSH endpoint.
 
-The provider is built with `object.__new__` deliberately — constructing one
+The provider is built with `object.__new__` deliberately; constructing one
 properly reaches the real client, which the suite refuses.
 """
 

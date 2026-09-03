@@ -113,7 +113,7 @@ export default function AdvancedSurface({
               reasoning traces with plain answers is ambiguous by construction,
               and a dataset below the minimum usable row count cannot train a
               meaningful adapter. No control resolves either, so neither can be
-              overridden — that is an absent control, not a hidden one.
+              overridden. That is an absent control, not a hidden one.
             </li>
             <li>
               A setting the trainer knows but Temper does not offer is refused

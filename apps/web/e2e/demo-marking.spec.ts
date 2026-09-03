@@ -6,7 +6,7 @@ import { requireFakeProvider } from "./helpers";
 // marked as a demonstration, and the marking cannot be turned off in that
 // mode. The journeys boot both halves with TEMPER_FAKE_PROVIDER
 // (playwright.config.ts), so the banner is part of every page these tests
-// render — this spec pins that it is actually there, on the routes a reviewer
+// render; this spec pins that it is actually there, on the routes a reviewer
 // would land on, and that nothing on the page offers to dismiss it.
 
 const backend =
@@ -47,7 +47,7 @@ test("the zero-cost tier starts with something to show", async ({ page }) => {
   // The seed half of spec 012: on a fresh database (the journeys boot the
   // control plane with TEMPER_DB_RESET) the tier plants a sample dataset and
   // one completed run, so the job list is never empty on first open. This
-  // pins that the demonstration content itself — not just the marking —
+  // pins that the demonstration content itself, not just the marking,
   // cannot rot, and that it rides under the same banner.
   await page.goto("/jobs");
   const row = page.getByRole("row", { name: /sample-chat\.jsonl/ });

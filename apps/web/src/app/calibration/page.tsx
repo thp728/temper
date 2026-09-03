@@ -1,4 +1,4 @@
-// Route kept but delinked from primary navigation — see note at top of
+// Route kept but delinked from primary navigation, see note at top of
 // `src/components/CalibrationView.tsx` for why the aggregate was removed from
 // the nav tree (observability, not end-user value) and what replaced it on the
 // dashboard. The page still renders at /calibration for direct/internal access.
