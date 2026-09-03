@@ -2,11 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { CloudUpload } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { uploadDatasetV1DatasetsPost } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
+import { cn } from "@/lib/utils";
 
 // The upload step of the journey: choose a file, send it to the one ingest
 // path the API publishes, land on its validation report. A refusal -- wrong
@@ -19,6 +21,7 @@ export default function UploadForm() {
   const [status, setStatus] = useState("");
   const [refusal, setRefusal] = useState<ApiError | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,35 +50,75 @@ export default function UploadForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="dataset-file">Dataset file (.jsonl)</Label>
-        <div className="relative flex h-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-input bg-muted/30 text-center transition-colors hover:border-primary/50 hover:bg-muted/50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50">
+        {/* Label stays for a11y/journeys (getByLabelText) but is visually the drop-zone's context */}
+        <Label htmlFor="dataset-file" className="sr-only">
+          Dataset file (.jsonl)
+        </Label>
+        {/* Wireframe upload area: dashed, hover -> primary/50, icon scales. Kept the
+             accessible input covering the whole area so drag & click both work.
+             Text matches docs/wireframes/datasets.html:372 (5GB) and
+             apps/control-plane/src/temper_control_plane/config.py:230
+             DEFAULT_MAX_DATASET_MB=5120, ADR-0036. We only ingest JSONL. */}
+        <div
+          className={cn(
+            "group relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed bg-card px-6 py-10 text-center transition-colors",
+            "hover:border-primary/50 hover:bg-muted/30",
+            "has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50",
+            dragOver ? "border-primary/50 bg-muted/30" : "border-border",
+            busy ? "opacity-60" : "",
+          )}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={() => setDragOver(false)}
+        >
           <input
             ref={inputRef}
             id="dataset-file"
             name="file"
             type="file"
-            accept=".jsonl,.json"
-            className="absolute inset-0 cursor-pointer opacity-0"
+            accept=".jsonl"
+            className="absolute inset-0 z-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+            disabled={busy}
             onChange={(event) =>
               setFileName(event.target.files?.[0]?.name ?? null)
             }
           />
-          <span className="pointer-events-none font-mono text-xs font-medium tracking-wide text-foreground">
-            {fileName ?? "Choose a .jsonl file"}
+          <span
+            className={cn(
+              "flex size-14 items-center justify-center rounded-full bg-muted transition-transform duration-300 group-hover:scale-105",
+              dragOver ? "scale-105" : "",
+            )}
+            aria-hidden="true"
+          >
+            <CloudUpload className="size-7 text-muted-foreground group-hover:text-primary transition-colors" />
           </span>
-          <span className="pointer-events-none text-xs text-muted-foreground">
-            {fileName ? "Click to choose a different file" : "Click to browse"}
+          <span className="pointer-events-none space-y-1">
+            <span className="block font-medium tracking-tight">
+              {fileName ?? "Drop files to upload"}
+            </span>
+            <span className="block font-mono text-xs text-muted-foreground">
+              {fileName ? "Click to choose a different file" : "Supports JSONL up to 5GB."}
+            </span>
           </span>
+          {/* CTA centered inside dropzone: deactivated until a file is chosen */}
+          <Button
+            type="submit"
+            disabled={busy || !fileName}
+            className="relative z-10 mt-2"
+            aria-disabled={busy || !fileName}
+          >
+            {busy ? "Validating…" : "Upload and validate"}
+          </Button>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Chat-format JSONL: one JSON object per line with a{" "}
-          <code className="rounded bg-muted px-1">messages</code> list.
-        </p>
       </div>
 
-      <Button type="submit" disabled={busy}>
-        {busy ? "Validating…" : "Upload and validate"}
-      </Button>
+      <p className="text-sm text-muted-foreground">
+        Chat-format JSONL: one JSON object per line with a{" "}
+        <code className="rounded bg-muted px-1">messages</code> list.
+      </p>
 
       <p aria-live="polite" className="text-sm text-muted-foreground">
         {busy ? status : ""}

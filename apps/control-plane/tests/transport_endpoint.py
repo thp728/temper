@@ -2,12 +2,12 @@
 
 The transport tier closes the gap between the fake provider and the real one:
 the fake never crosses a connection, so it is structurally blind to anything a
-connection does to bytes — line-ending translation above all, which is the
+connection does to bytes; line-ending translation above all, which is the
 defect that cost this project a real run.
 
 This module is the machine side of that tier: an in-process SSH server on
 127.0.0.1 that answers the exact three command shapes `JarvisLabsProvider`
-sends — `mkdir -p <parent> && cat > <dest>`, `sudo cat <path>`, and `bash -s`.
+sends; `mkdir -p <parent> && cat > <dest>`, `sudo cat <path>`, and `bash -s`.
 It holds pushed bytes in memory, returns them on fetch, and for `bash -s` it
 echoes each script line back as it consumes it, which is what lets tests
 observe output arriving line by line rather than at the end. Two deliberate

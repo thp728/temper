@@ -20,7 +20,7 @@ vi.mock("@/lib/api/generated/client", () => ({
 import { ApiError } from "@/lib/api/mutator";
 
 function fillRepo(user: ReturnType<typeof userEvent.setup>, repo = "acme/demo-chat") {
-  return user.type(screen.getByLabelText("Public repository"), repo);
+  return user.type(screen.getByLabelText("Repository URL"), repo);
 }
 
 beforeEach(() => {
@@ -31,7 +31,7 @@ beforeEach(() => {
 describe("ImportForm", () => {
   it("offers a labelled repository control and a named submit action", () => {
     render(<ImportForm />);
-    expect(screen.getByLabelText("Public repository")).toBeVisible();
+    expect(screen.getByLabelText("Repository URL")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Import and validate" }),
     ).toBeVisible();

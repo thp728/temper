@@ -107,31 +107,43 @@ def test_rolling_back_0002_drops_the_phase_b_tables_and_keeps_the_baseline(
     migrations.migrate_down(empty_database, steps=1)
 
     tables = _table_names(empty_database)
-    # Rolling back the last migration (now 0006_job_claim_lease) drops only
-    # its own `claimed_at` column but keeps the baseline, phase-B tables,
-    # endpoints and the reconciliation table. The absence of `claimed_at`
-    # proves the rollback was scoped; dropping `machine_reconciliation` would
-    # mean the rollback was too broad.
+    # Rolling back the last migration (now 0007_dataset_updated_at) drops
+    # only its own `updated_at` column but keeps the baseline, phase-B
+    # tables, endpoints and the reconciliation table. The absence of
+    # `updated_at` proves the rollback was scoped; dropping
+    # `machine_reconciliation` would mean the rollback was too broad.
     assert "endpoints" in tables
     assert "quotes" in tables
     assert "checkpoints" in tables
     assert "jobs" in tables
     assert "datasets" in tables
     assert "machine_reconciliation" in tables
-    # The 0004 and 0005 columns are kept -- they were not this migration's own.
-    cols = empty_database.execute(
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_name = 'jobs'"
-    ).fetchall()
-    col_names = {r[0] for r in cols}
-    assert "correlation_id" in col_names
-    assert "claimed_at" not in col_names
+    # The 0004 and 0006 columns are kept -- they were not this migration's
+    # own.
+    job_cols = {
+        r[0]
+        for r in empty_database.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'jobs'"
+        ).fetchall()
+    }
+    assert "correlation_id" in job_cols
+    assert "claimed_at" in job_cols
+    dataset_cols = {
+        r[0]
+        for r in empty_database.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'datasets'"
+        ).fetchall()
+    }
+    assert "updated_at" not in dataset_cols
     assert migrations.applied_ids(empty_database) == [
         "0001_baseline",
         "0002_phase_b_tables",
         "0003_serving_endpoints",
         "0004_correlation_id",
         "0005_machine_reconciliation",
+        "0006_job_claim_lease",
     ]
 
 

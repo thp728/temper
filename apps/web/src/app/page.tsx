@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 // The dashboard reads live job state at request time; it is never cached into
 // a lie about what is running or recorded. The calibration aggregate (issue
-// #77) is no longer fetched here — it was observability, not end-user value,
+// #77) is no longer fetched here; it was observability, not end-user value,
 // and is kept at /calibration for direct access (see CalibrationView.tsx top
 // comment). Dashboard now aggregates spend & time from the jobs themselves.
 export const dynamic = "force-dynamic";

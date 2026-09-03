@@ -5,7 +5,7 @@ Detailed design tokens are in DESIGN.md
 New UI flow:
 
 - main nav is on the left instead of top: dashboard, datasets, models, jobs
-- dashboard is the new home page: shows current active jobs, recently finished jobs, and a glimpse of the calibration data.
+- dashboard is the new home page: shows current active jobs, recently finished jobs, and a glimpse of spend and duration.
 - dataset manager: allows to upload/import datasets in jsonl. shows previously used datasets as well.
 - dataset detail view: shows what the current dataset validation page shows
 - jobs: shows list of all previous training jobs

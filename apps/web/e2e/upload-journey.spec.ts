@@ -142,7 +142,10 @@ test("the journey is keyboard-reachable and survives a small screen", async ({
 
 async function importRepo(page: Page, repo: string) {
   await page.goto("/datasets");
-  await page.getByLabel("Public repository").fill(repo);
+  // Import form now lives in a modal triggered by “Import Dataset”
+  // (redesign 2026-09). Open it before interacting.
+  await page.getByRole("button", { name: "Import Dataset" }).click();
+  await page.getByLabel("Repository URL").fill(repo);
   await page.getByRole("button", { name: "Import and validate" }).click();
 }
 

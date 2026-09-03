@@ -33,7 +33,7 @@ from typing import Protocol
 # `docs/research-reports/report-a.md` and report-b §2). For a memory
 # prediction that must **block** at creation (ADR-0043), the conservative
 # direction is *higher* (over-predict) so an OOM is never missed; 8 is the
-# minimum honest MoE total — still 8× the dense MLP and therefore visibly
+# minimum honest MoE total; still 8× the dense MLP and therefore visibly
 # larger than dense, while real configs read their actual count (60, 256, …)
 # and will predict larger. Using a larger default would be more conservative
 # but would overstate the legacy test fixture. This is the value

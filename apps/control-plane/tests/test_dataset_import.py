@@ -68,7 +68,7 @@ def test_a_dataset_imports_by_reference(client, monkeypatch):
 
     assert r.status_code == 202
     body = r.json()
-    assert body["status"] == "validating"
+    assert body["status"] == "importing"
     assert body["filename"] == "acme/demo-chat/default/default.jsonl"
     record = wait_validated(client, body["id"])
     assert record["status"] == "valid"
@@ -126,14 +126,17 @@ def test_imported_dataset_is_stored_under_the_seam(client, monkeypatch):
 
     ds_id = import_reference(client, "acme/demo-chat").json()["id"]
 
+    # The fetch is backgrounded (issue: "dataset import from HF"), so the
+    # object is not necessarily there the instant the request answers --
+    # wait for the row to leave "importing"/"validating" the same way every
+    # other caller that needs the finished object does.
+    wait_validated(client, ds_id)
+
     from temper_control_plane.remote_datasets import jsonl_chunks
 
     expected = b"".join(jsonl_chunks(rows))
     stored = storage.STORE.get(storage.dataset_key(ds_id))
     assert stored == expected
-    # And validation read that same stored object (the seam reads what the
-    # import wrote).
-    wait_validated(client, ds_id)
 
 
 # --- the identical validation path --------------------------------------------
@@ -248,10 +251,13 @@ def test_an_unfetchable_repository_is_refused_with_the_reason(
 
 
 def test_a_fetch_that_dies_mid_stream_surfaces_its_reason(client, monkeypatch):
-    """A repository that cannot be fetched must not fail mid-job: even a
-    failure discovered part-way through streaming answers as a coded 400 with
-    the reason, and the half-written import is cleaned up -- the same contract
-    a lying Content-Length earns on an upload."""
+    """A repository that cannot be fetched at all is refused synchronously
+    (see the tests below) -- but the fetch itself is backgrounded (issue:
+    "dataset import from HF"), so a failure discovered part-way through
+    streaming cannot be a synchronous response any more than a validation
+    crash can. It surfaces the same way: the request already answered with
+    the id, and the row it named ends up `invalid` with the reason in its
+    report, the same contract a lying Content-Length earns on an upload."""
     from temper_control_plane.remote_datasets import RemoteDatasetError
 
     class DyingSource:
@@ -272,11 +278,13 @@ def test_a_fetch_that_dies_mid_stream_surfaces_its_reason(client, monkeypatch):
 
     r = import_reference(client, "acme/flaky")
 
-    assert r.status_code == 400
-    detail = r.json()["detail"]
-    assert detail["code"] == "fetch_failed"
-    assert "rate limited" in detail["message"]
-    assert db.list_datasets() == []
+    assert r.status_code == 202
+    ds_id = r.json()["id"]
+    record = wait_validated(client, ds_id)
+    assert record["status"] == "invalid"
+    err = record["report"]["errors"][0]
+    assert err["code"] == "fetch_failed"
+    assert "rate limited" in err["message"]
 
 
 # --- a split resolving to nothing is refused ----------------------------------
@@ -334,7 +342,10 @@ def test_an_import_that_fails_validation_is_stored_with_its_report(
 # The ceiling is a configured product limit (config.MAX_DATASET_BYTES, derived
 # in ADR-0036 from measured throughput). Imports read the same value -- never
 # a retyped number -- and enforce it mid-stream, since a remote reference has
-# no declared size to refuse on ahead of time.
+# no declared size to refuse on ahead of time. Enforcement happens on the
+# background fetch thread now (issue: "dataset import from HF"), so it lands
+# as an invalid report rather than a synchronous 413 -- the request already
+# answered with the id before the true size was knowable.
 
 
 def test_the_size_ceiling_applies_to_imports(client, monkeypatch):
@@ -346,9 +357,9 @@ def test_the_size_ceiling_applies_to_imports(client, monkeypatch):
 
     r = import_reference(client, "acme/big")
 
-    assert r.status_code == 413
-    detail = r.json()["detail"]
-    assert detail["code"] == "dataset_too_large"
-    assert detail["limit_bytes"] == 128
-    assert detail["actual_bytes"] > 128
-    assert db.list_datasets() == []
+    assert r.status_code == 202
+    ds_id = r.json()["id"]
+    record = wait_validated(client, ds_id)
+    assert record["status"] == "invalid"
+    err = record["report"]["errors"][0]
+    assert err["code"] == "dataset_too_large"

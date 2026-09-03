@@ -6,7 +6,7 @@ and summary dicts that look almost the same, the tqdm bars it redraws between
 them, and the prose Axolotl and the remote script narrate with.
 
 The negative cases matter more than the positive ones. A false loss number is
-worse than a missing one — a user reading a chart cannot tell that the figure
+worse than a missing one; a user reading a chart cannot tell that the figure
 came from a line that merely looked like a measurement.
 """
 

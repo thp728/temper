@@ -34,7 +34,7 @@ export default function ActiveJobsSection({
   if (jobs.length === 0) {
     return (
       <section aria-labelledby="active-jobs-heading" className="space-y-3">
-        <h2 id="active-jobs-heading" className="text-lg font-semibold">
+        <h2 id="active-jobs-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
           Active jobs
         </h2>
         <EmptyStatePanel
@@ -55,7 +55,7 @@ export default function ActiveJobsSection({
 
   return (
     <section aria-labelledby="active-jobs-heading" className="space-y-3">
-      <h2 id="active-jobs-heading" className="text-lg font-semibold">
+      <h2 id="active-jobs-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
         Active jobs
       </h2>
       <p id="active-jobs-subtitle" className="text-sm text-muted-foreground">

@@ -151,6 +151,14 @@ class DatasetImportRequest(BaseModel):
     split: str | None = None
 
 
+class DatasetRenameRequest(BaseModel):
+    """A dataset's new display name -- the only field a dataset can be
+    updated with. The stored object and its key never move; this changes
+    what the dataset is called, nothing about what it is."""
+
+    filename: str
+
+
 class ValidationProgress(BaseModel):
     """Where validation has got to while a dataset is `validating`.
 
@@ -167,7 +175,10 @@ class DatasetRecord(BaseModel):
     """A stored dataset with its report attached -- including a dataset that
     failed validation, whose report is the reason it was kept. While it is
     `validating`, `progress` says how far validation has got and `report` is
-    absent.
+    absent. An import (issue #45) passes through `importing` first -- its
+    bytes are still being fetched from a third party, not yet in hand the way
+    an upload's are -- where `progress` says how far the fetch has got
+    instead; `report` is absent there too.
 
     The token fields (issue #42) belong to the counting phase that runs after
     validation, so they ride on the record rather than inside the validation
@@ -180,6 +191,7 @@ class DatasetRecord(BaseModel):
     id: str
     filename: str
     created_at: float
+    updated_at: float | None = None
     status: str
     report: DatasetReport | None = None
     progress: ValidationProgress | None = None

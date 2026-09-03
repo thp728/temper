@@ -385,6 +385,28 @@ def _down_0006(cur: psycopg.Cursor) -> None:
     cur.execute("ALTER TABLE jobs DROP COLUMN claimed_at")
 
 
+def _up_0007(cur: psycopg.Cursor) -> None:
+    """A dataset's own last-modified time (rename, issue: "add rename
+    functionality").
+
+    Before this, a dataset had exactly one timestamp -- `created_at` -- because
+    create/read/delete were the whole surface and nothing ever changed after
+    creation. Rename is the first update a dataset can have, so it earns its
+    own timestamp rather than overloading `created_at` with a meaning it
+    never had. `updated_at` is set to `created_at` at insert (`db.
+    create_dataset`) and stamped again only by `db.rename_dataset` -- an
+    ingest-lifecycle transition (importing -> validating -> valid/invalid) is
+    the system doing its job, not a user changing something about the
+    record, so it does not move this timestamp. Existing rows keep `NULL`,
+    the honest absence for data older than the concept.
+    """
+    cur.execute("ALTER TABLE datasets ADD COLUMN updated_at DOUBLE PRECISION")
+
+
+def _down_0007(cur: psycopg.Cursor) -> None:
+    cur.execute("ALTER TABLE datasets DROP COLUMN updated_at")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     ("0001_baseline", _up_0001, _down_0001),
     ("0002_phase_b_tables", _up_0002, _down_0002),
@@ -392,6 +414,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     ("0004_correlation_id", _up_0004, _down_0004),
     ("0005_machine_reconciliation", _up_0005, _down_0005),
     ("0006_job_claim_lease", _up_0006, _down_0006),
+    ("0007_dataset_updated_at", _up_0007, _down_0007),
 )
 
 

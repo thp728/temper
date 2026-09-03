@@ -22,20 +22,27 @@ export default function ValidationProgressView({
   record: DatasetRecord;
 }) {
   const percent = percentOf(record);
+  const importing = record.status === "importing";
 
   return (
     <section aria-labelledby="validating-heading" className="space-y-6">
-      {/* The record is re-fetched on every reload, so the page advances until
-          validation finishes and the report takes its place. */}
+      {/* The record is re-fetched on every reload, so the page advances
+          through "importing" (an import's fetch, if that's how this dataset
+          arrived) and "validating" until the report takes its place. */}
       <meta httpEquiv="refresh" content="2" />
 
       <div>
         <FocusHeading id="validating-heading">{record.filename}</FocusHeading>
         <Alert role="status" className="mt-3">
-          <AlertTitle>Validating your dataset…</AlertTitle>
+          <AlertTitle>
+            {importing
+              ? "Importing your dataset…"
+              : "Validating your dataset…"}
+          </AlertTitle>
           <AlertDescription>
-            This page reloads itself while validation runs, so you can leave it
-            open.
+            This page reloads itself while{" "}
+            {importing ? "the import" : "validation"} runs, so you can leave
+            it open.
           </AlertDescription>
         </Alert>
       </div>
@@ -60,7 +67,7 @@ export default function ValidationProgressView({
         </div>
       ) : (
         <p role="status" className="text-sm text-muted-foreground">
-          Reading rows…
+          {importing ? "Fetching rows…" : "Reading rows…"}
         </p>
       )}
 

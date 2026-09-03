@@ -1,7 +1,16 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import BackToUpload from "@/components/BackToUpload";
 import ReportView from "@/components/ReportView";
 import TokenCountPoll from "@/components/TokenCountPoll";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSlashSeparator,
+} from "@/components/ui/breadcrumb";
 import ValidationProgressView from "@/components/ValidationProgressView";
 import { DatasetRecordTokenCountStatus } from "@/lib/api/generated/client";
 import { getDatasetV1DatasetsDatasetIdGet } from "@/lib/api/generated/client";
@@ -27,9 +36,28 @@ async function loadDataset(id: string) {
   }
 }
 
+function DatasetBreadcrumb({ label }: { label: string }) {
+  return (
+    <Breadcrumb className="mb-6">
+      <BreadcrumbList>
+        <BreadcrumbItem>
+          <BreadcrumbLink asChild>
+            <Link href="/datasets">Datasets</Link>
+          </BreadcrumbLink>
+        </BreadcrumbItem>
+        <BreadcrumbSlashSeparator />
+        <BreadcrumbItem>
+          <BreadcrumbPage className="max-w-[28ch] truncate">{label}</BreadcrumbPage>
+        </BreadcrumbItem>
+      </BreadcrumbList>
+    </Breadcrumb>
+  );
+}
+
 function NotFound({ id }: { id: string }) {
   return (
     <section aria-labelledby="not-found-heading" className="space-y-4">
+      <DatasetBreadcrumb label={id} />
       <h1 id="not-found-heading" className="text-2xl font-semibold">
         Not found
       </h1>
@@ -50,10 +78,17 @@ export default async function DatasetPage({
   const { id } = await params;
   const { record, error } = await loadDataset(id);
 
-  if (record?.status === "validating") {
-    // Validation runs in the background; this view shows its progress and
-    // re-fetches on a meta refresh until the report lands.
-    return <ValidationProgressView record={record} />;
+  if (record?.status === "validating" || record?.status === "importing") {
+    // An import passes through "importing" (its bytes are still being
+    // fetched from a third party) before "validating"; an upload skips
+    // straight to "validating". Both run in the background and both re-fetch
+    // on a meta refresh until the report lands.
+    return (
+      <div className="space-y-0">
+        <DatasetBreadcrumb label={record.filename} />
+        <ValidationProgressView record={record} />
+      </div>
+    );
   }
   if (record) {
     // While the token count is being produced (issue #42) the report is
@@ -64,13 +99,14 @@ export default async function DatasetPage({
     // fires even after a client-side navigation has left the page, which
     // yanked a launching user back to the report).
     return (
-      <>
+      <div className="space-y-0">
+        <DatasetBreadcrumb label={record.filename} />
         {record.token_count_status ===
           DatasetRecordTokenCountStatus.counting && (
           <TokenCountPoll datasetId={record.id} />
         )}
         <ReportView record={record} />
-      </>
+      </div>
     );
   }
   if (error?.status === 404) {
@@ -79,6 +115,7 @@ export default async function DatasetPage({
 
   return (
     <section aria-labelledby="report-error-heading" className="space-y-4">
+      <DatasetBreadcrumb label={id} />
       <h1 id="report-error-heading" className="text-2xl font-semibold">
         The report could not be loaded
       </h1>

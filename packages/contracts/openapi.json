@@ -967,7 +967,7 @@
         "type": "object"
       },
       "DatasetRecord": {
-        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent.\n\nThe token fields (issue #42) belong to the counting phase that runs after\nvalidation, so they ride on the record rather than inside the validation\ndict: `token_count_status` is the phase's own state, typed as the literal\nvocabulary (`counting` | `done` | `failed` | null) so the contract is the\nsingle source of the state names both halves use, and `counting_progress`\nshows where it has got to while it runs. The count itself is merged into\n`report` once it lands.",
+        "description": "A stored dataset with its report attached -- including a dataset that\nfailed validation, whose report is the reason it was kept. While it is\n`validating`, `progress` says how far validation has got and `report` is\nabsent. An import (issue #45) passes through `importing` first -- its\nbytes are still being fetched from a third party, not yet in hand the way\nan upload's are -- where `progress` says how far the fetch has got\ninstead; `report` is absent there too.\n\nThe token fields (issue #42) belong to the counting phase that runs after\nvalidation, so they ride on the record rather than inside the validation\ndict: `token_count_status` is the phase's own state, typed as the literal\nvocabulary (`counting` | `done` | `failed` | null) so the contract is the\nsingle source of the state names both halves use, and `counting_progress`\nshows where it has got to while it runs. The count itself is merged into\n`report` once it lands.",
         "properties": {
           "counting_progress": {
             "anyOf": [
@@ -1030,6 +1030,17 @@
               }
             ],
             "title": "Token Count Status"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           }
         },
         "required": [
@@ -1039,6 +1050,20 @@
           "status"
         ],
         "title": "DatasetRecord",
+        "type": "object"
+      },
+      "DatasetRenameRequest": {
+        "description": "A dataset's new display name -- the only field a dataset can be\nupdated with. The stored object and its key never move; this changes\nwhat the dataset is called, nothing about what it is.",
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "title": "DatasetRenameRequest",
         "type": "object"
       },
       "DatasetReport": {
@@ -3439,7 +3464,7 @@
     },
     "/v1/datasets/import": {
       "post": {
-        "description": "Import a dataset by reference (issue #45): a public repository,\noptionally a configuration and a split, and Temper fetches it for you.\n\nThe reference is resolved before anything is stored, and a reference that\ncannot be fetched -- repository missing, configuration unnamed, split\nabsent, split empty -- is refused with its reason as a coded 400, never\nleft to fail mid-fetch. The rows are then streamed from the repository\ninto storage with the upload size ceiling enforced along the way, and the\ndataset validates through the *same* background path an upload uses --\nsame schema detection, same line-numbered errors, same thinking-mode\ndetection. Nothing gets a shortcut for arriving over a network, and an\nimported dataset that fails validation is stored with its report like any\nother.\n\nLike an upload, this answers 202 with the dataset's id while validation\nruns; progress and the report land on `GET /v1/datasets/{id}`. The\nhandler is a worker-pool `def` because the fetch-and-store leg is\nsynchronous and CPU/IO-bound (ADR-0006).",
+        "description": "Import a dataset by reference (issue #45): a public repository,\noptionally a configuration and a split, and Temper fetches it for you.\n\nThe reference is resolved before anything is stored, and a reference that\ncannot be fetched -- repository missing, configuration unnamed, split\nabsent, split empty -- is refused with its reason as a coded 400, never\nleft to fail mid-fetch. That resolution is the only network call this\nhandler waits on: the rows themselves are fetched from a third party that\ncan be arbitrarily slow (issue: \"dataset import from HF\"), so streaming\nthem into storage, enforcing the size ceiling, and validating all run in\nthe background (status `importing`, then `validating`) -- the *same*\nbackground path an upload uses past its own fetch, same schema\ndetection, same line-numbered errors, same thinking-mode detection.\nNothing gets a shortcut for arriving over a network, and an imported\ndataset that fails to fetch, or fails validation, is stored with its\nreport like any other.\n\nThis answers 202 with the dataset's id once the reference resolves;\nprogress and the report land on `GET /v1/datasets/{id}`. The handler is a\nworker-pool `def` because `resolve()` is synchronous and IO-bound\n(ADR-0006).",
         "operationId": "import_dataset_v1_datasets_import_post",
         "requestBody": {
           "content": {
@@ -3480,6 +3505,40 @@
       }
     },
     "/v1/datasets/{dataset_id}": {
+      "delete": {
+        "description": "Delete a dataset: the stored object, then the row.\n\nRefused (404) if it does not exist, and refused (409, `dataset_in_use`)\nif any job was launched against it -- a completed job's record must keep\nbeing able to say what it trained on, so the data it points at does not\ndisappear out from under it. There is no undo: the object is gone, not\narchived.",
+        "operationId": "delete_dataset_v1_datasets__dataset_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Dataset",
+        "tags": [
+          "datasets"
+        ]
+      },
       "get": {
         "operationId": "get_dataset_v1_datasets__dataset_id__get",
         "parameters": [
@@ -3516,6 +3575,57 @@
           }
         },
         "summary": "Get Dataset",
+        "tags": [
+          "datasets"
+        ]
+      },
+      "patch": {
+        "description": "Rename a dataset. The only field a dataset can be updated with --\nthe stored object never moves, this changes what it is called.\n\nRefused (404) if it does not exist, and refused (400,\n`unsupported_extension`) the same way an upload's own name is: the\nproduct only ever ingests JSONL.",
+        "operationId": "rename_dataset_v1_datasets__dataset_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetRenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Dataset",
         "tags": [
           "datasets"
         ]
@@ -3725,7 +3835,7 @@
     },
     "/v1/jobs/{job_id}/cancel": {
       "post": {
-        "description": "Ask a running job to stop. Destructive, and says so.\n\nThe request records the user's decision; the thread running the job sees it\nwithin a poll interval, destroys the machine and ends the job `cancelled`.\nSo this returns the state the job is in *now*, which is usually still a\nworking one \u2014 reporting `cancelled` here would claim a teardown that has\nnot happened yet, and teardown is the whole point of cancelling.\n\nRepeating it succeeds quietly: a double-clicked button is not an error.\nCancelling a job that has already ended is refused with a stable code,\nbecause nothing was undone and the user should not think otherwise.",
+        "description": "Ask a running job to stop. Destructive, and says so.\n\nThe request records the user's decision; the thread running the job sees it\nwithin a poll interval, destroys the machine and ends the job `cancelled`.\nSo this returns the state the job is in *now*, which is usually still a\nworking one; reporting `cancelled` here would claim a teardown that has\nnot happened yet, and teardown is the whole point of cancelling.\n\nRepeating it succeeds quietly: a double-clicked button is not an error.\nCancelling a job that has already ended is refused with a stable code,\nbecause nothing was undone and the user should not think otherwise.",
         "operationId": "cancel_job_v1_jobs__job_id__cancel_post",
         "parameters": [
           {

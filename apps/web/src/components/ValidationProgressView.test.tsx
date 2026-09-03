@@ -52,4 +52,14 @@ describe("ValidationProgressView", () => {
     const refresh = document.querySelector('meta[http-equiv="refresh"]');
     expect(refresh).toHaveAttribute("content", "2");
   });
+
+  it("shows the import's own fetch phase distinctly from validation", () => {
+    render(
+      <ValidationProgressView
+        record={validatingRecord({ status: "importing", progress: null })}
+      />,
+    );
+    expect(screen.getByText("Importing your dataset…")).toBeVisible();
+    expect(screen.getByText("Fetching rows…")).toBeVisible();
+  });
 });

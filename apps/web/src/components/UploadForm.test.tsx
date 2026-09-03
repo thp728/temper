@@ -49,12 +49,14 @@ describe("UploadForm", () => {
     expect(push).toHaveBeenCalledWith("/datasets/ds_abc");
   });
 
-  it("refuses to submit without a file, naming the problem", async () => {
+  it("keeps the action disabled until a file is chosen", async () => {
     const user = userEvent.setup();
     render(<UploadForm />);
-    await user.click(screen.getByRole("button", { name: "Upload and validate" }));
+    const button = screen.getByRole("button", { name: "Upload and validate" });
+    expect(button).toBeDisabled();
     expect(uploadMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(/choose a .*jsonl/i);
+    await chooseFile(user);
+    expect(button).toBeEnabled();
   });
 
   it("shows a refused upload's stable code and message", async () => {

@@ -5,6 +5,12 @@ import EmptyStatePanel from "@/components/EmptyStatePanel";
 import StatusPill from "@/components/StatusPill";
 import { Button } from "@/components/ui/button";
 import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+} from "@/components/ui/breadcrumb";
+import {
   TERMINAL_STATUSES,
   formatDuration,
   formatMinorCost,
@@ -39,7 +45,7 @@ const LINK = "text-primary transition-colors hover:text-primary-hover";
 function FinishedJobsSection({ jobs }: { jobs: JobRecord[] }) {
   return (
     <section aria-labelledby="finished-jobs-heading" className="space-y-3">
-      <h2 id="finished-jobs-heading" className="text-lg font-semibold">
+      <h2 id="finished-jobs-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
         Recently finished jobs
       </h2>
       {jobs.length === 0 ? (
@@ -156,7 +162,7 @@ function SpendTimeSection({ jobs }: { jobs: JobRecord[] }) {
   if (finished.length === 0) {
     return (
       <section aria-labelledby="spend-time-heading" className="space-y-3">
-        <h2 id="spend-time-heading" className="text-lg font-semibold">
+        <h2 id="spend-time-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
           Spend & time
         </h2>
         <EmptyStatePanel icon={Wallet} heading="No spend yet">
@@ -243,7 +249,7 @@ function SpendTimeSection({ jobs }: { jobs: JobRecord[] }) {
 
   return (
     <section aria-labelledby="spend-time-heading" className="space-y-3">
-      <h2 id="spend-time-heading" className="text-lg font-semibold">
+      <h2 id="spend-time-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
         Spend & time
       </h2>
       <p className="text-sm text-muted-foreground">
@@ -330,18 +336,23 @@ export default function DashboardView({
 
   return (
     <section aria-labelledby="dashboard-heading" className="space-y-8">
+      {/* Breadcrumb for style parity: Dashboard is top-level so it is
+          not a link, just a current page marker like Datasets page. */}
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbPage>Dashboard</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">
           <h1
             id="dashboard-heading"
-            className="text-2xl font-semibold tracking-tight"
+            className="text-2xl font-semibold tracking-tight text-balance"
           >
-            Dashboard
+            What is training now, what finished recently, and what you&apos;ve spent.
           </h1>
-          <p className="text-muted-foreground">
-            What is training now, what finished recently, and what you&apos;ve
-            spent.
-          </p>
         </div>
         {/* A job starts with a dataset: the launch screen needs one, so the
             action lands on the dataset picker rather than a page that would
