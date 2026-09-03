@@ -280,7 +280,7 @@ export default function QuoteView({
         <div>
           <dt className="text-sm text-muted-foreground">Tokens</dt>
           <dd className="font-medium">
-            {quote.token_count != null ? quote.token_count.toLocaleString() : "—"}
+            {quote.token_count != null ? quote.token_count.toLocaleString("en-US") : "—"}
           </dd>
         </div>
         <div>

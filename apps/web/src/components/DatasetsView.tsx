@@ -107,20 +107,20 @@ function DatasetCard({ record }: { record: DatasetRecord }) {
         <div className="flex items-center justify-between">
           <dt>Rows</dt>
           <dd className="text-foreground tabular-nums">
-            {report ? report.row_count.toLocaleString() : "—"}
+            {report ? report.row_count.toLocaleString("en-US") : "—"}
           </dd>
         </div>
         <div className="flex items-center justify-between">
           <dt>Usable</dt>
           <dd className="text-foreground tabular-nums">
-            {report ? report.usable_rows.toLocaleString() : "—"}
+            {report ? report.usable_rows.toLocaleString("en-US") : "—"}
           </dd>
         </div>
         <div className="flex items-center justify-between">
           <dt>Tokens</dt>
           <dd className="text-foreground tabular-nums">
             {report?.token_count != null
-              ? report.token_count.toLocaleString()
+              ? report.token_count.toLocaleString("en-US")
               : "—"}
           </dd>
         </div>

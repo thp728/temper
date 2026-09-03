@@ -20,7 +20,7 @@ import type {
 
 function formatTime(ts: number | null | undefined): string {
   if (ts == null) return "—";
-  return new Date(ts * 1000).toLocaleString();
+  return new Date(ts * 1000).toLocaleString("sv-SE");
 }
 
 function formatDuration(s: number | null | undefined): string {

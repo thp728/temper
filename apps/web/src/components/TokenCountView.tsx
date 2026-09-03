@@ -66,7 +66,7 @@ function DistributionBars({ dist }: { dist: TokenDistribution }) {
 }
 
 function truncationNote(dist: TokenDistribution): string {
-  return `${dist.truncated_rows.toLocaleString()} row${
+  return `${dist.truncated_rows.toLocaleString("en-US")} row${
     dist.truncated_rows === 1 ? "" : "s"
   } ${dist.truncated_rows === 1 ? "is" : "are"} longer than the ${
     dist.sequence_len
@@ -144,7 +144,7 @@ export default function TokenCountView({
               <dl>
                 <dt className="text-sm text-muted-foreground">Token count</dt>
                 <dd className="mt-1 text-2xl font-semibold">
-                  {total.toLocaleString()}
+                  {total.toLocaleString("en-US")}
                 </dd>
               </dl>
             </CardContent>
@@ -154,7 +154,7 @@ export default function TokenCountView({
               <dl>
                 <dt className="text-sm text-muted-foreground">Longest row</dt>
                 <dd className="mt-1 text-2xl font-semibold">
-                  {dist.max_row_tokens.toLocaleString()}
+                  {dist.max_row_tokens.toLocaleString("en-US")}
                 </dd>
               </dl>
             </CardContent>
@@ -166,7 +166,7 @@ export default function TokenCountView({
                   Would be truncated
                 </dt>
                 <dd className="mt-1 text-2xl font-semibold">
-                  {dist.truncated_rows.toLocaleString()}
+                  {dist.truncated_rows.toLocaleString("en-US")}
                 </dd>
               </dl>
             </CardContent>
