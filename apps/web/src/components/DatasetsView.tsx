@@ -75,7 +75,7 @@ function FileIcon() {
   return <FileJson className="size-4 text-primary" aria-hidden="true" />;
 }
 
-function DatasetCard({ record }: { record: DatasetRecord }) {
+function DatasetCard({ record, now }: { record: DatasetRecord; now: number }) {
   const report = record.report;
   return (
     <div className="group relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:border-ring/50 hover:bg-muted/20">
@@ -127,7 +127,7 @@ function DatasetCard({ record }: { record: DatasetRecord }) {
         <div className="flex items-center justify-between border-t pt-2 mt-2">
           <dt>Updated</dt>
           <dd className="text-muted-foreground">
-            {formatTimestamp(record.updated_at ?? record.created_at)}
+            {formatTimestamp(record.updated_at ?? record.created_at, now)}
           </dd>
         </div>
       </dl>
@@ -138,9 +138,14 @@ function DatasetCard({ record }: { record: DatasetRecord }) {
 export default function DatasetsView({
   datasets,
   loadError,
+  now,
 }: {
   datasets: DatasetRecord[];
   loadError?: { code?: string; message: string } | null;
+  // The server page's clock reading, not the client's own: the Updated dates
+  // render on the server first, and hydration must see the same strings the
+  // server sent (`RunningJobView`'s rule).
+  now: number;
 }) {
   const [query, setQuery] = useState("");
 
@@ -155,16 +160,22 @@ export default function DatasetsView({
 
   return (
     <div className="space-y-8">
-      {/* Page heading + Import: aligned on one row per feedback */}
-      <div className="space-y-2">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Page heading + Import: the same header anatomy as the dashboard and
+          jobs pages (breadcrumb above, title + subtitle + action in an
+          items-end row) so the three list pages sit identically. */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1">
           <h1
             id="upload-heading"
-            className="text-xl font-semibold tracking-tight text-balance sm:text-2xl"
+            className="text-2xl font-semibold tracking-tight text-balance"
           >
-            Manage and prepare your raw data for fine-tuning jobs.
+            Manage and prepare your raw data for fine-tuning jobs
           </h1>
-          <Dialog>
+          <p className="text-sm text-muted-foreground">
+            Upload a file or import from Hugging Face
+          </p>
+        </div>
+        <Dialog>
             <DialogTrigger asChild>
               <Button className="shrink-0">
                 <Upload className="size-4" aria-hidden="true" />
@@ -182,10 +193,6 @@ export default function DatasetsView({
             </DialogContent>
           </Dialog>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Upload a file or import from Hugging Face
-        </p>
-      </div>
 
       {/* Upload area: wireframe datasets.html:355. The form itself carries the
           a11y label “Dataset file (.jsonl)” and the submit name
@@ -241,7 +248,7 @@ export default function DatasetsView({
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filtered.map((d) => (
-              <DatasetCard key={d.id} record={d} />
+              <DatasetCard key={d.id} record={d} now={now} />
             ))}
           </div>
         )}

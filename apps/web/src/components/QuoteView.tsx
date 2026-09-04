@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   formatDurationRange,
   formatMinorCost,
+  formatTimestamp,
   shortRevision,
 } from "@/lib/jobs/display";
 import type {
@@ -323,8 +324,7 @@ export default function QuoteView({
           <code className="rounded bg-muted px-1">{shortRevision(quote.dataset_id)}</code>
           {" · "}model revision{" "}
           <code className="rounded bg-muted px-1">{shortRevision(quote.base_revision)}</code>
-          {" · "}expires{" "}
-          {new Date(quote.expires_at * 1000).toLocaleString("sv-SE")}.
+          {" · "}expires {formatTimestamp(quote.expires_at)}.
         </p>
       </div>
       </section>

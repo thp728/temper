@@ -8,6 +8,7 @@ import {
 import DatasetsView from "@/components/DatasetsView";
 import { listDatasetsV1DatasetsGet } from "@/lib/api/generated/client";
 import { load } from "@/lib/api/load";
+import { epochNow } from "@/lib/jobs/display";
 
 export const metadata: Metadata = {
   title: "Datasets",
@@ -26,7 +27,7 @@ export default async function UploadPage() {
   const datasets = [...(data?.datasets ?? [])].sort((a, b) => b.created_at - a.created_at);
 
   return (
-    <section aria-labelledby="upload-heading" className="space-y-6">
+    <section aria-labelledby="upload-heading" className="space-y-8">
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -35,7 +36,7 @@ export default async function UploadPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <DatasetsView datasets={datasets} loadError={error} />
+      <DatasetsView datasets={datasets} loadError={error} now={epochNow()} />
     </section>
   );
 }

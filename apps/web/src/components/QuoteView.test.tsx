@@ -100,7 +100,7 @@ function quote(overrides: Partial<Quote> = {}): Quote {
 describe("QuoteView", () => {
   it("shows a duration range and a cost range, never points", () => {
     render(<QuoteView quote={quote()} />);
-    expect(screen.getByText(/1m 33s–13m 37s/)).toBeVisible();
+    expect(screen.getByText(/00:01:33–00:13:37/)).toBeVisible();
     expect(screen.getByText(/INR 1\.07 – INR 9\.38/)).toBeVisible();
   });
 

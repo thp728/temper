@@ -59,7 +59,7 @@ describe("DashboardView", () => {
     expect(screen.getByText("training")).toBeVisible();
     expect(screen.getByText("l4")).toBeVisible();
     // Elapsed is derived from started_at/created_at, stated in the clock.
-    expect(screen.getByText("4h 12m 00s")).toBeVisible();
+    expect(screen.getByText("04:12:00")).toBeVisible();
 
     // The finished job reads its measured duration and derived cost from the
     // actuals, with the currency beside the amount.
@@ -171,7 +171,7 @@ describe("DashboardView", () => {
     // Total 600 minor = INR 6.00, avg 300 minor = INR 3.00, avg duration 450s = 7m 30s
     expect(screen.getByText("INR 6.00")).toBeVisible();
     expect(screen.getByText("INR 3.00")).toBeVisible();
-    expect(screen.getByText("7m 30s")).toBeVisible();
+    expect(screen.getByText("00:07:30")).toBeVisible();
     expect(screen.getByText(/Based on 2 finished jobs/)).toBeVisible();
   });
 

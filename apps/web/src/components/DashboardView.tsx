@@ -351,8 +351,12 @@ export default function DashboardView({
             id="dashboard-heading"
             className="text-2xl font-semibold tracking-tight text-balance"
           >
-            What is training now, what finished recently, and what you&apos;ve spent.
+            Training overview
           </h1>
+          <p className="text-sm text-muted-foreground">
+            What is training now, what finished recently, and what
+            you&apos;ve spent.
+          </p>
         </div>
         {/* A job starts with a dataset: the launch screen needs one, so the
             action lands on the dataset picker rather than a page that would
@@ -370,9 +374,9 @@ export default function DashboardView({
         </Button>
       </div>
 
+      <SpendTimeSection jobs={jobs} />
       <ActiveJobsSection jobs={active} now={now} />
       <FinishedJobsSection jobs={finished} />
-      <SpendTimeSection jobs={jobs} />
     </section>
   );
 }

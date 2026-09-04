@@ -92,7 +92,7 @@ describe("JobRecordView", () => {
     const value = (label: string) =>
       screen.getByText(label).nextElementSibling?.textContent;
     expect(value("State")).toBe("complete");
-    expect(value("Elapsed")).toBe("4m 30s");
+    expect(value("Elapsed")).toBe("00:04:30");
     expect(value("Machine")).toBe("L4 at 41.31 INR/hr");
     expect(value("Latest loss")).toContain("0.6931");
     expect(value("Latest loss")).toContain("step 10");
@@ -480,7 +480,7 @@ describe("JobRecordView", () => {
     expect(
       screen.getByRole("heading", { name: "Cost and time estimate" }),
     ).toBeVisible();
-    expect(screen.getByText(/3m 58s–18m 59s/)).toBeVisible();
+    expect(screen.getByText(/00:03:58–00:18:59/)).toBeVisible();
     expect(screen.getByText(/INR 2\.74 – INR 13\.08/)).toBeVisible();
   });
 
@@ -512,10 +512,10 @@ describe("JobRecordView", () => {
     expect(
       screen.getByRole("heading", { name: "Prediction vs what happened" }),
     ).toBeVisible();
-    // Duration: predicted 3m 58s–18m 59s (midpoint ~11m 29s), actual 10m.
+    // Duration: predicted 00:03:58–00:18:59 (midpoint ~00:11:29), actual 00:10:00.
     expect(screen.getByText("measured")).toBeVisible();
     expect(screen.getByText("derived from measured duration × frozen rate")).toBeVisible();
-    expect(screen.getByText(/10m 00s/)).toBeVisible();
+    expect(screen.getByText(/00:10:00/)).toBeVisible();
     // Peak memory: predicted 5.40 GB, measured 5.31 GB.
     expect(screen.getByText("5.40 GB")).toBeVisible();
     expect(screen.getByText("5.31 GB")).toBeVisible();
@@ -623,7 +623,7 @@ describe("JobRecordView", () => {
     expect(screen.getByText("model download")).toBeVisible();
     expect(screen.getByText(/2\.4 GB of 4\.0 GB/)).toBeVisible();
     expect(screen.getByText(/28\.0 MB\/s/)).toBeVisible();
-    expect(screen.getByText(/about 57s left/)).toBeVisible();
+    expect(screen.getByText(/about 00:00:57 left/)).toBeVisible();
     // The raw lines are offered as collapsed detail, not scattered into the
     // event log: the promoted line is present but hidden behind the summary.
     expect(screen.getByText(/60%\|██████/)).not.toBeVisible();

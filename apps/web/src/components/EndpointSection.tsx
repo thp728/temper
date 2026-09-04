@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ApiError } from "@/lib/api/mutator";
+import { formatDuration, formatTimestamp } from "@/lib/jobs/display";
 import {
   createEndpointV1JobsJobIdEndpointPost,
   deleteEndpointV1JobsJobIdEndpointDelete,
@@ -17,18 +18,6 @@ import type {
   EndpointPreview,
   EndpointRecord,
 } from "@/lib/api/generated/client";
-
-function formatTime(ts: number | null | undefined): string {
-  if (ts == null) return "—";
-  return new Date(ts * 1000).toLocaleString("sv-SE");
-}
-
-function formatDuration(s: number | null | undefined): string {
-  if (s == null) return "—";
-  if (s < 60) return `${Math.round(s)}s`;
-  if (s < 3600) return `${Math.round(s / 60)}m`;
-  return `${(s / 3600).toFixed(1)}h`;
-}
 
 export default function EndpointSection({
   jobId,
@@ -206,11 +195,11 @@ export default function EndpointSection({
             </div>
             <div>
               <dt className="text-muted-foreground">Stops at (idle)</dt>
-              <dd>{formatTime(endpoint.expires_at)}</dd>
+              <dd>{formatTimestamp(endpoint.expires_at)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Hard stop at</dt>
-              <dd>{formatTime(endpoint.max_expires_at)}</dd>
+              <dd>{formatTimestamp(endpoint.max_expires_at)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Key prefix</dt>
@@ -325,11 +314,11 @@ export default function EndpointSection({
             </div>
             <div>
               <dt className="text-muted-foreground">Would stop at</dt>
-              <dd>{formatTime(preview.expires_at)}</dd>
+              <dd>{formatTimestamp(preview.expires_at)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Hard stop at</dt>
-              <dd>{formatTime(preview.max_expires_at)} (max {formatDuration(preview.max_lifetime_s)})</dd>
+              <dd>{formatTimestamp(preview.max_expires_at)} (max {formatDuration(preview.max_lifetime_s)})</dd>
             </div>
           </dl>
         ) : (
