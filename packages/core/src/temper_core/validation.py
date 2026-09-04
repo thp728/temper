@@ -53,6 +53,7 @@ Two things are deliberately not warnings:
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -115,6 +116,14 @@ class Report:
     errors_suppressed: int = 0
     warnings_suppressed: int = 0
 
+    # The true per-code total, uncapped -- there are only a handful of
+    # distinct codes in the whole catalog, so this stays flat regardless of
+    # file size. It is what lets a capped report say "100 of 110 shown" for
+    # a specific cause instead of one undifferentiated "11 more" at the
+    # bottom of the page.
+    error_code_counts: dict[str, int] = field(default_factory=dict)
+    warning_code_counts: dict[str, int] = field(default_factory=dict)
+
     # Thinking-mode tallies and example lines, capped as they are collected
     # (`MAX_SAMPLE` each). They are what the `mixed_thinking` message is built
     # from; they stay off the published report, which carries the same
@@ -138,6 +147,8 @@ class Report:
             "warning_count": self.warning_count,
             "errors_suppressed": self.errors_suppressed,
             "warnings_suppressed": self.warnings_suppressed,
+            "error_code_counts": self.error_code_counts,
+            "warning_code_counts": self.warning_code_counts,
         }
 
     def retained_objects(self) -> int:
@@ -256,6 +267,34 @@ def validate_bytes(raw: bytes, messages_field: str = "messages") -> Report:
     return validate_chunks((raw,), messages_field)
 
 
+def _cap_diverse(issues: list[Issue], cap: int) -> list[Issue]:
+    """Cap a list at `cap` without letting one code crowd out every other.
+
+    `parse_errors` and `row_errors` are collected in separate buckets, each
+    already capped and already diverse on its own (`add`, below, sees to
+    that). Concatenating the two before this runs can still exceed `cap` --
+    a file broken on every line fills `parse_errors` to the cap before
+    `row_errors` gets its one file-level verdict appended -- and a positional
+    slice at that point would silently drop the second bucket entirely. This
+    keeps at least one instance of every distinct code, then fills the
+    remaining budget with duplicates in their original order.
+    """
+    if len(issues) <= cap:
+        return issues
+    first_of_code: dict[str, Issue] = {}
+    rest: list[Issue] = []
+    for issue in issues:
+        if issue.code not in first_of_code:
+            first_of_code[issue.code] = issue
+        else:
+            rest.append(issue)
+    budget = max(cap - len(first_of_code), 0)
+    kept = list(first_of_code.values()) + rest[:budget]
+    order = {id(issue): i for i, issue in enumerate(issues)}
+    kept.sort(key=lambda issue: order[id(issue)])
+    return kept[:cap]
+
+
 def validate_chunks(
     chunks: Iterable[bytes],
     messages_field: str = "messages",
@@ -283,19 +322,39 @@ def validate_chunks(
 
         The count is the number the user needs -- "every line is broken" is a
         different problem from "line 4,102 is broken" -- and the cap is what
-        keeps a 5 GB file of broken JSON from becoming a 5 GB error list.
+        keeps a 5 GB file of broken JSON from becoming a 5 GB error list. Once
+        the cap is hit, an issue whose code isn't kept yet still gets in, by
+        displacing a duplicate of whichever code is most repeated -- a
+        hundred identical parse errors must not crowd out the one file-level
+        verdict (say, too few usable rows) that explains the rest of the
+        report.
         """
         if is_error:
             rep.error_count += 1
+            rep.error_code_counts[issue.code] = (
+                rep.error_code_counts.get(issue.code, 0) + 1
+            )
         else:
             rep.warning_count += 1
+            rep.warning_code_counts[issue.code] = (
+                rep.warning_code_counts.get(issue.code, 0) + 1
+            )
         if len(bucket) < MAX_ERRORS:
             bucket.append(issue)
+            return
+        codes = Counter(kept.code for kept in bucket)
+        if issue.code in codes:
+            return
+        worst_code, _ = codes.most_common(1)[0]
+        for idx in range(len(bucket) - 1, -1, -1):
+            if bucket[idx].code == worst_code:
+                bucket[idx] = issue
+                return
 
     def finish(errors: list[Issue]) -> Report:
         """Cap the lists, reconcile the suppressed counts, set the verdict."""
-        rep.errors = errors[:MAX_ERRORS]
-        rep.warnings = rep.warnings[:MAX_ERRORS]
+        rep.errors = _cap_diverse(errors, MAX_ERRORS)
+        rep.warnings = _cap_diverse(rep.warnings, MAX_ERRORS)
         rep.errors_suppressed = rep.error_count - len(rep.errors)
         rep.warnings_suppressed = rep.warning_count - len(rep.warnings)
         rep.valid = rep.error_count == 0

@@ -59,9 +59,14 @@ function splitExtension(filename: string): {
 export default function DatasetActionsMenu({
   id,
   filename,
+  redirectOnDeleteTo,
 }: {
   id: string;
   filename: string;
+  /** The list view deletes in place (the row just leaves the grid on
+      refresh); the detail view has nothing left to render once its own
+      dataset is gone, so it navigates away instead. Omit for the former. */
+  redirectOnDeleteTo?: string;
 }) {
   const router = useRouter();
   const { stem: originalStem, extension } = splitExtension(filename);
@@ -93,7 +98,11 @@ export default function DatasetActionsMenu({
     try {
       await deleteDatasetV1DatasetsDatasetIdDelete(id);
       setDeleteOpen(false);
-      router.refresh();
+      if (redirectOnDeleteTo) {
+        router.push(redirectOnDeleteTo);
+      } else {
+        router.refresh();
+      }
     } catch (err) {
       setRefusal(err instanceof ApiError ? err : NETWORK_ERROR);
     } finally {

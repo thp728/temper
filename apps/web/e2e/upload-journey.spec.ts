@@ -13,22 +13,19 @@ function statValue(page: Page, name: string) {
     .locator("xpath=following-sibling::dd");
 }
 
-test("an accepted dataset reaches its report and offers to proceed", async ({
+test("an accepted dataset reaches its report", async ({
   page,
 }) => {
   const rows = Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`));
   await uploadRows(page, rows);
 
-  await expect(page.getByText("Validation passed")).toBeVisible();
+  await expect(page.getByText("Ready")).toBeVisible();
   await expect(statValue(page, "Rows found")).toHaveText("12");
   await expect(statValue(page, "Usable rows")).toHaveText("12");
   // The schema is named...
   await expect(statValue(page, "Schema")).toHaveText("chat");
   // ...and thinking mode is stated in plain language, not as a boolean.
   await expect(page.getByText("Not detected")).toBeVisible();
-  await expect(
-    page.getByText(/trained to answer directly/),
-  ).toBeVisible();
 
   // The token count is produced by the phase that runs after validation and
   // lands on this same report (issue #42). It arrives asynchronously, so the
@@ -41,31 +38,10 @@ test("an accepted dataset reaches its report and offers to proceed", async ({
   await expect(page.getByText("q0").first()).toBeVisible();
   await expect(page.getByText("a0").first()).toBeVisible();
 
-  // Twelve rows is below the recommended fifty: a warning appears...
+  // Twelve rows is below the recommended fifty: a warning appears, and does
+  // not block the dataset from being marked ready.
   await expect(page.getByText("few_rows")).toBeVisible();
-  // ...and does not block proceeding.
-  await expect(
-    page.getByRole("link", { name: "Choose a model and continue" }),
-  ).toBeVisible();
-});
-
-test("continuing hands over to the ported launch screen in this shell", async ({
-  page,
-}) => {
-  // Since #38 the next screen is part of this application, not a proxy
-  // handoff. The ported screen is recognised by what only it says -- the
-  // frozen-spec statement that replaces the form post.
-  const rows = Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`));
-  await uploadRows(page, rows);
-
-  await page
-    .getByRole("link", { name: "Choose a model and continue" })
-    .click();
-
-  await expect(
-    page.getByRole("heading", { name: "Choose a base model" }),
-  ).toBeVisible();
-  await expect(page.getByText(/cannot be changed afterwards/i)).toBeVisible();
+  await expect(page.getByText("Ready")).toBeVisible();
 });
 
 test("a rejected dataset names each problem against its line", async ({
@@ -84,11 +60,7 @@ test("a rejected dataset names each problem against its line", async ({
   await expect(page.getByText("invalid_json")).toBeVisible();
   await expect(page.getByText("Line 13")).toBeVisible();
   await expect(page.getByText("empty_target")).toBeVisible();
-
-  // A rejected dataset cannot proceed.
-  await expect(
-    page.getByRole("link", { name: "Choose a model and continue" }),
-  ).toHaveCount(0);
+  await expect(page.getByText("Needs fixes")).toBeVisible();
 });
 
 test("a file the picker allows but the API refuses keeps its stable code", async ({
@@ -154,12 +126,9 @@ test("an imported repository reaches its validation report", async ({ page }) =>
 
   // The imported rows went through the identical validation path: the same
   // report an upload of the same rows would produce.
-  await expect(page.getByText("Validation passed")).toBeVisible();
+  await expect(page.getByText("Ready")).toBeVisible();
   await expect(statValue(page, "Rows found")).toHaveText("12");
   await expect(statValue(page, "Usable rows")).toHaveText("12");
-  await expect(
-    page.getByRole("link", { name: "Choose a model and continue" }),
-  ).toBeVisible();
 });
 
 test("an import that fails validation is kept with its report", async ({

@@ -5,6 +5,7 @@ import path from "node:path";
 import { E2E_BACKEND_PORT } from "../src/lib/backend";
 import {
   chat,
+  goToLaunch,
   pairedValue,
   requireFakeProvider,
   uploadRows,
@@ -33,11 +34,8 @@ function twelveRows() {
 
 async function launchFromTheShell(page: Page): Promise<string> {
   await uploadRows(page, twelveRows());
-  await expect(page.getByText("Validation passed")).toBeVisible();
-  await page.getByRole("link", { name: "Choose a model and continue" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Choose a base model" }),
-  ).toBeVisible();
+  await expect(page.getByText("Ready")).toBeVisible();
+  await goToLaunch(page);
   await page.getByRole("button", { name: "Launch job" }).click();
 
   // The job appears immediately, and its record follows it to the end: the
@@ -185,11 +183,8 @@ test("a finished job offers each requested delivery format with its purpose", as
   // and offered on the finished record by what each is for -- a user chooses
   // a format without knowing what a merge is.
   await uploadRows(page, twelveRows());
-  await expect(page.getByText("Validation passed")).toBeVisible();
-  await page.getByRole("link", { name: "Choose a model and continue" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Choose a base model" }),
-  ).toBeVisible();
+  await expect(page.getByText("Ready")).toBeVisible();
+  await goToLaunch(page);
   await page.getByRole("checkbox", { name: /Merged model/ }).check();
   await page
     .getByRole("checkbox", { name: /Quantised local format/ })

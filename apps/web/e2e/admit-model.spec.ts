@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { E2E_BACKEND_PORT } from "../src/lib/backend";
 import {
   chat,
+  goToLaunch,
   requireFakeProvider,
   uploadRows,
 } from "./helpers";
@@ -24,17 +25,14 @@ test.beforeAll(async ({ playwright }) => {
 });
 
 async function continueToLaunch(page: Page) {
-  await page.getByRole("link", { name: "Choose a model and continue" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Choose a base model" }),
-  ).toBeVisible();
+  await goToLaunch(page);
 }
 
 async function uploadValidatedRows(page: Page, rows: object[]) {
   // Validation is asynchronous since #31; the report (and the launch link)
   // only exist once it has passed.
   await uploadRows(page, rows);
-  await expect(page.getByText("Validation passed")).toBeVisible();
+  await expect(page.getByText("Ready")).toBeVisible();
 }
 
 test("a model outside the catalog is probed, shown and launched", async ({

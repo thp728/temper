@@ -37,6 +37,16 @@ async function uploadRows(page: Page, rows: object[]) {
   await upload(page, await tempFile(jsonl(rows)));
 }
 
+// The report page's own way into the launch screen: the "Associated jobs"
+// panel's button, scoped to the dataset already on the page. Driven by its
+// accessible name, the same as a person would click it.
+async function goToLaunch(page: Page) {
+  await page.getByRole("link", { name: "New job with this dataset" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Choose a base model" }),
+  ).toBeVisible();
+}
+
 // Stat cards and definition lists pair a visible label with a value; read
 // them as pairs rather than matching bare words that repeat across the page.
 // A record keeps several pairs in one list, so take the value that
@@ -70,4 +80,13 @@ async function requireFakeProvider(
   }
 }
 
-export { chat, tempFile, jsonl, upload, uploadRows, pairedValue, requireFakeProvider };
+export {
+  chat,
+  tempFile,
+  jsonl,
+  upload,
+  uploadRows,
+  goToLaunch,
+  pairedValue,
+  requireFakeProvider,
+};

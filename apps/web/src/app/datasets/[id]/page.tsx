@@ -13,11 +13,15 @@ import {
 } from "@/components/ui/breadcrumb";
 import ValidationProgressView from "@/components/ValidationProgressView";
 import { DatasetRecordTokenCountStatus } from "@/lib/api/generated/client";
-import { getDatasetV1DatasetsDatasetIdGet } from "@/lib/api/generated/client";
+import {
+  getDatasetV1DatasetsDatasetIdGet,
+  listJobsV1JobsGet,
+} from "@/lib/api/generated/client";
+import { load } from "@/lib/api/load";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
 export const metadata: Metadata = {
-  title: "Validation report",
+  title: "Dataset",
 };
 
 // The fetch is what the try/catch guards; rendering happens after it, so a
@@ -34,6 +38,19 @@ async function loadDataset(id: string) {
         : NETWORK_ERROR;
     return { record: null, error: apiError };
   }
+}
+
+// There is no "list jobs for a dataset" endpoint (spec 007 never asked for
+// one), so this fetches every job and keeps the ones that name this dataset
+// -- the same trade the jobs list already makes for `datasetNames`. A load
+// failure here is not the report's failure: the report renders either way,
+// with the jobs panel saying it could not be loaded.
+async function loadDatasetJobs(id: string) {
+  const { data, error } = await load(() => listJobsV1JobsGet());
+  const jobs = (data?.jobs ?? [])
+    .filter((job) => job.dataset_id === id)
+    .sort((a, b) => b.created_at - a.created_at);
+  return { jobs, error };
 }
 
 function DatasetBreadcrumb({ label }: { label: string }) {
@@ -98,6 +115,7 @@ export default async function DatasetPage({
     // meta-refresh cannot promise that -- it is scheduled at parse time and
     // fires even after a client-side navigation has left the page, which
     // yanked a launching user back to the report).
+    const { jobs, error: jobsError } = await loadDatasetJobs(id);
     return (
       <div className="space-y-0">
         <DatasetBreadcrumb label={record.filename} />
@@ -105,7 +123,7 @@ export default async function DatasetPage({
           DatasetRecordTokenCountStatus.counting && (
           <TokenCountPoll datasetId={record.id} />
         )}
-        <ReportView record={record} />
+        <ReportView record={record} jobs={jobs} jobsError={jobsError} />
       </div>
     );
   }

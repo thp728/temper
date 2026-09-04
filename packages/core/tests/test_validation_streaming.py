@@ -121,7 +121,8 @@ def test_encoding_errors_name_a_line(tmp_path):
 def test_report_dict_is_exactly_the_documented_contract(tmp_path):
     """The report's contents -- counts, thinking mode, preview, line-numbered
     problems -- are unchanged by streaming; the only additions are the
-    suppression totals that keep a capped report honest."""
+    suppression totals that keep a capped report honest, and the per-code
+    totals that let a capped report attribute its suppression to a cause."""
     path = write(tmp_path, [chat(i) for i in range(12)])
     assert set(validate(path).to_dict()) == {
         "valid",
@@ -136,6 +137,8 @@ def test_report_dict_is_exactly_the_documented_contract(tmp_path):
         "warning_count",
         "errors_suppressed",
         "warnings_suppressed",
+        "error_code_counts",
+        "warning_code_counts",
     }
 
 
@@ -174,6 +177,17 @@ def test_error_list_is_capped_but_the_count_is_not(tmp_path):
     assert rep.error_count == 501
     assert rep.errors_suppressed == 501 - MAX_ERRORS
     assert not rep.valid
+
+
+def test_error_code_counts_are_exact_even_past_the_cap(tmp_path):
+    """The per-code totals are what let a capped report point at a cause
+    instead of leaving a bare 'N more, not shown': every suppressed error
+    here is a duplicate of `invalid_json`, which the total says plainly."""
+    rows = ['{"messages": [broken'] * 500
+    rep = validate(write(tmp_path, rows))
+    assert rep.error_code_counts["invalid_json"] == 500
+    assert rep.error_code_counts["unrecognised_schema"] == 1
+    assert sum(rep.error_code_counts.values()) == rep.error_count
 
 
 def test_thinking_sample_lines_are_capped(tmp_path):

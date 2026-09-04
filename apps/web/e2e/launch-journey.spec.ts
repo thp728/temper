@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { E2E_BACKEND_PORT } from "../src/lib/backend";
 import {
   chat,
+  goToLaunch,
   jsonl,
   pairedValue,
   requireFakeProvider,
@@ -35,7 +36,7 @@ async function uploadValidatedRows(
   page: Page,
   rows: object[],
   // Validation is asynchronous since #31 and streams the whole file, so how
-  // long "Validation passed" takes is a function of the row count, not a
+  // long the "Ready" badge takes is a function of the row count, not a
   // constant. Twelve rows land inside Playwright's 5s default; the 36,000-row
   // feasibility case does not, and failed on a loaded CI runner while passing
   // on a quiet one from the same commit. Scale the wait with the input rather
@@ -43,14 +44,11 @@ async function uploadValidatedRows(
   timeout = 5_000,
 ) {
   await uploadRows(page, rows);
-  await expect(page.getByText("Validation passed")).toBeVisible({ timeout });
+  await expect(page.getByText("Ready")).toBeVisible({ timeout });
 }
 
 async function continueToLaunch(page: Page) {
-  await page.getByRole("link", { name: "Choose a model and continue" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Choose a base model" }),
-  ).toBeVisible();
+  await goToLaunch(page);
 }
 
 test("a job is chosen, reviewed and launched from the shell", async ({

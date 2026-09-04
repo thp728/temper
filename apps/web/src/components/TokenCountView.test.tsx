@@ -108,6 +108,33 @@ describe("TokenCountView", () => {
     ).toBeVisible();
   });
 
+  it("caps the distribution at 7 bars, collapsing everything past the cutoff into one", () => {
+    render(
+      <TokenCountView
+        record={record({
+          token_count_status: "done",
+          report: {
+            ...record().report!,
+            token_count: 1234,
+            // Rows land in the first bin, at the cutoff, and in the far tail
+            // (131072+); with 14 histogram edges that would be 14 separate
+            // bars if none were collapsed.
+            token_distribution: dist({
+              rows_counted: 3,
+              histogram: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+            }),
+          },
+        })}
+      />,
+    );
+    // The two rows at or past the 2048 cutoff read as one bar, not two.
+    expect(screen.getByText("2048+")).toBeVisible();
+    expect(screen.getByText("2 (67%)")).toBeVisible();
+    // Nothing from the collapsed tail keeps its own bin.
+    expect(screen.queryByText(/3072/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/131072/)).not.toBeInTheDocument();
+  });
+
   it("says the count is unavailable when the phase failed", () => {
     render(
       <TokenCountView

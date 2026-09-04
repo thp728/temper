@@ -101,7 +101,11 @@ class DatasetReport(BaseModel):
     file is; the `errors`/`warnings` lists are capped at a hundred because the
     report is held in memory and a file broken on every line must not become a
     report proportional to the file. `*_suppressed` reconciles the two, so a
-    capped report says what it is not showing.
+    capped report says what it is not showing. `*_code_counts` goes one step
+    further: the exact total per code, uncapped, so a page can say "100 of
+    110 shown" against the one cause responsible instead of one
+    undifferentiated "N more" with no cause attached. Defaulted to `{}` so a
+    report stored before this field existed still parses.
 
     `token_count`/`token_distribution` (issue #42) are produced by the
     counting phase that runs after validation, so they are merged into the
@@ -121,6 +125,8 @@ class DatasetReport(BaseModel):
     warning_count: int = 0
     errors_suppressed: int = 0
     warnings_suppressed: int = 0
+    error_code_counts: dict[str, int] = Field(default_factory=dict)
+    warning_code_counts: dict[str, int] = Field(default_factory=dict)
     token_count: int | None = None
     token_distribution: TokenDistribution | None = None
 

@@ -124,6 +124,8 @@ def _synthetic_invalid_report(code: str, message: str) -> dict:
         "warning_count": 0,
         "errors_suppressed": 0,
         "warnings_suppressed": 0,
+        "error_code_counts": {code: 1},
+        "warning_code_counts": {},
     }
 
 

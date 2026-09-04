@@ -1,10 +1,23 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ReportView from "@/components/ReportView";
 import type { DatasetRecord } from "@/lib/api/generated/client";
 
+// ReportView renders DatasetActionsMenu for its rename/delete affordance,
+// which reaches for the app router and the generated client's mutations --
+// neither exists in this render-only environment, so both are stubbed the
+// same way DatasetActionsMenu.test.tsx stubs them.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+}));
+vi.mock("@/lib/api/generated/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/generated/client")>()),
+  deleteDatasetV1DatasetsDatasetIdDelete: vi.fn(),
+  renameDatasetV1DatasetsDatasetIdPatch: vi.fn(),
+}));
+
 // The assertions are what a user reads: a rejected line's number, an error's
-// stable code, the counts, the proceed action. Never markup structure.
+// stable code, the counts, the status badge. Never markup structure.
 function record(overrides: Partial<DatasetRecord> = {}): DatasetRecord {
   return {
     id: "ds_abc123",
@@ -52,11 +65,6 @@ describe("ReportView", () => {
     expect(statValue("Usable rows")).toBe("12");
     expect(statValue("Schema")).toBe("chat");
     expect(screen.getByText("Not detected")).toBeVisible();
-    // The label alone is a fact; the explanation says what it means for the
-    // run -- the old page's behaviour, moved.
-    expect(
-      screen.getByText(/trained to answer directly/),
-    ).toBeVisible();
   });
 
   it("moves focus to the report heading on arrival", () => {
@@ -74,17 +82,13 @@ describe("ReportView", () => {
     expect(screen.getByText(/assistant:/i)).toBeVisible();
   });
 
-  it("offers proceeding to a valid dataset even when warnings exist", () => {
+  it("shows warnings on an otherwise valid dataset without blocking it", () => {
     render(<ReportView record={record()} />);
-    // The warning is on the page with its stable code...
     expect(screen.getByText("few_rows")).toBeVisible();
     expect(
       screen.getByText(/do not block/i, { selector: "p" }),
     ).toBeVisible();
-    // ...and the journey continues anyway.
-    expect(
-      screen.getByRole("link", { name: "Choose a model and continue" }),
-    ).toBeVisible();
+    expect(screen.getByText("Ready")).toBeVisible();
   });
 
   it("names each problem against its line for a rejected dataset", () => {
@@ -122,13 +126,13 @@ describe("ReportView", () => {
     expect(screen.getByText("Line 13")).toBeVisible();
     expect(screen.getByText("empty_target")).toBeVisible();
 
-    const problems = screen.getByRole("region", {
-      name: /problems \(2\)/i,
+    const errorsRegion = screen.getByRole("region", {
+      name: /errors \(2\)/i,
     });
-    expect(problems).toBeVisible();
+    expect(errorsRegion).toBeVisible();
   });
 
-  it("does not offer proceeding to a rejected dataset", () => {
+  it("marks a rejected dataset as needing fixes", () => {
     const rejected = record({
       status: "invalid",
       report: {
@@ -140,12 +144,7 @@ describe("ReportView", () => {
       },
     });
     render(<ReportView record={rejected} />);
-    expect(
-      screen.queryByRole("link", { name: "Choose a model and continue" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Back to upload" }),
-    ).toBeVisible();
+    expect(screen.getByText("Needs fixes")).toBeVisible();
   });
 
   it("explains a mixed thinking-mode block on the report", () => {
@@ -176,9 +175,6 @@ describe("ReportView", () => {
     const r = record({ report: { ...record().report!, enable_thinking: true } });
     render(<ReportView record={r} />);
     expect(screen.getByText("Detected")).toBeVisible();
-    expect(
-      screen.getByText(/thinking mode enabled/),
-    ).toBeVisible();
   });
 
   it("renders a file-level error without inventing a line number", () => {
@@ -196,5 +192,36 @@ describe("ReportView", () => {
     render(<ReportView record={r} />);
     expect(screen.getByText("Whole file")).toBeVisible();
     expect(screen.queryByText(/^line \d+$/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the accepted schema as a code block for an unrecognised schema", () => {
+    const r = record({
+      status: "invalid",
+      report: {
+        ...record().report!,
+        valid: false,
+        errors: [
+          {
+            line: null,
+            code: "unrecognised_schema",
+            message:
+              'No row has a \'messages\' list. Temper accepts chat-format JSONL: {"messages": [{"role": "user", "content": ...}, {"role": "assistant", "content": ...}]}. Keys found instead: [\'input\', \'instruction\', \'output\'].',
+          },
+        ],
+        warnings: [],
+      },
+    });
+    render(<ReportView record={r} />);
+    // The prose and the found-keys line stay readable text.
+    expect(
+      screen.getByText(/temper accepts chat-format jsonl:/i),
+    ).toBeVisible();
+    expect(screen.getByText(/keys found instead/i)).toBeVisible();
+    // The example itself renders as a code block, reformatted for
+    // readability, not as one long line buried in the sentence.
+    const code = document.querySelector("pre code");
+    expect(code).not.toBeNull();
+    expect(code!.textContent).toContain('"messages"');
+    expect(code!.textContent).toContain("\n");
   });
 });
