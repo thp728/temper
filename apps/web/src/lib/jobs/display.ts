@@ -114,6 +114,18 @@ export function formatDurationRange(
 // number (the quote's `minor_unit`), never a formatting assumption: the
 // decimal places derive from it (100 → 2 places, 1000 → 3), so a currency
 // whose smallest unit is not a hundredth still prints correctly.
+function formatMinorAmount(minor: number, minorUnit: number): string {
+  const amount = minor / minorUnit;
+  // 100 → 2, 1000 → 3; anything else falls back to a sensible two places.
+  const decimals = Number.isInteger(Math.log10(minorUnit))
+    ? Math.log10(minorUnit)
+    : 2;
+  return new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(amount);
+}
+
 export function formatMinorCost(
   minor: number | null | undefined,
   currency: string,
@@ -122,16 +134,24 @@ export function formatMinorCost(
   if (minor == null) {
     return "—";
   }
-  const amount = minor / minorUnit;
-  // 100 → 2, 1000 → 3; anything else falls back to a sensible two places.
-  const decimals = Number.isInteger(Math.log10(minorUnit))
-    ? Math.log10(minorUnit)
-    : 2;
-  const formatted = new Intl.NumberFormat("en-IN", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(amount);
-  return `${currency} ${formatted}`;
+  return `${currency} ${formatMinorAmount(minor, minorUnit)}`;
+}
+
+// A cost range with one shared currency prefix ("INR 2.10–5.67"): the
+// comparison cards have room for one figure pair, not two prefixed ones, and
+// repeating the currency reads as two separate costs rather than one range.
+// The phase table and estimate header keep the repeated form
+// (`formatMinorCost` twice); this is only for the compact predicted figure.
+export function formatMinorCostRange(
+  low: number | null | undefined,
+  high: number | null | undefined,
+  currency: string,
+  minorUnit: number,
+): string {
+  if (low == null || high == null) {
+    return "—";
+  }
+  return `${currency} ${formatMinorAmount(low, minorUnit)}–${formatMinorAmount(high, minorUnit)}`;
 }
 
 // The statuses at which a record stops changing -- `db.TERMINAL_STATES` seen

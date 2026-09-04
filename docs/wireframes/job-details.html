@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"on-background":"#e5e1e6","surface-dim":"#131316","on-tertiary-container":"#fffaf8","surface-container-low":"#1c1b1f","ink-subtle":"#8a8f98","secondary-fixed":"#dfe0ff","surface-container-lowest":"#0e0e11","hairline-strong":"#34343a","outline":"#908f9e","background":"#131316","tertiary-container":"#a56500","on-primary-fixed":"#000965","primary":"#bdc2ff","on-secondary-container":"#abb3ff","on-secondary-fixed-variant":"#2c39a6","inverse-surface":"#e5e1e6","primary-fixed":"#dfe0ff","on-tertiary":"#482900","surface-container-high":"#2a292d","error-container":"#93000a","on-primary-container":"#fdfaff","outline-variant":"#454652","surface-3":"#18191a","on-secondary":"#0e1d90","error":"#ffb4ab","surface-container-highest":"#353438","ink-muted":"#d0d6e0","tertiary":"#ffb867","secondary-container":"#2f3ca9","surface-1":"#0f1011","primary-container":"#5e6ad2","surface-container":"#201f23","secondary-fixed-dim":"#bdc2ff","surface-2":"#141516","tertiary-fixed-dim":"#ffb867","surface-bright":"#39393c","surface-4":"#191a1b","on-primary":"#121f8b","success":"#27a644","on-surface-variant":"#c6c5d5","on-secondary-fixed":"#000964","surface-tint":"#bdc2ff","on-surface":"#e5e1e6","on-primary-fixed-variant":"#2e3aa2","on-error":"#690005","primary-fixed-dim":"#bdc2ff","on-tertiary-fixed":"#2b1700","inverse-primary":"#4854bb","surface-variant":"#353438","surface":"#131316","hairline":"#23252a","ink-primary":"#f7f8f8","on-error-container":"#ffdad6","secondary":"#bdc2ff","on-tertiary-fixed-variant":"#673d00","tertiary-fixed":"#ffddbb","inverse-on-surface":"#313034"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"lg":"24px","xl":"32px","section":"96px","md":"16px","sm":"12px","base":"4px","xs":"8px"},"fontFamily":{"headline-md":["Geist"],"display-xl":["Geist"],"label-mono":["JetBrains Mono"],"display-lg":["Geist"],"body-default":["Geist"],"eyebrow":["Geist"]},"fontSize":{"headline-md":["28px",{"lineHeight":"1.20","letterSpacing":"-0.6px","fontWeight":"600"}],"display-xl":["80px",{"lineHeight":"1.05","letterSpacing":"-3.0px","fontWeight":"600"}],"label-mono":["13px",{"lineHeight":"1.50","letterSpacing":"0px","fontWeight":"400"}],"display-lg":["56px",{"lineHeight":"1.10","letterSpacing":"-1.8px","fontWeight":"600"}],"body-default":["16px",{"lineHeight":"1.50","letterSpacing":"-0.05px","fontWeight":"400"}],"eyebrow":["13px",{"lineHeight":"1.30","letterSpacing":"0.4px","fontWeight":"500"}]}}}};</script></head><body class="bg-[#010102] font-body-default text-body-default text-on-surface antialiased selection:bg-primary-container selection:text-on-primary-container"><aside class="fixed left-0 top-0 h-full w-64 bg-surface-1 border-r border-hairline z-50 flex flex-col justify-between select-none"><div class="flex flex-col"><div class="h-14 px-md flex items-center justify-between border-b border-hairline"><div class="flex items-center gap-xs"><div class="w-5 h-5 rounded bg-primary-container flex items-center justify-center"><span class="material-symbols-outlined text-[14px] text-on-primary-container">tune</span></div><span class="font-headline-md text-eyebrow text-ink-primary font-semibold tracking-tight">TEMPER</span></div><span class="font-label-mono text-[11px] px-xs py-0.5 rounded bg-surface-2 border border-hairline text-ink-subtle">v2.4.0</span></div><div class="p-sm"><button class="w-full flex items-center justify-center gap-xs px-sm py-xs rounded-lg bg-primary-container hover:bg-primary text-on-primary-container hover:text-on-primary font-eyebrow text-eyebrow transition-colors duration-150" type="button"><span class="material-symbols-outlined text-[16px]">add</span><span>New Experiment</span></button></div><nav class="flex flex-col gap-0.5 px-sm" data-active-classes="bg-surface-2 text-ink-primary border border-hairline-strong font-medium"><a class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow" data-path="dashboard" href="#"><span class="material-symbols-outlined text-[18px]">grid_view</span><span>Dashboard</span></a><a class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow" data-path="models" href="#"><span class="material-symbols-outlined text-[18px]">neurology</span><span>Models</span></a><a aria-current="page" class="flex items-center gap-xs px-xs py-1.5 rounded-lg transition-all duration-150 bg-surface-2 text-ink-primary border border-hairline-strong font-medium" data-path="datasets" href="#"><span class="material-symbols-outlined text-[18px]">dataset</span><span>Datasets</span></a><a class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow" data-path="training" href="#"><span class="material-symbols-outlined text-[18px]">terminal</span><span>Training</span></a><a class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow" data-path="deployments" href="#"><span class="material-symbols-outlined text-[18px]">rocket_launch</span><span>Deployments</span></a><a class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow" data-path="settings" href="#"><span class="material-symbols-outlined text-[18px]">settings</span><span>Settings</span></a></nav></div><div class="flex flex-col border-t border-hairline p-sm gap-0.5"><nav class="flex flex-col gap-0.5"><a class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface transition-colors duration-150 font-eyebrow text-eyebrow" data-path="documentation" href="#"><span class="material-symbols-outlined text-[18px]">menu_book</span><span>Documentation</span></a><a class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface transition-colors duration-150 font-eyebrow text-eyebrow" data-path="support" href="#"><span class="material-symbols-outlined text-[18px]">help</span><span>Support</span></a></nav><div class="mt-xs pt-xs border-t border-hairline flex items-center justify-between px-xs"><div class="flex items-center gap-xs"><div class="w-2 h-2 rounded-full bg-success"></div><span class="font-label-mono text-[11px] text-ink-subtle">Cluster idle</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></aside><div class="pl-64 flex flex-col min-h-screen"><header class="fixed top-0 left-64 right-0 h-14 bg-surface-1/90 backdrop-blur-md border-b border-hairline z-40 px-lg flex items-center justify-between"><div class="flex items-center gap-xs text-eyebrow font-eyebrow"><span class="text-ink-subtle">Datasets</span><span class="text-hairline-strong font-label-mono">/</span><span class="text-ink-primary font-medium">Import Dataset Validation</span></div><div class="flex items-center gap-sm"><div class="flex items-center gap-xs px-sm py-1 rounded bg-surface-2 border border-hairline font-label-mono text-[12px] text-ink-subtle"><span class="material-symbols-outlined text-[14px]">search</span><span>Search runs, schemas...</span><kbd class="px-1 rounded bg-surface-3 text-[10px] text-ink-muted border border-hairline">⌘K</kbd></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></header><main class="w-full pt-14 bg-[#010102] flex-1"><div class="flex flex-col w-full">
+<div class="max-w-[1400px] w-full mx-auto px-lg py-xl space-y-xl">
+<!-- Header & Breadcrumbs & Status Bar -->
+<div class="flex flex-col gap-md">
+<div class="flex items-center gap-xs font-eyebrow text-eyebrow text-ink-subtle">
+<a class="hover:text-ink-primary transition-colors duration-150" href="#">Jobs</a>
+<span class="text-hairline-strong font-label-mono">/</span>
+<span class="font-label-mono text-ink-muted">job_92e994c6697b</span>
+</div>
+<div class="flex flex-wrap items-center justify-between gap-md">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-sm">
+<h1 class="font-headline-md text-headline-md text-ink-primary tracking-tight font-semibold">qwen3-8b</h1>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success/10 font-label-mono text-[11px] font-medium text-success border border-success/20">
+<span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
+              COMPLETE
+            </span>
+</div>
+<div class="flex items-center gap-2 font-label-mono text-xs text-ink-subtle">
+<span>Dataset:</span>
+<a class="text-primary hover:underline underline-offset-4" href="#">sample-chat.jsonl</a>
+<span class="text-hairline-strong">·</span>
+<span>commit <code class="text-ink-muted">b968826d9c46</code></span>
+<span class="text-hairline-strong">·</span>
+<span>Sep 2, 2026</span>
+</div>
+</div>
+<div class="flex items-center gap-xs">
+<button class="inline-flex items-center gap-1.5 px-sm py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary text-eyebrow font-eyebrow transition-all duration-150" type="button">
+<span class="material-symbols-outlined text-[16px] text-ink-subtle">share</span>
+            Share Run
+          </button>
+<button class="inline-flex items-center gap-1.5 px-sm py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary text-eyebrow font-eyebrow transition-all duration-150" type="button">
+<span class="material-symbols-outlined text-[16px] text-ink-subtle">restart_alt</span>
+            Clone Job
+          </button>
+</div>
+</div>
+<!-- Top KPI Metric Cards -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-xs">
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong">
+<div class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs">
+<span class="material-symbols-outlined text-[16px]">check_circle</span>
+<span>State</span>
+</div>
+<div class="mt-xs">
+<span class="inline-flex px-2 py-0.5 rounded bg-success/10 font-label-mono text-xs font-medium text-success border border-success/20">COMPLETE</span>
+</div>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong">
+<div class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+<span>Elapsed</span>
+</div>
+<div class="mt-xs font-label-mono text-lg font-medium text-ink-primary">00:00:02</div>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong">
+<div class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs">
+<span class="material-symbols-outlined text-[16px]">memory</span>
+<span>Machine</span>
+</div>
+<div class="mt-xs flex flex-col">
+<span class="font-label-mono text-sm font-medium text-ink-primary">L4 at 41.31 INR/hr</span>
+<span class="font-label-mono text-[11px] text-ink-subtle">1x instance</span>
+</div>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong">
+<div class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs">
+<span class="material-symbols-outlined text-[16px]">show_chart</span>
+<span>Latest loss</span>
+</div>
+<div class="mt-xs font-label-mono text-lg font-medium text-ink-primary">0.6931 <span class="text-xs text-ink-subtle font-normal">at step 10</span></div>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong col-span-2 md:col-span-1">
+<div class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span>Cost</span>
+</div>
+<div class="mt-xs font-label-mono text-lg font-medium text-ink-primary">INR 0.03</div>
+</div>
+</div>
+</div>
+<!-- Progress Breakdown -->
+<div class="flex flex-col gap-sm">
+<div class="flex items-center justify-between">
+<h2 class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle font-medium">Progress</h2>
+<span class="font-label-mono text-xs text-success">Finished in 2s</span>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg divide-y divide-hairline">
+<!-- image pull -->
+<div class="p-md flex flex-col gap-xs">
+<div class="flex items-center justify-between font-label-mono text-xs">
+<span class="font-medium text-ink-primary">image pull</span>
+<span class="text-ink-subtle">43.7 MB of 68.0 MB</span>
+</div>
+<div class="w-full bg-surface-3 h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full rounded-full transition-all duration-500" style="width: 64.2%"></div>
+</div>
+<div class="flex items-center justify-between font-label-mono text-[11px] text-ink-subtle pt-1">
+<span>981.8 MB/s · about 00:00:00 left</span>
+<button class="hover:text-ink-primary flex items-center gap-1 cursor-pointer transition-colors" onclick="this.nextElementSibling.classList.toggle('hidden')" type="button">
+<span>▶ 7 lines</span>
+</button>
+<div class="hidden"></div>
+</div>
+</div>
+<!-- model download -->
+<div class="p-md flex flex-col gap-xs">
+<div class="flex items-center justify-between font-label-mono text-xs">
+<span class="font-medium text-ink-primary">model download</span>
+<span class="text-ink-subtle">4.0 GB of 4.0 GB</span>
+</div>
+<div class="w-full bg-surface-3 h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full rounded-full transition-all duration-500" style="width: 100%"></div>
+</div>
+<div class="flex items-center justify-between font-label-mono text-[11px] text-ink-subtle pt-1">
+<span>157.5 GB/s · about 00:00:00 left</span>
+<button class="hover:text-ink-primary flex items-center gap-1 cursor-pointer transition-colors" type="button">
+<span>▶ 3 lines</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Artifacts & Checkpoints Grid -->
+<div class="flex flex-col gap-sm">
+<h2 class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle font-medium">Your Artifacts &amp; Outputs</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+<!-- PEFT Artifact Card -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-lg flex flex-col justify-between gap-md relative overflow-hidden group hover:border-hairline-strong transition-all">
+<div class="flex flex-col gap-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-[20px] text-primary">folder_zip</span>
+<span class="font-headline-md text-[16px] font-semibold text-ink-primary">LoRA Adapter Weights</span>
+</div>
+<span class="font-label-mono text-[11px] px-2 py-0.5 rounded bg-surface-2 border border-hairline text-ink-muted">PEFT safetensors</span>
+</div>
+<p class="font-body-default text-xs leading-relaxed text-ink-subtle">
+              A PEFT adapter that modifies the base model without altering it. Load the base model with <code class="text-ink-muted bg-surface-2 px-1 py-0.5 rounded font-label-mono text-[11px]">AutoModelForCausalLM.from_pretrained</code>, then apply these weights with <code class="text-ink-muted bg-surface-2 px-1 py-0.5 rounded font-label-mono text-[11px]">PeftModel.from_pretrained(base_model, &lt;unzipped folder&gt;)</code>; carries <code class="text-ink-muted font-label-mono">adapter_config.json</code> with target rank, alpha, and modules.
+            </p>
+<div class="font-label-mono text-[11px] text-ink-subtle bg-surface-2/60 border border-hairline rounded px-sm py-1.5 flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px] text-ink-muted">attachment</span>
+<span>Contains: adapter_model.safetensors, adapter_config.json</span>
+</div>
+</div>
+<div class="pt-sm border-t border-hairline flex items-center justify-between">
+<span class="font-label-mono text-[11px] text-ink-subtle">Total size ~14.2 MB</span>
+<button class="inline-flex items-center gap-xs px-md py-1.5 rounded-lg bg-primary-container hover:bg-primary text-on-primary-container hover:text-on-primary font-eyebrow text-eyebrow transition-all shadow-sm" type="button">
+<span class="material-symbols-outlined text-[16px]">download</span>
+<span>Download the artifact</span>
+</button>
+</div>
+</div>
+<!-- Merged Model Card -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-lg flex flex-col justify-between gap-md relative overflow-hidden group hover:border-hairline-strong transition-all">
+<div class="flex flex-col gap-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-[20px] text-ink-muted">layers</span>
+<span class="font-headline-md text-[16px] font-semibold text-ink-primary">Merged Standalone Model</span>
+</div>
+<span class="font-label-mono text-[11px] px-2 py-0.5 rounded bg-surface-2 border border-hairline text-ink-muted">Full FP16</span>
+</div>
+<p class="font-body-default text-xs leading-relaxed text-ink-subtle">
+              The base model with the trained change built into its full weights at full precision. One self-contained model you can serve directly in vLLM, TGI, or llama.cpp without composing pieces at load time.
+            </p>
+<div class="font-label-mono text-[11px] text-ink-subtle bg-surface-2/60 border border-hairline rounded px-sm py-1.5 flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px] text-ink-muted">attachment</span>
+<span>Contains: merged.tar.gz</span>
+</div>
+</div>
+<div class="pt-sm border-t border-hairline flex items-center justify-between">
+<span class="font-label-mono text-[11px] text-ink-subtle">Archive size ~15.8 GB</span>
+<button class="inline-flex items-center gap-xs px-md py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-eyebrow transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">download</span>
+<span>Download merged</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Retained Checkpoints Table -->
+<div class="bg-surface-1 border border-hairline rounded-lg mt-xs overflow-hidden">
+<div class="p-md border-b border-hairline flex flex-col sm:flex-row sm:items-center justify-between gap-xs bg-surface-2/30">
+<div>
+<div class="font-headline-md text-[15px] font-semibold text-ink-primary">Checkpoints</div>
+<div class="font-body-default text-xs text-ink-subtle">The best checkpoint is chosen by held-out loss and recorded on this run. Every other checkpoint stays downloadable.</div>
+</div>
+</div>
+<!-- Highlight Banner -->
+<div class="mx-md my-sm p-sm rounded bg-primary-container/10 border border-primary-container/30 flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary text-[18px]">verified</span>
+<div class="font-label-mono text-xs text-ink-primary">
+<span class="font-semibold text-primary">Best checkpoint: step 20</span> (held-out loss <span class="font-semibold text-success">0.39</span>) — Step 20 has the lowest held-out loss of 3 retained checkpoint(s).
+          </div>
+</div>
+<div class="divide-y divide-hairline font-label-mono text-xs">
+<!-- Step 10 -->
+<div class="px-md py-sm flex items-center justify-between hover:bg-surface-2/50 transition-colors">
+<div class="flex items-center gap-md">
+<span class="font-medium text-ink-primary w-20">Step 10</span>
+<span class="text-ink-subtle">held-out loss: <span class="text-ink-muted">0.44</span></span>
+</div>
+<button class="inline-flex items-center gap-1 px-sm py-1 rounded bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px]">download</span>
+<span>Download</span>
+</button>
+</div>
+<!-- Step 20 Chosen -->
+<div class="px-md py-sm flex items-center justify-between bg-surface-2/70 hover:bg-surface-2 transition-colors border-l-2 border-l-primary">
+<div class="flex items-center gap-md">
+<div class="flex items-center gap-2 w-48">
+<span class="font-semibold text-ink-primary">Step 20</span>
+<span class="px-1.5 py-0.2 text-[10px] rounded bg-primary/20 text-primary border border-primary/30 uppercase font-semibold tracking-wider">chosen result</span>
+</div>
+<span class="text-ink-subtle">held-out loss: <span class="text-success font-semibold">0.39</span></span>
+</div>
+<button class="inline-flex items-center gap-1 px-sm py-1 rounded bg-surface-3 hover:bg-surface-4 border border-hairline-strong text-ink-primary font-eyebrow text-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px]">download</span>
+<span>Download</span>
+</button>
+</div>
+<!-- Step 30 -->
+<div class="px-md py-sm flex items-center justify-between hover:bg-surface-2/50 transition-colors">
+<div class="flex items-center gap-md">
+<span class="font-medium text-ink-primary w-20">Step 30</span>
+<span class="text-ink-subtle">held-out loss: <span class="text-ink-muted">0.52</span></span>
+</div>
+<button class="inline-flex items-center gap-1 px-sm py-1 rounded bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px]">download</span>
+<span>Download</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Model Evaluation & General Capability Side-by-Side -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-md">
+<!-- Left 7 cols: Qualitative Side-by-Side -->
+<div class="lg:col-span-7 flex flex-col gap-sm">
+<div class="flex flex-col">
+<h2 class="font-headline-md text-[16px] font-semibold text-ink-primary">Base model vs your tuned model</h2>
+<p class="font-body-default text-xs text-ink-subtle">The same held-out prompts, answered by the base model and by the model this run produced. Evidence you can read, not a benchmark.</p>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-md">
+<div class="flex items-center justify-between border-b border-hairline pb-xs">
+<span class="font-label-mono text-xs font-semibold text-ink-primary px-2 py-0.5 rounded bg-surface-2">q0</span>
+<span class="font-label-mono text-[11px] text-ink-subtle">temp 0.7 · 128 max tokens</span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-md">
+<!-- Base column -->
+<div class="flex flex-col gap-xs p-sm rounded bg-surface-2/50 border border-hairline">
+<div class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs">
+<span class="w-2 h-2 rounded-full bg-ink-subtle"></span>
+<span>Base model</span>
+</div>
+<p class="font-body-default text-sm text-ink-muted leading-relaxed italic">
+                "The base model's answer to the held-out question."
+              </p>
+</div>
+<!-- Tuned column -->
+<div class="flex flex-col gap-xs p-sm rounded bg-primary-container/5 border border-primary-container/30">
+<div class="flex items-center justify-between text-primary font-eyebrow text-xs">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-medium">Tuned model (step 20)</span>
+</div>
+<span class="font-label-mono text-[10px] text-success">loss 0.39</span>
+</div>
+<p class="font-body-default text-sm text-ink-primary leading-relaxed">
+                "The tuned model's answer to the held-out question."
+              </p>
+</div>
+</div>
+<div class="font-body-default text-[11px] text-ink-subtle border-t border-hairline pt-2">
+            Both models answered with temperature 0.7, up to 128 new tokens, sampling on. Step 20 has the lowest held-out loss (0.39) of 3 retained checkpoint(s).
+          </div>
+</div>
+</div>
+<!-- Right 5 cols: General Capability / Catastrophic Forgetting -->
+<div class="lg:col-span-5 flex flex-col gap-sm">
+<div class="flex flex-col">
+<h2 class="font-headline-md text-[16px] font-semibold text-ink-primary">General capability</h2>
+<p class="font-body-default text-xs text-ink-subtle">A smoke test for catastrophic forgetting across general questions.</p>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-md">
+<!-- Large Regression Alert -->
+<div class="p-sm rounded bg-error-container/20 border border-error/40 flex items-start gap-xs">
+<span class="material-symbols-outlined text-error text-[18px] mt-0.5">warning</span>
+<div class="flex flex-col">
+<span class="font-label-mono text-xs font-semibold text-error uppercase">Large regression</span>
+<span class="font-body-default text-xs text-on-error-container leading-normal">
+                The tuned model answered at least 2 fewer general-knowledge questions correctly than the base model. This can be a sign that fine-tuning degraded general capability.
+              </span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-sm font-label-mono">
+<div class="p-xs bg-surface-2 rounded border border-hairline flex flex-col">
+<span class="text-[11px] text-ink-subtle">Base model</span>
+<span class="text-sm font-semibold text-ink-primary mt-0.5">6 of 8 (75%)</span>
+</div>
+<div class="p-xs bg-surface-2 rounded border border-hairline flex flex-col">
+<span class="text-[11px] text-ink-subtle">Tuned model (step 20)</span>
+<span class="text-sm font-semibold text-error mt-0.5">4 of 8 (50%)</span>
+</div>
+<div class="p-xs bg-surface-2 rounded border border-hairline flex flex-col">
+<span class="text-[11px] text-ink-subtle">Change</span>
+<span class="text-sm font-semibold text-error mt-0.5">-2 of 8 (-25%)</span>
+</div>
+<div class="p-xs bg-surface-2 rounded border border-hairline flex flex-col">
+<span class="text-[11px] text-ink-subtle">Sample</span>
+<span class="text-xs text-ink-muted mt-0.5">8 questions (12.5% ea)</span>
+</div>
+</div>
+<div class="font-label-mono text-[11px] text-ink-subtle leading-tight">
+            The standard error of the change is ±1.3 questions (±16%). A small sample honestly labelled is a smoke test, not a benchmark.
+          </div>
+</div>
+</div>
+</div>
+<!-- Interactive Inference / Playground Testing Banner -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-lg relative overflow-hidden flex flex-col gap-md">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-sm border-b border-hairline pb-md">
+<div>
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-primary text-[20px]">bolt</span>
+<h2 class="font-headline-md text-base font-semibold text-ink-primary">Try your model</h2>
+</div>
+<p class="font-body-default text-xs text-ink-subtle mt-0.5">Start a temporary endpoint to try your tuned model without downloading anything. Requires an API key, auto-stops when idle.</p>
+</div>
+<button class="inline-flex items-center justify-center gap-xs px-lg py-2 rounded-lg bg-primary-container hover:bg-primary text-on-primary-container hover:text-on-primary font-eyebrow text-eyebrow font-medium transition-all shadow-md shrink-0" type="button">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+<span>Start endpoint</span>
+</button>
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-md font-label-mono">
+<div class="flex flex-col gap-0.5">
+<span class="text-[11px] text-ink-subtle uppercase">Cost</span>
+<span class="text-sm font-medium text-ink-primary">41.31 INR/hr</span>
+</div>
+<div class="flex flex-col gap-0.5">
+<span class="text-[11px] text-ink-subtle uppercase">Idle stop</span>
+<span class="text-sm font-medium text-ink-primary">00:15:00 after last use</span>
+</div>
+<div class="flex flex-col gap-0.5">
+<span class="text-[11px] text-ink-subtle uppercase">Would stop at</span>
+<span class="text-sm font-medium text-ink-primary">in 13 min</span>
+</div>
+<div class="flex flex-col gap-0.5">
+<span class="text-[11px] text-ink-subtle uppercase">Hard stop at</span>
+<span class="text-sm font-medium text-ink-primary">in 1 hr (max 02:00:00)</span>
+</div>
+</div>
+<div class="bg-surface-2/40 border border-hairline rounded p-sm font-body-default text-xs text-ink-subtle leading-relaxed">
+        The endpoint carries its own expiry from the moment it starts, extends on use, and stops itself via a timer. The forgotten warm machine is the loudest complaint against the commercial baseline, so stopping itself is the feature rather than a convenience. A busy endpoint still dies at the hard ceiling even if you keep using it.
+      </div>
+</div>
+<!-- Loss Chart Section -->
+<div class="flex flex-col gap-sm">
+<div class="flex items-center justify-between">
+<h2 class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle font-medium">Loss Dynamics</h2>
+<div class="flex items-center gap-md font-label-mono text-xs">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-primary"></span>
+<span class="text-ink-subtle">Training loss</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-error"></span>
+<span class="text-ink-subtle">Held-out loss</span>
+</div>
+</div>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg p-lg flex flex-col gap-md">
+<!-- SVG Interactive Graph -->
+<div class="w-full h-48 sm:h-64 relative flex items-center justify-center">
+<svg class="w-full h-full" fill="none" preserveaspectratio="none" viewbox="0 0 800 200">
+<!-- Grid Lines -->
+<line stroke="#23252a" stroke-dasharray="4 4" x1="0" x2="800" y1="40" y2="40"></line>
+<line stroke="#23252a" stroke-dasharray="4 4" x1="0" x2="800" y1="90" y2="90"></line>
+<line stroke="#23252a" stroke-dasharray="4 4" x1="0" x2="800" y1="140" y2="140"></line>
+<line stroke="#34343a" x1="0" x2="800" y1="190" y2="190"></line>
+<!-- Training Loss Path (Curving down) -->
+<path d="M 60 60 Q 200 85 400 110 T 740 140" fill="none" stroke="#5e6ad2" stroke-width="2"></path>
+<!-- Training Loss Point Step 10 -->
+<circle class="cursor-pointer hover:r-6 transition-all" cx="60" cy="60" fill="#5e6ad2" r="5"></circle>
+<text fill="#bdc2ff" font-family="JetBrains Mono" font-size="11" text-anchor="middle" x="60" y="48">0.6931 (step 10)</text>
+<!-- Held-out Loss (Red line & points) -->
+<path d="M 280 120 L 480 100 L 740 135" fill="none" stroke="#ffb4ab" stroke-dasharray="3 3" stroke-width="1.5"></path>
+<!-- Step 10 held out -->
+<circle cx="280" cy="120" fill="#ffb4ab" r="4"></circle>
+<text fill="#8a8f98" font-family="JetBrains Mono" font-size="10" text-anchor="middle" x="280" y="140">step 10: 0.44</text>
+<!-- Step 20 held out (best) -->
+<circle cx="480" cy="100" fill="#27a644" r="6" stroke="#0f1011" stroke-width="2"></circle>
+<text fill="#27a644" font-family="JetBrains Mono" font-size="10" font-weight="600" text-anchor="middle" x="480" y="85">★ step 20: 0.39</text>
+<!-- Step 30 held out -->
+<circle cx="740" cy="135" fill="#ffb4ab" r="4"></circle>
+<text fill="#ffb4ab" font-family="JetBrains Mono" font-size="10" text-anchor="middle" x="740" y="155">step 30: 0.52</text>
+</svg>
+</div>
+<div class="text-center font-label-mono text-[11px] text-ink-subtle border-t border-hairline pt-sm">
+          measurement, in the order it was recorded
+        </div>
+</div>
+</div>
+<!-- Cost and Time Estimate vs Prediction -->
+<div class="flex flex-col gap-sm">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-xs">
+<h2 class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle font-medium">Cost and time estimate</h2>
+<span class="font-body-default text-xs text-ink-subtle">An estimate rather than a guarantee. It never blocks a launch.</span>
+</div>
+<!-- Overview 4 metrics header -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-xs bg-surface-1 border border-hairline rounded-lg p-md">
+<div>
+<span class="font-label-mono text-[11px] text-ink-subtle uppercase">Duration</span>
+<div class="font-label-mono text-sm font-medium text-ink-primary mt-0.5">00:03:02–00:08:13</div>
+</div>
+<div>
+<span class="font-label-mono text-[11px] text-ink-subtle uppercase">Cost</span>
+<div class="font-label-mono text-sm font-medium text-ink-primary mt-0.5">INR 2.10 – INR 5.67</div>
+</div>
+<div>
+<span class="font-label-mono text-[11px] text-ink-subtle uppercase">Tokens</span>
+<div class="font-label-mono text-sm font-medium text-ink-primary mt-0.5">2,024</div>
+</div>
+<div>
+<span class="font-label-mono text-[11px] text-ink-subtle uppercase">Currency</span>
+<div class="font-label-mono text-sm font-medium text-ink-primary mt-0.5">INR</div>
+</div>
+</div>
+<!-- Stage Breakdown Table -->
+<div class="bg-surface-1 border border-hairline rounded-lg overflow-hidden font-label-mono text-xs divide-y divide-hairline">
+<div class="px-md py-2.5 flex items-center justify-between hover:bg-surface-2/40 transition-colors">
+<span class="text-ink-primary">provisioning</span>
+<div class="flex items-center gap-lg">
+<span class="text-ink-muted">00:00:13–00:00:17</span>
+<span class="text-ink-subtle w-32 text-right">INR 0.15 – INR 0.20</span>
+</div>
+</div>
+<div class="px-md py-2.5 flex items-center justify-between hover:bg-surface-2/40 transition-colors">
+<span class="text-ink-primary">readiness</span>
+<div class="flex items-center gap-lg">
+<span class="text-ink-muted">00:00:40–00:01:08</span>
+<span class="text-ink-subtle w-32 text-right">INR 0.46 – INR 0.78</span>
+</div>
+</div>
+<div class="px-md py-2.5 flex items-center justify-between hover:bg-surface-2/40 transition-colors">
+<span class="text-ink-primary">image_pull</span>
+<div class="flex items-center gap-lg">
+<span class="text-ink-muted">00:01:27–00:03:03</span>
+<span class="text-ink-subtle w-32 text-right">INR 1.00 – INR 2.10</span>
+</div>
+</div>
+<div class="px-md py-2.5 flex items-center justify-between hover:bg-surface-2/40 transition-colors">
+<span class="text-ink-primary">model_download</span>
+<div class="flex items-center gap-lg">
+<span class="text-ink-muted">00:00:28–00:01:49</span>
+<span class="text-ink-subtle w-32 text-right">INR 0.32 – INR 1.26</span>
+</div>
+</div>
+<div class="px-md py-2.5 flex items-center justify-between hover:bg-surface-2/40 transition-colors">
+<span class="text-ink-primary">training</span>
+<div class="flex items-center gap-lg">
+<span class="text-ink-muted">00:00:09–00:01:35</span>
+<span class="text-ink-subtle w-32 text-right">INR 0.11 – INR 1.10</span>
+</div>
+</div>
+<div class="px-md py-2.5 flex items-center justify-between hover:bg-surface-2/40 transition-colors">
+<span class="text-ink-primary">teardown</span>
+<div class="flex items-center gap-lg">
+<span class="text-ink-muted">00:00:05–00:00:20</span>
+<span class="text-ink-subtle w-32 text-right">INR 0.06 – INR 0.23</span>
+</div>
+</div>
+<div class="px-md py-2.5 flex items-center justify-between hover:bg-surface-2/40 transition-colors bg-surface-2/20">
+<span class="text-ink-subtle">storage (USD, separate line)</span>
+<div class="flex items-center gap-lg">
+<span class="text-ink-subtle">—</span>
+<span class="text-ink-subtle w-32 text-right">USD 0.00 – USD 0.00</span>
+</div>
+</div>
+<div class="p-xs text-[11px] text-ink-subtle px-md bg-surface-2/40">
+          Estimated against dataset ds_d67a597cd · model revision b968826d9c46 · expires Sep 3, 2026.
+        </div>
+</div>
+<!-- Prediction vs what happened comparative strip -->
+<div class="mt-sm flex flex-col gap-xs">
+<h3 class="font-headline-md text-sm font-semibold text-ink-primary">Prediction vs what happened</h3>
+<p class="font-body-default text-xs text-ink-subtle">What this job was predicted to take, against what it actually took. The predicted figures are estimates; peak memory and duration were measured directly.</p>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-xs mt-xs">
+<!-- Duration -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between gap-sm">
+<div>
+<span class="font-eyebrow text-xs text-ink-subtle">Duration</span>
+<div class="flex items-baseline justify-between mt-1">
+<div>
+<div class="font-label-mono text-xs text-ink-subtle">Predicted</div>
+<div class="font-label-mono text-sm text-ink-muted">00:03:02</div>
+</div>
+<div class="text-right">
+<div class="font-label-mono text-xs text-ink-subtle">Actual</div>
+<div class="font-label-mono text-base font-semibold text-success">00:00:02</div>
+</div>
+</div>
+</div>
+<div class="font-label-mono text-[11px] text-ink-subtle border-t border-hairline pt-1.5">
+              Took 0.01× the midpoint of its predicted range, came in far under predicted range.
+            </div>
+</div>
+<!-- Peak memory -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between gap-sm">
+<div>
+<span class="font-eyebrow text-xs text-ink-subtle">Peak memory</span>
+<div class="flex items-baseline justify-between mt-1">
+<div>
+<div class="font-label-mono text-xs text-ink-subtle">Predicted</div>
+<div class="font-label-mono text-sm text-ink-muted">7.81 GB</div>
+</div>
+<div class="text-right">
+<div class="font-label-mono text-xs text-ink-subtle">Actual</div>
+<div class="font-label-mono text-base font-semibold text-ink-primary">5.31 GB</div>
+</div>
+</div>
+</div>
+<div class="font-label-mono text-[11px] text-ink-subtle border-t border-hairline pt-1.5">
+              Measured peak was 0.68× the prediction on hardware.
+            </div>
+</div>
+<!-- Cost -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between gap-sm">
+<div>
+<span class="font-eyebrow text-xs text-ink-subtle">Cost</span>
+<div class="flex items-baseline justify-between mt-1">
+<div>
+<div class="font-label-mono text-xs text-ink-subtle">Predicted</div>
+<div class="font-label-mono text-sm text-ink-muted">INR 2.10–5.67</div>
+</div>
+<div class="text-right">
+<div class="font-label-mono text-xs text-ink-subtle">Actual</div>
+<div class="font-label-mono text-base font-semibold text-success">INR 0.03</div>
+</div>
+</div>
+</div>
+<div class="font-label-mono text-[11px] text-ink-subtle border-t border-hairline pt-1.5">
+              The derived cost was 0.01× the midpoint of its predicted range.
+            </div>
+</div>
+</div>
+<!-- Measured state transitions list -->
+<div class="bg-surface-1 border border-hairline rounded-lg mt-xs divide-y divide-hairline font-label-mono text-xs">
+<div class="px-md py-2 flex items-center justify-between text-ink-muted">
+<span>provisioning</span>
+<span class="text-ink-subtle">00:00:00</span>
+</div>
+<div class="px-md py-2 flex items-center justify-between text-ink-muted">
+<span>preparing</span>
+<span class="text-ink-subtle">00:00:00</span>
+</div>
+<div class="px-md py-2 flex items-center justify-between text-ink-muted">
+<span>training</span>
+<span class="text-ink-subtle">00:00:00</span>
+</div>
+<div class="px-md py-2 flex items-center justify-between text-ink-muted">
+<span>packaging</span>
+<span class="text-ink-subtle">00:00:02</span>
+</div>
+<div class="p-xs text-[11px] text-ink-subtle px-md bg-surface-2/30">
+            What the machine actually did, stage by stage, measured from the job's own state transitions.
+          </div>
+</div>
+</div>
+</div>
+<!-- Configuration Decision Rationale ("Why this configuration") -->
+<div class="flex flex-col gap-sm">
+<div class="flex flex-col">
+<h2 class="font-headline-md text-sm font-semibold text-ink-primary">Why this configuration</h2>
+<p class="font-body-default text-xs text-ink-subtle">These are the decisions Temper made for you, and the alternatives that lost; the configuration this job froze.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-xs font-body-default">
+<!-- Method -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs hover:border-hairline-strong transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle">method</span>
+<span class="font-label-mono text-xs font-semibold text-primary">qlora</span>
+</div>
+<p class="text-xs text-ink-muted leading-relaxed">
+            The trainer can execute qlora today, and selection picks the cheapest executable method that fits; price never depends on method, so a method that loses here loses on footprint (full fine-tuning rewrites every weight; an adapter is cheaper to fit), not on price.
+          </p>
+<div class="pt-1 text-[11px] font-label-mono text-ink-subtle flex items-center gap-1 hover:text-ink-primary cursor-pointer">
+<span>▶</span> Alternatives considered (2)
+          </div>
+</div>
+<!-- Hardware -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs hover:border-hairline-strong transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle">hardware</span>
+<span class="font-label-mono text-xs font-semibold text-ink-primary">L4</span>
+</div>
+<p class="text-xs text-ink-muted leading-relaxed">
+            Predicted peak is 7.8 GB; the L4 (24.0 GB) is the cheapest card currently available that holds it with 16.2 GB to spare.
+          </p>
+<div class="pt-1 text-[11px] font-label-mono text-ink-subtle flex items-center gap-1 hover:text-ink-primary cursor-pointer">
+<span>▶</span> Alternatives considered (4)
+          </div>
+</div>
+<!-- Device count -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs hover:border-hairline-strong transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle">device count</span>
+<span class="font-label-mono text-xs font-semibold text-ink-primary">1</span>
+</div>
+<p class="text-xs text-ink-muted leading-relaxed">
+            One L4 holds the predicted peak of 7.8 GB. Qlora has never run sharded, so extra cards replicate the same per-device footprint rather than shrinking it, and only add interconnect overhead and cost.
+          </p>
+<div class="pt-1 text-[11px] font-label-mono text-ink-subtle flex items-center gap-1 hover:text-ink-primary cursor-pointer">
+<span>▶</span> Alternatives considered (2)
+          </div>
+</div>
+<!-- Disk -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs hover:border-hairline-strong transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle">disk</span>
+<span class="font-label-mono text-xs font-semibold text-ink-primary">100 GB</span>
+</div>
+<p class="text-xs text-ink-muted leading-relaxed">
+            Weights at download precision (16.4 GB) + retained checkpoints (0.5 GB) + trainer image (8.5 GB) + working space (10.0 GB, an assumed allowance) = 35.4 GB raw, floored at platform minimum of 100 GB.
+          </p>
+<div class="pt-1 text-[11px] font-label-mono text-ink-subtle flex items-center gap-1 hover:text-ink-primary cursor-pointer">
+<span>▶</span> Alternatives considered (1)
+          </div>
+</div>
+<!-- Precision -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs hover:border-hairline-strong transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle">precision</span>
+<span class="font-label-mono text-xs font-semibold text-ink-primary">nf4 (4-bit)</span>
+</div>
+<p class="text-xs text-ink-muted leading-relaxed">
+            Qlora quantises the frozen base to NF4 at 0.5 bytes/param, cutting the weights pool from 16.4 GB (bf16) to 4.1 GB — the difference between fitting the L4 and renting something bigger.
+          </p>
+<div class="pt-1 text-[11px] font-label-mono text-ink-subtle flex items-center gap-1 hover:text-ink-primary cursor-pointer">
+<span>▶</span> Alternatives considered (1)
+          </div>
+</div>
+<!-- Sequence Length -->
+<div class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col gap-xs hover:border-hairline-strong transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle">sequence length</span>
+<span class="font-label-mono text-xs font-semibold text-ink-primary">2048</span>
+</div>
+<p class="text-xs text-ink-muted leading-relaxed">
+            The trainer default (2048, trainer-defaults.json), well inside the model's 40960 context so no row is truncated against the context limit; activation memory (0.6 GB at this length) is the memory budget the hardware was chosen against.
+          </p>
+<div class="pt-1 text-[11px] font-label-mono text-ink-subtle flex items-center gap-1 hover:text-ink-primary cursor-pointer">
+<span>▶</span> Alternatives considered (1)
+          </div>
+</div>
+</div>
+</div>
+<!-- Live Output Log Console -->
+<div class="flex flex-col gap-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-xs">
+<h2 class="font-headline-md text-sm font-semibold text-ink-primary">Output</h2>
+<span class="font-label-mono text-xs text-ink-subtle">· Showing 23 of 23 events</span>
+</div>
+<div class="flex items-center gap-xs">
+<button class="text-ink-subtle hover:text-ink-primary p-1 rounded hover:bg-surface-2 transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+<button class="text-ink-subtle hover:text-ink-primary p-1 rounded hover:bg-surface-2 transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">fullscreen</span>
+</button>
+</div>
+</div>
+<div class="bg-surface-1 border border-hairline rounded-lg p-md font-label-mono text-xs text-ink-muted leading-relaxed overflow-x-auto shadow-inner">
+<pre class="whitespace-pre">queued
+Selecting hardware
+Provisioning 1x L4 (qlora) at 41.31INR/hr, 100 GB disk
+Machine 4242 running; waiting for SSH
+SSH ready after 0s
+Pulling image and training
+[00:00:00] building trainer image
+[00:00:02] image built in 2s
+[00:00:02] held-out split: 1 of 12 rows held out for evaluation (0 duplicate(s) removed)
+[00:00:02] running training
+{'loss': 0.6931, 'step': 10, 'epoch': 0.5}
+{'eval_loss': 0.52, 'eval_runtime': 2.0, 'epoch': 0.5}
+Verifying artifact
+Artifact verified, 0.0 MB
+Checkpoint at step 10 verified, 0.0 MB
+Checkpoint at step 20 verified, 0.0 MB
+Checkpoint at step 30 verified, 0.0 MB
+Best checkpoint by held-out loss: step 20 (0.39). Step 20 has the lowest held-out loss (0.39) of 3 retained checkpoint(s).
+Machine 4242 destroyed</pre>
+</div>
+</div>
+<!-- Bottom Actions Bar -->
+<div class="flex items-center justify-between pt-md border-t border-hairline pb-xl">
+<div class="flex items-center gap-sm">
+<button class="inline-flex items-center gap-xs px-md py-2 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-eyebrow transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">arrow_back</span>
+<span>All jobs</span>
+</button>
+<button class="inline-flex items-center gap-xs px-md py-2 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-eyebrow transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">upload_file</span>
+<span>Back to upload</span>
+</button>
+</div>
+<div class="flex items-center gap-xs font-label-mono text-xs text-ink-subtle">
+<span>Temper Engine · v2.4.0</span>
+</div>
+</div>
+</div>
+</div></main></div></body></html>

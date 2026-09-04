@@ -1,0 +1,1065 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      @layer base {
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        body {
+          overscroll-behavior: none;
+        }
+        main > :first-child {
+          margin-top: 0 !important;
+        }
+        main > :last-child {
+          margin-bottom: 0 !important;
+        }
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-background": "#e5e1e6",
+              "surface-dim": "#131316",
+              "on-tertiary-container": "#fffaf8",
+              "surface-container-low": "#1c1b1f",
+              "ink-subtle": "#8a8f98",
+              "secondary-fixed": "#dfe0ff",
+              "surface-container-lowest": "#0e0e11",
+              "hairline-strong": "#34343a",
+              outline: "#908f9e",
+              background: "#131316",
+              "tertiary-container": "#a56500",
+              "on-primary-fixed": "#000965",
+              primary: "#bdc2ff",
+              "on-secondary-container": "#abb3ff",
+              "on-secondary-fixed-variant": "#2c39a6",
+              "inverse-surface": "#e5e1e6",
+              "primary-fixed": "#dfe0ff",
+              "on-tertiary": "#482900",
+              "surface-container-high": "#2a292d",
+              "error-container": "#93000a",
+              "on-primary-container": "#fdfaff",
+              "outline-variant": "#454652",
+              "surface-3": "#18191a",
+              "on-secondary": "#0e1d90",
+              error: "#ffb4ab",
+              "surface-container-highest": "#353438",
+              "ink-muted": "#d0d6e0",
+              tertiary: "#ffb867",
+              "secondary-container": "#2f3ca9",
+              "surface-1": "#0f1011",
+              "primary-container": "#5e6ad2",
+              "surface-container": "#201f23",
+              "secondary-fixed-dim": "#bdc2ff",
+              "surface-2": "#141516",
+              "tertiary-fixed-dim": "#ffb867",
+              "surface-bright": "#39393c",
+              "surface-4": "#191a1b",
+              "on-primary": "#121f8b",
+              success: "#27a644",
+              "on-surface-variant": "#c6c5d5",
+              "on-secondary-fixed": "#000964",
+              "surface-tint": "#bdc2ff",
+              "on-surface": "#e5e1e6",
+              "on-primary-fixed-variant": "#2e3aa2",
+              "on-error": "#690005",
+              "primary-fixed-dim": "#bdc2ff",
+              "on-tertiary-fixed": "#2b1700",
+              "inverse-primary": "#4854bb",
+              "surface-variant": "#353438",
+              surface: "#131316",
+              hairline: "#23252a",
+              "ink-primary": "#f7f8f8",
+              "on-error-container": "#ffdad6",
+              secondary: "#bdc2ff",
+              "on-tertiary-fixed-variant": "#673d00",
+              "tertiary-fixed": "#ffddbb",
+              "inverse-on-surface": "#313034",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              lg: "24px",
+              xl: "32px",
+              section: "96px",
+              md: "16px",
+              sm: "12px",
+              base: "4px",
+              xs: "8px",
+            },
+            fontFamily: {
+              "headline-md": ["Geist"],
+              "display-xl": ["Geist"],
+              "label-mono": ["JetBrains Mono"],
+              "display-lg": ["Geist"],
+              "body-default": ["Geist"],
+              eyebrow: ["Geist"],
+            },
+            fontSize: {
+              "headline-md": [
+                "28px",
+                {
+                  lineHeight: "1.20",
+                  letterSpacing: "-0.6px",
+                  fontWeight: "600",
+                },
+              ],
+              "display-xl": [
+                "80px",
+                {
+                  lineHeight: "1.05",
+                  letterSpacing: "-3.0px",
+                  fontWeight: "600",
+                },
+              ],
+              "label-mono": [
+                "13px",
+                { lineHeight: "1.50", letterSpacing: "0px", fontWeight: "400" },
+              ],
+              "display-lg": [
+                "56px",
+                {
+                  lineHeight: "1.10",
+                  letterSpacing: "-1.8px",
+                  fontWeight: "600",
+                },
+              ],
+              "body-default": [
+                "16px",
+                {
+                  lineHeight: "1.50",
+                  letterSpacing: "-0.05px",
+                  fontWeight: "400",
+                },
+              ],
+              eyebrow: [
+                "13px",
+                {
+                  lineHeight: "1.30",
+                  letterSpacing: "0.4px",
+                  fontWeight: "500",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-[#010102] font-body-default text-body-default text-on-surface antialiased selection:bg-primary-container selection:text-on-primary-container"
+  >
+    <aside
+      class="fixed left-0 top-0 h-full w-64 bg-surface-1 border-r border-hairline z-50 flex flex-col justify-between select-none"
+    >
+      <div class="flex flex-col">
+        <div
+          class="h-14 px-md flex items-center justify-between border-b border-hairline"
+        >
+          <div class="flex items-center gap-xs">
+            <div
+              class="w-5 h-5 rounded bg-primary-container flex items-center justify-center"
+            >
+              <span
+                class="material-symbols-outlined text-[14px] text-on-primary-container"
+                >tune</span
+              >
+            </div>
+            <span
+              class="font-headline-md text-eyebrow text-ink-primary font-semibold tracking-tight"
+              >TEMPER</span
+            >
+          </div>
+          <span
+            class="font-label-mono text-[11px] px-xs py-0.5 rounded bg-surface-2 border border-hairline text-ink-subtle"
+            >v2.4.0</span
+          >
+        </div>
+        <div class="p-sm">
+          <button
+            class="w-full flex items-center justify-center gap-xs px-sm py-xs rounded-lg bg-primary-container hover:bg-primary text-on-primary-container hover:text-on-primary font-eyebrow text-eyebrow transition-colors duration-150"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[16px]">add</span
+            ><span>New Experiment</span>
+          </button>
+        </div>
+        <nav
+          class="flex flex-col gap-0.5 px-sm"
+          data-active-classes="bg-surface-2 text-ink-primary border border-hairline-strong font-medium"
+        >
+          <a
+            class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow"
+            data-path="dashboard"
+            href="#"
+            ><span class="material-symbols-outlined text-[18px]">grid_view</span
+            ><span>Dashboard</span></a
+          ><a
+            class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow"
+            data-path="models"
+            href="#"
+            ><span class="material-symbols-outlined text-[18px]">neurology</span
+            ><span>Models</span></a
+          ><a
+            aria-current="page"
+            class="flex items-center gap-xs px-xs py-1.5 rounded-lg transition-all duration-150 bg-surface-2 text-ink-primary border border-hairline-strong font-medium"
+            data-path="datasets"
+            href="#"
+            ><span class="material-symbols-outlined text-[18px]">dataset</span
+            ><span>Datasets</span></a
+          ><a
+            class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow"
+            data-path="training"
+            href="#"
+            ><span class="material-symbols-outlined text-[18px]">terminal</span
+            ><span>Training</span></a
+          ><a
+            class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow"
+            data-path="deployments"
+            href="#"
+            ><span class="material-symbols-outlined text-[18px]"
+              >rocket_launch</span
+            ><span>Deployments</span></a
+          ><a
+            class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface border border-transparent transition-all duration-150 font-eyebrow text-eyebrow"
+            data-path="settings"
+            href="#"
+            ><span class="material-symbols-outlined text-[18px]">settings</span
+            ><span>Settings</span></a
+          >
+        </nav>
+      </div>
+      <div class="flex flex-col border-t border-hairline p-sm gap-0.5">
+        <nav class="flex flex-col gap-0.5">
+          <a
+            class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface transition-colors duration-150 font-eyebrow text-eyebrow"
+            data-path="documentation"
+            href="#"
+            ><span class="material-symbols-outlined text-[18px]">menu_book</span
+            ><span>Documentation</span></a
+          ><a
+            class="flex items-center gap-xs px-xs py-1.5 rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-on-surface transition-colors duration-150 font-eyebrow text-eyebrow"
+            data-path="support"
+            href="#"
+            ><span class="material-symbols-outlined text-[18px]">help</span
+            ><span>Support</span></a
+          >
+        </nav>
+        <div
+          class="mt-xs pt-xs border-t border-hairline flex items-center justify-between px-xs"
+        >
+          <div class="flex items-center gap-xs">
+            <div class="w-2 h-2 rounded-full bg-success"></div>
+            <span class="font-label-mono text-[11px] text-ink-subtle"
+              >Cluster idle</span
+            >
+          </div>
+          <div
+            class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"
+          >
+            <span class="material-symbols-outlined text-on-primary text-[18px]"
+              >person</span
+            >
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="pl-64 flex flex-col min-h-screen">
+      <header
+        class="fixed top-0 left-64 right-0 h-14 bg-surface-1/90 backdrop-blur-md border-b border-hairline z-40 px-lg flex items-center justify-between"
+      >
+        <div class="flex items-center gap-xs text-eyebrow font-eyebrow">
+          <span class="text-ink-subtle">Datasets</span
+          ><span class="text-hairline-strong font-label-mono">/</span
+          ><span class="text-ink-primary font-medium"
+            >Import Dataset Validation</span
+          >
+        </div>
+        <div class="flex items-center gap-sm">
+          <div
+            class="flex items-center gap-xs px-sm py-1 rounded bg-surface-2 border border-hairline font-label-mono text-[12px] text-ink-subtle"
+          >
+            <span class="material-symbols-outlined text-[14px]">search</span
+            ><span>Search runs, schemas...</span
+            ><kbd
+              class="px-1 rounded bg-surface-3 text-[10px] text-ink-muted border border-hairline"
+              >⌘K</kbd
+            >
+          </div>
+          <div
+            class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"
+          >
+            <span class="material-symbols-outlined text-on-primary text-[18px]"
+              >person</span
+            >
+          </div>
+        </div>
+      </header>
+      <main class="w-full pt-14 bg-[#010102] flex-1">
+        <div class="flex flex-col w-full">
+          <div class="max-w-[1400px] w-full mx-auto px-lg py-xl space-y-xl">
+            <!-- Header & Breadcrumbs & Status Bar -->
+            <div class="flex flex-col gap-md">
+              <div
+                class="flex items-center gap-xs font-eyebrow text-eyebrow text-ink-subtle"
+              >
+                <a
+                  class="hover:text-ink-primary transition-colors duration-150"
+                  href="#"
+                  >Jobs</a
+                >
+                <span class="text-hairline-strong font-label-mono">/</span>
+                <span class="font-label-mono text-ink-muted"
+                  >job_92e994c6697b</span
+                >
+              </div>
+              <div class="flex flex-wrap items-center justify-between gap-md">
+                <div class="flex flex-col gap-1">
+                  <div class="flex items-center gap-sm">
+                    <h1
+                      class="font-headline-md text-headline-md text-ink-primary tracking-tight font-semibold"
+                    >
+                      qwen3-8b
+                    </h1>
+                    <span
+                      class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success/10 font-label-mono text-[11px] font-medium text-success border border-success/20"
+                    >
+                      <span
+                        class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"
+                      ></span>
+                      COMPLETE
+                    </span>
+                  </div>
+                  <div
+                    class="flex items-center gap-2 font-label-mono text-xs text-ink-subtle"
+                  >
+                    <span>Dataset:</span>
+                    <a
+                      class="text-primary hover:underline underline-offset-4"
+                      href="#"
+                      >sample-chat.jsonl</a
+                    >
+                    <span class="text-hairline-strong">·</span>
+                    <span
+                      >commit
+                      <code class="text-ink-muted">b968826d9c46</code></span
+                    >
+                    <span class="text-hairline-strong">·</span>
+                    <span>Sep 2, 2026</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-xs">
+                  <button
+                    class="inline-flex items-center gap-1.5 px-sm py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary text-eyebrow font-eyebrow transition-all duration-150"
+                    type="button"
+                  >
+                    <span
+                      class="material-symbols-outlined text-[16px] text-ink-subtle"
+                      >share</span
+                    >
+                    Share Run
+                  </button>
+                  <button
+                    class="inline-flex items-center gap-1.5 px-sm py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary text-eyebrow font-eyebrow transition-all duration-150"
+                    type="button"
+                  >
+                    <span
+                      class="material-symbols-outlined text-[16px] text-ink-subtle"
+                      >restart_alt</span
+                    >
+                    Clone Job
+                  </button>
+                </div>
+              </div>
+              <!-- Top KPI Metric Cards -->
+              <div class="grid grid-cols-2 md:grid-cols-5 gap-xs">
+                <div
+                  class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong"
+                >
+                  <div
+                    class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs"
+                  >
+                    <span class="material-symbols-outlined text-[16px]"
+                      >check_circle</span
+                    >
+                    <span>State</span>
+                  </div>
+                  <div class="mt-xs">
+                    <span
+                      class="inline-flex px-2 py-0.5 rounded bg-success/10 font-label-mono text-xs font-medium text-success border border-success/20"
+                      >COMPLETE</span
+                    >
+                  </div>
+                </div>
+                <div
+                  class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong"
+                >
+                  <div
+                    class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs"
+                  >
+                    <span class="material-symbols-outlined text-[16px]"
+                      >schedule</span
+                    >
+                    <span>Elapsed</span>
+                  </div>
+                  <div
+                    class="mt-xs font-label-mono text-lg font-medium text-ink-primary"
+                  >
+                    00:00:02
+                  </div>
+                </div>
+                <div
+                  class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong"
+                >
+                  <div
+                    class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs"
+                  >
+                    <span class="material-symbols-outlined text-[16px]"
+                      >memory</span
+                    >
+                    <span>Machine</span>
+                  </div>
+                  <div class="mt-xs flex flex-col">
+                    <span
+                      class="font-label-mono text-sm font-medium text-ink-primary"
+                      >L4 at 41.31 INR/hr</span
+                    >
+                    <span class="font-label-mono text-[11px] text-ink-subtle"
+                      >1x instance</span
+                    >
+                  </div>
+                </div>
+                <div
+                  class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong"
+                >
+                  <div
+                    class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs"
+                  >
+                    <span class="material-symbols-outlined text-[16px]"
+                      >show_chart</span
+                    >
+                    <span>Latest loss</span>
+                  </div>
+                  <div
+                    class="mt-xs font-label-mono text-lg font-medium text-ink-primary"
+                  >
+                    0.6931
+                    <span class="text-xs text-ink-subtle font-normal"
+                      >at step 10</span
+                    >
+                  </div>
+                </div>
+                <div
+                  class="bg-surface-1 border border-hairline rounded-lg p-md flex flex-col justify-between transition-colors duration-150 hover:border-hairline-strong col-span-2 md:col-span-1"
+                >
+                  <div
+                    class="flex items-center gap-1.5 text-ink-subtle font-eyebrow text-xs"
+                  >
+                    <span class="material-symbols-outlined text-[16px]"
+                      >payments</span
+                    >
+                    <span>Cost</span>
+                  </div>
+                  <div
+                    class="mt-xs font-label-mono text-lg font-medium text-ink-primary"
+                  >
+                    INR 0.03
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Linear-style Navigation Tab Bar -->
+            <div
+              class="border-b border-hairline flex items-center justify-between gap-sm pt-xs"
+            >
+              <nav class="flex items-center gap-xs font-eyebrow text-eyebrow">
+                <button
+                  class="flex items-center gap-1.5 px-md py-2.5 border-b-2 border-primary text-ink-primary font-medium bg-surface-2/40 rounded-t-lg transition-colors"
+                  type="button"
+                >
+                  <span
+                    class="material-symbols-outlined text-[18px] text-primary"
+                    >inventory_2</span
+                  >
+                  <span>Overview &amp; Artifacts</span>
+                  <span
+                    class="px-1.5 py-0.2 rounded-full bg-primary/20 text-primary font-label-mono text-[10px]"
+                    >2</span
+                  >
+                </button>
+                <button
+                  class="flex items-center gap-1.5 px-md py-2.5 border-b-2 border-transparent text-ink-subtle hover:text-ink-primary hover:bg-surface-2/30 rounded-t-lg transition-colors"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >insights</span
+                  >
+                  <span>Evaluation &amp; Loss</span>
+                  <span
+                    class="px-1.5 py-0.2 rounded-full bg-surface-2 text-ink-subtle font-label-mono text-[10px]"
+                    >0.39</span
+                  >
+                </button>
+                <button
+                  class="flex items-center gap-1.5 px-md py-2.5 border-b-2 border-transparent text-ink-subtle hover:text-ink-primary hover:bg-surface-2/30 rounded-t-lg transition-colors"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >tune</span
+                  >
+                  <span>System &amp; Estimates</span>
+                </button>
+                <button
+                  class="flex items-center gap-1.5 px-md py-2.5 border-b-2 border-transparent text-ink-subtle hover:text-ink-primary hover:bg-surface-2/30 rounded-t-lg transition-colors"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >terminal</span
+                  >
+                  <span>Terminal Logs</span>
+                  <span
+                    class="px-1.5 py-0.2 rounded-full bg-surface-2 text-ink-subtle font-label-mono text-[10px]"
+                    >23</span
+                  >
+                </button>
+              </nav>
+              <div
+                class="hidden sm:flex items-center gap-xs font-label-mono text-[11px] text-ink-subtle"
+              >
+                <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+                <span>Checkpoint 20 active</span>
+              </div>
+            </div>
+            <!-- Tab Content: Active View (Overview & Artifacts) -->
+            <div class="space-y-xl">
+              <!-- Progress Breakdown (Finished summary) -->
+              <div class="flex flex-col gap-sm">
+                <div class="flex items-center justify-between">
+                  <h2
+                    class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle font-medium"
+                  >
+                    Execution Lifecycle
+                  </h2>
+                  <span
+                    class="font-label-mono text-xs text-success flex items-center gap-1"
+                    ><span class="material-symbols-outlined text-[14px]"
+                      >done_all</span
+                    >
+                    Finished in 2s</span
+                  >
+                </div>
+                <div
+                  class="bg-surface-1 border border-hairline rounded-lg divide-y divide-hairline"
+                >
+                  <!-- image pull -->
+                  <div class="p-md flex flex-col gap-xs">
+                    <div
+                      class="flex items-center justify-between font-label-mono text-xs"
+                    >
+                      <span class="font-medium text-ink-primary"
+                        >image pull</span
+                      >
+                      <span class="text-ink-subtle"
+                        >43.7 MB of 68.0 MB · 100% cached</span
+                      >
+                    </div>
+                    <div
+                      class="w-full bg-surface-3 h-1.5 rounded-full overflow-hidden"
+                    >
+                      <div
+                        class="bg-primary-container h-full rounded-full transition-all duration-500"
+                        style="width: 100%"
+                      ></div>
+                    </div>
+                    <div
+                      class="flex items-center justify-between font-label-mono text-[11px] text-ink-subtle pt-1"
+                    >
+                      <span>981.8 MB/s · completed in 0.8s</span>
+                      <span class="text-ink-muted">7 lines output</span>
+                    </div>
+                  </div>
+                  <!-- model download -->
+                  <div class="p-md flex flex-col gap-xs">
+                    <div
+                      class="flex items-center justify-between font-label-mono text-xs"
+                    >
+                      <span class="font-medium text-ink-primary"
+                        >model download</span
+                      >
+                      <span class="text-ink-subtle"
+                        >4.0 GB of 4.0 GB · verified checksum</span
+                      >
+                    </div>
+                    <div
+                      class="w-full bg-surface-3 h-1.5 rounded-full overflow-hidden"
+                    >
+                      <div
+                        class="bg-primary-container h-full rounded-full transition-all duration-500"
+                        style="width: 100%"
+                      ></div>
+                    </div>
+                    <div
+                      class="flex items-center justify-between font-label-mono text-[11px] text-ink-subtle pt-1"
+                    >
+                      <span>157.5 GB/s · completed in 1.2s</span>
+                      <span class="text-ink-muted">3 lines output</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Artifacts & Outputs Grid -->
+              <div class="flex flex-col gap-sm">
+                <div class="flex items-center justify-between">
+                  <h2
+                    class="font-eyebrow text-xs uppercase tracking-wider text-ink-subtle font-medium"
+                  >
+                    Model Artifacts &amp; Checkpoints
+                  </h2>
+                  <span class="font-label-mono text-xs text-ink-subtle"
+                    >2 downloadable targets ready</span
+                  >
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+                  <!-- PEFT Artifact Card -->
+                  <div
+                    class="bg-surface-1 border border-hairline rounded-lg p-lg flex flex-col justify-between gap-md relative overflow-hidden group hover:border-hairline-strong transition-all"
+                  >
+                    <div class="flex flex-col gap-sm">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-xs">
+                          <span
+                            class="material-symbols-outlined text-[20px] text-primary"
+                            >folder_zip</span
+                          >
+                          <span
+                            class="font-headline-md text-[16px] font-semibold text-ink-primary"
+                            >LoRA Adapter Weights</span
+                          >
+                        </div>
+                        <span
+                          class="font-label-mono text-[11px] px-2 py-0.5 rounded bg-surface-2 border border-hairline text-ink-muted"
+                          >PEFT safetensors</span
+                        >
+                      </div>
+                      <p
+                        class="font-body-default text-xs leading-relaxed text-ink-subtle"
+                      >
+                        A PEFT adapter that modifies the base model without
+                        altering it. Load the base model with
+                        <code
+                          class="text-ink-muted bg-surface-2 px-1 py-0.5 rounded font-label-mono text-[11px]"
+                          >AutoModelForCausalLM.from_pretrained</code
+                        >, then apply these weights with
+                        <code
+                          class="text-ink-muted bg-surface-2 px-1 py-0.5 rounded font-label-mono text-[11px]"
+                          >PeftModel.from_pretrained(base_model, &lt;unzipped
+                          folder&gt;)</code
+                        >; carries
+                        <code class="text-ink-muted font-label-mono"
+                          >adapter_config.json</code
+                        >
+                        with target rank, alpha, and modules.
+                      </p>
+                      <div
+                        class="font-label-mono text-[11px] text-ink-subtle bg-surface-2/60 border border-hairline rounded px-sm py-1.5 flex items-center gap-xs"
+                      >
+                        <span
+                          class="material-symbols-outlined text-[14px] text-ink-muted"
+                          >attachment</span
+                        >
+                        <span
+                          >Contains: adapter_model.safetensors,
+                          adapter_config.json</span
+                        >
+                      </div>
+                    </div>
+                    <div
+                      class="pt-sm border-t border-hairline flex items-center justify-between"
+                    >
+                      <span class="font-label-mono text-[11px] text-ink-subtle"
+                        >Total size ~14.2 MB</span
+                      >
+                      <button
+                        class="inline-flex items-center gap-xs px-md py-1.5 rounded-lg bg-primary-container hover:bg-primary text-on-primary-container hover:text-on-primary font-eyebrow text-eyebrow transition-all shadow-sm"
+                        type="button"
+                      >
+                        <span class="material-symbols-outlined text-[16px]"
+                          >download</span
+                        >
+                        <span>Download the artifact</span>
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Merged Model Card -->
+                  <div
+                    class="bg-surface-1 border border-hairline rounded-lg p-lg flex flex-col justify-between gap-md relative overflow-hidden group hover:border-hairline-strong transition-all"
+                  >
+                    <div class="flex flex-col gap-sm">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-xs">
+                          <span
+                            class="material-symbols-outlined text-[20px] text-ink-muted"
+                            >layers</span
+                          >
+                          <span
+                            class="font-headline-md text-[16px] font-semibold text-ink-primary"
+                            >Merged Standalone Model</span
+                          >
+                        </div>
+                        <span
+                          class="font-label-mono text-[11px] px-2 py-0.5 rounded bg-surface-2 border border-hairline text-ink-muted"
+                          >Full FP16</span
+                        >
+                      </div>
+                      <p
+                        class="font-body-default text-xs leading-relaxed text-ink-subtle"
+                      >
+                        The base model with the trained change built into its
+                        full weights at full precision. One self-contained model
+                        you can serve directly in vLLM, TGI, or llama.cpp
+                        without composing pieces at load time.
+                      </p>
+                      <div
+                        class="font-label-mono text-[11px] text-ink-subtle bg-surface-2/60 border border-hairline rounded px-sm py-1.5 flex items-center gap-xs"
+                      >
+                        <span
+                          class="material-symbols-outlined text-[14px] text-ink-muted"
+                          >attachment</span
+                        >
+                        <span>Contains: merged.tar.gz</span>
+                      </div>
+                    </div>
+                    <div
+                      class="pt-sm border-t border-hairline flex items-center justify-between"
+                    >
+                      <span class="font-label-mono text-[11px] text-ink-subtle"
+                        >Archive size ~15.8 GB</span
+                      >
+                      <button
+                        class="inline-flex items-center gap-xs px-md py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-eyebrow transition-all"
+                        type="button"
+                      >
+                        <span class="material-symbols-outlined text-[16px]"
+                          >download</span
+                        >
+                        <span>Download merged</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <!-- Retained Checkpoints Table -->
+                <div
+                  class="bg-surface-1 border border-hairline rounded-lg mt-xs overflow-hidden"
+                >
+                  <div
+                    class="p-md border-b border-hairline flex flex-col sm:flex-row sm:items-center justify-between gap-xs bg-surface-2/30"
+                  >
+                    <div>
+                      <div
+                        class="font-headline-md text-[15px] font-semibold text-ink-primary"
+                      >
+                        Retained Checkpoints
+                      </div>
+                      <div class="font-body-default text-xs text-ink-subtle">
+                        The best checkpoint is chosen by held-out loss and
+                        recorded on this run. Every other checkpoint stays
+                        downloadable.
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Highlight Banner -->
+                  <div
+                    class="mx-md my-sm p-sm rounded bg-primary-container/10 border border-primary-container/30 flex items-center gap-sm"
+                  >
+                    <span
+                      class="material-symbols-outlined text-primary text-[18px]"
+                      >verified</span
+                    >
+                    <div class="font-label-mono text-xs text-ink-primary">
+                      <span class="font-semibold text-primary"
+                        >Best checkpoint: step 20</span
+                      >
+                      (held-out loss
+                      <span class="font-semibold text-success">0.39</span>) —
+                      Step 20 has the lowest held-out loss of 3 retained
+                      checkpoint(s).
+                    </div>
+                  </div>
+                  <div class="divide-y divide-hairline font-label-mono text-xs">
+                    <!-- Step 10 -->
+                    <div
+                      class="px-md py-sm flex items-center justify-between hover:bg-surface-2/50 transition-colors"
+                    >
+                      <div class="flex items-center gap-md">
+                        <span class="font-medium text-ink-primary w-20"
+                          >Step 10</span
+                        >
+                        <span class="text-ink-subtle"
+                          >held-out loss:
+                          <span class="text-ink-muted">0.44</span></span
+                        >
+                      </div>
+                      <button
+                        class="inline-flex items-center gap-1 px-sm py-1 rounded bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-xs transition-colors"
+                        type="button"
+                      >
+                        <span class="material-symbols-outlined text-[14px]"
+                          >download</span
+                        >
+                        <span>Download</span>
+                      </button>
+                    </div>
+                    <!-- Step 20 Chosen -->
+                    <div
+                      class="px-md py-sm flex items-center justify-between bg-surface-2/70 hover:bg-surface-2 transition-colors border-l-2 border-l-primary"
+                    >
+                      <div class="flex items-center gap-md">
+                        <div class="flex items-center gap-2 w-48">
+                          <span class="font-semibold text-ink-primary"
+                            >Step 20</span
+                          >
+                          <span
+                            class="px-1.5 py-0.2 text-[10px] rounded bg-primary/20 text-primary border border-primary/30 uppercase font-semibold tracking-wider"
+                            >chosen result</span
+                          >
+                        </div>
+                        <span class="text-ink-subtle"
+                          >held-out loss:
+                          <span class="text-success font-semibold"
+                            >0.39</span
+                          ></span
+                        >
+                      </div>
+                      <button
+                        class="inline-flex items-center gap-1 px-sm py-1 rounded bg-surface-3 hover:bg-surface-4 border border-hairline-strong text-ink-primary font-eyebrow text-xs transition-colors"
+                        type="button"
+                      >
+                        <span class="material-symbols-outlined text-[14px]"
+                          >download</span
+                        >
+                        <span>Download</span>
+                      </button>
+                    </div>
+                    <!-- Step 30 -->
+                    <div
+                      class="px-md py-sm flex items-center justify-between hover:bg-surface-2/50 transition-colors"
+                    >
+                      <div class="flex items-center gap-md">
+                        <span class="font-medium text-ink-primary w-20"
+                          >Step 30</span
+                        >
+                        <span class="text-ink-subtle"
+                          >held-out loss:
+                          <span class="text-ink-muted">0.52</span></span
+                        >
+                      </div>
+                      <button
+                        class="inline-flex items-center gap-1 px-sm py-1 rounded bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-xs transition-colors"
+                        type="button"
+                      >
+                        <span class="material-symbols-outlined text-[14px]"
+                          >download</span
+                        >
+                        <span>Download</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Interactive Inference / Playground Testing Banner -->
+              <div
+                class="bg-surface-1 border border-hairline rounded-lg p-lg relative overflow-hidden flex flex-col gap-md"
+              >
+                <div
+                  class="flex flex-col sm:flex-row sm:items-center justify-between gap-sm border-b border-hairline pb-md"
+                >
+                  <div>
+                    <div class="flex items-center gap-xs">
+                      <span
+                        class="material-symbols-outlined text-primary text-[20px]"
+                        >bolt</span
+                      >
+                      <h2
+                        class="font-headline-md text-base font-semibold text-ink-primary"
+                      >
+                        Try your model
+                      </h2>
+                    </div>
+                    <p class="font-body-default text-xs text-ink-subtle mt-0.5">
+                      Start a temporary endpoint to try your tuned model without
+                      downloading anything. Requires an API key, auto-stops when
+                      idle.
+                    </p>
+                  </div>
+                  <button
+                    class="inline-flex items-center justify-center gap-xs px-lg py-2 rounded-lg bg-primary-container hover:bg-primary text-on-primary-container hover:text-on-primary font-eyebrow text-eyebrow font-medium transition-all shadow-md shrink-0"
+                    type="button"
+                  >
+                    <span class="material-symbols-outlined text-[18px]"
+                      >play_arrow</span
+                    >
+                    <span>Start endpoint</span>
+                  </button>
+                </div>
+                <div
+                  class="grid grid-cols-2 md:grid-cols-4 gap-md font-label-mono"
+                >
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-[11px] text-ink-subtle uppercase"
+                      >Cost</span
+                    >
+                    <span class="text-sm font-medium text-ink-primary"
+                      >41.31 INR/hr</span
+                    >
+                  </div>
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-[11px] text-ink-subtle uppercase"
+                      >Idle stop</span
+                    >
+                    <span class="text-sm font-medium text-ink-primary"
+                      >00:15:00 after last use</span
+                    >
+                  </div>
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-[11px] text-ink-subtle uppercase"
+                      >Would stop at</span
+                    >
+                    <span class="text-sm font-medium text-ink-primary"
+                      >in 13 min</span
+                    >
+                  </div>
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-[11px] text-ink-subtle uppercase"
+                      >Hard stop at</span
+                    >
+                    <span class="text-sm font-medium text-ink-primary"
+                      >in 1 hr (max 02:00:00)</span
+                    >
+                  </div>
+                </div>
+                <div
+                  class="bg-surface-2/40 border border-hairline rounded p-sm font-body-default text-xs text-ink-subtle leading-relaxed flex items-center justify-between"
+                >
+                  <span
+                    >The endpoint carries its own expiry from the moment it
+                    starts, extends on use, and stops itself via a timer. The
+                    forgotten warm machine is the loudest complaint against the
+                    commercial baseline.</span
+                  >
+                  <span
+                    class="font-label-mono text-[11px] text-primary shrink-0 pl-md"
+                    >Max duration: 2h</span
+                  >
+                </div>
+              </div>
+              <!-- Quick Evaluation Summary Callout / Teaser pointing to Tab 2 -->
+              <div
+                class="p-md rounded-lg bg-surface-1 border border-hairline flex flex-col sm:flex-row sm:items-center justify-between gap-md"
+              >
+                <div class="flex items-center gap-md">
+                  <div
+                    class="w-10 h-10 rounded-lg bg-surface-2 border border-hairline flex items-center justify-center shrink-0"
+                  >
+                    <span
+                      class="material-symbols-outlined text-primary text-[20px]"
+                      >insights</span
+                    >
+                  </div>
+                  <div class="flex flex-col">
+                    <div class="flex items-center gap-xs">
+                      <span
+                        class="font-headline-md text-sm font-semibold text-ink-primary"
+                        >Evaluation &amp; Loss Dynamics</span
+                      >
+                      <span
+                        class="px-2 py-0.5 rounded bg-error-container/20 text-error border border-error/40 font-label-mono text-[10px] font-semibold uppercase"
+                        >Regression Notice</span
+                      >
+                    </div>
+                    <span
+                      class="font-body-default text-xs text-ink-subtle mt-0.5"
+                      >Step 20 held-out loss: 0.39 · General capability test: 4
+                      of 8 correct (-25%). Switch to the Evaluation tab for
+                      side-by-side prompt diffs.</span
+                    >
+                  </div>
+                </div>
+                <button
+                  class="inline-flex items-center gap-xs px-md py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-xs transition-colors shrink-0"
+                  type="button"
+                >
+                  <span>View Evaluation</span>
+                  <span class="material-symbols-outlined text-[14px]"
+                    >arrow_forward</span
+                  >
+                </button>
+              </div>
+            </div>
+            <!-- Bottom Actions Bar -->
+            <div
+              class="flex items-center justify-between pt-md border-t border-hairline pb-xl"
+            >
+              <div class="flex items-center gap-sm">
+                <button
+                  class="inline-flex items-center gap-xs px-md py-2 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-eyebrow transition-colors"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[16px]"
+                    >arrow_back</span
+                  >
+                  <span>All jobs</span>
+                </button>
+                <button
+                  class="inline-flex items-center gap-xs px-md py-2 rounded-lg bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-primary font-eyebrow text-eyebrow transition-colors"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[16px]"
+                    >upload_file</span
+                  >
+                  <span>Back to upload</span>
+                </button>
+              </div>
+              <div
+                class="flex items-center gap-xs font-label-mono text-xs text-ink-subtle"
+              >
+                <span>Temper Engine · v2.4.0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

@@ -43,3 +43,20 @@ export function decodingSentence(
   if (parts.length === 0) return "";
   return `Both models answered with ${parts.join(", ")}.`;
 }
+
+// The same decoding settings, as a compact badge rather than a sentence --
+// for a per-row header where the full sentence would repeat once per prompt.
+// Same recorded keys as `decodingSentence`, just shorter words.
+export function decodingBadge(
+  decoding: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!decoding) return null;
+  const parts: string[] = [];
+  if (typeof decoding.temperature === "number") {
+    parts.push(`temp ${decoding.temperature}`);
+  }
+  if (typeof decoding.max_new_tokens === "number") {
+    parts.push(`${decoding.max_new_tokens} max tokens`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}

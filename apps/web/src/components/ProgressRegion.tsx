@@ -32,7 +32,7 @@ function PhaseRow({
   const lines = output.map((o) => o.line);
 
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className="rounded-[12px] border bg-card p-3">
       <dl className="space-y-1">
         <div className="flex items-baseline justify-between gap-2">
           <dt className="text-sm font-medium">{phase.phase}</dt>
@@ -89,7 +89,7 @@ export default function ProgressRegion({
 
   return (
     <section aria-labelledby="progress-heading" className="space-y-2">
-      <h2 id="progress-heading" className="text-lg font-semibold">
+      <h2 id="progress-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
         Progress
       </h2>
       <div className="space-y-3">

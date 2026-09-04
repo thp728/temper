@@ -104,9 +104,21 @@ describe("QuoteView", () => {
     expect(screen.getByText(/INR 1\.07 – INR 9\.38/)).toBeVisible();
   });
 
-  it("labels itself an estimate that never blocks", () => {
+  it("labels itself an estimate", () => {
     render(<QuoteView quote={quote()} />);
-    expect(screen.getByText(/An estimate rather than a guarantee/i)).toBeVisible();
+    expect(screen.getByRole("heading", { name: /Cost and time estimate/i })).toBeVisible();
+    expect(screen.getByText(/Estimated against dataset/i)).toBeVisible();
+  });
+
+  it("warns that an estimate never blocks a launch — on the plan, not the finished record", () => {
+    const { rerender } = render(<QuoteView quote={quote()} />);
+    // Finished job (read-only): the heading is there, but the inline disclaimer
+    // was removed after visual review — it was noisy beside the eyebrow and the
+    // footer already pins the basis.
+    expect(screen.queryByText(/never blocks a launch/i)).not.toBeInTheDocument();
+    // Plan (editable): the warning is shown beside the heading, where a user
+    // can still act on it before committing.
+    rerender(<QuoteView quote={quote()} editable overrides={[]} onOverridesChange={() => {}} />);
     expect(screen.getByText(/never blocks a launch/i)).toBeVisible();
   });
 

@@ -5,6 +5,7 @@ import {
   formatDurationRange,
   formatExactTimestamp,
   formatMinorCost,
+  formatMinorCostRange,
   formatTimestamp,
   shortRevision,
 } from "@/lib/jobs/display";
@@ -104,6 +105,17 @@ describe("formatMinorCost", () => {
 
   it("renders an absent cost as a dash", () => {
     expect(formatMinorCost(null, "INR", 100)).toBe("—");
+  });
+});
+
+describe("formatMinorCostRange", () => {
+  it("shares one currency prefix across the range", () => {
+    expect(formatMinorCostRange(210, 567, "INR", 100)).toBe("INR 2.10–5.67");
+  });
+
+  it("renders an absent end as a dash rather than inventing a number", () => {
+    expect(formatMinorCostRange(null, 567, "INR", 100)).toBe("—");
+    expect(formatMinorCostRange(210, undefined, "INR", 100)).toBe("—");
   });
 });
 

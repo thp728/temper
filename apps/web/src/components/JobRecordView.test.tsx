@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import JobRecordView from "@/components/JobRecordView";
 import type { JobEvent, JobRecord, Quote } from "@/lib/api/generated/client";
@@ -6,6 +7,24 @@ import type { JobEvent, JobRecord, Quote } from "@/lib/api/generated/client";
 // The assertions are what a user reads on a job's record: how it ended, what
 // it produced, why it failed, and that a cancellation is a decision rather
 // than a defect. The port's behaviour, pinned.
+
+// The record's content is split across tabs (each a readable length); Radix
+// mounts only the active tab's content, so tests against a non-default tab
+// switch to it first, the same as a person clicking through would.
+async function switchToTab(name: RegExp) {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name }));
+}
+
+// A matcher for text that continues past a nested styled span (e.g. the
+// held-out loss number gets its own color) -- `getByText`'s default matcher
+// only looks at an element's own direct text-node children, so it misses
+// text split by markup. This checks the element's full descendant text
+// instead, matching the way a screen reader would announce it.
+function exactText(expected: string) {
+  return (_content: string, element: Element | null) =>
+    element?.textContent?.replace(/\s+/g, " ").trim() === expected;
+}
 
 function job(overrides: Partial<JobRecord> = {}): JobRecord {
   return {
@@ -214,7 +233,7 @@ describe("JobRecordView", () => {
     ).toBeNull();
   });
 
-  it("shows a failure's stable code with its reason in plain language", () => {
+  it("shows a failure's stable code with its reason in plain language", async () => {
     render(
       <JobRecordView
         job={job({
@@ -237,7 +256,8 @@ describe("JobRecordView", () => {
     ).toBeVisible();
     // Proof that billing stopped reaches the page, in the machine's own words.
     expect(screen.getByText(/machine destroyed/)).toBeVisible();
-    // What the job was doing before it died stays readable.
+    // What the job was doing before it died stays readable, on the Logs tab.
+    await switchToTab(/Logs/);
     expect(screen.getByText("[00:00:00] building trainer image")).toBeVisible();
     expect(
       screen.queryByRole("link", { name: /Download the artifact/ }),
@@ -450,7 +470,7 @@ describe("JobRecordView", () => {
     ).toBeNull();
   });
 
-  it("presents a cancellation as a decision rather than a defect", () => {
+  it("presents a cancellation as a decision rather than a defect", async () => {
     render(
       <JobRecordView
         job={job({ status: "cancelled", finished_at: 1756162800, result: null })}
@@ -458,25 +478,29 @@ describe("JobRecordView", () => {
       />,
     );
 
-    // The decision is stated in the outcome section...
+    // The decision is stated in the outcome section, on the default tab...
     expect(
       screen.getByText(/which is what cancelling means here/i),
     ).toBeVisible();
-    // ...and the history records it in the same words the run recorded.
-    expect(screen.getByRole("log")).toHaveTextContent(
-      "Cancelled at your request.",
-    );
     // No error code, no destructive framing: nothing on the page may read
     // the user's own decision as something that went wrong.
     expect(screen.queryByText(/^failed/i)).toBeNull();
     expect(screen.queryByText("gpu_stalled")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+
+    // ...and the history, on the Logs tab, records it in the same words
+    // the run recorded.
+    await switchToTab(/Logs/);
+    expect(screen.getByRole("log")).toHaveTextContent(
+      "Cancelled at your request.",
+    );
   });
 
-  it("shows the quote the job launched under, still on the finished record", () => {
+  it("shows the quote the job launched under, still on the finished record", async () => {
     // The quote is frozen into the job spec at launch and never updated; a
     // finished job still says what it was predicted to cost (issue #72).
     render(<JobRecordView job={job({ quote: quote() })} events={[]} />);
+    await switchToTab(/Cost & estimates/);
     expect(
       screen.getByRole("heading", { name: "Cost and time estimate" }),
     ).toBeVisible();
@@ -484,7 +508,7 @@ describe("JobRecordView", () => {
     expect(screen.getByText(/INR 2\.74 – INR 13\.08/)).toBeVisible();
   });
 
-  it("compares what was predicted against what happened on a finished job", () => {
+  it("compares what was predicted against what happened on a finished job", async () => {
     // Issue #77: a finished job shows each metric's prediction against the
     // measured figure, marked measured or derived. The calibration aggregate
     // is kept at /calibration but not linked from here (see top comment there).
@@ -508,6 +532,7 @@ describe("JobRecordView", () => {
         events={[]}
       />,
     );
+    await switchToTab(/Cost & estimates/);
 
     expect(
       screen.getByRole("heading", { name: "Prediction vs what happened" }),
@@ -535,7 +560,7 @@ describe("JobRecordView", () => {
     ).toBeNull();
   });
 
-  it("keeps the full history of a finished job readable", () => {
+  it("keeps the full history of a finished job readable", async () => {
     render(
       <JobRecordView
         job={job()}
@@ -545,11 +570,12 @@ describe("JobRecordView", () => {
         ]}
       />,
     );
+    await switchToTab(/Logs/);
     expect(screen.getByRole("log")).toHaveTextContent("queued");
     expect(screen.getByRole("log")).toHaveTextContent("Selecting a GPU");
   });
 
-  it("charts training and held-out loss on the finished record", () => {
+  it("charts training and held-out loss on the finished record", async () => {
     // Issue #53: the overfitting signal is read after the run too, so the
     // chart lives on the finished record as well as the running view.
     render(
@@ -572,8 +598,12 @@ describe("JobRecordView", () => {
         ]}
       />,
     );
+    await switchToTab(/Evaluation/);
     expect(
-      screen.getByRole("img", { name: /training loss and held-out loss/i }),
+      screen.getByRole("img", { name: /training loss against step/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("img", { name: /held-out loss against epoch/i }),
     ).toBeVisible();
     expect(screen.getByText("Training loss")).toBeVisible();
     expect(screen.getByText("Held-out loss")).toBeVisible();
@@ -629,7 +659,7 @@ describe("JobRecordView", () => {
     expect(screen.getByText(/60%\|██████/)).not.toBeVisible();
   });
 
-  it("surfaces a held-out loss that stopped improving, in plain language", () => {
+  it("surfaces a held-out loss that stopped improving, in plain language", async () => {
     const heldOut = (id: number, loss: number) =>
       event({
         id,
@@ -643,6 +673,7 @@ describe("JobRecordView", () => {
         events={[heldOut(2, 0.7), heldOut(3, 0.7), heldOut(4, 0.7)]}
       />,
     );
+    await switchToTab(/Evaluation/);
     const note = screen.getByText(/held-out loss has not improved/i);
     expect(note).toHaveTextContent(/overfitting/i);
   });
@@ -673,7 +704,9 @@ describe("JobRecordView", () => {
 
     // The choice, in plain language, with its recorded reason.
     expect(
-      screen.getByText("Best checkpoint: step 20 (held-out loss 0.39)"),
+      screen.getByText(
+        exactText("Best checkpoint: step 20 (held-out loss 0.39)"),
+      ),
     ).toBeVisible();
     expect(
       screen.getByText(
@@ -690,8 +723,8 @@ describe("JobRecordView", () => {
         `/v1/jobs/job_abc123def456/checkpoints/${step}`,
       );
     }
-    expect(screen.getByText("held-out loss 0.44")).toBeVisible();
-    expect(screen.getByText("held-out loss 0.52")).toBeVisible();
+    expect(screen.getByText(exactText("held-out loss: 0.44"))).toBeVisible();
+    expect(screen.getByText(exactText("held-out loss: 0.52"))).toBeVisible();
   });
 
   it("names a checkpoint with no held-out loss, without a download that cannot succeed", () => {
@@ -759,7 +792,7 @@ describe("JobRecordView", () => {
 
   // The advanced-surface overrides frozen into the job spec (issue #80) are
   // shown on the finished run: the run says what it actually used.
-  it("shows the frozen settings the user changed on the finished run", () => {
+  it("shows the frozen settings the user changed on the finished run", async () => {
     render(
       <JobRecordView
         job={job({
@@ -771,6 +804,7 @@ describe("JobRecordView", () => {
         events={[]}
       />,
     );
+    await switchToTab(/Cost & estimates/);
     expect(
       screen.getByRole("heading", { name: "Settings you changed" }),
     ).toBeVisible();
@@ -788,7 +822,7 @@ describe("JobRecordView", () => {
     ).toBeNull();
   });
 
-  it("discloses how many events are shown when not truncated", () => {
+  it("discloses how many events are shown when not truncated", async () => {
     render(
       <JobRecordView
         job={job()}
@@ -796,6 +830,7 @@ describe("JobRecordView", () => {
         total={2}
       />,
     );
+    await switchToTab(/Logs/);
     expect(screen.getByTestId("event-disclosure")).toHaveTextContent("Showing 2 of 2 events");
     // No pagination control when nothing is hidden.
     expect(screen.queryByRole("button", { name: /Load more events/ })).toBeNull();
@@ -807,6 +842,7 @@ describe("JobRecordView", () => {
       event({ id: i + 1, message: `log ${i + 1}` }),
     );
     render(<JobRecordView job={job()} events={many} total={734} />);
+    await switchToTab(/Logs/);
     const disclosure = screen.getByTestId("event-disclosure");
     expect(disclosure).toHaveTextContent("Showing 500 of 734 events");
     expect(disclosure).toHaveTextContent(/paginated/);
@@ -819,7 +855,7 @@ describe("JobRecordView", () => {
   // The side-by-side comparison (issue #69): held-out prompts answered by the
   // base model and the chosen checkpoint, with the decoding settings recorded
   // so a reader can tell whether two outputs are comparable.
-  it("shows both models answering the same held-out prompts", () => {
+  it("shows both models answering the same held-out prompts", async () => {
     render(
       <JobRecordView
         job={job({
@@ -843,12 +879,13 @@ describe("JobRecordView", () => {
         events={[]}
       />,
     );
+    await switchToTab(/Evaluation/);
     const section = within(
       screen.getByRole("region", { name: "Base model vs your tuned model" }),
     );
     expect(section.getByText("What is the capital of France?")).toBeVisible();
-    expect(section.getByText("The base model's answer.")).toBeVisible();
-    expect(section.getByText("The tuned model's answer.")).toBeVisible();
+    expect(section.getByText("“The base model's answer.”")).toBeVisible();
+    expect(section.getByText("“The tuned model's answer.”")).toBeVisible();
     // The tuned side names the checkpoint the run chose, and the decoding
     // settings are shown -- recorded, so two outputs can be compared.
     expect(
@@ -858,7 +895,7 @@ describe("JobRecordView", () => {
     expect(section.getByText(/up to 128 new tokens/)).toBeVisible();
   });
 
-  it("states a failed comparison's reason without dressing it as a failed job", () => {
+  it("states a failed comparison's reason without dressing it as a failed job", async () => {
     render(
       <JobRecordView
         job={job({
@@ -871,6 +908,7 @@ describe("JobRecordView", () => {
         events={[]}
       />,
     );
+    await switchToTab(/Evaluation/);
     expect(
       screen.getByRole("heading", { name: "Base model vs your tuned model" }),
     ).toBeVisible();
@@ -928,13 +966,14 @@ describe("the general-capability slice (issue #73)", () => {
     ...over,
   });
 
-  it("labels it a smoke test, shows the sample size beside the numbers, the change and the uncertainty", () => {
+  it("labels it a smoke test, shows the sample size beside the numbers, the change and the uncertainty", async () => {
     render(
       <JobRecordView
         job={job({ capability: capability() as JobRecord["capability"] })}
         events={[]}
       />,
     );
+    await switchToTab(/Evaluation/);
     const section = within(
       screen.getByRole("region", { name: "General capability" }),
     );
@@ -959,13 +998,14 @@ describe("the general-capability slice (issue #73)", () => {
     expect(section.getByText(/temperature 0.7/)).toBeVisible();
   });
 
-  it("surfaces a large regression prominently, from the recorded flag", () => {
+  it("surfaces a large regression prominently, from the recorded flag", async () => {
     render(
       <JobRecordView
         job={job({ capability: capability() as JobRecord["capability"] })}
         events={[]}
       />,
     );
+    await switchToTab(/Evaluation/);
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Large regression");
     // The threshold is read from the record, never re-decided here.
@@ -987,7 +1027,7 @@ describe("the general-capability slice (issue #73)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("states a failed slice's reason without dressing it as a failed job", () => {
+  it("states a failed slice's reason without dressing it as a failed job", async () => {
     render(
       <JobRecordView
         job={job({
@@ -1001,6 +1041,7 @@ describe("the general-capability slice (issue #73)", () => {
         events={[]}
       />,
     );
+    await switchToTab(/Evaluation/);
     expect(
       screen.getByRole("heading", { name: "General capability" }),
     ).toBeVisible();

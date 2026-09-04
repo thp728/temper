@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Play, Square, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -18,6 +19,23 @@ import type {
   EndpointPreview,
   EndpointRecord,
 } from "@/lib/api/generated/client";
+
+function EndpointStat({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
+        {label}
+      </dt>
+      <dd className="text-sm font-semibold tabular-nums">{children}</dd>
+    </div>
+  );
+}
 
 export default function EndpointSection({
   jobId,
@@ -176,42 +194,64 @@ export default function EndpointSection({
     const isExpired = endpoint.status !== "running";
     return (
       <section aria-labelledby="endpoint-heading" className="space-y-3">
-        <h2 id="endpoint-heading" className="text-lg font-semibold">
-          Try your model
-        </h2>
-        <Card className="p-4 space-y-3">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <div>
-              <dt className="text-muted-foreground">Status</dt>
-              <dd className="font-medium">{endpoint.status}</dd>
+        <Card className="space-y-4 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-4">
+            <div className="flex items-start gap-2">
+              <Zap aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
+              <div>
+                <h2 id="endpoint-heading" className="font-semibold">
+                  Endpoint {endpoint.status}
+                  {endpoint.stop_reason ? ` (${endpoint.stop_reason})` : ""}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {isExpired
+                    ? "This endpoint cannot serve prompts anymore."
+                    : "Send it a prompt below, or stop it now."}
+                </p>
+              </div>
             </div>
+            {/* One stop control, not the two the pre-tabs layout carried (the
+                prompt panel's own button and this header's were both offered
+                whenever the key from creation was gone) -- same action, one
+                place to find it. */}
+            {!isExpired && (
+              <Button onClick={onStop} disabled={loading} variant="outline" size="sm">
+                <Square aria-hidden className="size-3.5" />
+                Stop endpoint now
+              </Button>
+            )}
+          </div>
+
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <EndpointStat label="Cost">
+              {endpoint.price_per_hour != null && endpoint.currency
+                ? `${endpoint.price_per_hour} ${endpoint.currency}/hr`
+                : "—"}
+            </EndpointStat>
+            <EndpointStat label="Idle stop">
+              {formatDuration(endpoint.idle_timeout_s)}
+            </EndpointStat>
+            <EndpointStat label="Stops at">
+              {formatTimestamp(endpoint.expires_at)}
+            </EndpointStat>
+            <EndpointStat label="Hard stop at">
+              {formatTimestamp(endpoint.max_expires_at)}
+            </EndpointStat>
+          </dl>
+
+          <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
             <div>
-              <dt className="text-muted-foreground">Cost</dt>
-              <dd>
-                {endpoint.price_per_hour != null && endpoint.currency
-                  ? `${endpoint.price_per_hour} ${endpoint.currency}/hr`
-                  : "—"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Stops at (idle)</dt>
-              <dd>{formatTimestamp(endpoint.expires_at)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Hard stop at</dt>
-              <dd>{formatTimestamp(endpoint.max_expires_at)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Key prefix</dt>
+              <dt className="text-xs text-muted-foreground">Key prefix</dt>
               <dd>
                 <code className="rounded bg-muted px-1">{endpoint.api_key_prefix}</code>
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Machine</dt>
+              <dt className="text-xs text-muted-foreground">Machine</dt>
               <dd>{endpoint.machine_id ?? "—"}</dd>
             </div>
           </dl>
+
           {created?.api_key && (
             <Alert>
               <AlertTitle>API key, shown once</AlertTitle>
@@ -226,17 +266,8 @@ export default function EndpointSection({
               </AlertDescription>
             </Alert>
           )}
-          <p className="text-xs text-muted-foreground">
-            This endpoint extends its idle expiry on each use (idle {formatDuration(endpoint.idle_timeout_s)}),
-            but still stops at the hard ceiling ({formatDuration(endpoint.max_lifetime_s)} from creation) even
-            if you keep using it, because a busy endpoint cannot be kept alive forever.
-          </p>
-          {isExpired ? (
-            <p className="text-sm text-muted-foreground">
-              This endpoint is {endpoint.status}
-              {endpoint.stop_reason ? ` (${endpoint.stop_reason})` : ""} and cannot serve prompts.
-            </p>
-          ) : (
+
+          {!isExpired && (
             <div className="space-y-2">
               <label htmlFor="endpoint-prompt" className="text-sm font-medium">
                 Prompt
@@ -246,44 +277,48 @@ export default function EndpointSection({
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Ask your tuned model something..."
-                className="min-h-20 w-full rounded border bg-background p-2 text-sm"
+                className="min-h-20 w-full rounded-[8px] border bg-background p-2 text-sm"
               />
               <div className="flex gap-2">
                 <Button onClick={onInfer} disabled={inferLoading} size="sm">
                   {inferLoading ? "Thinking…" : "Send prompt"}
                 </Button>
-                <Button onClick={onStop} disabled={loading} variant="outline" size="sm">
-                  Stop endpoint now
-                </Button>
+                {!created && (
+                  <Button
+                    onClick={fetchEndpoint}
+                    disabled={loading}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    Refresh
+                  </Button>
+                )}
               </div>
               {completion && (
-                <div className="rounded border bg-muted p-3 text-sm whitespace-pre-wrap">
+                <div className="rounded-[8px] border bg-muted p-3 text-sm whitespace-pre-wrap">
                   {completion}
                 </div>
               )}
             </div>
           )}
-          {!isExpired && !created && (
-            <div className="flex gap-2">
-              <Button onClick={onStop} disabled={loading} variant="outline" size="sm">
-                Stop endpoint now
-              </Button>
-              <Button
-                onClick={fetchEndpoint}
-                disabled={loading}
-                variant="ghost"
-                size="sm"
-              >
-                Refresh
-              </Button>
-            </div>
-          )}
+
           {error && (
             <Alert variant="destructive">
               <AlertTitle>Error</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[8px] border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            <span>
+              This endpoint extends its idle expiry on each use, but still
+              stops at the hard ceiling even if you keep using it, because a
+              busy endpoint cannot be kept alive forever.
+            </span>
+            <span className="shrink-0 font-mono text-primary">
+              Max duration: {formatDuration(endpoint.max_lifetime_s)}
+            </span>
+          </div>
         </Card>
       </section>
     );
@@ -292,47 +327,60 @@ export default function EndpointSection({
   // No endpoint yet -- show preview and start button
   return (
     <section aria-labelledby="endpoint-heading" className="space-y-3">
-      <h2 id="endpoint-heading" className="text-lg font-semibold">
-        Try your model
-      </h2>
-      <Card className="p-4 space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Start a temporary endpoint to try your tuned model without downloading anything. It requires
-          a key, and it stops itself when you stop using it.
-        </p>
+      <Card className="space-y-4 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-4">
+          <div className="flex items-start gap-2">
+            <Zap aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div>
+              <h2 id="endpoint-heading" className="font-semibold">
+                Try your model
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Start a temporary endpoint to try your tuned model without
+                downloading anything. Requires an API key, auto-stops when
+                idle.
+              </p>
+            </div>
+          </div>
+          <Button onClick={onStart} disabled={loading || !isComplete}>
+            <Play aria-hidden className="size-3.5" />
+            {loading ? "Starting…" : "Start endpoint"}
+          </Button>
+        </div>
+
         {preview ? (
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <div>
-              <dt className="text-muted-foreground">Cost</dt>
-              <dd className="font-medium">
-                {preview.price_per_hour} {preview.currency}/hr
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Idle stop</dt>
-              <dd>{formatDuration(preview.idle_timeout_s)} after last use</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Would stop at</dt>
-              <dd>{formatTimestamp(preview.expires_at)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Hard stop at</dt>
-              <dd>{formatTimestamp(preview.max_expires_at)} (max {formatDuration(preview.max_lifetime_s)})</dd>
-            </div>
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <EndpointStat label="Cost">
+              {preview.price_per_hour} {preview.currency}/hr
+            </EndpointStat>
+            <EndpointStat label="Idle stop">
+              {formatDuration(preview.idle_timeout_s)} after last use
+            </EndpointStat>
+            <EndpointStat label="Would stop at">
+              {formatTimestamp(preview.expires_at)}
+            </EndpointStat>
+            <EndpointStat label="Hard stop at">
+              {formatTimestamp(preview.max_expires_at)}
+            </EndpointStat>
           </dl>
         ) : (
           <p className="text-sm text-muted-foreground">Loading preview…</p>
         )}
-        <p className="text-xs text-muted-foreground">
-          The endpoint carries its own expiry from the moment it starts, extends on use, and stops
-          itself via a timer. The forgotten warm machine is the loudest complaint against the
-          commercial baseline, so stopping itself is the feature rather than a convenience. A busy endpoint
-          still dies at the hard ceiling even if you keep using it.
-        </p>
-        <Button onClick={onStart} disabled={loading || !isComplete}>
-          {loading ? "Starting…" : "Start endpoint"}
-        </Button>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[8px] border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <span>
+            The endpoint carries its own expiry from the moment it starts,
+            extends on use, and stops itself via a timer. The forgotten warm
+            machine is the loudest complaint against the commercial baseline,
+            so stopping itself is the feature rather than a convenience.
+          </span>
+          {preview?.max_lifetime_s != null && (
+            <span className="shrink-0 font-mono text-primary">
+              Max duration: {formatDuration(preview.max_lifetime_s)}
+            </span>
+          )}
+        </div>
+
         {error && (
           <Alert variant="destructive">
             <AlertTitle>Error</AlertTitle>

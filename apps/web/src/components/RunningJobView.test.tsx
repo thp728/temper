@@ -202,7 +202,7 @@ describe("RunningJobView", () => {
     ).toHaveTextContent("epoch 0.5");
   });
 
-  it("charts training and held-out loss on one chart", () => {
+  it("charts training loss against step and held-out loss against epoch, each on its own plot", () => {
     const metric = (
       id: number,
       data: Record<string, number>,
@@ -221,12 +221,16 @@ describe("RunningJobView", () => {
         metric(5, { held_out_loss: 0.6, epoch: 1.0 }),
       ],
     });
-    // Both series are drawn, not just labelled: one line per series.
-    const svg = screen.getByRole("img", {
-      name: /training loss and held-out loss/i,
+    // Two plots, each with its own axis and its own line drawn -- not one
+    // shared chart with two series forced onto the same x.
+    const trainingChart = screen.getByRole("img", {
+      name: /training loss against step/i,
     });
-    expect(svg).toBeInTheDocument();
-    expect(svg.querySelectorAll("polyline")).toHaveLength(2);
+    const heldOutChart = screen.getByRole("img", {
+      name: /held-out loss against epoch/i,
+    });
+    expect(trainingChart.querySelectorAll("polyline")).toHaveLength(1);
+    expect(heldOutChart.querySelectorAll("polyline")).toHaveLength(1);
     expect(screen.getByText("Training loss")).toBeVisible();
     expect(screen.getByText("Held-out loss")).toBeVisible();
   });

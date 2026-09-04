@@ -170,21 +170,23 @@ function DecisionCard({
 }) {
   const alternatives = d.alternatives ?? [];
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="font-medium">{d.decision}</h3>
-        {d.overridden && (
-          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
-            you changed this
-          </span>
-        )}
+    <div className="rounded-[12px] border bg-card p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+          {d.decision}
+        </h3>
+        <span className="shrink-0 rounded-md border bg-muted px-2 py-0.5 font-mono text-xs font-medium text-foreground">
+          {d.chosen}
+        </span>
       </div>
-      <p className="mt-1 text-sm">
-        <strong>{d.chosen}</strong>
-        <span className="text-muted-foreground"> — {d.constraint}</span>
-      </p>
+      {d.overridden && (
+        <span className="mt-2 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+          you changed this
+        </span>
+      )}
+      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{d.constraint}</p>
       {editable && onOverridesChange && (
-        <div className="mt-2">
+        <div className="mt-3">
           <DecisionControl
             d={d}
             options={options}
@@ -194,17 +196,23 @@ function DecisionCard({
         </div>
       )}
       {alternatives.length > 0 && (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+        <details className="group mt-4 border-t pt-3">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <span aria-hidden className="text-[10px] transition-transform group-open:rotate-90">
+              ▶
+            </span>
             Alternatives considered ({alternatives.length})
           </summary>
-          <ul className="mt-2 space-y-2 text-sm">
+          <ul className="mt-3 space-y-2">
             {alternatives.map((a, i) => (
-              <li key={i}>
-                <p>
-                  <strong>{a.value}</strong> — {a.cost}
+              <li key={i} className="rounded-md border bg-muted/40 px-3 py-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-mono text-xs font-medium">{a.value}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{a.cost}</span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {a.constraint}
                 </p>
-                <p className="text-muted-foreground">{a.constraint}</p>
               </li>
             ))}
           </ul>
@@ -216,12 +224,12 @@ function DecisionCard({
 
 function PhaseRow({ phase, quote }: { phase: Quote["phases"][number]; quote: Quote }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5 py-1 sm:grid-cols-[1fr_auto_auto]">
-      <dt className="text-sm text-muted-foreground">{phase.name}</dt>
-      <dd className="text-sm font-medium text-right">
+    <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1 py-3.5 font-mono text-sm sm:grid-cols-[1fr_auto_auto]">
+      <dt className="text-foreground">{phase.name}</dt>
+      <dd className="text-right text-muted-foreground">
         {formatDurationRange(phase.duration_low_s, phase.duration_high_s)}
       </dd>
-      <dd className="text-sm text-right text-muted-foreground sm:min-w-28">
+      <dd className="text-right text-muted-foreground sm:min-w-36">
         {formatMinorCost(
           phase.cost_low_minor,
           quote.currency,
@@ -255,44 +263,54 @@ export default function QuoteView({
     <>
       <section aria-labelledby="quote-heading" className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="quote-heading" className="text-lg font-semibold">
+          <h2 id="quote-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
             Cost and time estimate
           </h2>
-          <p className="text-sm text-muted-foreground">
-            An estimate rather than a guarantee. It never blocks a launch.
-          </p>
+          {editable && (
+            <p className="text-sm text-muted-foreground">
+              An estimate rather than a guarantee. It never blocks a launch.
+            </p>
+          )}
         </div>
 
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg border bg-card p-4 sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-[12px] border bg-card p-5 sm:grid-cols-4">
         <div>
-          <dt className="text-sm text-muted-foreground">Duration</dt>
-          <dd className="font-medium">
+          <dt className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+            Duration
+          </dt>
+          <dd className="mt-1 font-mono text-base font-semibold tabular-nums">
             {formatDurationRange(quote.duration_low_s, quote.duration_high_s)}
           </dd>
         </div>
         <div>
-          <dt className="text-sm text-muted-foreground">Cost</dt>
-          <dd className="font-medium">
+          <dt className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+            Cost
+          </dt>
+          <dd className="mt-1 font-mono text-base font-semibold tabular-nums">
             {formatMinorCost(quote.cost_low_minor, quote.currency, quote.minor_unit)}
             {" – "}
             {formatMinorCost(quote.cost_high_minor, quote.currency, quote.minor_unit)}
           </dd>
         </div>
         <div>
-          <dt className="text-sm text-muted-foreground">Tokens</dt>
-          <dd className="font-medium">
+          <dt className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+            Tokens
+          </dt>
+          <dd className="mt-1 font-mono text-base font-semibold tabular-nums">
             {quote.token_count != null ? quote.token_count.toLocaleString("en-US") : "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-sm text-muted-foreground">Currency</dt>
-          <dd className="font-medium">{quote.currency}</dd>
+          <dt className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+            Currency
+          </dt>
+          <dd className="mt-1 font-mono text-base font-semibold tabular-nums">{quote.currency}</dd>
         </div>
       </dl>
 
       {/* The phase-by-phase breakdown is the point: a long cold start on a
           large model is visible rather than buried in one blended rate. */}
-      <div className="rounded-lg border bg-card p-4">
+      <div className="rounded-[12px] border bg-card px-6">
         <dl className="divide-y divide-border">
           {quote.phases.map((phase) => (
             <PhaseRow key={phase.name} phase={phase} quote={quote} />
@@ -300,11 +318,10 @@ export default function QuoteView({
           {/* Storage bills on its own line, in USD, never folded into the
               account-currency phases (ADR-0030): an invisible line is exactly
               the hidden cost the quote exists to remove. */}
-          <div className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5 py-1 sm:grid-cols-[1fr_auto_auto]">
-            <dt className="text-sm text-muted-foreground">
-              storage (USD, separate line)
-            </dt>
-            <dd className="text-sm text-right text-muted-foreground sm:col-start-3 sm:min-w-28">
+          <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1 py-3.5 font-mono text-sm sm:grid-cols-[1fr_auto_auto]">
+            <dt className="text-foreground">storage (USD, separate line)</dt>
+            <dd className="hidden text-right text-muted-foreground sm:col-start-2 sm:block">—</dd>
+            <dd className="text-right text-muted-foreground sm:col-start-3 sm:min-w-36">
               {formatMinorCost(
                 quote.storage_cost_usd_total_low_minor,
                 "USD",
@@ -319,11 +336,9 @@ export default function QuoteView({
             </dd>
           </div>
         </dl>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Estimated against dataset{" "}
-          <code className="rounded bg-muted px-1">{shortRevision(quote.dataset_id)}</code>
-          {" · "}model revision{" "}
-          <code className="rounded bg-muted px-1">{shortRevision(quote.base_revision)}</code>
+        <p className="border-t px-6 py-3 font-mono text-xs text-muted-foreground">
+          Estimated against dataset {shortRevision(quote.dataset_id)}
+          {" · "}model revision {shortRevision(quote.base_revision)}
           {" · "}expires {formatTimestamp(quote.expires_at)}.
         </p>
       </div>
@@ -339,7 +354,7 @@ export default function QuoteView({
           an expert mode. */}
       {quote.decisions && quote.decisions.length > 0 && (
         <section aria-labelledby="decisions-heading" className="space-y-3">
-          <h2 id="decisions-heading" className="text-lg font-semibold">
+          <h2 id="decisions-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
             Why this configuration
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -348,14 +363,14 @@ export default function QuoteView({
                 + "and the rest recomputes; the configuration below is what a "
                 + "launch would freeze."
               : "These are the decisions Temper made for you, and the "
-                + "alternatives that lost, the configuration this job froze."}
+                + "alternatives that lost; the configuration this job froze."}
           </p>
           {refusal && (
             <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
               <strong>{refusal.code}:</strong> {refusal.message}
             </p>
           )}
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {quote.decisions.map((d) => (
               <DecisionCard
                 key={d.decision}
