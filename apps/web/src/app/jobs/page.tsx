@@ -7,6 +7,7 @@ import {
   listJobsV1JobsGet,
 } from "@/lib/api/generated/client";
 import { load } from "@/lib/api/load";
+import { epochNow } from "@/lib/jobs/display";
 
 export const metadata: Metadata = {
   title: "Jobs",
@@ -40,5 +41,10 @@ export default async function JobsPage() {
     (datasets?.datasets ?? []).map((d) => [d.id, d.filename]),
   );
 
-  return <JobsView jobs={listing.jobs} datasetNames={datasetNames} />;
+  // The clock reading travels with the HTML: the list's relative dates render
+  // on the server first, and hydration must see the same strings the server
+  // sent rather than a clock the client computed for itself.
+  return (
+    <JobsView jobs={listing.jobs} datasetNames={datasetNames} now={epochNow()} />
+  );
 }

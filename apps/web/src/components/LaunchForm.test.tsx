@@ -433,7 +433,7 @@ describe("LaunchForm", () => {
       base_model: "qwen3-4b",
     });
     expect(screen.getByText(/never blocks a launch/i)).toBeVisible();
-    expect(screen.getByText(/3m 58s–18m 59s/)).toBeVisible();
+    expect(screen.getByText(/00:03:58–00:18:59/)).toBeVisible();
     expect(screen.getByText(/INR 2\.74 – INR 13\.08/)).toBeVisible();
   });
 
@@ -448,7 +448,7 @@ describe("LaunchForm", () => {
     for (const phase of ["provisioning", "readiness", "image_pull", "model_download", "training", "teardown"]) {
       expect(screen.getByText(phase)).toBeVisible();
     }
-    expect(screen.getByText(/1m 27s–3m 03s/)).toBeVisible(); // image pull
+    expect(screen.getByText(/00:01:27–00:03:03/)).toBeVisible(); // image pull
   });
 
   it("re-fetches the quote when the selected model changes", async () => {
@@ -475,7 +475,7 @@ describe("LaunchForm", () => {
         base_model: "qwen3-8b",
       }),
     );
-    expect(screen.getByText(/6m 40s–33m 20s/)).toBeVisible();
+    expect(screen.getByText(/00:06:40–00:33:20/)).toBeVisible();
     expect(screen.getByText(/INR 4\.60 – INR 23\.00/)).toBeVisible();
   });
 

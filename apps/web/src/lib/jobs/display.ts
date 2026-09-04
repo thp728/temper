@@ -4,24 +4,90 @@
 
 import type { JobEvent } from "@/lib/api/generated/client";
 
-// An epoch stamp as local YYYY-MM-DD HH:mm:ss, which is what the old pages'
-// `datetimeformat` filter produced and what a record is read against.
-export function formatTimestamp(epochSeconds: number): string {
-  // "sv-SE" formats exactly this shape across runtimes; the date is built
-  // from epoch seconds so the value stays the server's own clock reading.
-  return new Date(epochSeconds * 1000).toLocaleString("sv-SE");
+// A timestamp as a person reads it: relative while it is fresh ("just now",
+// "3 min ago", "4 hrs ago"), an absolute "Sep 4, 2026" once it is older than
+// a day. `nowSeconds` is a parameter so tests pin the clock -- and so a
+// server-rendered page passes its own reading down (the dashboard's `now`,
+// the jobs page's `now`): hydration must never see a clock the client
+// computed for itself (`RunningJobView`'s rule), so components rendered on
+// the server take `now` as a prop and only purely client-side surfaces fall
+// back to the live clock. A future stamp (a quote expiry, a clock skew)
+// mirrors the past -- "in 3 min" -- and an absent stamp is a dash, the same
+// rule `formatMinorCost` applies.
+const DAY_S = 24 * 3600;
+
+export function formatTimestamp(
+  epochSeconds: number | null | undefined,
+  nowSeconds: number = Date.now() / 1000,
+): string {
+  if (epochSeconds == null) {
+    return "—";
+  }
+  const delta = nowSeconds - epochSeconds;
+  if (Math.abs(delta) < 60) {
+    return "just now";
+  }
+  if (delta > 0 && delta < 3600) {
+    const minutes = Math.floor(delta / 60);
+    return `${minutes} min ago`;
+  }
+  if (delta > 0 && delta < DAY_S) {
+    const hours = Math.floor(delta / 3600);
+    return `${hours} hr${hours === 1 ? "" : "s"} ago`;
+  }
+  if (delta < 0 && delta > -3600) {
+    const minutes = Math.floor(-delta / 60);
+    return `in ${minutes} min`;
+  }
+  if (delta < 0 && delta > -DAY_S) {
+    const hours = Math.floor(-delta / 3600);
+    return `in ${hours} hr${hours === 1 ? "" : "s"}`;
+  }
+  // "en-US" with a short month is exactly this shape across runtimes, and
+  // the day is read in UTC so a server in one timezone and a browser in
+  // another agree on it: the value stays a deterministic function of the
+  // epoch seconds, which is what keeps server-rendered HTML and hydration
+  // from disagreeing about what yesterday means.
+  return new Date(epochSeconds * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
-// Ported from `_fmt_duration`: hours, minutes and zero-padded seconds.
-export function formatDuration(seconds: number): string {
+// The exact stamp behind a friendly date, for tooltips: UTC, locale-free,
+// and identical on server and client, so it never breaks hydration the way
+// a bare `toLocaleString()` does (the server's locale is not the browser's).
+export function formatExactTimestamp(
+  epochSeconds: number | null | undefined,
+): string {
+  if (epochSeconds == null) {
+    return "—";
+  }
+  return (
+    new Date(epochSeconds * 1000)
+      .toISOString()
+      .replace("T", " ")
+      .replace(/\.\d+Z$/, " UTC")
+  );
+}
+
+// A duration as a zero-padded HH:MM:SS clock ("00:02:14") -- the one duration
+// format everywhere in the app, from the jobs table to elapsed times, ETAs,
+// quote ranges and endpoint lifetimes. One shape so aligned columns scan and
+// no two surfaces disagree about how long a minute is.
+export function formatDuration(
+  seconds: number | null | undefined,
+): string {
+  if (seconds == null) {
+    return "—";
+  }
   const s = Math.max(0, Math.floor(seconds));
+  const two = (n: number) => String(n).padStart(2, "0");
   const hours = Math.floor(s / 3600);
   const minutes = Math.floor((s % 3600) / 60);
-  const secs = s % 60;
-  const two = (n: number) => String(n).padStart(2, "0");
-  if (hours) return `${hours}h ${two(minutes)}m ${two(secs)}s`;
-  if (minutes) return `${minutes}m ${two(secs)}s`;
-  return `${secs}s`;
+  return `${two(hours)}:${two(minutes)}:${two(s % 60)}`;
 }
 
 // A pinned revision is forty characters; twelve is what fits beside a model

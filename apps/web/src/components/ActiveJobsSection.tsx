@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Rocket } from "lucide-react";
+import { ChevronLeft, ChevronRight, Rocket } from "lucide-react";
 import { useState } from "react";
 import EmptyStatePanel from "@/components/EmptyStatePanel";
 import StatusPill from "@/components/StatusPill";
@@ -142,21 +142,21 @@ export default function ActiveJobsSection({
           <div className="flex gap-2">
             <Button
               variant="outline"
-              size="sm"
+              size="icon-sm"
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={safePage === 0}
               aria-label="Previous page"
             >
-              Previous
+              <ChevronLeft aria-hidden="true" />
             </Button>
             <Button
               variant="outline"
-              size="sm"
+              size="icon-sm"
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={safePage >= totalPages - 1}
               aria-label="Next page"
             >
-              Next
+              <ChevronRight aria-hidden="true" />
             </Button>
           </div>
         </div>

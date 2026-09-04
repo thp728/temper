@@ -4,6 +4,7 @@
 // the contract -- no component knowledge, no React.
 
 import type { JobOutputLine, JobProgress } from "@/lib/api/generated/client";
+import { formatDuration } from "@/lib/jobs/display";
 
 // A byte count as docker/tqdm write one: SI base (1000), one decimal for
 // anything above a kilobyte -- `15.2 MB`, `4.0 GB` -- matching the same
@@ -28,20 +29,12 @@ export function formatRate(bytesPerSecond: number | null | undefined): string {
   return `${formatBytes(bytesPerSecond)}/s`;
 }
 
-// An estimate as a human interval, reusing the duration format the record
-// already uses so the two never disagree about how long a minute is. Null
-// when there is no estimate to render.
+// An estimate as the app's one duration clock, so it never disagrees with
+// the record about how long a minute is. Null when there is no estimate to
+// render.
 export function formatEta(etaSeconds: number | null | undefined): string | null {
   if (etaSeconds == null) return null;
-  const total = Math.max(0, Math.round(etaSeconds));
-  if (total < 60) return `${total}s`;
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  if (minutes < 60) {
-    return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-  }
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
+  return formatDuration(Math.max(0, Math.round(etaSeconds)));
 }
 
 // How far a phase has got, 0–1, or null when there is no total to divide by.

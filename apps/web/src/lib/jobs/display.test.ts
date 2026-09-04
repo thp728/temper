@@ -3,6 +3,7 @@ import {
   failureExplanation,
   formatDuration,
   formatDurationRange,
+  formatExactTimestamp,
   formatMinorCost,
   formatTimestamp,
   shortRevision,
@@ -13,24 +14,59 @@ import {
 // the shell shows the same strings the old screens did.
 
 describe("formatTimestamp", () => {
-  it("renders an epoch stamp as local YYYY-MM-DD HH:mm:ss", () => {
-    // 2025-08-26 00:00:00 local time, as seconds since the epoch.
-    const ts = new Date(2025, 7, 26, 0, 0, 0).getTime() / 1000;
-    expect(formatTimestamp(ts)).toBe("2025-08-26 00:00:00");
+  // The clock is pinned in UTC: expectations hold in whatever timezone the
+  // suite runs under, the same guarantee the component gets from `timeZone:
+  // "UTC"` in the absolute branch.
+  const NOW = Date.UTC(2026, 8, 4, 12, 0, 0) / 1000;
+
+  it("reads relative while the stamp is fresh", () => {
+    expect(formatTimestamp(NOW - 30, NOW)).toBe("just now");
+    expect(formatTimestamp(NOW - 3 * 60, NOW)).toBe("3 min ago");
+    expect(formatTimestamp(NOW - 60, NOW)).toBe("1 min ago");
+    expect(formatTimestamp(NOW - 4 * 3600, NOW)).toBe("4 hrs ago");
+    expect(formatTimestamp(NOW - 3600, NOW)).toBe("1 hr ago");
+  });
+
+  it("mirrors the future the same way", () => {
+    expect(formatTimestamp(NOW + 30, NOW)).toBe("just now");
+    expect(formatTimestamp(NOW + 3 * 60, NOW)).toBe("in 3 min");
+    expect(formatTimestamp(NOW + 4 * 3600, NOW)).toBe("in 4 hrs");
+  });
+
+  it("falls back to a short absolute date once older than a day", () => {
+    // 2025-08-26 12:00:00 UTC, as seconds since the epoch.
+    const ts = Date.UTC(2025, 7, 26, 12, 0, 0) / 1000;
+    expect(formatTimestamp(ts, NOW)).toBe("Aug 26, 2025");
+    expect(formatTimestamp(NOW - 25 * 3600, NOW)).toBe("Sep 3, 2026");
+  });
+
+  it("renders an absent stamp as a dash", () => {
+    expect(formatTimestamp(null, NOW)).toBe("—");
+    expect(formatTimestamp(undefined, NOW)).toBe("—");
+  });
+});
+
+describe("formatExactTimestamp", () => {
+  it("renders a locale-free UTC stamp, identical on server and client", () => {
+    expect(formatExactTimestamp(Date.UTC(2026, 8, 2, 12, 7, 7) / 1000)).toBe(
+      "2026-09-02 12:07:07 UTC",
+    );
+    expect(formatExactTimestamp(null)).toBe("—");
   });
 });
 
 describe("formatDuration", () => {
-  it("shows seconds alone below a minute", () => {
-    expect(formatDuration(42)).toBe("42s");
+  it("renders a zero-padded HH:MM:SS clock", () => {
+    expect(formatDuration(42)).toBe("00:00:42");
+    expect(formatDuration(134)).toBe("00:02:14");
+    expect(formatDuration(725)).toBe("00:12:05");
+    expect(formatDuration(6312)).toBe("01:45:12");
+    expect(formatDuration(12044)).toBe("03:20:44");
   });
 
-  it("shows minutes and zero-padded seconds below an hour", () => {
-    expect(formatDuration(2 * 60 + 5)).toBe("2m 05s");
-  });
-
-  it("shows hours, minutes and seconds above one", () => {
-    expect(formatDuration(3 * 3600 + 2 * 60 + 5)).toBe("3h 02m 05s");
+  it("renders an absent duration as a dash", () => {
+    expect(formatDuration(null)).toBe("—");
+    expect(formatDuration(undefined)).toBe("—");
   });
 });
 
@@ -47,7 +83,7 @@ describe("shortRevision", () => {
 
 describe("formatDurationRange", () => {
   it("shows both ends of a range, never a point", () => {
-    expect(formatDurationRange(60, 120)).toBe("1m 00s–2m 00s");
+    expect(formatDurationRange(60, 120)).toBe("00:01:00–00:02:00");
   });
 
   it("says when a phase is not estimable", () => {

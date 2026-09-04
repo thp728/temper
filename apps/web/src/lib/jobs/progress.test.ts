@@ -27,10 +27,10 @@ describe("formatRate", () => {
 });
 
 describe("formatEta", () => {
-  it("reuses the duration format's units", () => {
-    expect(formatEta(45)).toBe("45s");
-    expect(formatEta(125)).toBe("2m 05s");
-    expect(formatEta(3725)).toBe("1h 02m");
+  it("reuses the app's one duration clock", () => {
+    expect(formatEta(45)).toBe("00:00:45");
+    expect(formatEta(125)).toBe("00:02:05");
+    expect(formatEta(3725)).toBe("01:02:05");
     expect(formatEta(null)).toBeNull();
   });
 });

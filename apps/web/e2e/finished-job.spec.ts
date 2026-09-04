@@ -385,7 +385,9 @@ test("the list survives a small screen", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 720 });
   await page.goto("/jobs");
   await expect(
-    page.getByRole("heading", { name: "Jobs" }),
+    page.getByRole("heading", {
+      name: "Manage and monitor your fine-tuning jobs",
+    }),
   ).toBeVisible();
   // Nothing forces horizontal scrolling on a phone-sized viewport; the table
   // scrolls inside its own container instead of taking the page with it.

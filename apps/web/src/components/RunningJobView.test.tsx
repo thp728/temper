@@ -144,7 +144,7 @@ describe("RunningJobView", () => {
     const value = (label: string) =>
       screen.getByText(label).nextElementSibling?.textContent;
     expect(value("State")).toBe("training");
-    expect(value("Elapsed")).toBe("1m 05s");
+    expect(value("Elapsed")).toBe("00:01:05");
     expect(value("Machine")).toBe("—");
     expect(value("Latest loss")).toContain("0.6931");
     expect(value("Latest loss")).toContain("step 10");
@@ -291,7 +291,7 @@ describe("RunningJobView", () => {
     expect(bar).toHaveAttribute("aria-valuenow", "36");
     expect(screen.getByText(/15\.2 MB of 42\.4 MB/)).toBeVisible();
     expect(screen.getByText(/8\.0 MB\/s/)).toBeVisible();
-    expect(screen.getByText(/about 3s left/)).toBeVisible();
+    expect(screen.getByText(/about 00:00:03 left/)).toBeVisible();
   });
 
   it("supersedes a phase's progress rather than accumulating it", async () => {
