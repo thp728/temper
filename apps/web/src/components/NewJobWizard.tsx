@@ -681,6 +681,9 @@ export default function NewJobWizard({
   // selection, the validation report, VRAM arithmetic, estimate presence.
   // A check without data passes open rather than crying wolf: an estimate
   // never refuses a launch, and neither does this banner.
+  // Absent means an older control plane that does not publish the field;
+  // treat that as published so a missing field never blocks a launch.
+  const imagePublished = preview?.trainer_image_published ?? true;
   const preflight = (() => {
     if (!preview) return [];
     const vramPass =
@@ -710,6 +713,19 @@ export default function NewJobWizard({
           ? `${formatMinorCostRange(quote.cost_low_minor, quote.cost_high_minor, quote.currency, quote.minor_unit)} · ${formatFriendlyDurationRange(quote.duration_low_s, quote.duration_high_s)}`
           : "No estimate — launching still works",
         pass: quote != null,
+      },
+      // The one assertion that is not advisory. The other four describe a
+      // job that would run; this one says whether it can start at all. The
+      // orchestrator refuses an unpublished image with `image_not_published`
+      // before provisioning, so without this the user learns it from a
+      // failed job instead of a disabled button. Absent (an older control
+      // plane that does not publish the field) passes open, like the rest.
+      {
+        title: "Trainer image",
+        detail: imagePublished
+          ? "Published — the machine can pull the image this job runs"
+          : "image_not_published — publish the trainer image before launching",
+        pass: imagePublished,
       },
     ];
   })();
@@ -1986,7 +2002,11 @@ export default function NewJobWizard({
             primary={{
               label: busy ? "Launching…" : "Launch job",
               onClick: () => void launch(),
-              disabled: busy || !preview,
+              // An unpublished trainer image is refused by the orchestrator
+              // before it provisions anything, so pressing Launch can only
+              // produce a failed job. Refusing here costs the user a click
+              // instead of a job record; the pre-flight row above says why.
+              disabled: busy || !preview || !imagePublished,
             }}
             secondary={{ label: "Back to hardware", onClick: () => go(3) }}
           />

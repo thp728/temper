@@ -2309,7 +2309,7 @@
         "type": "object"
       },
       "JobSpecPreview": {
-        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\n`delivery_formats` (issue #74) are the delivery formats a launch may ask\nfor beyond the canonical artifact, each with its plain-language purpose --\nread from the one `temper_core.delivery` vocabulary, so the launch screen\nand the finished page describe a format the same way.\n\nDeliberately quote-free: the plan page renders immediately and fetches the\nquote for the selected model afterwards, because an estimate never blocks\nthe surface it appears on (spec 005).",
+        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\n`delivery_formats` (issue #74) are the delivery formats a launch may ask\nfor beyond the canonical artifact, each with its plain-language purpose --\nread from the one `temper_core.delivery` vocabulary, so the launch screen\nand the finished page describe a format the same way.\n\n`trainer_image_published` is whether a real launch can pull the image it\nwould run. The orchestrator refuses a launch with `image_not_published`\nwhen the digest contract carries none, and that refusal used to arrive\nonly after the user pressed Launch -- as a failed job rather than a\ndisabled button. Publishing it here lets the launch screen assert the one\ncondition that actually blocks a real run, beside the four it already\nchecks. Always true under the simulated provider, which pulls no image.\n\nDeliberately quote-free: the plan page renders immediately and fetches the\nquote for the selected model afterwards, because an estimate never blocks\nthe surface it appears on (spec 005).",
         "properties": {
           "dataset": {
             "$ref": "#/components/schemas/DatasetRecord"
@@ -2325,6 +2325,11 @@
             "additionalProperties": true,
             "title": "Hyperparameters",
             "type": "object"
+          },
+          "trainer_image_published": {
+            "default": true,
+            "title": "Trainer Image Published",
+            "type": "boolean"
           },
           "warning": {
             "anyOf": [

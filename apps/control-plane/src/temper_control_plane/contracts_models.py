@@ -539,6 +539,14 @@ class JobSpecPreview(BaseModel):
     read from the one `temper_core.delivery` vocabulary, so the launch screen
     and the finished page describe a format the same way.
 
+    `trainer_image_published` is whether a real launch can pull the image it
+    would run. The orchestrator refuses a launch with `image_not_published`
+    when the digest contract carries none, and that refusal used to arrive
+    only after the user pressed Launch -- as a failed job rather than a
+    disabled button. Publishing it here lets the launch screen assert the one
+    condition that actually blocks a real run, beside the four it already
+    checks. Always true under the simulated provider, which pulls no image.
+
     Deliberately quote-free: the plan page renders immediately and fetches the
     quote for the selected model afterwards, because an estimate never blocks
     the surface it appears on (spec 005)."""
@@ -547,6 +555,7 @@ class JobSpecPreview(BaseModel):
     hyperparameters: dict[str, Any]
     warning: FeasibilityWarning | None = None
     delivery_formats: list[DeliveryFormatOption] = Field(default_factory=list)
+    trainer_image_published: bool = True
 
 
 class DeliveryFormatOption(BaseModel):

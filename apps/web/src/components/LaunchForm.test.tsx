@@ -397,6 +397,41 @@ describe("LaunchForm", () => {
     ).toBeVisible();
   });
 
+  // An unpublished trainer image is refused by the orchestrator before it
+  // provisions anything, so pressing Launch can only produce a failed job.
+  // The review step says so while the user can still act on it.
+  it("refuses to launch when the trainer image is not published", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview({ trainer_image_published: false })}
+        surface={null}
+      />,
+    );
+    await goToReview(user);
+    // The refusal keeps its stable code on the page.
+    expect(screen.getByText(/image_not_published/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Launch job" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).not.toHaveBeenCalled();
+  });
+
+  // A control plane that does not publish the field must not block a launch:
+  // an absent check passes open, like the other four.
+  it("launches when the published field is absent", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview({ trainer_image_published: undefined })}
+        surface={null}
+      />,
+    );
+    await goToReview(user);
+    expect(screen.getByRole("button", { name: "Launch job" })).toBeEnabled();
+  });
+
   it("launches with the chosen model and opens the job's own page", async () => {
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);

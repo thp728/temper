@@ -38,6 +38,7 @@ from temper_control_plane import (
     remote_datasets,
     seed_demo,
     storage,
+    trainer_build,
 )
 from temper_control_plane.contracts_models import (
     AdmittedModel,
@@ -759,11 +760,21 @@ def get_job_spec_preview(dataset_id: str):
         }
         for fmt in delivery.FORMATS.values()
     ]
+    # Whether a real launch could pull the image it would run. The
+    # orchestrator refuses with `image_not_published` when the digest
+    # contract carries none; reporting it here lets the launch screen say so
+    # while the user can still act on it, rather than after they have
+    # committed. The simulated provider pulls no image, so it is never
+    # blocked by this.
+    image_published = (
+        config.FAKE_PROVIDER or trainer_build.published_reference() is not None
+    )
     return {
         "dataset": ds,
         "hyperparameters": hyperparams.effective({}),
         "warning": warn,
         "delivery_formats": delivery_formats,
+        "trainer_image_published": image_published,
     }
 
 
