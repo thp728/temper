@@ -356,11 +356,8 @@ export default function EndpointSection({
             <EndpointStat label="Idle stop">
               {formatDuration(preview.idle_timeout_s)} after last use
             </EndpointStat>
-            <EndpointStat label="Would stop at">
-              {formatTimestamp(preview.expires_at)}
-            </EndpointStat>
-            <EndpointStat label="Hard stop at">
-              {formatTimestamp(preview.max_expires_at)}
+            <EndpointStat label="Max duration">
+              {formatDuration(preview.max_lifetime_s)}
             </EndpointStat>
           </dl>
         ) : (
@@ -370,15 +367,8 @@ export default function EndpointSection({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-[8px] border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
           <span>
             The endpoint carries its own expiry from the moment it starts,
-            extends on use, and stops itself via a timer. The forgotten warm
-            machine is the loudest complaint against the commercial baseline,
-            so stopping itself is the feature rather than a convenience.
+            extends on use, and stops itself via a timer.
           </span>
-          {preview?.max_lifetime_s != null && (
-            <span className="shrink-0 font-mono text-primary">
-              Max duration: {formatDuration(preview.max_lifetime_s)}
-            </span>
-          )}
         </div>
 
         {error && (
