@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RunningJobView from "@/components/RunningJobView";
@@ -90,6 +90,15 @@ function event(overrides: Partial<JobEvent> = {}): JobEvent {
   };
 }
 
+// The view's content is split across the same tabs the finished record uses
+// (issue: non-terminal/terminal parity); Radix mounts only the active tab's
+// content, so a test against a non-default tab switches to it first, the
+// same as a person clicking through would.
+async function switchToTab(name: RegExp) {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name }));
+}
+
 function renderView(
   overrides: {
     job?: JobRecord;
@@ -128,7 +137,7 @@ describe("RunningJobView", () => {
     expect(stream().url).toBe("/v1/jobs/job_abc123def456/stream?after=1");
   });
 
-  it("shows a running job's state, elapsed and latest loss beside it", () => {
+  it("shows a running job's state, elapsed and latest loss beside it", async () => {
     renderView({
       events: [
         event({ id: 1, kind: "state", message: "training" }),
@@ -148,6 +157,10 @@ describe("RunningJobView", () => {
     expect(value("Machine")).toBe("—");
     expect(value("Latest loss")).toContain("0.6931");
     expect(value("Latest loss")).toContain("step 10");
+
+    // The status tiles are visible on every tab; the raw output is the
+    // Logs tab's own content.
+    await switchToTab(/Logs/);
     expect(screen.getByRole("log")).toHaveTextContent("training");
   });
 
@@ -156,13 +169,22 @@ describe("RunningJobView", () => {
     // rather than only painted, so a screen-reader user is not left guessing
     // where the job is (spec 007, stories 18-19).
     renderView();
-    const state = screen.getByText("training", { selector: "strong" });
-    expect(state).toHaveAttribute("id", "job-state");
-    expect(state).toHaveAttribute("aria-live", "polite");
+    // Scoped to the status region (its accessible name, from the section's
+    // own sr-only heading) because the Overview tab's own status narration
+    // can say the same word in plain prose -- both are correct, so the pill
+    // is found by where it lives, not by assuming its text is unique on the
+    // page. The live region is the `strong` one level up from the pill's
+    // text, walked to rather than queried from the DOM by id.
+    const statusRegion = screen.getByRole("region", { name: "Status" });
+    const pill = within(statusRegion).getByText("training");
+    const liveRegion = pill.closest("[aria-live]");
+    expect(liveRegion).toHaveAttribute("id", "job-state");
+    expect(liveRegion).toHaveAttribute("aria-live", "polite");
   });
 
   it("appends streamed output without a refresh", async () => {
     renderView();
+    await switchToTab(/Logs/);
     stream().emit("job", event({ id: 2, kind: "log", message: "building image" }));
     await waitFor(() =>
       expect(screen.getByRole("log")).toHaveTextContent("building image"),
@@ -186,23 +208,28 @@ describe("RunningJobView", () => {
 
   it("shows the latest held-out loss as it becomes available", async () => {
     renderView();
+    await switchToTab(/Evaluation/);
     stream().emit("job", event({
       id: 2,
       kind: "metric",
       message: "{'eval_loss': 0.52, 'epoch': 0.5}",
       data: { held_out_loss: 0.52, epoch: 0.5 },
     }));
+    // A prose line under the chart, not a bento tile: the status row's five
+    // tiles match the finished record's exactly (issue: non-terminal/
+    // terminal parity), and this figure has no place there once the run is
+    // over -- so it lives beside the chart it explains, on both surfaces.
     await waitFor(() =>
-      expect(
-        screen.getByText("Latest held-out loss").nextElementSibling,
-      ).toHaveTextContent("0.52"),
+      expect(screen.getByText(/Latest held-out loss/)).toHaveTextContent(
+        "0.52",
+      ),
     );
-    expect(
-      screen.getByText("Latest held-out loss").nextElementSibling,
-    ).toHaveTextContent("epoch 0.5");
+    expect(screen.getByText(/Latest held-out loss/)).toHaveTextContent(
+      "epoch 0.5",
+    );
   });
 
-  it("charts training loss against step and held-out loss against epoch, each on its own plot", () => {
+  it("charts training loss against step and held-out loss against epoch, each on its own plot", async () => {
     const metric = (
       id: number,
       data: Record<string, number>,
@@ -221,6 +248,7 @@ describe("RunningJobView", () => {
         metric(5, { held_out_loss: 0.6, epoch: 1.0 }),
       ],
     });
+    await switchToTab(/Evaluation/);
     // Two plots, each with its own axis and its own line drawn -- not one
     // shared chart with two series forced onto the same x.
     const trainingChart = screen.getByRole("img", {
@@ -235,7 +263,7 @@ describe("RunningJobView", () => {
     expect(screen.getByText("Held-out loss")).toBeVisible();
   });
 
-  it("surfaces a held-out loss that stops improving, in plain language", () => {
+  it("surfaces a held-out loss that stops improving, in plain language", async () => {
     const heldOut = (id: number, loss: number) =>
       event({
         id,
@@ -251,12 +279,13 @@ describe("RunningJobView", () => {
         heldOut(4, 0.7),
       ],
     });
+    await switchToTab(/Evaluation/);
     const note = screen.getByRole("status");
     expect(note).toHaveTextContent(/overfitting/i);
     expect(note).toHaveTextContent(/held-out loss has not improved/i);
   });
 
-  it("says nothing while the held-out loss is still improving", () => {
+  it("says nothing while the held-out loss is still improving", async () => {
     const heldOut = (id: number, loss: number) =>
       event({
         id,
@@ -272,6 +301,7 @@ describe("RunningJobView", () => {
         heldOut(4, 0.4),
       ],
     });
+    await switchToTab(/Evaluation/);
     expect(screen.queryByRole("status")).toBeNull();
   });
 
@@ -405,16 +435,42 @@ describe("RunningJobView", () => {
     renderView();
     const button = screen.getByRole("button", { name: "Cancel job" });
     expect(button).toBeEnabled();
+  });
+
+  it("asks for confirmation before cancelling, explaining the consequence", async () => {
+    const user = userEvent.setup();
+    renderView();
+    await user.click(screen.getByRole("button", { name: "Cancel job" }));
+
+    // The request has not been made yet -- only asked about.
     expect(
-      screen.getByText(/no artifact will be produced/i),
+      screen.getByRole("heading", { name: "Cancel this job?" }),
     ).toBeVisible();
+    expect(screen.getByText(/no artifact will be produced/i)).toBeVisible();
     expect(screen.getByText(/cannot be undone/i)).toBeVisible();
+    expect(cancelJobMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the job running when the confirmation is dismissed", async () => {
+    const user = userEvent.setup();
+    renderView();
+    await user.click(screen.getByRole("button", { name: "Cancel job" }));
+    await user.click(screen.getByRole("button", { name: "Keep it running" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "Cancel this job?" }),
+      ).toBeNull(),
+    );
+    expect(cancelJobMock).not.toHaveBeenCalled();
   });
 
   it("records the cancellation request and stops offering it twice", async () => {
     cancelJobMock.mockResolvedValue({});
+    const user = userEvent.setup();
     renderView();
-    await userEvent.click(screen.getByRole("button", { name: "Cancel job" }));
+    await user.click(screen.getByRole("button", { name: "Cancel job" }));
+    await user.click(screen.getByRole("button", { name: "Yes, cancel job" }));
 
     await waitFor(() =>
       expect(
@@ -422,19 +478,30 @@ describe("RunningJobView", () => {
       ).toBeDisabled(),
     );
     expect(cancelJobMock).toHaveBeenCalledWith("job_abc123def456");
+    // The dialog closes once the request lands.
+    expect(
+      screen.queryByRole("heading", { name: "Cancel this job?" }),
+    ).toBeNull();
   });
 
-  it("shows a refused cancellation with its stable code", async () => {
+  it("shows a refused cancellation with its stable code, dialog still open", async () => {
     cancelJobMock.mockRejectedValue(
       new ApiError(409, "job_already_terminal", "Job is already 'complete'."),
     );
+    const user = userEvent.setup();
     renderView();
-    await userEvent.click(screen.getByRole("button", { name: "Cancel job" }));
+    await user.click(screen.getByRole("button", { name: "Cancel job" }));
+    await user.click(screen.getByRole("button", { name: "Yes, cancel job" }));
 
     await waitFor(() =>
       expect(screen.getByText("job_already_terminal")).toBeVisible(),
     );
     expect(screen.getByText(/already 'complete'/)).toBeVisible();
+    // A refusal is something to read and retry, not a reason to lose the
+    // question that was being asked.
+    expect(
+      screen.getByRole("heading", { name: "Cancel this job?" }),
+    ).toBeVisible();
   });
 
   it("hands back to the record when a state event confirms a terminal status", async () => {

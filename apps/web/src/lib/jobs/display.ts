@@ -2,7 +2,7 @@
 // showed, defined once so the list and the record cannot drift apart. No
 // component knowledge, no React -- these are functions over the contract.
 
-import type { JobEvent } from "@/lib/api/generated/client";
+import type { JobEvent, JobRecord } from "@/lib/api/generated/client";
 
 // A timestamp as a person reads it: relative while it is fresh ("just now",
 // "3 min ago", "4 hrs ago"), an absolute "Sep 4, 2026" once it is older than
@@ -174,6 +174,19 @@ export function latestLoss(
     return { loss, step: typeof step === "number" ? step : undefined };
   }
   return null;
+}
+
+// The machine tile's value, one definition so the running view and the
+// finished record never describe the same job's hardware differently: a
+// device count above one is named (a single L4 has nothing to count), and an
+// unprovisioned job reads as a dash rather than a guess.
+export function machineLabel(
+  job: Pick<JobRecord, "gpu_type" | "device_count" | "price_per_hour" | "currency">,
+): string {
+  if (!job.gpu_type) return "—";
+  const prefix =
+    job.device_count && job.device_count > 1 ? `${job.device_count}x ` : "";
+  return `${prefix}${job.gpu_type} at ${job.price_per_hour} ${job.currency}/hr`;
 }
 
 // What the stable codes mean, where the API's message alone does not say it:

@@ -1,37 +1,22 @@
-import Link from "next/link";
 import {
-  Ban,
-  BadgeCheck,
-  CheckCircle2,
-  Clock,
-  Cpu,
   Download,
   FolderArchive,
   HardDriveDownload,
   Layers,
   Package,
   Paperclip,
-  TrendingDown,
   TriangleAlert,
-  Wallet,
-  XCircle,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSlashSeparator,
-} from "@/components/ui/breadcrumb";
+import CheckpointSection from "@/components/CheckpointSection";
 import EventLog from "@/components/EventLog";
-import FocusHeading from "@/components/FocusHeading";
+import InstabilityBanner from "@/components/InstabilityBanner";
+import JobHeader from "@/components/JobHeader";
+import JobStatsGrid from "@/components/JobStatsGrid";
 import LossChart from "@/components/LossChart";
 import PlateauNote from "@/components/PlateauNote";
 import ProgressRegion from "@/components/ProgressRegion";
 import QuoteView from "@/components/QuoteView";
-import StatusPill from "@/components/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DivergenceRetry from "@/components/DivergenceRetry";
@@ -45,7 +30,7 @@ import {
   formatMinorCost,
   formatMinorCostRange,
   formatTimestamp,
-  shortRevision,
+  latestLoss,
 } from "@/lib/jobs/display";
 import {
   directionLabel,
@@ -81,46 +66,6 @@ import type {
 // once the job is terminal -- the tabs below are the one interactive surface,
 // and they need client JS only to switch which section is visible, not to
 // fetch or compute anything.
-
-function latestLoss(events: JobEvent[]): { loss: number; step?: number } | null {
-  // Scanning backwards: the latest metric wins, whatever order older events
-  // arrive in.
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i];
-    if (!e || e.kind !== "metric" || !e.data) continue;
-    const loss = e.data["loss"];
-    if (typeof loss !== "number") continue;
-    const step = e.data["step"];
-    return { loss, step: typeof step === "number" ? step : undefined };
-  }
-  return null;
-}
-
-function BentoStat({
-  icon: Icon,
-  label,
-  valueClassName = "mt-1 text-2xl font-semibold tracking-tight tabular-nums",
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  label: string;
-  valueClassName?: string;
-  children: React.ReactNode;
-}) {
-  // Each tile is its own `dl`, so the label/value pair stays a real dt/dd
-  // adjacency (that's what a screen reader announces, and what the tests
-  // read) while still living inside its own bordered card. Every tile holds
-  // to the same two lines -- label, then value -- so the row stays level;
-  // a third line on one card alone (issue: device count as its own hint)
-  // is what broke that before.
-  return (
-    <dl className="rounded-[12px] border bg-card p-4">
-      <Icon aria-hidden className="mb-2 size-4 text-muted-foreground" />
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className={valueClassName}>{children}</dd>
-    </dl>
-  );
-}
 
 // Presentational labels and icons keyed by the artifact's real, published
 // `kind` (packages/core/src/temper_core/artifacts.py `ARTIFACT_KIND_*`): a
@@ -271,98 +216,6 @@ function ArtifactSection({ job }: { job: JobRecord }) {
   );
 }
 
-function CheckpointSection({ job }: { job: JobRecord }) {
-  // The result checkpoint is chosen by held-out loss and recorded on the run
-  // (issue #62), so the finished record states which one was chosen and why,
-  // and offers every retained checkpoint for download -- the user is never
-  // locked out of their own run's history. Only retained checkpoints are
-  // downloadable; a superseded or failed one is named but not offered.
-  const checkpoints = job.checkpoints ?? [];
-  if (checkpoints.length === 0) return null;
-  const best = job.best_checkpoint;
-  return (
-    <section aria-labelledby="checkpoints-heading" className="space-y-3">
-      <h2 id="checkpoints-heading" className="text-xs font-medium tracking-widest uppercase text-foreground">
-        Retained checkpoints
-      </h2>
-      {best && best.step != null && (
-        <div className="flex items-start gap-2 px-4 py-3 font-mono text-sm">
-          <BadgeCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
-          <p>
-            <strong className="font-semibold text-primary">
-              Best checkpoint: step {best.step}
-              {best.held_out_loss != null && (
-                <>
-                  {" "}
-                  (held-out loss{" "}
-                  <span className="text-success">{best.held_out_loss}</span>)
-                </>
-              )}
-            </strong>
-            {best.reason && (
-              <>
-                {" — "}
-                <span className="font-sans text-muted-foreground">
-                  {best.reason}
-                </span>
-              </>
-            )}
-          </p>
-        </div>
-      )}
-      <div className="overflow-hidden rounded-[12px] border bg-card font-mono text-sm">
-        <ul className="divide-y">
-          {checkpoints.map((c) => (
-            <li
-              key={c.step}
-              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">Step {c.step}</span>
-                {c.selected && (
-                  <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-primary uppercase">
-                    chosen result
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-3 text-muted-foreground">
-                <span>
-                  {c.held_out_loss != null ? (
-                    <>
-                      held-out loss:{" "}
-                      <span
-                        className={
-                          c.selected
-                            ? "font-semibold text-success"
-                            : "text-foreground"
-                        }
-                      >
-                        {c.held_out_loss}
-                      </span>
-                    </>
-                  ) : (
-                    "no held-out loss recorded"
-                  )}
-                </span>
-                {c.verified ? (
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={`/v1/jobs/${job.id}/checkpoints/${c.step}`}>
-                      <Download aria-hidden className="size-3.5" />
-                      Download
-                    </a>
-                  </Button>
-                ) : (
-                  <span className="text-xs">not retained</span>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
 function FailedSection({ job, events }: { job: JobRecord; events: JobEvent[] }) {
   return (
     <Alert variant="destructive">
@@ -376,28 +229,6 @@ function FailedSection({ job, events }: { job: JobRecord; events: JobEvent[] }) 
         {failureExplanation(job.error_code) && <p>{failureExplanation(job.error_code)}</p>}
         {job.error_message && <p>{job.error_message}</p>}
         <DivergenceRetry job={job} />
-      </AlertDescription>
-    </Alert>
-  );
-}
-
-function InstabilityBanner({ events }: { events: JobEvent[] }) {
-  const warnings = events.filter(
-    (e) => e.data && (e.data["code"] === "training_instability" || e.data["warning"] === true),
-  );
-  if (warnings.length === 0) return null;
-  return (
-    <Alert>
-      <AlertTitle>Training instability</AlertTitle>
-      <AlertDescription>
-        <p>
-          Loss is spiking well above its recent average. This is shown as a
-          warning rather than an abort, because it may be early divergence. Consider
-          lowering the learning rate if it continues.
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {warnings[warnings.length - 1]?.message}
-        </p>
       </AlertDescription>
     </Alert>
   );
@@ -853,111 +684,13 @@ export default function JobRecordView({
         <meta httpEquiv="refresh" content="2" />
       )}
 
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <Link href="/jobs">Jobs</Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSlashSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage className="font-mono text-xs">{job.id}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      <JobHeader
+        job={job}
+        datasetFilename={datasetFilename}
+        meta={formatTimestamp(end)}
+      />
 
-      <div>
-        <FocusHeading id="job-heading">
-          <code>{job.base_model}</code>
-        </FocusHeading>
-        <p className="mt-2 text-muted-foreground">
-          Dataset{" "}
-          <Link
-            href={`/datasets/${job.dataset_id}`}
-            className="underline hover:no-underline"
-          >
-            {datasetFilename ?? job.dataset_id}
-          </Link>
-          {job.base_revision && (
-            <>
-              {" · "}model revision{" "}
-              <code title={job.base_revision}>{shortRevision(job.base_revision)}</code>
-            </>
-          )}
-          {" · "}
-          {formatTimestamp(end)}
-        </p>
-        {job.is_moe && (
-          <div className="mt-3 rounded-[12px] border border-amber-200 bg-amber-50 p-3">
-            <p className="text-sm font-medium text-amber-900">
-              Mixture-of-experts, untested here
-            </p>
-            <p className="mt-1 text-sm text-amber-800">
-              This model is a mixture-of-experts architecture, which is untested
-              here: expert routing changes LoRA target-module selection, memory
-              scales with total rather than active parameters, and routing
-              interacts poorly with small-batch adapters. It is usable and
-              labelled untested, because curation is a default rather than a boundary.
-            </p>
-          </div>
-        )}
-      </div>
-
-      <section aria-labelledby="status-heading">
-        <h2 id="status-heading" className="sr-only">
-          Status
-        </h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          <BentoStat
-            icon={
-              job.status === "complete"
-                ? CheckCircle2
-                : job.status === "failed"
-                  ? XCircle
-                  : Ban
-            }
-            label="State"
-            valueClassName="mt-2"
-          >
-            <strong id="job-state" aria-live="polite">
-              <StatusPill status={job.status} />
-            </strong>
-          </BentoStat>
-          <BentoStat icon={Clock} label="Elapsed">
-            {formatDuration(end - start)}
-          </BentoStat>
-          <BentoStat
-            icon={Cpu}
-            label="Machine"
-            valueClassName="mt-1 text-lg font-semibold tracking-tight tabular-nums"
-          >
-            {job.gpu_type
-              ? `${job.device_count && job.device_count > 1 ? `${job.device_count}x ` : ""}${job.gpu_type} at ${job.price_per_hour} ${job.currency}/hr`
-              : "—"}
-          </BentoStat>
-          <BentoStat
-            icon={TrendingDown}
-            label="Latest loss"
-            valueClassName="mt-1 text-lg font-semibold tracking-tight tabular-nums"
-          >
-            {loss
-              ? `${loss.loss}${loss.step !== undefined ? ` at step ${loss.step}` : ""}`
-              : "—"}
-          </BentoStat>
-          <BentoStat icon={Wallet} label="Cost">
-            {job.actuals?.cost_minor != null &&
-            job.actuals.currency != null &&
-            job.quote?.minor_unit != null
-              ? formatMinorCost(
-                  job.actuals.cost_minor,
-                  job.actuals.currency,
-                  job.quote.minor_unit,
-                )
-              : "—"}
-          </BentoStat>
-        </div>
-      </section>
+      <JobStatsGrid job={job} elapsedSeconds={end - start} loss={loss} />
 
       {/* The record used to run as one long page; a finished job's history
           made that a scroll through everything at once regardless of what a
