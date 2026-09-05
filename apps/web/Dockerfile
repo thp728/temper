@@ -29,9 +29,22 @@ COPY apps/web apps/web
 ARG TEMPER_BACKEND_URL=http://control-plane:8000
 ENV TEMPER_BACKEND_URL=$TEMPER_BACKEND_URL
 
-RUN corepack pnpm --dir apps/web install --frozen-lockfile
-RUN corepack pnpm --dir apps/web generate:client
-RUN corepack pnpm --dir apps/web build
+# Run pnpm from the directory that pins it, not from /workspace. `--dir`
+# tells pnpm where to work but does not move corepack's resolution root:
+# corepack reads `packageManager` from the working directory's package.json,
+# finds none at /workspace, and silently falls back to whichever pnpm it
+# ships with. That version is not pinned by anything here -- `node:22-slim`
+# is a moving tag -- so a base-image bump shipped pnpm 11.25.0 against a
+# project pinned to 11.24.0 and the build began failing with no change to
+# this repo. Working from apps/web means the pin in its package.json is the
+# one definition both corepack and pnpm read.
+WORKDIR /workspace/apps/web
+
+RUN corepack pnpm install --frozen-lockfile
+RUN corepack pnpm generate:client
+RUN corepack pnpm build
+
+WORKDIR /workspace
 
 # --- runtime ----------------------------------------------------------------
 FROM node:22-slim
