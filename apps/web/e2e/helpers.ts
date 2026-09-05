@@ -43,7 +43,7 @@ async function uploadRows(page: Page, rows: object[]) {
 async function goToLaunch(page: Page) {
   await page.getByRole("link", { name: "New job with this dataset" }).click();
   await expect(
-    page.getByRole("heading", { name: "Choose a base model" }),
+    page.getByRole("heading", { name: "Model & dataset" }),
   ).toBeVisible();
 }
 

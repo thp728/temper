@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LaunchForm from "@/components/LaunchForm";
 import type {
   AdvancedSurface as AdvancedSurfaceModel,
   CatalogEntry,
+  DatasetRecord,
   JobSpecPreview,
   ModelCatalog,
   Quote,
@@ -22,11 +23,19 @@ vi.mock("next/navigation", () => ({
 const createJobMock = vi.hoisted(() => vi.fn());
 const getQuoteMock = vi.hoisted(() => vi.fn());
 const recomputeQuoteMock = vi.hoisted(() => vi.fn());
+const getPreviewMock = vi.hoisted(() => vi.fn());
+const uploadDatasetMock = vi.hoisted(() => vi.fn());
+const getDatasetMock = vi.hoisted(() => vi.fn());
+const listJobsMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/generated/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/generated/client")>()),
   createJobV1JobsPost: createJobMock,
   getQuoteV1QuotesGet: getQuoteMock,
   recomputeQuoteV1QuotesPost: recomputeQuoteMock,
+  getJobSpecPreviewV1JobsSpecGet: getPreviewMock,
+  uploadDatasetV1DatasetsPost: uploadDatasetMock,
+  getDatasetV1DatasetsDatasetIdGet: getDatasetMock,
+  listJobsV1JobsGet: listJobsMock,
 }));
 
 import { ApiError } from "@/lib/api/mutator";
@@ -170,6 +179,13 @@ function quote(overrides: Partial<Quote> = {}): Quote {
         ],
         overridden: false,
       },
+      {
+        decision: "sequence length",
+        chosen: "2048",
+        constraint: "the trainer default (2048, trainer-defaults.json).",
+        alternatives: [],
+        overridden: false,
+      },
     ],
     override_options: {
       method: ["qlora", "lora", "full"],
@@ -279,30 +295,75 @@ beforeEach(() => {
   getQuoteMock.mockReset();
   recomputeQuoteMock.mockReset();
   getQuoteMock.mockResolvedValue(null);
+  getPreviewMock.mockReset();
+  getPreviewMock.mockResolvedValue(preview());
+  uploadDatasetMock.mockReset();
+  getDatasetMock.mockReset();
+  listJobsMock.mockReset();
+  listJobsMock.mockResolvedValue({ jobs: [] });
   push.mockReset();
 });
 
+// The launch surface is a four-step wizard (Model & dataset >
+// Hyperparameters > Compute & hardware > Review): model and dataset choice
+// live on step 1, the spec and training-shape decisions on step 2, the
+// estimate and where-it-runs decisions on step 3, delivery and Launch on
+// step 4. Tests drive it the way a person does — Continue through the steps,
+// then assert.
+async function goToHyperparameters(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    screen.getByRole("button", { name: "Continue to hyperparameters" }),
+  );
+}
+
+async function goToHardware(user: ReturnType<typeof userEvent.setup>) {
+  await goToHyperparameters(user);
+  await user.click(
+    screen.getByRole("button", { name: "Continue to hardware" }),
+  );
+}
+
+async function goToReview(user: ReturnType<typeof userEvent.setup>) {
+  await goToHardware(user);
+  await user.click(
+    screen.getByRole("button", { name: "Continue to review" }),
+  );
+}
+
 describe("LaunchForm", () => {
-  it("offers every catalog model as a named choice, with licence and pinned revision", () => {
+  it("offers every catalog model as a named choice, with licence and pinned revision", async () => {
+    const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     for (const m of catalog.models) {
       const card = optionCard(m.repo);
       expect(screen.getByRole("radio", { name: new RegExp(m.repo) })).toBeVisible();
-      // The terms and the pin, beside the choice they belong to.
+      // The terms beside the choice they belong to; the forty-character
+      // revision shows truncated, with the exact hash opening in a tooltip
+      // on hover (and staying in the label for screen readers).
       expect(card).toHaveTextContent(`Licence ${m.license}`);
-      expect(card).toHaveTextContent(m.revision);
+      const code = card.querySelector("code")!;
+      expect(
+        code.querySelector("[aria-hidden='true']")?.textContent,
+      ).not.toBe(m.revision);
+      await user.hover(code);
+      await screen.findAllByText(m.revision);
+      await user.unhover(code);
     }
   });
 
-  it("shows the predicted peak memory and headroom for every model, before launch", () => {
+  it("shows params and context on every model card, without the memory estimate", () => {
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
+    // The memory arithmetic lives beside the hardware choice on step 3, not
+    // on the card: the card says what the model is, not where it fits.
     const card4b = optionCard("Qwen/Qwen3-4B");
-    expect(card4b).toHaveTextContent("5.35");
-    expect(card4b).toHaveTextContent("18.65");
-    expect(card4b).toHaveTextContent("L4");
+    expect(card4b).toHaveTextContent("4B");
+    expect(card4b).toHaveTextContent("40960");
+    expect(card4b).not.toHaveTextContent("headroom");
+    expect(card4b).not.toHaveTextContent("Predicted peak VRAM");
     const card8b = optionCard("Qwen/Qwen3-8B");
-    expect(card8b).toHaveTextContent("9.6");
-    expect(card8b).toHaveTextContent("14.4");
+    expect(card8b).toHaveTextContent("8.2");
+    expect(card8b).toHaveTextContent("32768");
+    expect(card8b).not.toHaveTextContent("headroom");
   });
 
   it("preselects the catalog default", () => {
@@ -315,14 +376,22 @@ describe("LaunchForm", () => {
     ).not.toBeChecked();
   });
 
-  it("shows the specification the job will freeze, before launching", () => {
+  it("shows the specification the job will freeze, before launching", async () => {
+    const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
+    await goToHyperparameters(user);
     expect(specValue("lora_r")).toBe("16");
     expect(specValue("num_epochs")).toBe("3");
     // The commitment is stated where the numbers are read...
     expect(screen.getByText(/frozen at launch/i)).toBeVisible();
     // ...alongside the fact that it cannot be undone later.
     expect(screen.getByText(/cannot be changed afterwards/i)).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Continue to hardware" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Continue to review" }),
+    );
     expect(
       screen.getByRole("button", { name: "Launch job" }),
     ).toBeVisible();
@@ -332,6 +401,7 @@ describe("LaunchForm", () => {
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await goToReview(user);
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalledWith({
       dataset_id: "ds_abc123",
@@ -349,6 +419,7 @@ describe("LaunchForm", () => {
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await goToReview(user);
     // The delivery choices are offered by what each format is for.
     await user.click(
       screen.getByRole("checkbox", { name: /Merged model/ }),
@@ -366,6 +437,7 @@ describe("LaunchForm", () => {
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     await user.click(screen.getByRole("radio", { name: /Qwen\/Qwen3-8B/ }));
+    await goToReview(user);
     createJobMock.mockResolvedValueOnce({ id: "job_def456" });
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalledWith(
@@ -383,12 +455,16 @@ describe("LaunchForm", () => {
         "'gpt-9' is not in the catalog.",
       ),
     );
+    await goToReview(user);
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("unknown_model");
     expect(alert).toHaveTextContent("not in the catalog");
     expect(push).not.toHaveBeenCalled();
-    // Still here, still able to act: pick the other model and retry.
+    // Still here, still able to act: go back and pick the other model.
+    await user.click(screen.getByRole("button", { name: "Back to hardware" }));
+    await user.click(screen.getByRole("button", { name: "Back to hyperparameters" }));
+    await user.click(screen.getByRole("button", { name: "Back to sources" }));
     expect(
       screen.getByRole("radio", { name: /Qwen\/Qwen3-8B/ }),
     ).toBeEnabled();
@@ -398,6 +474,7 @@ describe("LaunchForm", () => {
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
     createJobMock.mockRejectedValueOnce(new TypeError("fetch failed"));
+    await goToReview(user);
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(screen.getByRole("alert")).toHaveTextContent("network_error");
   });
@@ -411,6 +488,7 @@ describe("LaunchForm", () => {
         resolve = res;
       }),
     );
+    await goToReview(user);
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(
       screen.getByRole("button", { name: /launching/i }),
@@ -420,7 +498,9 @@ describe("LaunchForm", () => {
 
   it("fetches and shows the selected model's quote: a duration range, not a point", async () => {
     getQuoteMock.mockResolvedValue(quote());
+    const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
+    await goToHardware(user);
     // The default model's quote is fetched after the page renders, with its
     // ranges.
     await waitFor(() =>
@@ -432,14 +512,15 @@ describe("LaunchForm", () => {
       dataset_id: "ds_abc123",
       base_model: "qwen3-4b",
     });
-    expect(screen.getByText(/never blocks a launch/i)).toBeVisible();
     expect(screen.getByText(/00:03:58–00:18:59/)).toBeVisible();
     expect(screen.getByText(/INR 2\.74 – INR 13\.08/)).toBeVisible();
   });
 
   it("shows the per-phase breakdown of cost and duration", async () => {
     getQuoteMock.mockResolvedValue(quote());
+    const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
+    await goToHardware(user);
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Cost and time estimate" }),
@@ -455,11 +536,6 @@ describe("LaunchForm", () => {
     getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
-    await waitFor(() =>
-      expect(
-        screen.getByRole("heading", { name: "Cost and time estimate" }),
-      ).toBeVisible(),
-    );
     getQuoteMock.mockResolvedValue(
       quote({
         duration_low_s: 400,
@@ -469,13 +545,16 @@ describe("LaunchForm", () => {
       }),
     );
     await user.click(screen.getByRole("radio", { name: /Qwen\/Qwen3-8B/ }));
+    await goToHardware(user);
     await waitFor(() =>
       expect(getQuoteMock).toHaveBeenLastCalledWith({
         dataset_id: "ds_abc123",
         base_model: "qwen3-8b",
       }),
     );
-    expect(screen.getByText(/00:06:40–00:33:20/)).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByText(/00:06:40–00:33:20/)).toBeVisible(),
+    );
     expect(screen.getByText(/INR 4\.60 – INR 23\.00/)).toBeVisible();
   });
 
@@ -483,10 +562,14 @@ describe("LaunchForm", () => {
     getQuoteMock.mockResolvedValue(null);
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
-    // The estimate is shown as unavailable, and the launch is still offered:
-    // an estimate warns, it never blocks (spec 005).
+    // The estimate is shown as unavailable on the hardware step, and the
+    // launch is still offered on review: an estimate warns, it never blocks.
+    await goToHardware(user);
     await waitFor(() =>
       expect(screen.getByText(/could not be computed/i)).toBeVisible(),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Continue to review" }),
     );
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
     await user.click(screen.getByRole("button", { name: "Launch job" }));
@@ -499,9 +582,10 @@ describe("LaunchForm", () => {
     getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
+    await goToHyperparameters(user);
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Cost and time estimate" }),
+        screen.getByRole("combobox", { name: "method override" }),
       ).toBeVisible(),
     );
     // The change is re-requested, not applied locally: the client sends the
@@ -539,9 +623,10 @@ describe("LaunchForm", () => {
     getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
+    await goToHyperparameters(user);
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Cost and time estimate" }),
+        screen.getByRole("combobox", { name: "method override" }),
       ).toBeVisible(),
     );
     recomputeQuoteMock.mockRejectedValue(
@@ -563,7 +648,7 @@ describe("LaunchForm", () => {
     await waitFor(() =>
       expect(
         screen.getByRole("combobox", { name: "method override" }),
-      ).toHaveValue(""),
+      ).toHaveValue("qlora"),
     );
   });
 
@@ -571,9 +656,10 @@ describe("LaunchForm", () => {
     getQuoteMock.mockResolvedValue(quote());
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
+    await goToHyperparameters(user);
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Cost and time estimate" }),
+        screen.getByRole("combobox", { name: "method override" }),
       ).toBeVisible(),
     );
     recomputeQuoteMock.mockResolvedValue(quote());
@@ -583,6 +669,12 @@ describe("LaunchForm", () => {
     );
     await waitFor(() => expect(recomputeQuoteMock).toHaveBeenCalled());
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await user.click(
+      screen.getByRole("button", { name: "Continue to hardware" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Continue to review" }),
+    );
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalledWith({
       dataset_id: "ds_abc123",
@@ -601,16 +693,14 @@ describe("LaunchForm", () => {
     render(
       <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
     );
+    await goToHyperparameters(user);
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Cost and time estimate" }),
+        screen.getByRole("combobox", { name: "method override" }),
       ).toBeVisible(),
     );
-    // Opening the disclosure is the explicit act; the change is then
-    // re-requested from the server with the hyperparameter, not applied
-    // locally.
-    const details = screen.getByRole("group", { name: "Advanced settings" });
-    await user.click(details.querySelector("summary") as HTMLElement);
+    // The edit happens in place on the hyperparameter card: the advanced
+    // disclosure below only lists what Temper does not offer yet.
     recomputeQuoteMock.mockResolvedValue(quote());
     const lr = screen.getByRole("spinbutton", { name: "learning_rate override" });
     await user.clear(lr);
@@ -625,8 +715,301 @@ describe("LaunchForm", () => {
       }),
     );
     // The frozen-spec preview reflects the override, so what the page says a
-    // launch will freeze is what will actually freeze.
-    expect(screen.getByText("0.0001")).toBeVisible();
+    // launch will freeze is what will actually freeze: the card input holds
+    // the edited value.
+    expect(
+      screen.getByRole("spinbutton", { name: "learning_rate override" }),
+    ).toHaveValue(0.0001);
+  });
+
+  it("edits an exposed hyperparameter in place and offers the way back", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await goToHyperparameters(user);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "method override" }),
+      ).toBeVisible(),
+    );
+    // num_epochs is exposed, so its card row is an input populated with the
+    // default; editing re-requests the plan and marks the row.
+    recomputeQuoteMock.mockResolvedValue(quote());
+    const epochs = screen.getByRole("spinbutton", {
+      name: "num_epochs override",
+    });
+    expect(epochs).toHaveValue(3);
+    await user.clear(epochs);
+    await user.type(epochs, "5");
+    await user.tab();
+    await waitFor(() =>
+      expect(recomputeQuoteMock).toHaveBeenCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-4b",
+        overrides: [],
+        hyperparameters: { num_epochs: "5" },
+      }),
+    );
+    expect(screen.getByText("you changed this")).toBeVisible();
+    // The way back clears the override and re-requests the plain quote.
+    await user.click(screen.getByRole("button", { name: "Use the default" }));
+    await waitFor(() =>
+      expect(getQuoteMock).toHaveBeenLastCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-4b",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("spinbutton", { name: "num_epochs override" }),
+      ).toHaveValue(3),
+    );
+  });
+
+  it("keeps calculated keys read-only with the value shown", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await goToHyperparameters(user);
+    // lora_r is not in the fixture surface's exposed tier, so its card row
+    // is a shown value, never a control the launch would refuse.
+    expect(
+      screen.queryByRole("spinbutton", { name: "lora_r override" }),
+    ).not.toBeInTheDocument();
+    const card = screen.getByRole("region", {
+      name: "LoRA & Adapter Architecture",
+    });
+    expect(within(card).getByText("16")).toBeVisible();
+  });
+
+  it("explains a hyperparameter behind a '?' tooltip", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await goToHyperparameters(user);
+    // The reason and the failure mode stay off the page until asked for.
+    expect(
+      screen.queryByText(/The peak learning rate for the cosine schedule/i),
+    ).not.toBeInTheDocument();
+    await user.hover(screen.getByRole("button", { name: "About learning_rate" }));
+    expect(
+      await screen.findByText(/The peak learning rate for the cosine schedule/i),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/diverges to NaN partway through a paid run/i),
+    ).toBeVisible();
+  });
+
+  it("explains a plan decision behind a '?' dialog", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await goToHyperparameters(user);
+    // The card keeps heading, value and control; the reason opens on demand.
+    expect(screen.getByRole("heading", { name: "method" })).toBeVisible();
+    expect(
+      screen.getByRole("combobox", { name: "method override" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/the trainer can execute qlora today/i),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "About the method decision" }),
+    );
+    expect(
+      await screen.findByText(/the trainer can execute qlora today/i),
+    ).toBeVisible();
+  });
+
+  it("nests the training decisions inside the form cards, with no decisions section", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await goToHyperparameters(user);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "method override" }),
+      ).toBeVisible(),
+    );
+    // No dedicated section: method and precision sit in the adapter card,
+    // sequence length in the sequence card.
+    expect(
+      screen.queryByRole("heading", { name: "Why this configuration" }),
+    ).not.toBeInTheDocument();
+    const adapter = screen.getByRole("region", {
+      name: "LoRA & Adapter Architecture",
+    });
+    expect(
+      within(adapter).getByRole("combobox", { name: "method override" }),
+    ).toBeVisible();
+    const sequence = screen.getByRole("region", {
+      name: "Sequence & Context Length",
+    });
+    expect(
+      within(sequence).getByRole("spinbutton", {
+        name: "sequence length override",
+      }),
+    ).toBeVisible();
+  });
+
+  it("resets every override to the smart defaults in one act", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await goToHyperparameters(user);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "method override" }),
+      ).toBeVisible(),
+    );
+    // Pin a decision and a hyperparameter first, so the reset has something
+    // to clear.
+    recomputeQuoteMock.mockResolvedValue(
+      quote({
+        decisions: [
+          {
+            decision: "method",
+            chosen: "lora",
+            constraint: "you chose lora.",
+            alternatives: [],
+            overridden: true,
+          },
+        ],
+      }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "method override" }),
+      "lora",
+    );
+    const lr = screen.getByRole("spinbutton", { name: "learning_rate override" });
+    await user.clear(lr);
+    await user.type(lr, "0.0001");
+    await user.tab();
+    await waitFor(() => expect(recomputeQuoteMock).toHaveBeenCalled());
+    expect(screen.getAllByText("you changed this").length).toBe(2);
+    // Reset returns to the smart defaults: one clean quote request, no
+    // markers, inputs back on their defaults.
+    await user.click(screen.getByRole("button", { name: "Reset defaults" }));
+    await waitFor(() =>
+      expect(getQuoteMock).toHaveBeenLastCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-4b",
+      }),
+    );
+    expect(screen.queryByText("you changed this")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "method override" }),
+    ).toHaveValue("qlora");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("spinbutton", { name: "learning_rate override" }),
+      ).toHaveValue(0.0002),
+    );
+  });
+
+  it("overrides the hardware from its option cards", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await goToHardware(user);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    // Temper's default starts selected and badged.
+    const group = screen.getByRole("radiogroup", { name: "hardware options" });
+    expect(within(group).getByRole("radio", { name: /L4/ })).toBeChecked();
+    expect(within(group).getByText("Recommended")).toBeVisible();
+    // Picking another card pins the override and recomputes from the server.
+    recomputeQuoteMock.mockResolvedValue(
+      quote({
+        decisions: [
+          {
+            decision: "hardware",
+            chosen: "H100",
+            constraint: "you chose H100.",
+            alternatives: [],
+            overridden: true,
+          },
+        ],
+      }),
+    );
+    await user.click(within(group).getByRole("radio", { name: /H100/ }));
+    await waitFor(() =>
+      expect(recomputeQuoteMock).toHaveBeenCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-4b",
+        overrides: [{ decision: "hardware", value: "H100" }],
+        hyperparameters: {},
+      }),
+    );
+    expect(screen.getByText("you changed this")).toBeVisible();
+  });
+
+  it("reselecting the predictor's default unpins instead of re-pinning it", async () => {
+    const user = userEvent.setup();
+    getQuoteMock.mockResolvedValue(quote());
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
+    );
+    await goToHardware(user);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Cost and time estimate" }),
+      ).toBeVisible(),
+    );
+    const group = screen.getByRole("radiogroup", { name: "hardware options" });
+    // Pin another GPU: the recomputed quote echoes the pin as its choice.
+    recomputeQuoteMock.mockResolvedValue(
+      quote({
+        decisions: [
+          {
+            decision: "hardware",
+            chosen: "H100",
+            constraint: "you chose H100.",
+            alternatives: [],
+            overridden: true,
+          },
+        ],
+      }),
+    );
+    await user.click(within(group).getByRole("radio", { name: /H100/ }));
+    await waitFor(() => expect(recomputeQuoteMock).toHaveBeenCalled());
+    // Recommended stays on the predictor's default, and the copy names it.
+    expect(
+      within(group).getByRole("radio", { name: "L4 Recommended" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Select hardware" }),
+    ).toHaveTextContent(/Temper's default was/);
+    // Reselecting the default clears the override: one clean quote request,
+    // no marker, the default checked again.
+    await user.click(
+      within(group).getByRole("radio", { name: "L4 Recommended" }),
+    );
+    await waitFor(() =>
+      expect(getQuoteMock).toHaveBeenLastCalledWith({
+        dataset_id: "ds_abc123",
+        base_model: "qwen3-4b",
+      }),
+    );
+    expect(screen.queryByText("you changed this")).not.toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: /L4/ })).toBeChecked();
   });
 
   it("reverts an advanced override the server refuses, and shows the refusal", async () => {
@@ -635,9 +1018,10 @@ describe("LaunchForm", () => {
     render(
       <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
     );
+    await goToHyperparameters(user);
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Cost and time estimate" }),
+        screen.getByRole("combobox", { name: "method override" }),
       ).toBeVisible(),
     );
     const details = screen.getByRole("group", { name: "Advanced settings" });
@@ -671,9 +1055,10 @@ describe("LaunchForm", () => {
     render(
       <LaunchForm catalog={catalog} preview={preview()} surface={surface()} />,
     );
+    await goToHyperparameters(user);
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Cost and time estimate" }),
+        screen.getByRole("combobox", { name: "method override" }),
       ).toBeVisible(),
     );
     const details = screen.getByRole("group", { name: "Advanced settings" });
@@ -685,6 +1070,12 @@ describe("LaunchForm", () => {
     await user.tab();
     await waitFor(() => expect(recomputeQuoteMock).toHaveBeenCalled());
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await user.click(
+      screen.getByRole("button", { name: "Continue to hardware" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Continue to review" }),
+    );
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalledWith({
       dataset_id: "ds_abc123",
@@ -703,14 +1094,21 @@ describe("LaunchForm", () => {
     render(
       <LaunchForm catalog={catalog} preview={preview()} surface={null} />,
     );
+    await goToHyperparameters(user);
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Cost and time estimate" }),
+        screen.getByRole("combobox", { name: "method override" }),
       ).toBeVisible(),
     );
     expect(
       screen.queryByRole("group", { name: "Advanced settings" }),
     ).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Continue to hardware" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Continue to review" }),
+    );
     createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalledWith({
@@ -720,5 +1118,371 @@ describe("LaunchForm", () => {
       overrides: [],
       delivery: [],
     });
+  });
+
+  // --- the dataset is picked on the Sources step ---------------------------
+
+  function datasetRecord(
+    overrides: Partial<DatasetRecord> = {},
+  ): DatasetRecord {
+    return {
+      id: "ds_def456",
+      filename: "second.jsonl",
+      created_at: 1756160500,
+      updated_at: 1756160500,
+      status: "valid",
+      report: {
+        valid: true,
+        row_count: 20,
+        usable_rows: 18,
+        errors: [],
+        warnings: [],
+        preview: [],
+      },
+      token_count_status: "counted",
+      ...overrides,
+    } as DatasetRecord;
+  }
+
+  it("offers only ready datasets as named choices beside the current one", () => {
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview()}
+        surface={null}
+        datasets={[
+          datasetRecord(),
+          datasetRecord({
+            id: "ds_bad",
+            filename: "bad.jsonl",
+            report: {
+              valid: false,
+              row_count: 3,
+              usable_rows: 0,
+              errors: [],
+              warnings: [],
+              preview: [],
+            },
+          }),
+        ]}
+      />,
+    );
+    // The current dataset is the checked choice; the other ready one is
+    // offered beside it, with its usable rows.
+    expect(screen.getByRole("radio", { name: /^d\.jsonl/ })).toBeChecked();
+    const other = screen.getByRole("radio", { name: /second\.jsonl/ });
+    expect(other).not.toBeChecked();
+    expect(other.closest("label")).toHaveTextContent("18 of 20 rows");
+    // A dataset that needs fixes is not offered here at all — its report,
+    // not this picker, is where it gets fixed.
+    expect(
+      screen.queryByRole("link", { name: /bad\.jsonl/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/needs fixes/)).not.toBeInTheDocument();
+  });
+
+  it("switching datasets reloads the preview and resets the tune state", async () => {
+    getQuoteMock.mockResolvedValue(quote());
+    const user = userEvent.setup();
+    const second = preview({
+      dataset: {
+        id: "ds_def456",
+        filename: "second.jsonl",
+        created_at: 1756160500,
+        status: "valid",
+      },
+    });
+    getPreviewMock.mockResolvedValue(second);
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview()}
+        surface={null}
+        datasets={[datasetRecord()]}
+      />,
+    );
+    // Pin something first, so the reset has something to clear.
+    await goToHyperparameters(user);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "method override" }),
+      ).toBeVisible(),
+    );
+    recomputeQuoteMock.mockResolvedValue(
+      quote({
+        decisions: [
+          {
+            decision: "method",
+            chosen: "lora",
+            constraint: "you chose lora. The trainer executes only 'qlora' today.",
+            alternatives: [],
+            overridden: true,
+          },
+        ],
+      }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "method override" }),
+      "lora",
+    );
+    await waitFor(() => expect(recomputeQuoteMock).toHaveBeenCalled());
+    expect(screen.getByText("you changed this")).toBeVisible();
+
+    // Back to Sources, switch datasets: the plan below is the new
+    // dataset's, the override is gone, and the quote is re-requested for it.
+    await user.click(screen.getByRole("button", { name: "Back to sources" }));
+    await user.click(screen.getByRole("radio", { name: /second\.jsonl/ }));
+    await waitFor(() =>
+      expect(getPreviewMock).toHaveBeenCalledWith({
+        dataset_id: "ds_def456",
+      }),
+    );
+    await waitFor(() =>
+      expect(getQuoteMock).toHaveBeenLastCalledWith({
+        dataset_id: "ds_def456",
+        base_model: "qwen3-4b",
+      }),
+    );
+    await goToHyperparameters(user);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "method override" }),
+      ).toBeVisible(),
+    );
+    expect(screen.queryByText("you changed this")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "method override" }),
+      ).toHaveValue("qlora");
+  });
+
+  it("a refused dataset reverts with its stable code", async () => {
+    const user = userEvent.setup();
+    getPreviewMock.mockRejectedValueOnce(
+      new ApiError(400, "dataset_invalid", "This dataset cannot be trained on."),
+    );
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview()}
+        surface={null}
+        datasets={[datasetRecord()]}
+      />,
+    );
+    await user.click(screen.getByRole("radio", { name: /second\.jsonl/ }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("dataset_invalid");
+    // Reverted to the last good dataset rather than leaving a lie checked.
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: /^d\.jsonl/ })).toBeChecked(),
+    );
+  });
+
+  // --- starting with no dataset (/jobs/new with no ?dataset_id=) -----------
+
+  it("shows the wizard with no dataset picked, and a disabled Continue", () => {
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={null}
+        surface={null}
+        datasets={[datasetRecord()]}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Model & dataset" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("radio", { name: /second\.jsonl/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Continue to hyperparameters" }),
+    ).toBeDisabled();
+    // No spec, no estimate, no launch without a dataset.
+    expect(
+      screen.queryByRole("button", { name: "Launch job" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("picking a dataset loads its preview and enables Continue", async () => {
+    const user = userEvent.setup();
+    getPreviewMock.mockResolvedValue(
+      preview({
+        dataset: {
+          id: "ds_def456",
+          filename: "second.jsonl",
+          created_at: 1756160500,
+          status: "valid",
+        },
+      }),
+    );
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={null}
+        surface={null}
+        datasets={[datasetRecord()]}
+      />,
+    );
+    const cont = screen.getByRole("button", {
+      name: "Continue to hyperparameters",
+    });
+    expect(cont).toBeDisabled();
+    await user.click(screen.getByRole("radio", { name: /second\.jsonl/ }));
+    await waitFor(() =>
+      expect(getPreviewMock).toHaveBeenCalledWith({
+        dataset_id: "ds_def456",
+      }),
+    );
+    await waitFor(() => expect(cont).toBeEnabled());
+  });
+
+  // --- adding a dataset without leaving Sources ----------------------------
+
+  it("switches to an inline add pane with upload and import tabs", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={null} />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Upload / Import" }),
+    );
+    // No dialog, no navigation: the same forms render inline.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Dataset file (.jsonl)"),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("tab", { name: "Import from Hugging Face" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Import and validate" }),
+    ).toBeVisible();
+  });
+
+  it("an uploaded dataset joins the list, selected, once validation lands", async () => {    const user = userEvent.setup();
+    const fresh = datasetRecord({
+      id: "ds_fresh",
+      filename: "fresh.jsonl",
+      created_at: 1756160600,
+    });
+    uploadDatasetMock.mockResolvedValue({
+      id: "ds_fresh",
+      filename: "fresh.jsonl",
+      status: "validating",
+    });
+    // Still validating on the immediate check, reported on the next poll.
+    getDatasetMock
+      .mockResolvedValueOnce({ ...fresh, report: null, status: "validating" })
+      .mockResolvedValue(fresh);
+    getPreviewMock.mockImplementation(({ dataset_id }: { dataset_id: string }) =>
+      dataset_id === "ds_fresh"
+        ? preview({
+            dataset: {
+              id: "ds_fresh",
+              filename: "fresh.jsonl",
+              created_at: 1756160600,
+              status: "valid",
+            },
+          })
+        : preview(),
+    );
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={null} />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Upload / Import" }),
+    );
+    const file = new File(['{"messages": []}'], "fresh.jsonl", {
+      type: "application/json",
+    });
+    await user.upload(screen.getByLabelText("Dataset file (.jsonl)"), file);
+    await user.click(
+      screen.getByRole("button", { name: "Upload and validate" }),
+    );
+    // The pane switches back and the arrival validates in the list…
+    await waitFor(() =>
+      expect(screen.getByText("Validating…")).toBeVisible(),
+    );
+    // …then joins the list, selected, with its preview loaded.
+    await waitFor(
+      () =>
+        expect(
+          screen.getByRole("radio", { name: /^fresh\.jsonl/ }),
+        ).toBeChecked(),
+      { timeout: 5000 },
+    );
+    await waitFor(() =>
+      expect(getPreviewMock).toHaveBeenCalledWith({
+        dataset_id: "ds_fresh",
+      }),
+    );
+  });
+
+  it("opens the validation report in place instead of navigating away", async () => {    const user = userEvent.setup();
+    getDatasetMock.mockResolvedValue(
+      datasetRecord({ id: "ds_abc123", filename: "d.jsonl" }),
+    );
+    render(
+      <LaunchForm catalog={catalog} preview={preview()} surface={null} />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "View validation report" }),
+    );
+    // The full report renders in the dialog — same component as the report
+    // page — instead of navigating away.
+    await screen.findByRole("heading", { name: "d.jsonl" });
+    expect(push).not.toHaveBeenCalled();
+    // Closing returns to the wizard where it was.
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Continue to hyperparameters" }),
+      ).toBeVisible(),
+    );
+  });
+
+  it("keeps the dataset order stable when switching", async () => {
+    const user = userEvent.setup();
+    getPreviewMock.mockResolvedValue(
+      preview({
+        dataset: {
+          id: "ds_def456",
+          filename: "second.jsonl",
+          created_at: 1756160500,
+          status: "valid",
+        },
+      }),
+    );
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview()}
+        surface={null}
+        datasets={[
+          datasetRecord(),
+          datasetRecord({
+            id: "ds_abc123",
+            filename: "d.jsonl",
+            created_at: 1756160400,
+            updated_at: 1756160400,
+          }),
+        ]}
+      />,
+    );
+    // Newest first, with the preview's older dataset in its natural place —
+    // and switching selections must not reshuffle the grid.
+    const order = () =>
+      Array.from(
+        document.querySelectorAll('#dataset-list input[type="radio"]'),
+      ).map((el) => (el as HTMLInputElement).value);
+    expect(order()).toEqual(["ds_def456", "ds_abc123"]);
+    await user.click(screen.getByRole("radio", { name: /second\.jsonl/ }));
+    await waitFor(() =>
+      expect(getPreviewMock).toHaveBeenCalledWith({
+        dataset_id: "ds_def456",
+      }),
+    );
+    expect(order()).toEqual(["ds_def456", "ds_abc123"]);
+    expect(screen.getByRole("radio", { name: /second\.jsonl/ })).toBeChecked();
   });
 });

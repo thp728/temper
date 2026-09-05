@@ -257,7 +257,7 @@ describe("JobsView", () => {
     expect(screen.getByText(/newest first, with its status beside it/)).toBeVisible();
     expect(
       screen.getByRole("link", { name: /select a dataset/i }),
-    ).toHaveAttribute("href", "/datasets");
+    ).toHaveAttribute("href", "/jobs/new");
   });
 
   it("renders the list as a table with column headers", () => {

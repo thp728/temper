@@ -66,7 +66,19 @@ test("a job is chosen, reviewed and launched from the shell", async ({
   await expect(qwen8b).toBeVisible();
   const card = page.locator("label").filter({ has: qwen8b });
   await expect(card).toContainText("Apache-2.0");
-  await expect(card.getByText(/^[a-f0-9]{40}$/)).toBeVisible();
+  // The forty-character revision shows truncated; hovering the hash opens
+  // the exact one in a tooltip.
+  await card.locator("code").hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+    /^[a-f0-9]{40}$/,
+  );
+  await qwen8b.check();
+
+  // The wizard steps: sources, then hyperparameters, then hardware, then
+  // review. The spec and the training-shape decisions live on the
+  // hyperparameters step; the estimate and the where-it-runs decisions on
+  // hardware; the launch action on review.
+  await page.getByRole("button", { name: "Continue to hyperparameters" }).click();
 
   // The settings are visible before launching, and say they freeze... The
   // advanced-settings disclosure (issue #80) also names the same fields, so
@@ -78,15 +90,25 @@ test("a job is chosen, reviewed and launched from the shell", async ({
     await expect(spec.getByText(key, { exact: true })).toBeVisible();
   }
 
-  // ...and the cost-and-time estimate is shown before anything is spent:
-  // a duration range (never a point) and a per-phase cost breakdown, in the
-  // account's currency, labelled an estimate. It is fetched for the selected
-  // model after the page renders -- an estimate never blocks the surface it
-  // appears on -- so this assertion waits for it to arrive.
+  // ...and the training-shape decisions sit in the form they tune, each
+  // with its control and a "?" for its reason.
+  await expect(
+    page.getByRole("combobox", { name: "method override" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "method" }),
+  ).toBeVisible();
+
+  // ...and the cost-and-time estimate is shown before anything is spent,
+  // on the hardware step: a duration range (never a point) and a per-phase
+  // cost breakdown, in the account's currency, labelled an estimate. It is
+  // fetched for the selected model after the page renders -- an estimate
+  // never blocks the surface it appears on -- so this assertion waits for it
+  // to arrive.
+  await page.getByRole("button", { name: "Continue to hardware" }).click();
   await expect(
     page.getByRole("heading", { name: "Cost and time estimate" }),
   ).toBeVisible();
-  await expect(page.getByText(/never blocks a launch/i)).toBeVisible();
   for (const phase of [
     "provisioning",
     "readiness",
@@ -98,35 +120,34 @@ test("a job is chosen, reviewed and launched from the shell", async ({
     await expect(page.getByText(phase, { exact: true })).toBeVisible();
   }
 
-  // ...and each decision the predictor made is shown with its reason visible
-  // by default, its alternatives one interaction away (issue #76). The fake
-  // provider only has an L4 free, so the device-count decision is the one
-  // with two alternatives.
+  // ...and the hardware is selectable: Temper's default starts selected
+  // and recommended, and any card overrides it.
   await expect(
-    page.getByRole("heading", { name: "Why this configuration" }),
+    page.getByRole("radiogroup", { name: "hardware options" }),
+  ).toBeVisible();
+  await expect(page.getByRole("radio", { name: /L4/ })).toBeChecked();
+  await expect(page.getByText("Recommended")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "device count" }),
+  ).toBeVisible();
+  // Reasons and alternatives live behind each decision's "?" now: one click
+  // opens the hardware explanation beside the control it explains.
+  await page
+    .getByRole("button", { name: "About the hardware decision" })
+    .click();
+  const explanation = page.getByRole("dialog");
+  await expect(
+    explanation.getByText(/cheapest card currently available/i),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "method" }),
+    explanation.getByText(/Alternatives considered \(\d+\)/),
   ).toBeVisible();
-  // The chosen value is the method decision's strong; the method override
-  // control also carries an identical option label (issue #79), so target
-  // the reason, not the whole page.
-  await expect(
-    page.locator("strong").filter({ hasText: /^qlora$/ }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/cheapest card currently available/i),
-  ).toBeVisible();
-  // The disclosure summaries are the one interaction away: several
-  // decisions carry two alternatives each, so the text is not unique.
-  await expect(
-    page.getByText("Alternatives considered (2)").first(),
-  ).toBeVisible();
+  await page.keyboard.press("Escape");
 
-  // ...and the screen offers exactly one obvious action.
+  // ...and the screen offers exactly one obvious action, on the review step.
+  await page.getByRole("button", { name: "Continue to review" }).click();
   await expect(page.getByRole("button", { name: "Launch job" })).toHaveCount(1);
 
-  await qwen8b.check();
   await page.getByRole("button", { name: "Launch job" }).click();
 
   // The job appears immediately afterwards, already carrying the choice.
@@ -154,6 +175,49 @@ test("a job is chosen, reviewed and launched from the shell", async ({
   await expect(page.getByText("qlora", { exact: true })).toBeVisible();
 });
 
+// The dataset is picked on the Sources step itself: switching reloads the
+// preview inline — no navigation away — and the launch freezes the newly
+// picked dataset.
+test("the dataset can be switched inline on the Sources step", async ({
+  page,
+}) => {
+  await uploadValidatedRows(
+    page,
+    Array.from({ length: 12 }, (_, i) => chat(`a${i}`, `b${i}`)),
+  );
+  await upload(
+    page,
+    await tempFile(
+      jsonl(Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`))),
+      "second.jsonl",
+    ),
+  );
+  await expect(page.getByText("Ready")).toBeVisible();
+  await continueToLaunch(page);
+
+  // Both datasets are offered where the job starts; the report's own dataset
+  // is the checked one.
+  const first = page.getByRole("radio", { name: /^d\.jsonl/ });
+  await expect(
+    page.getByRole("radio", { name: /second\.jsonl/ }),
+  ).toBeChecked();
+  await first.check();
+  await expect(first).toBeChecked();
+
+  // The later steps reload for the newly picked dataset, and review
+  // freezes it: the receipt names the switched file, and the launch
+  // succeeds.
+  await page.getByRole("button", { name: "Continue to hyperparameters" }).click();
+  await page.getByRole("button", { name: "Continue to hardware" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Cost and time estimate" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Continue to review" }).click();
+  await expect(page.getByText("d.jsonl", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Launch job" }).click();
+  await expect(page).toHaveURL(/\/jobs\/job_/);
+});
+
 // An override on the plan (issue #79): a decision the predictor made can be
 // changed from the same surface that explains it, and changing one re-requests
 // the plan -- the recomputation rules live on the server. An override that
@@ -167,8 +231,9 @@ test("a plan decision can be overridden and the launch refuses what the trainer 
     Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
   );
   await continueToLaunch(page);
+  await page.getByRole("button", { name: "Continue to hyperparameters" }).click();
   await expect(
-    page.getByRole("heading", { name: "Why this configuration" }),
+    page.getByRole("combobox", { name: "method override" }),
   ).toBeVisible();
 
   // The control sits beside the explanation it edits: one surface, not a
@@ -177,13 +242,29 @@ test("a plan decision can be overridden and the launch refuses what the trainer 
   await expect(method).toBeVisible();
 
   // Override method to lora: the plan recomputes from the server, marks the
-  // decision overridden, and shows lora as what a launch would freeze.
+  // decision overridden, and the recomputed reason opens behind its "?".
   await method.selectOption("lora");
   await expect(page.getByText("you changed this")).toBeVisible();
-  await expect(page.getByText(/you chose lora/i)).toBeVisible();
+  await page
+    .getByRole("button", { name: "About the method decision" })
+    .click();
+  await expect(
+    page.getByRole("dialog").getByText(/you chose lora/i),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
 
-  // The trainer executes only QLoRA today, so the launch refuses -- with the
-  // stable code, never by silently running something else.
+  // Reselecting the predictor's default unpins rather than re-pinning it.
+  await method.selectOption("qlora");
+  await expect(page.getByText("you changed this")).not.toBeVisible();
+
+  // Re-pin lora: the trainer executes only QLoRA today, so the launch
+  // refuses -- with the stable code, never by silently running something
+  // else.
+  await method.selectOption("lora");
+  await expect(page.getByText("you changed this")).toBeVisible();
+
+  await page.getByRole("button", { name: "Continue to hardware" }).click();
+  await page.getByRole("button", { name: "Continue to review" }).click();
   await page.getByRole("button", { name: "Launch job" }).click();
   await expect(
     page.getByRole("alert").filter({ hasText: "not_executable" }),
@@ -205,8 +286,9 @@ test("a runnable override is frozen into the job and still marked after the run"
     Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
   );
   await continueToLaunch(page);
+  await page.getByRole("button", { name: "Continue to hyperparameters" }).click();
   await expect(
-    page.getByRole("heading", { name: "Why this configuration" }),
+    page.getByRole("spinbutton", { name: "sequence length override" }),
   ).toBeVisible();
 
   const sequence = page.getByRole("spinbutton", {
@@ -216,6 +298,8 @@ test("a runnable override is frozen into the job and still marked after the run"
   await sequence.blur();
   await expect(page.getByText("you changed this")).toBeVisible();
 
+  await page.getByRole("button", { name: "Continue to hardware" }).click();
+  await page.getByRole("button", { name: "Continue to review" }).click();
   await page.getByRole("button", { name: "Launch job" }).click();
   await expect(page).toHaveURL(/\/jobs\/job_/);
 
@@ -261,7 +345,10 @@ test("a feasibility warning arrives before the launch, while it can still be act
   await expect(warning).toContainText("duration_feasibility");
   await expect(warning).toContainText(/estimate/i);
 
-  // A warning, never a refusal: the launch is still offered.
+  // A warning, never a refusal: the launch is still offered, on review.
+  await page.getByRole("button", { name: "Continue to hyperparameters" }).click();
+  await page.getByRole("button", { name: "Continue to hardware" }).click();
+  await page.getByRole("button", { name: "Continue to review" }).click();
   await expect(
     page.getByRole("button", { name: "Launch job" }),
   ).toBeEnabled();
@@ -273,34 +360,17 @@ test("the launch screen is keyboard-operable end to end", async ({ page }) => {
     Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
   );
 
-  // Reachable by keyboard alone: tab from the page's start until the action
-  // has focus. The cap is a failure guard, not an assertion about the page --
-  // the decisions' disclosure widgets and the advanced-settings disclosure's
-  // summary (issue #80) are legitimate tab stops, so the count is deliberately
-  // generous. The decisions load after the page draws (an estimate never
-  // blocks it), so wait for them before counting stops.
+  // The wizard is keyboard-operable per step: sources, hyperparameters,
+  // hardware, review. Each Continue is a real button in the tab order, and
+  // the step heading takes focus on change so a screen reader starts at the
+  // top.
   await continueToLaunch(page);
-  const launch = page.getByRole("button", { name: "Launch job" });
-  await expect(
-    page.getByRole("heading", { name: "Why this configuration" }),
-  ).toBeVisible();
-  const maxTabStops = 24;
-  for (
-    let i = 0;
-    i < maxTabStops && !(await launch.evaluate((el) => el === document.activeElement));
-    i++
-  ) {
-    await page.keyboard.press("Tab");
-  }
-  await expect(launch).toBeFocused();
 
-  // Shift+Tab back into the model group -- past the decisions' disclosures
-  // and their override controls -- and choose with the arrow keys. Only the
-  // checked radio is in the tab order (roving tabindex), so the first radio
-  // reached going backwards is the checked model, and ArrowDown moves the
-  // choice on from there. The loop targets a radio specifically: the
-  // decisions' free-form controls are number inputs (issue #79), which are
-  // also INPUTs.
+  // Step 1: choose with arrow keys from the model group, then Continue.
+  // Only the checked radio is in the tab order (roving tabindex).
+  // Step 2 carries an input and a "?" per hyperparameter, so the budget
+  // counts stops, not steps.
+  const maxTabStops = 60;
   for (
     let i = 0;
     i < maxTabStops &&
@@ -309,21 +379,45 @@ test("the launch screen is keyboard-operable end to end", async ({ page }) => {
     ));
     i++
   ) {
-    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
   }
   await page.keyboard.press("ArrowDown");
   await expect(
     page.getByRole("radio", { name: /Qwen\/Qwen3-8B/ }),
   ).toBeChecked();
 
-  // Launch from the keyboard alone: back past the disclosures to the action.
-  for (
-    let i = 0;
-    i < maxTabStops && !(await launch.evaluate((el) => el === document.activeElement));
-    i++
-  ) {
-    await page.keyboard.press("Tab");
+  // Tab to Continue and step forward through all four steps, then to Launch.
+  async function tabToButton(name: string) {
+    const target = page.getByRole("button", { name });
+    for (
+      let i = 0;
+      i < maxTabStops &&
+      !(await target.evaluate((el) => el === document.activeElement));
+      i++
+    ) {
+      await page.keyboard.press("Tab");
+    }
+    await expect(target).toBeFocused();
+    return target;
   }
+
+  await tabToButton("Continue to hyperparameters");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("combobox", { name: "method override" }),
+  ).toBeVisible();
+
+  await tabToButton("Continue to hardware");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Cost and time estimate" }),
+  ).toBeVisible();
+
+  await tabToButton("Continue to review");
+  await page.keyboard.press("Enter");
+  const launch = page.getByRole("button", { name: "Launch job" });
+  await expect(launch).toBeVisible();
+  await expect(launch).toBeFocused();
   await page.keyboard.press("Enter");
 
   await expect(page).toHaveURL(/\/jobs\/job_/);
@@ -366,42 +460,25 @@ test("the advanced surface is behind a disclosure, names its failure modes, and 
     Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
   );
   await continueToLaunch(page);
-  await expect(
-    page.getByRole("heading", { name: "Cost and time estimate" }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Continue to hyperparameters" }).click();
 
-  // The settings are behind an explicit disclosure, not a wall of dials: the
-  // disclosure is named, and no override control is reachable until it is
-  // opened.
-  const advanced = page.getByLabel("Advanced settings");
-  await expect(advanced).toBeVisible();
-  await expect(
-    page.getByRole("spinbutton", { name: "learning_rate override" }),
-  ).not.toBeVisible();
-
-  // Opening it is a deliberate act; each setting then carries the specific
-  // thing that goes wrong, inline -- not a general caution.
-  await advanced.locator("summary").click();
-  await expect(
-    page.getByRole("spinbutton", { name: "learning_rate override" }),
-  ).toBeVisible();
+  // The hyperparameters are edited in place on the cards: every exposed key
+  // carries an input populated with its default, with no disclosure to open
+  // first.
+  const lr = page.getByRole("spinbutton", { name: "learning_rate override" });
+  await expect(lr).toBeVisible();
+  // The failure mode lives behind the row's "?" tooltip.
+  await page.getByRole("button", { name: "About learning_rate" }).hover();
   await expect(
     page.getByText(/diverges to NaN partway through a paid run/i),
   ).toBeVisible();
-  // The distinction is explained, with both refused-input examples named.
-  await expect(
-    page.getByText(/Why some settings are adjustable and others are refused/i),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/mixes reasoning traces with plain answers/i),
-  ).toBeVisible();
 
-  // A trainer setting this product does not offer is visible with its reason,
-  // searchable rather than absent.
+  // A trainer setting this product does not offer yet is visible with its
+  // reason, searchable rather than absent.
+  const advanced = page.getByLabel("Advanced settings");
+  await advanced.locator("summary").click();
   await page
-    .getByRole("searchbox", {
-      name: "Search the trainer's settings Temper does not offer",
-    })
+    .getByRole("searchbox", { name: "Search unsupported Axolotl settings" })
     .fill("wandb_project");
   await expect(
     page.getByText("wandb_project", { exact: true }).first(),
@@ -409,17 +486,17 @@ test("the advanced surface is behind a disclosure, names its failure modes, and 
   await expect(
     page.getByText(/experiment-tracking integration/i),
   ).toBeVisible();
+  await expect(page.getByText(/support will be added/i)).toBeVisible();
 
-  // An override is re-requested from the server and marked, and the frozen
-  // specification the page previews reflects it.
-  const lr = page.getByRole("spinbutton", { name: "learning_rate override" });
+  // An override is re-requested from the server and marked, and the card
+  // input holds the edited value.
   await lr.fill("0.0001");
   await lr.blur();
   await expect(page.getByText("you changed this").first()).toBeVisible();
-  await expect(
-    page.getByText("0.0001", { exact: true }).first(),
-  ).toBeVisible();
+  await expect(lr).toHaveValue("0.0001");
 
+  await page.getByRole("button", { name: "Continue to hardware" }).click();
+  await page.getByRole("button", { name: "Continue to review" }).click();
   await page.getByRole("button", { name: "Launch job" }).click();
   await expect(page).toHaveURL(/\/jobs\/job_/);
 
@@ -446,12 +523,10 @@ test("an advanced override that makes the job infeasible is refused before launc
     Array.from({ length: 12 }, (_, i) => chat(`q${i}`, `a${i}`)),
   );
   await continueToLaunch(page);
-  await expect(
-    page.getByRole("heading", { name: "Cost and time estimate" }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Continue to hyperparameters" }).click();
 
-  const advanced = page.getByLabel("Advanced settings");
-  await advanced.locator("summary").click();
+  // The edit happens in place on the hyperparameter card: no disclosure to
+  // open first.
   const mbs = page.getByRole("spinbutton", {
     name: "micro_batch_size override",
   });
@@ -467,7 +542,9 @@ test("an advanced override that makes the job infeasible is refused before launc
   await expect(mbs).toHaveValue("1");
 
   // Still here, still able to act: the refusal did not navigate away or
-  // disable the launch.
+  // disable the launch (the action lives on the review step).
+  await page.getByRole("button", { name: "Continue to hardware" }).click();
+  await page.getByRole("button", { name: "Continue to review" }).click();
   await expect(
     page.getByRole("button", { name: "Launch job" }),
   ).toBeEnabled();

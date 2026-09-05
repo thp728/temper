@@ -2,17 +2,26 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import BackToUpload from "@/components/BackToUpload";
 import FocusHeading from "@/components/FocusHeading";
-import LaunchForm from "@/components/LaunchForm";
+import NewJobWizard from "@/components/NewJobWizard";
 import { Button } from "@/components/ui/button";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSlashSeparator,
+} from "@/components/ui/breadcrumb";
 import {
   getAdvancedSurfaceV1SurfaceGet,
   getJobSpecPreviewV1JobsSpecGet,
+  listDatasetsV1DatasetsGet,
   listModelsV1ModelsGet,
 } from "@/lib/api/generated/client";
 import { load } from "@/lib/api/load";
 
 export const metadata: Metadata = {
-  title: "Choose a base model",
+  title: "New job",
 };
 
 // A refusal keeps its stable code on the page -- the same contract every
@@ -43,36 +52,46 @@ export default async function NewJobPage({
   searchParams: Promise<{ dataset_id?: string }>;
 }) {
   const { dataset_id: datasetId } = await searchParams;
-  if (!datasetId) {
-    return (
-      <Refusal
-        heading="Choose a base model"
-        code="no_dataset"
-        message="No dataset was given. Upload one first, because its validation report decides whether a job can start at all."
-      />
-    );
-  }
+
+  // /jobs/new always shows the wizard: with a dataset id the preview arrives
+  // server-rendered, without one the Sources step picks it and re-requests
+  // the preview from there. Either way the URL stays the source of truth.
+  const previewRequest = datasetId
+    ? load(() => getJobSpecPreviewV1JobsSpecGet({ dataset_id: datasetId }))
+    : Promise.resolve({ data: null, error: null });
 
   const [
     { data: catalog, error: catalogError },
     { data: preview, error: previewError },
     { data: surface, error: surfaceError },
+    { data: datasetList },
   ] = await Promise.all([
     load(() => listModelsV1ModelsGet()),
-    load(() => getJobSpecPreviewV1JobsSpecGet({ dataset_id: datasetId })),
+    previewRequest,
     load(() => getAdvancedSurfaceV1SurfaceGet()),
+    load(() => listDatasetsV1DatasetsGet()),
   ]);
 
-  if (previewError || !preview) {
+  if (datasetId && (previewError || !preview)) {
     // A dataset that cannot start a job is refused before anything can be
     // committed, with the same stable code and message the launch itself
-    // would raise.
+    // would raise — and a way out that stays in the flow.
     return (
-      <Refusal
-        heading="Dataset not usable"
-        code={previewError?.code}
-        message={previewError?.message ?? "The dataset could not be checked."}
-      />
+      <section aria-labelledby="launch-heading" className="space-y-4">
+        <FocusHeading id="launch-heading">Dataset not usable</FocusHeading>
+        <p>
+          <code className="rounded bg-neutral-100 px-1">
+            {previewError?.code}
+          </code>{" "}
+          — {previewError?.message ?? "The dataset could not be checked."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/jobs/new">Choose a different dataset</Link>
+          </Button>
+          <BackToUpload />
+        </div>
+      </section>
     );
   }
 
@@ -86,45 +105,36 @@ export default async function NewJobPage({
     );
   }
 
-  const usableRows = preview.dataset.report?.usable_rows;
+  const datasets = [...(datasetList?.datasets ?? [])].sort(
+    (a, b) => b.created_at - a.created_at,
+  );
 
   return (
     <section aria-labelledby="launch-heading" className="space-y-6">
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/jobs">Jobs</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSlashSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>New job</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+
       <div className="space-y-2">
-        <FocusHeading id="launch-heading">Choose a base model</FocusHeading>
+        <FocusHeading id="launch-heading">New job</FocusHeading>
         <p className="text-muted-foreground">
-          For dataset{" "}
-          <span className="font-medium text-foreground">
-            {preview.dataset.filename}
-          </span>
-          {usableRows !== null && usableRows !== undefined && (
-            <> ({usableRows} usable rows)</>
-          )}
-          . Everything you are about to commit to is on this page; nothing has
-          been spent yet.
+          Four steps — sources, hyperparameters, hardware, review.
         </p>
       </div>
 
-      {preview.warning && (
-        // The feasibility estimate reaches the user here rather than after
-        // the money starts: this is the last moment they can still act on it.
-        <div
-          role="alert"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900"
-        >
-          <p className="font-semibold">Before you launch</p>
-          <p>
-            <code className="rounded bg-amber-100 px-1 text-xs">
-              {preview.warning.code}
-            </code>
-          </p>
-          <p className="mt-1 text-sm">{preview.warning.message}</p>
-        </div>
-      )}
-
-      <LaunchForm
+      <NewJobWizard
         catalog={catalog}
-        preview={preview}
+        preview={preview ?? null}
         // The advanced surface is generated from the trainer's own schema and
         // published through the contract. A load failure does not block the
         // launch -- the job is still offered with the defaults, which is what
@@ -133,14 +143,10 @@ export default async function NewJobPage({
         // The models admitted from outside the catalog, each with its persisted
         // probe result shown beside it (issue #58).
         admitted={catalog.admitted ?? []}
+        // The datasets the Sources step offers beside the current one, so
+        // switching never leaves the screen.
+        datasets={datasets}
       />
-
-      {/* The old screen's way back: the report this launch was reached from. */}
-      <Button variant="outline" asChild>
-        <Link href={`/datasets/${preview.dataset.id}`}>
-          Back to the validation report
-        </Link>
-      </Button>
     </section>
   );
 }

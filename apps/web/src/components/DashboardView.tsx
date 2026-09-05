@@ -358,16 +358,15 @@ export default function DashboardView({
             you&apos;ve spent.
           </p>
         </div>
-        {/* A job starts with a dataset: the launch screen needs one, so the
-            action lands on the dataset picker rather than a page that would
-            only refuse with `no_dataset`. Named apart from the sidebar's
-            "New job" -- two controls, one route, and an ambiguous name would
-            break the journeys' accessible-name queries. It shares its name
-            with the active-jobs empty state's own button below: same action,
-            same route, so tests reach either by scoping to a container or
-            using `getAllByRole`. */}
+        {/* A job starts by picking a dataset: the launch screen carries its own
+            picker, so the action lands there directly. Named apart from the
+            sidebar's "New job" -- two controls, one route, and an ambiguous
+            name would break the journeys' accessible-name queries. It shares
+            its name with the active-jobs empty state's own button below: same
+            action, same route, so tests reach either by scoping to a
+            container or using `getAllByRole`. */}
         <Button asChild>
-          <Link href="/datasets">
+          <Link href="/jobs/new">
             <Plus aria-hidden="true" className="size-4" />
             Start a new job
           </Link>

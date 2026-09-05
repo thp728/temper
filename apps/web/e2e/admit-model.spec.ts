@@ -44,9 +44,9 @@ test("a model outside the catalog is probed, shown and launched", async ({
   );
   await continueToLaunch(page);
 
-  // The disclosure holds the boundary: use any model repository at a pinned
+  // The toggle holds the boundary: use any model repository at a pinned
   // revision, probed in front of the user.
-  await page.getByText("Use a model outside the catalog").click();
+  await page.getByRole("button", { name: "Import model" }).click();
   await page.getByLabel("Public repository").fill("Qwen/Qwen3-4B");
   // The pinned revision the catalog itself carries: a probe refuses anything
   // but a resolved commit, never a branch name.
@@ -69,8 +69,12 @@ test("a model outside the catalog is probed, shown and launched", async ({
   await expect(page.getByText("Usable", { exact: true }).first()).toBeVisible();
 
   // Launching uses the imported model; the finished job says what it trained
-  // against (the imported model's id, not a catalog id).
+  // against (the imported model's id, not a catalog id). The action lives
+  // on the review step.
   const importedId = await imported.getAttribute("value");
+  await page.getByRole("button", { name: "Continue to hyperparameters" }).click();
+  await page.getByRole("button", { name: "Continue to hardware" }).click();
+  await page.getByRole("button", { name: "Continue to review" }).click();
   await page.getByRole("button", { name: "Launch job" }).click();
   await expect(page).toHaveURL(/\/jobs\/job_/);
   await expect(page.getByText(importedId ?? "")).toBeVisible();
@@ -85,7 +89,7 @@ test("an unpinned revision is refused with its stable code", async ({
   );
   await continueToLaunch(page);
 
-  await page.getByText("Use a model outside the catalog").click();
+  await page.getByRole("button", { name: "Import model" }).click();
   await page.getByLabel("Public repository").fill("Qwen/Qwen3-4B");
   await page.getByLabel("Pinned revision").fill("main");
   await page.getByRole("button", { name: "Probe and admit" }).click();

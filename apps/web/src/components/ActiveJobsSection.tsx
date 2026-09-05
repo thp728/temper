@@ -42,7 +42,7 @@ export default function ActiveJobsSection({
           heading="No active jobs"
           action={
             <Button asChild>
-              <Link href="/datasets">Start a new job</Link>
+              <Link href="/jobs/new">Start a new job</Link>
             </Button>
           }
         >

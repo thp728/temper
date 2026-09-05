@@ -103,9 +103,11 @@ export default function AdmitModelForm({
         result is shown here before it can launch.
       </p>
 
-      <Button type="button" onClick={() => void probe()} disabled={busy}>
-        {busy ? "Probing…" : "Probe and admit"}
-      </Button>
+      <div className="flex justify-end">
+        <Button type="button" onClick={() => void probe()} disabled={busy}>
+          {busy ? "Probing…" : "Probe and admit"}
+        </Button>
+      </div>
 
       <p aria-live="polite" className="text-sm text-muted-foreground">
         {busy ? status : ""}

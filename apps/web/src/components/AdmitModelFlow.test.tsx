@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LaunchForm from "@/components/LaunchForm";
@@ -187,9 +187,18 @@ describe("admitted models on the launch screen (issue #58)", () => {
   it("shows an admitted model with its probe result, selectable when usable", async () => {
     renderForm([admitted()]);
 
+    // Admitted models live on the import tab, beside the form that probed
+    // them.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Import model" }),
+    );
     const radio = screen.getByRole("radio", { name: /org\/imported/ });
     expect(radio).toBeEnabled();
-    expect(screen.getByText("Usable")).toBeInTheDocument();
+    // Scoped to the probe result: the dataset card beside it carries its own
+    // "Usable" row label.
+    expect(
+      within(screen.getByTestId("probe-result")).getByText("Usable"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Compatibility probe:")).toBeInTheDocument();
     expect(screen.getByTestId("probe-result")).toHaveTextContent("5.35 GB");
 
@@ -202,7 +211,7 @@ describe("admitted models on the launch screen (issue #58)", () => {
     );
   });
 
-  it("shows a blocked model's reasons and refuses to select it", () => {
+  it("shows a blocked model's reasons and refuses to select it", async () => {
     renderForm([
       admitted(
         {},
@@ -221,18 +230,21 @@ describe("admitted models on the launch screen (issue #58)", () => {
       ),
     ]);
 
+    await userEvent.click(
+      screen.getByRole("button", { name: "Import model" }),
+    );
     const radio = screen.getByRole("radio", { name: /org\/imported/ });
     expect(radio).toBeDisabled();
     expect(screen.getByText("Blocked")).toBeInTheDocument();
     expect(screen.getByText(/no chat template/)).toBeInTheDocument();
   });
 
-  it("probes a model from the disclosure, shows the result and launches with it", async () => {
+  it("probes a model from the import tab, shows the result and launches with it", async () => {
     renderForm();
     probeModelMock.mockResolvedValue(admitted());
 
     await userEvent.click(
-      screen.getByText("Use a model outside the catalog"),
+      screen.getByRole("button", { name: "Import model" }),
     );
     await userEvent.type(
       screen.getByLabelText("Public repository"),
@@ -254,8 +266,20 @@ describe("admitted models on the launch screen (issue #58)", () => {
     );
     const radio = await screen.findByRole("radio", { name: /org\/imported/ });
     expect(radio).toBeChecked();
-    expect(screen.getByText("Usable")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("probe-result")).getByText("Usable"),
+    ).toBeInTheDocument();
 
+    // The launch action lives on the review step of the wizard.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to hyperparameters" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to hardware" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to review" }),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Launch job" }));
     await waitFor(() =>
       expect(createJobMock).toHaveBeenCalledWith({
@@ -279,7 +303,7 @@ describe("admitted models on the launch screen (issue #58)", () => {
     );
 
     await userEvent.click(
-      screen.getByText("Use a model outside the catalog"),
+      screen.getByRole("button", { name: "Import model" }),
     );
     await userEvent.type(
       screen.getByLabelText("Public repository"),

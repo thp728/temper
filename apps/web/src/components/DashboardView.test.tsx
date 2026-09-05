@@ -78,10 +78,11 @@ describe("DashboardView", () => {
     expect(screen.getByText("Average duration")).toBeVisible();
     expect(screen.getByText("Success rate")).toBeVisible();
 
-    // The primary action starts a job the honest way: from a dataset.
+    // The primary action starts a job via the new-job screen, which picks
+    // the dataset itself as its first step.
     expect(
       screen.getByRole("link", { name: "Start a new job" }),
-    ).toHaveAttribute("href", "/datasets");
+    ).toHaveAttribute("href", "/jobs/new");
   });
 
   it("shows a failed or cancelled job's outcome without its stable code", () => {
@@ -138,7 +139,7 @@ describe("DashboardView", () => {
     });
     expect(startLinks).toHaveLength(2);
     for (const link of startLinks) {
-      expect(link).toHaveAttribute("href", "/datasets");
+      expect(link).toHaveAttribute("href", "/jobs/new");
     }
     // Calibration is no longer linked from the dashboard (kept at /calibration
     // for direct access; see CalibrationView.tsx top comment).

@@ -90,6 +90,45 @@ export function formatDuration(
   return `${two(hours)}:${two(minutes)}:${two(s % 60)}`;
 }
 
+// A duration as a person says it ("4 min", "4 hrs 12 mins") — the estimate
+// rail's tier, where the HH:MM:SS clock would compete with the focal estimate
+// it summarises. Rounded to the unit shown, so it never pretends to be the
+// precise figure beside it.
+export function formatFriendlyDuration(
+  seconds: number | null | undefined,
+): string {
+  if (seconds == null) {
+    return "—";
+  }
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 90) {
+    return `${s} sec`;
+  }
+  const mins = Math.round(s / 60);
+  if (mins < 90) {
+    return `${mins} min`;
+  }
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const hs = `${h} hr${h === 1 ? "" : "s"}`;
+  return m === 0 ? hs : `${hs} ${m} min${m === 1 ? "" : "s"}`;
+}
+
+// A friendly range keeps both ends (`formatDurationRange` rule: never a
+// point), with the mock's "~" marking it the summary-tier figure.
+export function formatFriendlyDurationRange(
+  low: number | null | undefined,
+  high: number | null | undefined,
+): string {
+  if (low == null || high == null) {
+    return "not estimable";
+  }
+  if (low === high) {
+    return `~${formatFriendlyDuration(low)}`;
+  }
+  return `~${formatFriendlyDuration(low)} – ${formatFriendlyDuration(high)}`;
+}
+
 // A pinned revision is forty characters; twelve is what fits beside a model
 // name and what the old pages showed.
 export function shortRevision(revision: string | null | undefined): string {

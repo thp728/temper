@@ -1,14 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import AdvancedSurface from "@/components/AdvancedSurface";
 import type { AdvancedSurface as AdvancedSurfaceModel } from "@/lib/api/generated/client";
 
 // The advanced surface (issue #80), generated from the trainer's own schema
-// and published through `GET /v1/surface`: overridable settings behind an
-// explicit disclosure with the specific thing that goes wrong beside each,
-// the trainer's known-but-unsupported settings visible with their reasons,
-// and the adjustable-versus-refused distinction explained.
+// and published through `GET /v1/surface`. Since the step-2 cards edit every
+// exposed key in place, this disclosure carries only what the cards cannot:
+// the trainer settings Temper does not support yet, visible with their
+// reasons and searchable -- never wondered about as overlooked.
 
 function surface(): AdvancedSurfaceModel {
   return {
@@ -61,62 +61,47 @@ function surface(): AdvancedSurfaceModel {
   };
 }
 
-const defaults = { learning_rate: 0.0002, num_epochs: 3 };
-
 describe("AdvancedSurface", () => {
-  it("hides the exposed settings behind an explicit disclosure", () => {
-    render(
-      <AdvancedSurface
-        surface={surface()}
-        defaults={defaults}
-        values={{}}
-        onChange={() => {}}
-      />,
-    );
-    // The disclosure is present and closed: opening the advanced surface is a
-    // deliberate act, not a wall of dials. (jsdom does not hide a closed
-    // details' children from role queries, so the not-reachable-until-opened
-    // guarantee is asserted in the real-browser journey instead.)
+  it("hides the unsupported settings behind an explicit disclosure", () => {
+    render(<AdvancedSurface surface={surface()} />);
+    // The disclosure is present and closed: opening it is a deliberate act,
+    // not a wall of dials. (jsdom does not hide a closed details' children
+    // from role queries, so the not-reachable-until-opened guarantee is
+    // asserted in the real-browser journey instead.)
     const details = screen.getByRole("group", { name: "Advanced settings" });
     expect(details).toBeInTheDocument();
     expect((details as HTMLDetailsElement).open).toBe(false);
   });
 
-  it("shows each exposed setting with its specific failure mode inline", async () => {
+  it("carries no editors: exposed keys are edited in the step-2 cards", () => {
+    render(<AdvancedSurface surface={surface()} />);
+    // One editor per key, and it lives in the hyperparameter cards -- a
+    // second "learning_rate override" here would double every control name.
+    expect(
+      screen.queryByRole("spinbutton", { name: "learning_rate override" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("spinbutton", { name: "num_epochs override" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says the trainer settings are not yet supported, with support coming", async () => {
     const user = userEvent.setup();
-    render(
-      <AdvancedSurface
-        surface={surface()}
-        defaults={defaults}
-        values={{}}
-        onChange={() => {}}
-      />,
-    );
+    render(<AdvancedSurface surface={surface()} />);
     await user.click(
       screen.getByRole("group", { name: "Advanced settings" }).querySelector(
         "summary",
       ) as HTMLElement,
     );
-    const lr = screen.getByRole("spinbutton", { name: "learning_rate override" });
-    await expect(lr).toHaveValue(0.0002);
-    // The failure mode is the specific thing that goes wrong, inline, not a
-    // general caution -- and the reason sits beside it.
     expect(
-      screen.getByText(/diverges to NaN partway through a paid run/i),
+      screen.getByText(/Axolotl settings Temper doesn't support yet/i),
     ).toBeVisible();
-    expect(screen.getByText(/peak learning rate/i)).toBeVisible();
+    expect(screen.getByText(/support will be added/i)).toBeVisible();
   });
 
   it("shows a trainer setting this product does not offer, with its reason", async () => {
     const user = userEvent.setup();
-    render(
-      <AdvancedSurface
-        surface={surface()}
-        defaults={defaults}
-        values={{}}
-        onChange={() => {}}
-      />,
-    );
+    render(<AdvancedSurface surface={surface()} />);
     await user.click(
       screen.getByRole("group", { name: "Advanced settings" }).querySelector(
         "summary",
@@ -125,7 +110,7 @@ describe("AdvancedSurface", () => {
     // The unsupported set is searchable: find the setting, read its reason.
     await user.type(
       screen.getByRole("searchbox", {
-        name: "Search the trainer's settings Temper does not offer",
+        name: "Search unsupported Axolotl settings",
       }),
       "wandb_project",
     );
@@ -133,80 +118,5 @@ describe("AdvancedSurface", () => {
     expect(
       screen.getByText(/experiment-tracking integration/i),
     ).toBeVisible();
-  });
-
-  it("explains the distinction between an adjustable setting and a refused input", async () => {
-    const user = userEvent.setup();
-    render(
-      <AdvancedSurface
-        surface={surface()}
-        defaults={defaults}
-        values={{}}
-        onChange={() => {}}
-      />,
-    );
-    await user.click(
-      screen.getByRole("group", { name: "Advanced settings" }).querySelector(
-        "summary",
-      ) as HTMLElement,
-    );
-    expect(
-      screen.getByText(
-        /Why some settings are adjustable and others are refused/i,
-      ),
-    ).toBeVisible();
-    // Both named examples: the mixed thinking-mode dataset and the below-floor
-    // dataset are refused inputs, not hidden controls.
-    expect(
-      screen.getByText(/mixes reasoning traces with plain answers/i),
-    ).toBeVisible();
-    expect(
-      screen.getByText(/below the minimum usable row count/i),
-    ).toBeVisible();
-  });
-
-  it("records a changed setting through the callback", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      <AdvancedSurface
-        surface={surface()}
-        defaults={defaults}
-        values={{}}
-        onChange={onChange}
-      />,
-    );
-    await user.click(
-      screen.getByRole("group", { name: "Advanced settings" }).querySelector(
-        "summary",
-      ) as HTMLElement,
-    );
-    const lr = screen.getByRole("spinbutton", { name: "learning_rate override" });
-    await user.clear(lr);
-    await user.type(lr, "0.0001");
-    await user.tab();
-    expect(onChange).toHaveBeenLastCalledWith({ learning_rate: "0.0001" });
-  });
-
-  it("reverts a changed setting to the default", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      <AdvancedSurface
-        surface={surface()}
-        defaults={defaults}
-        values={{ learning_rate: "0.0001" }}
-        onChange={onChange}
-      />,
-    );
-    await user.click(
-      screen.getByRole("group", { name: "Advanced settings" }).querySelector(
-        "summary",
-      ) as HTMLElement,
-    );
-    // The override is marked, and offers its way back to the default.
-    expect(screen.getByText("you changed this")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Use the default" }));
-    expect(onChange).toHaveBeenLastCalledWith({});
   });
 });

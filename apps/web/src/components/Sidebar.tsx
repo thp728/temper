@@ -92,7 +92,7 @@ export default function Sidebar() {
       </nav>
       <div className="px-3 pb-4">
         <Button asChild className="w-full">
-          <Link href="/datasets">
+          <Link href="/jobs/new">
             <Plus aria-hidden="true" className="size-4" />
             New job
           </Link>

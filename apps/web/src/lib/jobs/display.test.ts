@@ -4,6 +4,8 @@ import {
   formatDuration,
   formatDurationRange,
   formatExactTimestamp,
+  formatFriendlyDuration,
+  formatFriendlyDurationRange,
   formatMinorCost,
   formatMinorCostRange,
   formatTimestamp,
@@ -68,6 +70,33 @@ describe("formatDuration", () => {
   it("renders an absent duration as a dash", () => {
     expect(formatDuration(null)).toBe("—");
     expect(formatDuration(undefined)).toBe("—");
+  });
+});
+
+describe("formatFriendlyDuration", () => {
+  it("says a duration the way a person would", () => {
+    expect(formatFriendlyDuration(42)).toBe("42 sec");
+    expect(formatFriendlyDuration(238)).toBe("4 min");
+    expect(formatFriendlyDuration(1139)).toBe("19 min");
+    expect(formatFriendlyDuration(15120)).toBe("4 hrs 12 mins");
+    expect(formatFriendlyDuration(3600)).toBe("60 min");
+    expect(formatFriendlyDuration(7200)).toBe("2 hrs");
+  });
+
+  it("renders an absent duration as a dash", () => {
+    expect(formatFriendlyDuration(null)).toBe("—");
+    expect(formatFriendlyDuration(undefined)).toBe("—");
+  });
+});
+
+describe("formatFriendlyDurationRange", () => {
+  it("shows both ends of a range, never a point", () => {
+    expect(formatFriendlyDurationRange(238, 1139)).toBe("~4 min – 19 min");
+  });
+
+  it("says when a phase is not estimable", () => {
+    expect(formatFriendlyDurationRange(null, 1139)).toBe("not estimable");
+    expect(formatFriendlyDurationRange(238, undefined)).toBe("not estimable");
   });
 });
 

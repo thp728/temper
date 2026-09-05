@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import {
   AlertCircle,
@@ -348,9 +350,10 @@ function dataHealth(report: DatasetReport): {
 // continue" button along with it; a ready dataset still needs exactly one
 // clear way to start a job scoped to it, so that link moves into this
 // panel's header, where it stays visible whether or not a job exists yet.
-// Distinct from the sidebar's own "New job" link (which lands on /datasets,
-// not this dataset already selected) so the two never collide on
-// accessible name -- and so what the button does is legible on its own.
+// Distinct from the sidebar's own "New job" link (which opens /jobs/new with
+// no dataset picked, not this dataset already selected) so the two never
+// collide on accessible name -- and so what the button does is legible on its
+// own.
 function NewJobButton({ datasetId }: { datasetId: string }) {
   return (
     <Button size="sm" asChild>
@@ -442,14 +445,27 @@ function RecentJobsPanel({
 // how the first rows were understood. Everything on this page comes from the
 // published report shape -- the same dict the API returns, typed by the
 // generated client. No hand-written casts.
+//
+// A client component so the launch wizard can render the same report inside
+// a modal without navigating away: the report page and the dialog read the
+// same props, never two implementations. In the dialog the dataset actions
+// (rename, delete) stay hidden — deleting mid-wizard would yank the launch
+// out from under itself, and that choice belongs on the report page.
 export default function ReportView({
   record,
   jobs = [],
   jobsError = null,
+  showActions = true,
+  stacked = false,
 }: {
   record: DatasetRecord;
   jobs?: JobRecord[];
   jobsError?: ApiError | null;
+  showActions?: boolean;
+  // Stack the preview over the job history instead of beside it: the report
+  // page has the full width, but a modal does not, and the side-by-side
+  // bento that breathes on the page squeezes in a dialog.
+  stacked?: boolean;
 }) {
   const report = record.report;
   if (!report) {
@@ -479,11 +495,13 @@ export default function ReportView({
               {blocked ? "Needs fixes" : "Ready"}
             </span>
           </div>
-          <DatasetActionsMenu
-            id={record.id}
-            filename={record.filename}
-            redirectOnDeleteTo="/datasets"
-          />
+          {showActions && (
+            <DatasetActionsMenu
+              id={record.id}
+              filename={record.filename}
+              redirectOnDeleteTo="/datasets"
+            />
+          )}
         </div>
         {/* Passing is what the badge above says permanently; this banner is
             only worth a reader's attention while there is something to act
@@ -610,8 +628,14 @@ export default function ReportView({
           rejected dataset cannot launch a job, so that pairing has nothing to
           show yet; the preview takes the full width instead of sitting next
           to a panel that can only promise a workflow this dataset can't use. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className={blocked ? "lg:col-span-3" : "lg:col-span-2"}>
+      <div
+        className={
+          stacked
+            ? "grid grid-cols-1 gap-4"
+            : "grid grid-cols-1 gap-4 lg:grid-cols-3"
+        }
+      >
+        <div className={stacked ? "" : blocked ? "lg:col-span-3" : "lg:col-span-2"}>
           {report.preview.length > 0 && (
             <section
               aria-labelledby="preview-heading"

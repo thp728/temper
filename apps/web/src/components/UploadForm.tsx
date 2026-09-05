@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { uploadDatasetV1DatasetsPost } from "@/lib/api/generated/client";
+import type { DatasetAccepted } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +15,16 @@ import { cn } from "@/lib/utils";
 // path the API publishes, land on its validation report. A refusal -- wrong
 // extension, oversized body, server unreachable -- is shown here with its
 // stable code, exactly as the API states it, never laundered into "error".
-export default function UploadForm() {
+//
+// Inside the launch wizard the form instead hands the new record back
+// through onUploaded, so the wizard can watch validation land and select it
+// without leaving the screen. Absent, the form keeps its standalone
+// behavior: navigate to the new dataset's report.
+export default function UploadForm({
+  onUploaded,
+}: {
+  onUploaded?: (dataset: DatasetAccepted) => void;
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -37,6 +47,10 @@ export default function UploadForm() {
     setStatus("Uploading your dataset…");
     try {
       const uploaded = await uploadDatasetV1DatasetsPost({ file });
+      if (onUploaded) {
+        onUploaded(uploaded);
+        return;
+      }
       setStatus("Dataset received. Opening the report…");
       router.push(`/datasets/${uploaded.id}`);
     } catch (err) {

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 
 const HF_PREFIX = "https://huggingface.co/datasets/";
 import { importDatasetV1DatasetsImportPost } from "@/lib/api/generated/client";
+import type { DatasetAccepted } from "@/lib/api/generated/client";
 import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 
 // The import step of the journey (issue #45): start from a public dataset
@@ -19,7 +20,15 @@ import { ApiError, NETWORK_ERROR } from "@/lib/api/mutator";
 // upload's do, so the report that comes back is the same shape. A refusal --
 // repository unfetchable, split empty, server unreachable -- is shown here
 // with its stable code, exactly as the API states it.
-export default function ImportForm() {
+//
+// Like UploadForm, an onImported callback keeps the flow on the caller's
+// screen (the launch wizard watches validation land and selects the new
+// dataset); absent, the form navigates to the new dataset's report.
+export default function ImportForm({
+  onImported,
+}: {
+  onImported?: (dataset: DatasetAccepted) => void;
+}) {
   const router = useRouter();
   const repoRef = useRef<HTMLInputElement>(null);
   const configRef = useRef<HTMLInputElement>(null);
@@ -50,6 +59,10 @@ export default function ImportForm() {
         ...(config ? { config } : {}),
         ...(split ? { split } : {}),
       });
+      if (onImported) {
+        onImported(imported);
+        return;
+      }
       router.push(`/datasets/${imported.id}`);
     } catch (err) {
       setRefusal(err instanceof ApiError ? err : NETWORK_ERROR);

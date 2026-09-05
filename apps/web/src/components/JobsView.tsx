@@ -302,11 +302,10 @@ export default function JobsView({
             history, and the artifact when there is one.
           </p>
         </div>
-        {/* A job starts with a dataset: the launch screen needs one, so the
-            action lands on the dataset picker rather than a page that would
-            only refuse with `no_dataset`. */}
+        {/* A job starts at the new-job screen, which carries its own dataset
+            picker as its first step. */}
         <Button asChild>
-          <Link href="/datasets">
+          <Link href="/jobs/new">
             <Plus aria-hidden="true" className="size-4" />
             Start a new job
           </Link>
@@ -320,7 +319,7 @@ export default function JobsView({
           headingAs="h2"
           action={
             <Button asChild>
-              <Link href="/datasets">Select a dataset</Link>
+              <Link href="/jobs/new">Select a dataset</Link>
             </Button>
           }
         >

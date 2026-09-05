@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import QuoteView from "@/components/QuoteView";
@@ -110,16 +110,12 @@ describe("QuoteView", () => {
     expect(screen.getByText(/Estimated against dataset/i)).toBeVisible();
   });
 
-  it("warns that an estimate never blocks a launch — on the plan, not the finished record", () => {
+  it("prints no disclaimer beside the heading — the heading says estimate", () => {
     const { rerender } = render(<QuoteView quote={quote()} />);
-    // Finished job (read-only): the heading is there, but the inline disclaimer
-    // was removed after visual review — it was noisy beside the eyebrow and the
-    // footer already pins the basis.
+    expect(screen.getByRole("heading", { name: /Cost and time estimate/i })).toBeVisible();
     expect(screen.queryByText(/never blocks a launch/i)).not.toBeInTheDocument();
-    // Plan (editable): the warning is shown beside the heading, where a user
-    // can still act on it before committing.
     rerender(<QuoteView quote={quote()} editable overrides={[]} onOverridesChange={() => {}} />);
-    expect(screen.getByText(/never blocks a launch/i)).toBeVisible();
+    expect(screen.queryByText(/never blocks a launch/i)).not.toBeInTheDocument();
   });
 
   it("shows the token count and the currency", () => {
@@ -286,9 +282,11 @@ describe("QuoteView", () => {
         onOverridesChange={onOverride}
       />,
     );
+    // The select always shows the effective value: reselecting the
+    // predictor's own choice unpins rather than pinning it.
     await user.selectOptions(
       screen.getByRole("combobox", { name: "method override" }),
-      "",
+      "qlora",
     );
     expect(onOverride).toHaveBeenCalledWith([]);
   });
@@ -332,7 +330,6 @@ describe("QuoteView", () => {
     );
     expect(onOverride).toHaveBeenCalledWith([]);
   });
-
   it("shows a refusal beside the decisions when one cannot be honoured", () => {
     render(
       <QuoteView
@@ -349,5 +346,193 @@ describe("QuoteView", () => {
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("configuration_does_not_fit");
     expect(alert).toHaveTextContent("66.9 GB peak");
+  });
+
+  // --- explanations behind "?" (the launch wizard) --------------------------
+
+  it("keeps the card to label, value and control with the reason behind a '?'", async () => {
+    const user = userEvent.setup();
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={[]}
+        onOverridesChange={() => {}}
+        explain="dialog"
+      />,
+    );
+    // The card keeps its heading, its chosen value and its control...
+    // (the chosen badge and the combobox option share the word "qlora",
+    // so the badge is read through its card, not by bare text).
+    expect(screen.getByRole("heading", { name: "method" })).toBeVisible();
+    const card = screen
+      .getByRole("heading", { name: "method" })
+      .closest("div")?.parentElement;
+    expect(card).toHaveTextContent("qlora");
+    expect(
+      screen.getByRole("combobox", { name: "method override" }),
+    ).toBeVisible();
+    // ...while the reason and the alternatives stay out of the page.
+    expect(
+      screen.queryByText(/cheapest executable method/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Alternatives considered (1)"),
+    ).not.toBeInTheDocument();
+    // One click opens them — scoped to the dialog, since the combobox
+    // options share the same words.
+    await user.click(
+      screen.getByRole("button", { name: "About the method decision" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/cheapest executable method/i),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText("Alternatives considered (1)"),
+    ).toBeVisible();
+    expect(within(dialog).getByText("lora")).toBeVisible();
+  });
+
+  it("marks an overridden decision in dialog mode too", () => {
+    const q = quote();
+    const base = q.decisions ?? [];
+    q.decisions = [
+      { ...base[0]!, overridden: true },
+      base[1]!,
+      base[2]!,
+    ];
+    render(
+      <QuoteView
+        quote={q}
+        editable
+        overrides={[{ decision: "hardware", value: "H100" }]}
+        onOverridesChange={() => {}}
+        explain="dialog"
+      />,
+    );
+    expect(screen.getByText("you changed this")).toBeVisible();
+    expect(
+      screen.getByRole("combobox", { name: "hardware override" }),
+    ).toBeVisible();
+  });
+
+  // --- option cards (the hardware choice) ------------------------------------
+
+  it("renders one radio per published option with the predictor's pick recommended", () => {
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={[]}
+        onOverridesChange={() => {}}
+        explain="dialog"
+        bareDecisions
+        cardDecisions={["hardware"]}
+      />,
+    );
+    // No select, no section chrome: radios named by their option.
+    expect(
+      screen.queryByRole("combobox", { name: "hardware override" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Why this configuration" }),
+    ).not.toBeInTheDocument();
+    const group = screen.getByRole("radiogroup", { name: "hardware options" });
+    const radios = within(group).getAllByRole("radio");
+    expect(radios.map((r) => (r as HTMLInputElement).value)).toEqual([
+      "A100-80GB",
+      "H100",
+      "H200",
+      "L4",
+      "RTX-PRO6000",
+    ]);
+    // The predictor's default starts selected and badged...
+    expect(
+      within(group).getByRole("radio", { name: /L4/ }),
+    ).toBeChecked();
+    expect(within(group).getByText("Recommended")).toBeVisible();
+    // ...with the losing option's own cost beside it.
+    expect(within(group).getByText("INR 250.00/hr")).toBeVisible();
+  });
+
+  it("pins an option and unpins by reselecting the predictor's choice", async () => {
+    const user = userEvent.setup();
+    const onOverride = vi.fn();
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={[]}
+        onOverridesChange={onOverride}
+        explain="dialog"
+        bareDecisions
+        cardDecisions={["hardware"]}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "hardware options" });
+    await user.click(within(group).getByRole("radio", { name: /H100/ }));
+    expect(onOverride).toHaveBeenCalledWith([
+      { decision: "hardware", value: "H100" },
+    ]);
+  });
+
+  it("leaves non-card decisions on their controls", () => {
+    render(
+      <QuoteView
+        quote={quote()}
+        editable
+        overrides={[]}
+        onOverridesChange={() => {}}
+        explain="dialog"
+        bareDecisions
+        cardDecisions={["hardware"]}
+      />,
+    );
+    // Method keeps its select; sequence length keeps its input.
+    expect(
+      screen.getByRole("combobox", { name: "method override" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("spinbutton", { name: "sequence length override" }),
+    ).toBeVisible();
+  });
+
+  it("badges and unpins against the predictor's default, not the pinned choice", async () => {
+    const user = userEvent.setup();
+    const onOverride = vi.fn();
+    // A pinned quote: the choice echoes the pin, marked overridden.
+    const q = quote({
+      decisions: [
+        {
+          decision: "hardware",
+          chosen: "H100",
+          constraint: "you chose H100.",
+          alternatives: [],
+          overridden: true,
+        },
+      ],
+    });
+    render(
+      <QuoteView
+        quote={q}
+        editable
+        overrides={[{ decision: "hardware", value: "H100" }]}
+        onOverridesChange={onOverride}
+        explain="dialog"
+        bareDecisions
+        cardDecisions={["hardware"]}
+        defaultChoices={{ hardware: "L4" }}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "hardware options" });
+    // The pin is selected, but Recommended stays on the default.
+    expect(within(group).getByRole("radio", { name: "H100" })).toBeChecked();
+    expect(
+      within(group).getByRole("radio", { name: "L4 Recommended" }),
+    ).not.toBeChecked();
+    // Reselecting the default unpins instead of re-pinning it.
+    await user.click(within(group).getByRole("radio", { name: "L4 Recommended" }));
+    expect(onOverride).toHaveBeenCalledWith([]);
   });
 });
