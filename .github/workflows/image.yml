@@ -92,7 +92,14 @@ jobs:
         env:
           GITHUB_SHA: ${{ github.sha }}
 
+      # `gh` needs its token from the environment; nothing else in this job
+      # calls it, so the omission only surfaced once a publish first got far
+      # enough to reach this step -- the digest branch was pushed and the run
+      # then failed with "set the GH_TOKEN environment variable", leaving a
+      # published image and no pull request to land it.
       - name: Open the digest-change pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name "temper[bot]"
