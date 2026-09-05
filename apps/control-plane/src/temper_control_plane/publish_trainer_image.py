@@ -91,8 +91,26 @@ def _tag() -> str:
 
 
 def _run(*args: str) -> subprocess.CompletedProcess:
-    """One docker/registry command, failing loudly on a nonzero exit."""
-    return subprocess.run(args, check=True, capture_output=True, text=True)
+    """One docker/registry command, failing loudly on a nonzero exit.
+
+    Loudly means *with the reason*. `CalledProcessError`'s own message names
+    the command and the exit code and nothing else, so a captured build that
+    failed printed a traceback ending in the docker command line while the
+    error docker actually reported -- the missing base, the exhausted disk,
+    the refused push -- stayed in the captured stderr nobody read. Two
+    publish runs were diagnosed as "docker build exited 1" because of it.
+    The output is captured (these commands are chatty and the caller prints
+    what matters), so failure has to re-raise it deliberately.
+    """
+    try:
+        return subprocess.run(args, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        detail = "\n".join(
+            part.strip() for part in (exc.stdout, exc.stderr) if part
+        )
+        raise RuntimeError(
+            f"{' '.join(args)} exited {exc.returncode}\n{detail}"
+        ) from exc
 
 
 def build(tag: str) -> None:
