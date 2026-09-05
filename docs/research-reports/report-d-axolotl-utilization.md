@@ -16,7 +16,7 @@
 
 - **Rendering YAML + subprocess is the right seam vs importing Axolotl as a library** for a control plane that must be orchestrator-agnostic (thread today, Temporal tomorrow) and must never couple to Axolotl's internal Python imports. The seam is narrow, auditable (`/out/config.yaml`), and replayable. The cost is that you inherit YAML's ergonomics and must validate before you launch a billing VM — which this repo already does (pure validation functions, loud rejection of unknown keys at both top-level and `hyperparameters`). **Confidence: High.**
 
-- **The defensible parts under grilling are:** the version-matrix delegation (Spike 3/4), the digest pin, the `axolotl train` CLI, `train_on_inputs: false`, `chat_template: tokenizer_default`, NF4 double-quant + bf16, `lora_target_linear: true`, `save_safetensors: true`, thinking-mode detection, and the `/job -> /out` contract with always-written `result.json`.
+- **The strongest parts under review are:** the version-matrix delegation (Spike 3/4), the digest pin, the `axolotl train` CLI, `train_on_inputs: false`, `chat_template: tokenizer_default`, NF4 double-quant + bf16, `lora_target_linear: true`, `save_safetensors: true`, thinking-mode detection, and the `/job -> /out` contract with always-written `result.json`.
 
 - **What gets challenged:** the 344-field config schema hides ~88% of its constraints in Python `model_validator` hooks (Spike 7 measured 113 hooks, 1 field with schema bounds, 19 enums — so a form generated from the schema cannot know what will be refused until the job is already on a billing VM); `sample_packing: false` is correct today but leaves 3–5× throughput on the table and must be gated per-model behind varlen attention; single-GPU-only without an FSDP path wired through YAML is a scope cut that must be stated, not implied; and the `main-20260817` tag is a moving `main` build, not a semantic release tag — digest pinning mitigates but update cadence needs a policy.
 
@@ -92,7 +92,7 @@ Thinking mode is detected from the dataset via `thinking.py:detect()` and applie
 
 ## 3. Correctness Assessment
 
-### 3.1 What's right (defensible under grilling)
+### 3.1 What's right (strongest under review)
 
 **1. YAML + `axolotl train` is the strongest seam for a platform.**
 
@@ -120,7 +120,7 @@ The Qwen3 model guides show `chat_template_kwargs` threading through the Jinja t
 
 The `try/finally` that writes `result.json` including on failure means the orchestrator never parses logs to learn what happened [trainer/entrypoint.py:393-396]. The streaming relay (`PYTHONUNBUFFERED=1`, `bufsize=0`, `flush=True`, `\r` splitting) is load-bearing for tqdm and is documented as such [trainer/entrypoint.py:98-161; ADR-0001].
 
-### 3.2 What's risky (grillable, not wrong)
+### 3.2 What's risky (worth pressing on, not wrong)
 
 **1. The config schema is wide and mostly opaque to static validation.**
 
@@ -134,7 +134,7 @@ The Docker tag grammar distinguishes `main-20260817-py3.12-cu130-2.12.0` (nightl
 
 The Dockerfile's ban — *"Never `pip install` inside it — that reintroduces the dependency-resolution problem the pinned base exists to avoid"* [trainer/Dockerfile:33-36] — is correct for the base dependencies. But a CVE in `transformers` between pins still needs a path. **Recommendation:** allow a pinned `requirements-patch.txt` with exact `==` versions and hashes, reviewed as a code change that re-runs the smoke test, rather than an unpinned `RUN pip install`.
 
-### 3.3 What's missing (not bugs, but gaps an evaluator will ask about)
+### 3.3 What's missing (not bugs, but gaps a reviewer will ask about)
 
 **1. `sample_packing: false` is conservative and correct; the upside is large and the enablement condition is precise.**
 
@@ -142,11 +142,11 @@ The Multipack docs visualize packed batches and state: *"we only need to concate
 
 **2. FSDP/DeepSpeed is validated but not wired through the job spec.**
 
-The multi-GPU docs define three mutually exclusive strategies: DeepSpeed (`deepspeed: deepspeed_configs/zero3.json`), FSDP (`fsdp_version: 2` + `fsdp_config: {…}`), and DDP (default) [docs.axolotl.ai — Multi-GPU](https://docs.axolotl.ai/docs/multi-gpu.html). Spike 6 proved 2× L4: the image sees both devices, FSDP FULL_SHARD shards and steps, `.distcp` checkpoint is written, sharded resume works — but loss collapses with `nan` grad_norm, so the mechanism runs and the numerics do not [spike/README.md — Spike 6; spike/findings-spike6.json]. The entrypoint has no `fsdp_version`/`deepspeed` rendering, and `api/orchestrator.py` hard-codes `GPU_PREFERENCE` for single-GPU; multi-GPU is correctly described as *"provisioning, not architecture"* with `num_gpus` as a create parameter, but the YAML path stays single-GPU. An evaluator will ask: *"How does a 70B LoRA fit on one 24 GB card, and when does it spill to FSDP?"* The honest answer is: single-GPU QLoRA fits 7–8B on 24 GB and 70B NF4 on 80 GB (QLoRA paper, Support Matrix); 70B full fine-tuning needs FSDP — which is proven at the provider level but not at the numerics level (Issue #81). **Recommendation:** keep v1 single-GPU, but add a `num_gpus` job field that threads through to `fsdp_version: 2` + `fsdp_config` when needed, gated on the Spike 6 numerics fix.
+The multi-GPU docs define three mutually exclusive strategies: DeepSpeed (`deepspeed: deepspeed_configs/zero3.json`), FSDP (`fsdp_version: 2` + `fsdp_config: {…}`), and DDP (default) [docs.axolotl.ai — Multi-GPU](https://docs.axolotl.ai/docs/multi-gpu.html). Spike 6 proved 2× L4: the image sees both devices, FSDP FULL_SHARD shards and steps, `.distcp` checkpoint is written, sharded resume works — but loss collapses with `nan` grad_norm, so the mechanism runs and the numerics do not [spike/README.md — Spike 6; spike/findings-spike6.json]. The entrypoint has no `fsdp_version`/`deepspeed` rendering, and `api/orchestrator.py` hard-codes `GPU_PREFERENCE` for single-GPU; multi-GPU is correctly described as *"provisioning, not architecture"* with `num_gpus` as a create parameter, but the YAML path stays single-GPU. A reviewer will ask: *"How does a 70B LoRA fit on one 24 GB card, and when does it spill to FSDP?"* The honest answer is: single-GPU QLoRA fits 7–8B on 24 GB and 70B NF4 on 80 GB (QLoRA paper, Support Matrix); 70B full fine-tuning needs FSDP — which is proven at the provider level but not at the numerics level (Issue #81). **Recommendation:** keep v1 single-GPU, but add a `num_gpus` job field that threads through to `fsdp_version: 2` + `fsdp_config` when needed, gated on the Spike 6 numerics fix.
 
 **3. W&B / experiment tracking, evaluation, and merge are present in Axolotl but unused here.**
 
-The CLI documents `axolotl evaluate`, `axolotl lm-eval`, `axolotl merge-lora`, and `axolotl quantize` [docs.axolotl.ai — CLI / Command Reference](https://docs.axolotl.ai/docs/cli.html); the support matrix lists W&B, MLflow, Comet, TensorBoard as experiment tracking [docs.axolotl.ai — Support Matrix / Experiment tracking](https://docs.axolotl.ai/docs/support-matrix.html). The repo streams loss via SSH stdout and classifies metric vs log events in the orchestrator, but does not set `wandb_project`/`wandb_entity`, does not run `axolotl evaluate` post-training, and does not merge the adapter (it ships the adapter + `adapter_config.json` only). For a take-home this is correct scope ("auth and billing are the only sanctioned gaps; every other flow is meant to be complete" — but deployment is explicitly Docker Compose, not hosted W&B). For a production platform, the missing pieces are: `wandb_project` per tenant (the support matrix's experiment-tracking row), `do_causal_lm_eval` / `lm_eval_tasks` for eval loss, and `axolotl merge-lora` for users who want a merged checkpoint rather than an adapter. **None of these are misuses of Axolotl; they are unused surfaces.**
+The CLI documents `axolotl evaluate`, `axolotl lm-eval`, `axolotl merge-lora`, and `axolotl quantize` [docs.axolotl.ai — CLI / Command Reference](https://docs.axolotl.ai/docs/cli.html); the support matrix lists W&B, MLflow, Comet, TensorBoard as experiment tracking [docs.axolotl.ai — Support Matrix / Experiment tracking](https://docs.axolotl.ai/docs/support-matrix.html). The repo streams loss via SSH stdout and classifies metric vs log events in the orchestrator, but does not set `wandb_project`/`wandb_entity`, does not run `axolotl evaluate` post-training, and does not merge the adapter (it ships the adapter + `adapter_config.json` only). This is correct scope for here ("auth and billing are out of scope; every other flow is meant to be complete" — deployment is Docker Compose, not hosted W&B). For a production platform, the missing pieces are: `wandb_project` per tenant (the support matrix's experiment-tracking row), `do_causal_lm_eval` / `lm_eval_tasks` for eval loss, and `axolotl merge-lora` for users who want a merged checkpoint rather than an adapter. **None of these are misuses of Axolotl; they are unused surfaces.**
 
 **4. Quantization correctness is correctly implemented; the merge nuance deserves a sentence in `trainer/README.md`.**
 
@@ -154,7 +154,7 @@ The support matrix is precise: load-time QLoRA is `load_in_4bit: true` + frozen 
 
 **5. The export-time template probe is specified but not yet implemented.**
 
-Report A's spine principle — the chat template resolved at stage 5 must be the same object serialized into the artifact at stage 11 — is correct and load-bearing. The repo records that the probe ("re-tokenise a fixed conversation through both the training template and the artifact's, assert identical ids") is the check that makes Advanced-mode exposure safe [AGENTS.md — Design rules; trainer/README.md — Still open]. An evaluator will ask to see it run; today it is a TODO.
+Report A's spine principle — the chat template resolved at stage 5 must be the same object serialized into the artifact at stage 11 — is correct and load-bearing. The repo records that the probe ("re-tokenise a fixed conversation through both the training template and the artifact's, assert identical ids") is the check that makes Advanced-mode exposure safe [AGENTS.md — Design rules; trainer/README.md — Still open]. A reviewer will ask to see it run; today it is a TODO.
 
 ---
 
@@ -248,7 +248,7 @@ Primary-source evidence reviewed: the docs home claims accelerated training via 
 
 ---
 
-## 6. What Would Get Challenged Under Grilling (Outsider Perspective)
+## 6. What Would Get Challenged Under Review (Outsider Perspective)
 
 > **"Why not just call TRL directly? Axolotl is a wrapper."**
 
@@ -272,7 +272,7 @@ Primary-source evidence reviewed: the docs home claims accelerated training via 
 
 > **"How is this different from just shipping a Dockerfile and calling it a platform?"**
 
-**Answer:** The platform value is not the training loop — Axolotl owns that, by design. The value is the contract around it: pure validation functions, loud rejection of unknown keys at both levels, thinking-mode detection with line-numbered blocks, streaming event channel over SSH with stall/duration guards (ADR-0001/0002), always-written `result.json`, `finally`-block VM teardown with `list`-based confirmation, and adapter hash verification end-to-end. Those are not Axolotl features; they are the orchestration layer that is the work sample for a GPU-infrastructure company.
+**Answer:** The platform value is not the training loop — Axolotl owns that, by design. The value is the contract around it: pure validation functions, loud rejection of unknown keys at both levels, thinking-mode detection with line-numbered blocks, streaming event channel over SSH with stall/duration guards (ADR-0001/0002), always-written `result.json`, `finally`-block VM teardown with `list`-based confirmation, and adapter hash verification end-to-end. Those are not Axolotl features; they are the orchestration layer that is this project's core contribution.
 
 ---
 

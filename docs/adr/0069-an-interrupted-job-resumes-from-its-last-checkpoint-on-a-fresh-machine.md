@@ -129,7 +129,7 @@ verification clause of spec 010 requires exactly that, not a claim:
   statement is that a resumption restores the whole checkpoint and therefore
   does not change the optimisation, and that this must be confirmed by
   interrupting a real job (a hardware run named in the PR body, owned by the
-  submission's hardware-verification pass).
+  hardware-verification pass).
 
 ## Alternatives considered
 

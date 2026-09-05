@@ -1,8 +1,7 @@
 # Belt and braces. The root .gitignore already covers these, but this file
 # lives next to the thing that holds a real credential, so it is repeated here
 # deliberately — a second rule costs nothing and a leaked key costs a rotation.
-# It also travels with the folder when the spike moves to the take-home repo,
-# which will be public.
+# It also travels with the folder, so the rule holds wherever the folder goes.
 .env
 .env.*
 !.env.example

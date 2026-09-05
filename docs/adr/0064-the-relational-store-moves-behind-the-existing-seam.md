@@ -10,10 +10,9 @@
 Job state lived in a local SQLite file, one process holding it, a thread per
 job. That file cannot express a claim on a row surviving contention, so there
 was no path to running orchestration anywhere but inside the request-serving
-process, and a restart lost every running job with nothing to show for it. The
-brief's reader sells GPU infrastructure; "a thread in the web process, a local
-file, and a directory" is not a production answer to any question that will be
-asked about it.
+process, and a restart lost every running job with nothing to show for it.
+"a thread in the web process, a local file, and a directory" is not a
+production answer to any question asked about durability.
 
 Spec 008 named the bet this issue tests: **persistence sits behind functions
 rather than scattered through handlers, so the migration is bounded to what

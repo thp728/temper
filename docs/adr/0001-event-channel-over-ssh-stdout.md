@@ -31,7 +31,7 @@ The third had already been opened by the provider seam (issue #3), which made
 layers beneath it still held the output.
 
 A fine-tuning product that cannot show a loss value while a job runs is the
-hello-world version the brief disqualifies. Opening this channel is also the
+hello-world version this project rules out. Opening this channel is also the
 prerequisite for three other behaviours in the same spec — cancellation, stall
 detection, and the duration ceiling all need a loop over arriving lines to hang
 a check on.

@@ -4,7 +4,7 @@
 **Phase:** B, band 1 for the parts that gate evaluation; band 2 for the rest
 **Depends on:** Spec 007 (the shell that starts), Spec 008 (the services that start with it)
 **Produces:** an ADR that the zero-cost path is a labelled demonstration and is structurally blind to the transport
-**Assumes:** the repository becomes public at submission, and the private working vault does not
+**Assumes:** a fresh clone on a machine that is not the author's
 
 ## Problem Statement
 
@@ -33,9 +33,8 @@ Every fact about the current state points the wrong way:
   investigation that produced them. They were the right artefact then; they read
   as clutter now.
 - **The decision record starts three-quarters of the way through the project.**
-  Thirteen decisions made during the first week live in a private vault, and the
-  public directory says in writing that they are copied in before publication.
-  Until they are, the record appears to begin late.
+  Thirteen decisions made during the first week were filed later, and until
+  they are, the record appears to begin late.
 - **The interface's front page assumes you already have hardware.**
 
 ## Solution
@@ -124,11 +123,11 @@ scripts collapse to the one that represents the final approach; the findings
 files stay, because they are the measured evidence and the reason the numbers in
 this repository can be called measured at all.
 
-**The decision records are completed before publication.** The thirteen earlier
-entries are copied into the public directory in their original order, as the
-directory's own index already promises. They are edited for a public audience but
-not rewritten — an entry that reconstructs its reasoning after the fact is the
-thing this project has consistently said fails under questioning.
+**The decision records are completed.** The thirteen earlier entries are
+filed in the directory in their original order, as the directory's own index
+already promises. They are not rewritten — an entry that reconstructs its
+reasoning after the fact is the thing this project has consistently said
+fails under questioning.
 
 **The remaining work becomes tracked items, written for a stranger.** Not a list
 in a document — items with the same care as the ones already completed, so that
@@ -155,9 +154,8 @@ build; a check asserts that no secret pattern appears in the tree.
 **What only a cold clone covers:** that the documented sequence is complete, that
 the platform-specific traps are the only ones, that one command genuinely starts
 everything from nothing, and that a real job runs from a fresh checkout on an
-operating system the author does not use. **This is the verification clause and
-it is scheduled, not aspirational** — before the final two days, so that what it
-finds has somewhere to be fixed.
+operating system the author does not use. **This is the verification clause:**
+a cold clone on a fresh machine, recorded the way the probe findings are.
 
 **Prior art:** the interface tests already run against the double and are the
 foundation of the demonstration mode's coverage. The probe findings files are the
@@ -171,9 +169,8 @@ about what was and was not proven.
   than in infrastructure.
 - **Supporting operating systems beyond the three a reviewer plausibly uses.**
 - **A hosted demonstration.** The zero-cost mode runs on the reviewer's machine.
-- **Publishing the working vault.** The research material and the
-  project-management record stay private. What becomes public is the decision
-  records, the specifications, and the measured findings.
+- **Packaging beyond cloning.** Cloning and running is the interface; installers,
+  images, and hosted demos are separate work.
 - **Packaging for distribution.** Cloning and running is the interface.
 
 ## Further Notes

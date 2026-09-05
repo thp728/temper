@@ -71,9 +71,9 @@ def test_trainable_params_matches_the_real_run_exactly():
 
 
 def test_qwen3_8b_trainable_params_matches_the_by_hand_arithmetic():
-    """The private vault's wiki/lora-and-peft.md derives 43,646,976 for
-    Qwen3-8B at r=16, all-linear, by hand from the same config. A second
-    independent confirmation of the formula, not just the first model."""
+    """Derives 43,646,976 for Qwen3-8B at r=16, all-linear, by hand from the
+    same config. A second independent confirmation of the formula, not just
+    the first model."""
     assert memory.trainable_params(QWEN3_8B, lora_r=16) == 43_646_976
 
 

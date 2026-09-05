@@ -121,7 +121,7 @@ so the claim cannot be mistaken for something stronger:
 **A benchmark-style score (many questions, a leaderboard-style aggregate).**
 Rejected: it is Spec 011's out-of-scope, costs warm-machine time the product
 does not budget for, and the honest label for a handful of questions is a
-smoke test, not a benchmark. The bar in the brief is "a small slice with a
+smoke test, not a benchmark. The bar here is "a small slice with a
 stated margin of error is honest; the same slice presented as a benchmark
 score is not."
 

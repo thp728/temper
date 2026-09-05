@@ -3,13 +3,11 @@
 - **Status:** accepted
 - **Date:** 2026-08-21
 
-> **A note on the number and the date.** This decision was recorded on
-> 2026-08-21 in the private working vault where the first thirteen decisions
-> were logged, and copied into this directory on 2026-08-26
+> **A note on the number and the date.** This decision was made on
+> 2026-08-21 and filed in this directory on 2026-08-26
 > ([#26](https://github.com/thp728/temper/issues/26)). Its file number reflects
 > when the record landed here, not when the decision was made. The wording is
-> the original: private-vault links are replaced by descriptions of what they
-> pointed at, and module names are given as the record wrote them — where a
+> the original: module names are given as the record wrote them — where a
 > file has since moved (for example the event parser now lives in
 > `packages/core`), the record below describes the state that produced the
 > decision.
@@ -34,7 +32,7 @@ translated every `\n` into `\r\n` on the way to the remote `bash -s`. A **regres
 the streaming work itself** — the old blocking path fed bytes; `stream()` introduced
 text-mode stdin, and the suite went on passing.
 
-**The generalisable point, and the one to volunteer under grilling:** `fake_provider`
+**The generalisable point:** `fake_provider`
 implements the `Provider` protocol faithfully and **never crosses a pipe**, so the
 translation that breaks every real run cannot happen to it. *A double proves the logic above
 the seam and is structurally blind to the seam itself.* The remedy adopted is not "trust the

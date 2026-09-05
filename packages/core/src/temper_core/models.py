@@ -96,9 +96,8 @@ class ModelFacts:
 
         Verified against two real configs: Qwen3-4B's arithmetic lands at
         4.02B against a catalog figure of 4.0B, and Qwen3-8B's lands on
-        8,190,427,136 -- exactly the model's advertised 8.19B. See
-        `wiki/foundations.md` in the private vault for the by-hand version
-        this reproduces.
+        8,190,427,136 -- exactly the model's advertised 8.19B, matching the
+        by-hand derivation this reproduces.
 
         For mixture-of-experts models the MLP is replicated per expert and
         the count scales with **total** parameters (all experts stored), not

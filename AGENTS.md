@@ -2,46 +2,44 @@
 
 A fine-tuning platform: upload a JSONL dataset, pick a base model, get a trained LoRA adapter.
 
-Built as a take-home for [JarvisLabs.ai](https://jarvislabs.ai). **Submission 2026-08-31.** The bar
-from the brief is *"70-80% of what commercial products offer"*, *"cannot be the hello-world level of
-fine-tuning"*, and the one that shapes everything here: **"I should be able to explain every
-decision that's done. Expect to be grilled."**
+An open-source fine-tuning platform. The bar is *"70-80% of what commercial products offer"*,
+*"cannot be the hello-world level of fine-tuning"*, and the one that shapes everything here:
+**every decision is explainable, with alternatives and tradeoffs on record.**
 
-Auth and billing are the only sanctioned gaps. Every other flow is meant to be complete.
+Auth and billing are out of scope. Every other flow is meant to be complete.
 
 ## Environment
 
-**Anything that SSHes runs through PowerShell, never Bash.** Git Bash ships its own `ssh` and cannot
-see the Windows `ssh-agent` service. The JarvisLabs key is passphrase-protected, so auth fails and
-surfaces as `"ssh ready — no answer within 240s"`, which looks exactly like a dead VM. That
-misdiagnosis cost an evening and produced a wrongly-filed platform bug.
+**Anything that SSHes runs through PowerShell, never Git Bash.** Git Bash ships its own `ssh` and cannot
+see the Windows `ssh-agent` service, so a passphrase-protected key fails auth and the failure
+surfaces as `"ssh ready — no answer within 240s"`, which looks exactly like a dead VM.
 
 ```powershell
-& "d:\Dev\life-os\.venv\Scripts\python.exe" -u spike/spike4.py
+& ".venv\Scripts\python.exe" -u spike/spike4.py
 ```
 
 Before any GPU work, `ssh-add -l` must list one ED25519 key. If it does not, `ssh-add ~/.ssh/id_ed25519`.
 
-Interpreter: `d:\Dev\life-os\.venv\Scripts\python.exe`. `python -u` for backgrounded runs;
+Interpreter: the repo's `.venv` (`uv sync` creates it). `python -u` for backgrounded runs;
 `PYTHONIOENCODING=utf-8` for anything writing emoji, since Windows defaults to cp1252 and raises.
 Use the Write tool over bash heredocs past ~50 lines, which have silently produced no file and no
 error. Commit with `git commit -F -`, never `-m` with backticks, which get command-substituted.
 
-**Money.** GPU work bills per minute against a ₹50,000 grant. The account bills in **INR**, so read
-`account.currency()` rather than assuming USD. Cheapest VM-capable GPU is L4 at ₹41.31/hr. **Every
-code path that creates a VM destroys it in a `finally` block and then confirms by listing
-instances.** A destroy call's return value is not evidence. An orphaned GPU bills until somebody
-notices.
+**Money.** GPU work bills per minute. The reference account bills in **INR**, so read
+`account.currency()` rather than assuming USD. Cheapest VM-capable GPU observed here is L4 at ₹41.31/hr
+(prices move; re-check before provisioning). **Every code path that creates a VM destroys it in a
+`finally` block and then confirms by listing instances.** A destroy call's return value is not
+evidence. An orphaned GPU bills until somebody notices.
 
 **Secrets.** `spike/.env` holds `JL_API_KEY`, git-ignored at two levels. Never print it, never
-commit it, never paste it into a message. This repo goes public at submission.
+commit it, never paste it into a message.
 
 ## Layout and tasks
 
 One rule, from [ADR-0010](docs/adr/0010-the-repository-is-laid-out-as-apps-and-packages.md): **if it
 ships it is an app, if it is imported it is a package.** `apps/` holds `control-plane`,
 `worker`, `trainer` and `web`; `packages/` holds `core` (pure domain, no framework imports) and `contracts`
-(generated artifacts crossing a boundary where import is impossible). `spike/` is a documented
+(artifacts crossing a boundary where import is impossible: some generated, some hand-kept). `spike/` is a documented
 throwaway; code graduating out of it takes its tests along.
 
 **A value two components must agree on is defined once and read, never retyped.**
@@ -57,14 +55,10 @@ in the body. Minimum ceremony: no templates, no required reviewers.
 
 ## Phases
 
-Phase A (to 2026-08-21) proved the loop on a deliberately scrappy stack. Phase B (to submission) is
+Phase A (to 2026-08-21) proved the loop on a deliberately scrappy stack. Phase B is
 the larger half: Postgres, Temporal, Redis, MinIO, Next.js, quality gates. Phase A was written so
 Phase B would be a migration, and **the domain logic carries over unchanged.** Anywhere it does not,
 the seam was leakier than claimed, and that gets recorded rather than patched over.
-
-**Production-grade is part of the deliverable.** This repository is the public portfolio artifact,
-read by a company whose own product is GPU infrastructure. **The orchestration layer is the work
-sample.** Target spec: `technical-architecture.md` in the vault.
 
 ## How to work
 
@@ -87,9 +81,7 @@ written during the build records reasoning; one written after reconstructs it, a
 what fails under questioning. Numbers are assigned when a record lands, never reserved. A decision
 is not edited once accepted; superseding it means a new record.
 
-The vault's `decisions.md` held the earlier decisions and is closed to new entries. The ten platform
-decisions among them are copied into `docs/adr/` as [0013]–[0022] (issue #26); new decisions land here
-only.
+New decisions land here only. See `docs/adr/` for the index and numbering rules.
 
 ## Where things are
 
@@ -97,11 +89,6 @@ only.
 `docs/adr/` holds decision records, `docs/specs/` the twelve specs tickets come from, `docs/agents/`
 the issue tracker, triage labels and domain docs. Each module carries its own `AGENTS.md` with the
 rules specific to it.
-
-Reasoning and project state live in the private vault at
-`d:\Dev\life-os\projects\jarvislabs-assignment\`: `technical-architecture.md` is the spec,
-`grilling-prep.md` answers everything cut, `scope-flow-table.md` is the parity boundary, `tasks.md`
-is the backlog, `wiki/` is the explainability gate.
 
 `uv` owns Python dependencies, `pnpm` will own JavaScript ones, `just` owns verbs. One workspace,
 one `uv.lock`. `just check` before you push; `just --list` for everything else.

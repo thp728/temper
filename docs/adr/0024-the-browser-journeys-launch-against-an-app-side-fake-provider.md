@@ -15,7 +15,7 @@ validate) never touches the provider. Issue #38 ports model choice and
 without driving the money path. A launched job goes through
 `orchestrator.launch`, which builds a real provider by default; on a machine
 holding credentials (`spike/.env` is read at import), a Playwright run could
-provision real machines and bill against the grant.
+provision real machines and bill against the account.
 
 The suite-wide rule has always been "no test constructs a real provider"
 (`conftest.py` enforces it by refusing `_connect`). But conftest guards pytest;

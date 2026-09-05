@@ -13,9 +13,9 @@ A user who launches a job watches nothing happen for roughly four minutes, canno
 Concretely, from the user's side:
 
 - **The run is silent.** The whole build-and-train phase — measured at 251 seconds on 2026-08-19 — produces no output at all. Events do appear afterwards, but all of them carry the same timestamp, so even the record of what happened cannot say how long anything took.
-- **The loss is nowhere.** The training framework's own output never leaves the machine; it is written to a file on a VM that is then destroyed. There is no loss number available during a run or after one. A fine-tuning product that cannot show a loss curve is the hello-world version the brief disqualifies.
+- **The loss is nowhere.** The training framework's own output never leaves the machine; it is written to a file on a VM that is then destroyed. There is no loss number available during a run or after one. A fine-tuning product that cannot show a loss curve is a hello-world version, and this project rules that out.
 - **There is no way to stop a job.** A `cancelled` state exists in the lifecycle and no path reaches it. A user who realises they picked the wrong dataset can only wait and pay.
-- **There is no protection against a hung job.** A safety constant exists and is never read. A job that wedges bills for as long as nobody is watching, against a fixed grant.
+- **There is no protection against a hung job.** A safety constant exists and is never read. A job that wedges bills for as long as nobody is watching.
 - **Teardown confirmation arrives after the job says it finished.** The "VM destroyed" event is appended after the terminal transition, so any client that stops polling on a terminal status — which is what a reasonable UI does — never sees the one confirmation it most wants.
 
 Underneath all five: the money-spending path has **no test coverage**. The orchestration function builds its provider client internally and shells out directly, so it cannot be exercised without provisioning a real GPU. Every behaviour above would be added to code that nothing tests.
@@ -151,9 +151,7 @@ This spec is not complete until its decision records exist. They are written **a
 
 - **ADR-0001 — Event channel over SSH stdout.** Why the stream is pulled over the connection that already exists rather than pushed to the control plane; that a push requires a publicly addressable control plane, which is out of scope in both phases; that the `stream` contract is shaped so a push implementation is a substitution rather than a rewrite; and the alternatives rejected — polling a file on the machine, and a reverse tunnel.
 - **ADR-0002 — Stall detection and a duration ceiling.** Why one unread wall-clock constant is replaced by two live controls with different meanings; why a stalled job and an over-long job are different outcomes with different codes; how each default was derived; and why these are circuit breakers rather than spend policy.
-- **The decision-record index.** This spec creates the decision-record directory, so it also creates the index that explains why the numbering begins partway through the project: the first thirteen entries were logged in a private vault during the build and are reproduced here before the repository becomes public.
-
-Records are written for a public audience from the first entry, because the repository becomes public at submission.
+- **The decision-record index.** This spec creates the decision-record directory, so it also creates the index that explains the numbering. See `docs/adr/README.md` for why the numbers are not in date order.
 
 ## Testing Decisions
 

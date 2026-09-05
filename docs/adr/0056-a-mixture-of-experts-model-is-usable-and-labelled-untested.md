@@ -29,7 +29,7 @@ This record supersedes ADR-0050 on that point only, and it does not edit
 ADR-0050's text. An accepted decision is not rewritten; a new record
 supersedes the earlier position rather than editing it, stating that the
 mechanics reasoning was sound and the consequence was not. That sentence is
-the one this project will be grilled on, and it is kept verbatim.
+the one reviewers will press on hardest, and it is kept verbatim.
 
 Three things this issue adds beyond the verdict change, each with its own
 acceptance criterion:

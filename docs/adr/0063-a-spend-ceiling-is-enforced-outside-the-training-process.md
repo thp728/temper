@@ -9,10 +9,10 @@
 
 A job that has gone wrong keeps billing until somebody stops it. The stall
 detector and the duration ceiling stop a job that is no longer making progress
-or that runs too long; neither is a cap on *money*, and the brief's parity
-boundary names the missing control directly: a **hard spend cap enforced
+or that runs too long; neither is a cap on *money*, and the scope boundary
+names the missing control directly: a **hard spend cap enforced
 outside the training process**, kept because it is a safety control, not
-billing (scope-flow-table row 3).
+billing.
 
 The reason "outside the training process" is the requirement, not a detail, is
 in the spec's own one-liner: **a process that has stopped responding cannot
@@ -55,14 +55,14 @@ and on reaching it the job runs checkpoint, terminate, destroy and fails with
 - **The number is derived from two inherited facts and one judgment, and each
   half is labelled.** The most a *legitimate* job can cost is bounded by the
   duration ceiling (ADR-0002's 24h) and the most expensive card the platform
-  has measured — H200 at ₹378.27/hr (reference-technical-architecture.md,
-  measured 2026-08-17) — about ₹9,078. The ceiling is ₹10,000: roughly 10%
-  above that worst legitimate cost, so it cannot fire on a legitimate run (a
-  ceiling that fires on a legitimate run is a bug, not a safety net), and it
-  is 20% of the account's ₹50,000 grant, so a runaway is stopped before it
-  can consume a fifth of the account. The two inherited facts are the adopted
-  24h ceiling and the measured H200 rate; the 20%-of-grant bound is the
-  judgment. If the catalog or the rates move, this is the number to revisit.
+  has measured — H200 at ₹378.27/hr (measured 2026-08-17) — about ₹9,078.
+  The ceiling is ₹10,000: roughly 10% above that worst legitimate cost, so it
+  cannot fire on a legitimate run (a ceiling that fires on a legitimate run
+  is a bug, not a safety net), and a runaway is stopped at roughly one job's
+  worst-case cost rather than an open-ended bill. The two inherited facts are
+  the adopted 24h ceiling and the measured H200 rate; the 10%-above-worst-
+  legitimate bound is the judgment. If the catalog or the rates move, this is
+  the number to revisit.
 
 - **Enforcement is outside the training process, and the measurement never
   reads the trainer.** The spend check lives in the control plane's `guard`

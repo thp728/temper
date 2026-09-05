@@ -5,10 +5,9 @@ Status: accepted
 
 ## Context
 
-The repository becomes public at submission (2026-08-31). Until a licence
-exists, a public repository grants nobody anything: default copyright means
-"all rights reserved", so a reviewer cloning it to evaluate may read it only by
-toleration, not by right.
+Until a licence exists, a public repository grants nobody anything: default
+copyright means "all rights reserved", so anyone cloning it to evaluate may
+read it only by toleration, not by right.
 
 The awkwardness is sharper than usual because this product is in the licence
 business whether it wants to be or not. It fine-tunes open-weight models whose
@@ -17,28 +16,24 @@ surfaces each base model's licence and pinned revision at job creation for
 exactly that reason (the curated models, `Qwen/Qwen3-4B` and `Qwen/Qwen3-8B`,
 are Apache-2.0, which is part of why they were chosen). A platform that tells
 its users what obligations attach to their artifacts, while attaching no terms
-of its own, is an awkward thing to be grilled about.
+of its own, invites an obvious question.
 
 The constraint set:
 
-- The artifact is a portfolio piece, read and run by a company whose own
-  product is GPU infrastructure. The licence must allow reading, running,
-  modifying and reusing the code without friction.
-- It must be recognisable. An evaluator should not have to study the licence to
+- The licence must allow reading, running, modifying and reusing the code
+  without friction.
+- It must be recognisable. A reader should not have to study the licence to
   know what they may do.
 - The ecosystem it sits on is permissive: FastAPI, Pydantic, uv, Axolotl and
   the Qwen weights are all Apache-2.0 or MIT. Nothing here imposes copyleft on
   the whole.
-- The author keeps copyright; the take-home relationship with JarvisLabs does
-  not change who owns the code.
 
 ## Decision
 
 MIT, as `LICENSE` at the repository root, copyright "the Temper authors".
 
-Roughly 170 words that an evaluator can read in full in under a minute, and the
-default licence for a portfolio project. Nothing an evaluator has to reason
-about before cloning.
+Roughly 170 words that a reader can read in full in under a minute. Nothing
+anyone has to reason about before cloning.
 
 ## Alternatives considered
 
@@ -59,15 +54,15 @@ patentable subject matter anyone is plausibly asserting**; they are ordinary
 operational practice, and treating them as patent-adjacent overstates what this
 repository is. The grant insures against a risk that does not exist here, and
 it costs about ten times MIT's length plus a paragraph on patent retaliation
-that an evaluator has to skim past. Apache-2.0 earns its place when code is
+that a reader has to skim past. Apache-2.0 earns its place when code is
 expected to be vendored into a product whose legal review looks for the grant.
-A take-home is not that, and choosing the heavier licence for a benefit nothing
+This project is not that, and choosing the heavier licence for a benefit nothing
 in this situation needs is exactly the kind of unexamined default this
 repository is supposed to catch.
 
 **GPL or AGPL.** Rejected: copyleft serves a project building a commons it
-wants to stay open. This is a work sample; its reach should be as wide as
-possible, and AGPL's network clause would give an evaluator one more thing to
+wants to stay open. This project's reach should be as wide as
+possible, and AGPL's network clause would give a reader one more thing to
 check before running it at all.
 
 **A proprietary or source-available licence** ("look, don't reuse"). Rejected:

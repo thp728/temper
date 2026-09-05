@@ -235,7 +235,7 @@ classification is reviewable in a diff.
 ### The question
 
 The product's positioning includes reflecting what the provider offers. Nothing
-in this repo or the vault enumerates what the SDK actually exposes: the
+in this repo enumerates what the SDK actually exposes: the
 orchestrator uses create, destroy, list, and currency, and those were the four
 that Phase A needed. **Four calls is what was required, not what exists**, and
 the difference has never been looked at.

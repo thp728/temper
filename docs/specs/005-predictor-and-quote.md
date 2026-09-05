@@ -169,7 +169,7 @@ magnitude. The currency travels with the amount as a unit, never as a
 formatting choice.
 
 **Every attempt records predicted against actual** — duration, peak memory,
-cost — so that by submission the estimate is calibrated against a countable
+cost — so that over time the estimate is calibrated against a countable
 number of runs. The sentence *"calibrated against N real runs"* is worth more
 than a better constant, and it is only available if recording starts with the
 first run of the week rather than the last.

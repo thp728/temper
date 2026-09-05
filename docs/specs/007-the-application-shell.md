@@ -166,8 +166,8 @@ shell, which is why it is early rather than late.
   flow.
 - **Visual design and brand.** Conventional components, used plainly.
 - **Internationalisation.** Single language.
-- **Authentication and anything that follows from it.** The brief sanctions the
-  cut and the product is single-tenant by design.
+- **Authentication and anything that follows from it.** Out of scope by design,
+  and the product is single-tenant.
 
 ## Further Notes
 

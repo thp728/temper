@@ -6,12 +6,10 @@
 - **Issue:** [#13](https://github.com/thp728/temper/issues/13)
 
 > **A note on the number.** Spec 003 calls this "ADR-0003", which is its
-> position in the private working log where the first thirteen decisions were
-> recorded. The in-repo numbering was already at 0007 when this directory was
-> created, and 0003 is taken, so the record lives here as 0008. When the vault
-> entries are copied into this directory before the repository goes public,
-> this file keeps its number and the cross-reference above keeps the two
-> straight.
+> position in the original decision ordering. The in-repo numbering was
+> already at 0007 when this directory was created, and 0003 is taken, so the
+> record lives here as 0008. This file keeps its number and the
+> cross-reference above keeps the two straight.
 
 ## Context
 

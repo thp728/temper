@@ -3,13 +3,11 @@
 - **Status:** accepted
 - **Date:** 2026-08-19
 
-> **A note on the number and the date.** This decision was recorded on
-> 2026-08-19 in the private working vault where the first thirteen decisions
-> were logged, and copied into this directory on 2026-08-26
+> **A note on the number and the date.** This decision was made on
+> 2026-08-19 and filed in this directory on 2026-08-26
 > ([#26](https://github.com/thp728/temper/issues/26)). Its file number reflects
 > when the record landed here, not when the decision was made. The wording is
-> the original: private-vault links are replaced by descriptions of what they
-> pointed at, and file paths are given as the record wrote them — where a file
+> the original: file paths are given as the record wrote them — where a file
 > has since moved or changed (for example `thinking.py` now lives in
 > `packages/core`, and the trainer image copies both modules), the record
 > below describes the state that produced the decision.

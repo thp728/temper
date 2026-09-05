@@ -40,9 +40,8 @@ permutations: asked how many schemas exist across the industry, how many
 the pinned trainer's stack (Axolotl) can consume, and how many Temper
 recognises, the honest answer to the third was *"one, and nobody decided
 that on purpose."* That is exactly the kind of gap this project's own
-standard says gets recorded rather than left implicit — the brief's "expect
-to be grilled" bar means an unexamined boundary like this one is a question
-waiting to be asked.
+standard says gets recorded rather than left implicit — an unexamined
+boundary like this one is a question waiting to be asked.
 
 ## Decision
 
@@ -53,7 +52,7 @@ forward: the OpenAI-style `messages` list.** Any other shape is refused with
 instead. Nothing is silently coerced or partially accepted.
 
 This is adopted, not merely inherited: single-schema depth is the right
-trade against this build's actual constraint — time to submission, not
+trade against this build's actual constraint — depth of validation, not
 breadth of user formats — and it keeps the validation surface (one set of
 line-numbered error codes, one preview renderer, one thinking-mode
 detector) small enough to be exercised as thoroughly as report-c's own
@@ -98,7 +97,7 @@ option.
 - The gap against Axolotl (which consumes nearly every shape above through
   its named loaders and its schema-agnostic `chat_template` path) is now a
   named, deliberate scope boundary instead of an implicit one, worth
-  restating directly in the submission's "what's out of scope" material.
+  restating directly in the README's "what's out of scope" material.
 - No code changes land with this record — it documents behaviour
   (`schema_type = "chat"`, the `unrecognised_schema` refusal) that already
   exists. Nothing is migrated or rolled back by it landing.

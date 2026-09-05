@@ -20,7 +20,7 @@ to `apps/worker/`. Whatever stays here has no tests, because none of it is produ
 key fails and surfaces as `"ssh ready — no answer within 240s"`, which looks exactly like a dead VM.
 
 ```powershell
-& "d:\Dev\life-os\.venv\Scripts\python.exe" -u spike/spike6.py
+& ".venv\Scripts\python.exe" -u spike/spike6.py
 ```
 
 `ssh-add -l` must list one ED25519 key first.

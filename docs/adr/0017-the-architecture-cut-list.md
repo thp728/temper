@@ -3,19 +3,16 @@
 - **Status:** accepted
 - **Date:** 2026-08-18
 
-> **A note on the number and the date.** This decision was recorded on
-> 2026-08-18 in the private working vault where the first thirteen decisions
-> were logged, and copied into this directory on 2026-08-26
+> **A note on the number and the date.** This decision was made on
+> 2026-08-18 and filed in this directory on 2026-08-26
 > ([#26](https://github.com/thp728/temper/issues/26)). Its file number reflects
-> when the record landed here, not when the decision was made; the wording is
-> the original, with private-vault links replaced by descriptions of what they
-> pointed at.
+> when the record landed here, not when the decision was made.
 
 ## Context
 
-The reference architecture produced by the research phase describes a fundable product — seven build phases, a modular monolith, WCAG 2.2 AA browser tests — and it cannot be built by 08-31. The brief sanctions the two largest cuts outright: *"auth and billing are optional."* Everything else on the list is either a scaling argument with no scale behind it (the separate gateway process), a cost trap the product is positioned against (persistent warm endpoints — research report C names the hidden hosting bill as Together's top user complaint), or breadth nobody asked for (a third model is another template and tokenizer surface that can break independently, and report A argues curation *is* the feature).
+The reference architecture produced by the research phase describes a larger product — seven build phases, a modular monolith, WCAG 2.2 AA browser tests — and it cannot be built at once. The scope cuts the two largest outright: *"auth and billing are out of scope."* Everything else on the list is either a scaling argument with no scale behind it (the separate gateway process), a cost trap the product is positioned against (persistent warm endpoints — research report C names the hidden hosting bill as Together's top user complaint), or breadth nobody asked for (a third model is another template and tokenizer surface that can break independently, and report A argues curation *is* the feature).
 
-**Why the GPU-minute cap survives billing:** it is a **safety control**, not a billing feature. A runaway job is a failure path, and the brief says non-auth flows must be perfect. It is also enforced outside the training process, so it holds when the worker crashes.
+**Why the GPU-minute cap survives billing:** it is a **safety control**, not a billing feature. A runaway job is a failure path, and every non-auth flow is meant to be complete. It is also enforced outside the training process, so it holds when the worker crashes.
 
 ## Decision
 

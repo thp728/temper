@@ -179,7 +179,7 @@ with React 19 and TypeScript strict. A Vite SPA would be smaller and faster to
 build, and there is no authentication, no SEO and no public content to justify
 server rendering today — but authentication as middleware, multi-tenancy as
 nested layouts and public content as server-rendered pages are all cuts this
-project has to defend in `grilling-prep.md`, and Next.js answers all three
+project documents in its scope records, and Next.js answers all three
 while a Vite SPA answers none without a rewrite. **The framework is chosen for
 the flows that were cut, not the flows that ship.** Tailwind v4 and shadcn/ui,
 where you own the component code outright. TanStack Query v5, with `staleTime`
@@ -195,7 +195,7 @@ end-to-end.
 **Orval** generates the TypeScript client, over Hey API. Hey API has momentum
 and is the successor to `openapi-typescript-codegen`, but it is pre-1.0 and its
 own documentation tells you to pin an exact version, which is not a sentence
-worth saying about a submission piece. Orval is stable at v7 and generates
+worth saying about a core dependency. Orval is stable at v7 and generates
 TanStack Query hooks, Zod schemas and MSW mock handlers from one config. The
 mocks matter more than they look: they let component tests run with no backend,
 which is the difference between a fast test and one that needs Postgres and
@@ -212,8 +212,7 @@ packages/contracts/openapi.json`.
 
 **Supply chain.** gitleaks in the pipeline and in the pre-commit hook, scanning
 history rather than only the diff. This is not optional: `spike/.env` holds a
-live key against a ₹50,000 grant and this repository goes public at submission.
-Catching a secret before it enters history is a different outcome from catching
+live provider key. Catching a secret before it enters history is a different outcome from catching
 it after, where the remedy is rewriting history and rotating a key. Dependabot
 scoped to GitHub Actions only; action version drift is a genuine supply-chain
 risk and it is one config file, while opening it to pip and npm with days left
@@ -227,7 +226,7 @@ exists instead: structured logs with a correlation identifier, a `/health`
 endpoint reporting each dependency separately, Sentry wired behind a DSN that
 is unset locally, per-job metric series in Postgres, and Temporal's Web UI —
 every workflow, activity, retry and failure, browsable, free with the stack.
-For a repository whose work sample is the orchestration layer, that is a better
+For a project whose core is the orchestration layer, that is a better
 answer than a dashboard built in an afternoon. **Threshold:** tracing earns its
 place when there is more than one service worth correlating across and the
 correlation identifier stops being enough.

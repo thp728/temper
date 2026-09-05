@@ -21,8 +21,8 @@ plausible value, a comment explaining its intent.
 **That is worse than having no limit at all.** A missing control is visible to
 anyone reading the module; a control that looks implemented and is not is
 indistinguishable from a working one until the day it matters, and the day it
-matters is the day a job wedges overnight on a machine billing ₹41.31 an hour
-against a fixed grant. The person reading the code that evening would have
+matters is the day a job wedges overnight on a machine billing per minute.
+The person reading the code that evening would have
 concluded the job was already capped at ninety minutes.
 
 Two facts made this reachable rather than theoretical. First, the job's work
@@ -179,7 +179,7 @@ to a stall detector and would run forever.
 wants, and it is what a commercial platform exposes. Rejected for now because it
 needs a price-per-second model, a running-cost meter, and a policy about what
 happens to a partially trained job when the money runs out — that is the billing
-work the brief sanctions as a gap. Recorded here so the absence is a decision
+work that is out of scope. Recorded here so the absence is a decision
 rather than an oversight.
 
 **A watchdog thread that kills the run from outside.** Rejected: it needs a way

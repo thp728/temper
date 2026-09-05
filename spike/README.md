@@ -4,10 +4,9 @@ Purpose: settle the provider assumptions that everything else rests on, before w
 
 This is a probe, not a prototype. It deliberately does no training. A spike that also trains cannot tell you which half broke.
 
-> **A note on the `§` references below.** They point at a private working
-> architecture document that is not part of this repository, and they are kept
-> because they are what the findings were written against at the time. Nothing
-> here depends on reading it: each reference is summarised where it is used.
+> **A note on the `§` references below.** They point at the design doc the
+> findings were written against at the time. Nothing here depends on reading
+> it: each reference is summarised where it is used.
 
 ## What it answers
 
@@ -197,7 +196,7 @@ There is still no reason to spike container instances. The docs are explicit tha
 ## Afterwards
 
 1. Update correction C1 in the architecture document from open to resolved, with what was found.
-2. Log any forced decision the same evening, per the brief's standard that reasoning gets recorded rather than reconstructed.
+2. Log any forced decision the same evening, per the project's standard that reasoning gets recorded rather than reconstructed.
 3. Record the measured boot time. It feeds the duration estimate in the quote, which is the product's differentiator, and a guessed boot time makes the quote wrong from day one.
 
 ---
@@ -512,8 +511,8 @@ stored id must be re-read.
   attachable at create or resume). They are the obvious home for a model cache
   that would otherwise be re-downloaded per job.
 - **Serverless deployments exist** (`jl deploy`), and they are the one place the
-  platform reports cost per resource. Out of scope for this submission, recorded
-  so the cut is informed rather than accidental.
+   platform reports cost per resource. Out of scope here, recorded
+   so the cut is informed rather than accidental.
 
 ### What I got wrong, found by running it
 

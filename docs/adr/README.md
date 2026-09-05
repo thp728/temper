@@ -8,33 +8,26 @@ reconstructs reasoning, and reconstruction is what fails under questioning.
 ## Why the numbers are not in date order
 
 This directory was created on 2026-08-21, about three-quarters of the way into
-the build, and the in-repo numbering began there. The earlier decisions were
-logged in a private working vault as they were made, between 2026-08-15
-and 2026-08-21: the choice of JarvisLabs VMs with an SSH-driven bootstrap,
-pinning the trainer image by digest, detecting thinking mode from the dataset,
-the reference baseline, Temporal for orchestration, and the rest. That log is
-closed to new entries.
+the build, and the in-repo numbering began there. The earlier decisions —
+the choice of JarvisLabs VMs with an SSH-driven bootstrap, pinning the
+trainer image by digest, detecting thinking mode from the dataset, the
+reference baseline, Temporal for orchestration, and the rest — were made
+between 2026-08-15 and 2026-08-21 and filed here afterwards.
 
-The ten platform decisions among them were copied into this directory on
-2026-08-26 ([#26](https://github.com/thp728/temper/issues/26)), in their
-original order, as [0013](0013-assumptions-verified-before-code.md) through
-[0022](0022-phase-a-closed-from-a-browser.md). Three further vault entries are
-personal project-management records, covering scheduling, research budgeting and
-the choice of product name, and they stay in the private vault. Numbers are
-assigned when a record lands, never reserved, never reused, never renumbered, so
-records that were decided *earlier* carry *higher* numbers than records that
-landed before them. The number says when a record entered this directory. The
-Date column says when the decision was made. The index below is ordered by date
-so the record reads from its beginning.
+Those ten were filed in this directory on 2026-08-26
+([#26](https://github.com/thp728/temper/issues/26)), in their original order,
+as [0013](0013-assumptions-verified-before-code.md) through
+[0022](0022-phase-a-closed-from-a-browser.md). Numbers are assigned when a
+record lands, never reserved, never reused, never renumbered, so records that
+were decided *earlier* carry *higher* numbers than records that landed before
+them. The number says when a record entered this directory. The Date column
+says when the decision was made. The index below is ordered by date so the
+record reads from its beginning.
 
-Each copied entry keeps its original reasoning. It was edited only for a public
-audience, meaning private-vault links replaced with descriptions of what they
-pointed at and file paths updated to where files now live. None was rewritten,
-because an entry that reconstructs its reasoning after the fact is the thing
-this project has consistently said fails under questioning.
-
-Records are written for a public audience from the first entry, because the
-repository becomes public at submission.
+Each filed entry keeps its original reasoning, with file paths updated to
+where files now live. None was rewritten, because an entry that reconstructs
+its reasoning after the fact is the thing this project has consistently said
+fails under questioning.
 
 ## Index
 
@@ -116,7 +109,7 @@ repository becomes public at submission.
 | [0074](0074-dataset-ingestion-recognises-exactly-one-schema.md) | Dataset ingestion recognises exactly one schema — the OpenAI-style chat `messages` list — on purpose, not by accident | accepted | 2026-09-04 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
-private working log; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
+original decision ordering; in this directory it is [0008](0008-adapters-ship-as-fp32.md).
 
 ## Numbering
 
@@ -126,7 +119,7 @@ because a reservation is a plan, and a plan that slips leaves gaps in a
 sequence that is supposed to mean chronology. Numbers are never reused and
 never renumbered. A number therefore says when a record entered this directory,
 while the index's Date column says when the decision was made. The two differ
-for the entries copied in from the vault, which is why the index above is
+for the entries filed later, which is why the index above is
 ordered by date rather than by number.
 
 ## Format

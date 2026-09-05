@@ -30,8 +30,7 @@
 `cancelled` has been in the job lifecycle since the state machine was written,
 and until now no code path reached it. A user who launched a job against the
 wrong dataset — or with a rank they immediately regretted — could do nothing but
-watch it run and pay for it, on a machine billing ₹41.31 an hour against a fixed
-grant.
+watch it run and pay for it, on a machine billing per minute.
 
 Two things made this the right moment to fix it rather than a fourth thing to
 add later. The streaming loop (ADR-0001) gave the run its first place to look at

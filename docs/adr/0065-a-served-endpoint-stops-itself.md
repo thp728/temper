@@ -93,10 +93,10 @@ and it stops itself via the confirmed teardown path without anyone asking.**
   - `ENDPOINT_MAX_LIFETIME_S = 2 * 60 * 60`. 2 hours, so a busy endpoint
     kept alive by traffic still dies. At the cheapest GPU the platform
     provisions (L4 at Rs 41.31/hr, the same rate the idle/max derivation
-    assumes) 2h costs ~Rs 82.62 -- about 0.16% of the Rs 50,000 grant and
-    ~0.8% of the Rs 10,000 spend ceiling (ADR-0063). That is a bill a
-    reviewer can see is small, which is the point of a ceiling that is a
-    safety control. 2h is enough to try a model interactively (the
+    assumes) 2h costs ~Rs 82.62 -- about 0.8% of the Rs 10,000 spend ceiling
+    (ADR-0063). That is a bill a reviewer can see is small, which is the
+    point of a ceiling that is a safety control. 2h is enough to try a model
+    interactively (the
     side-by-side comparison is one prompt; ten prompts still fit) without
     forcing a re-provision every few minutes, which a shorter ceiling (30
     min) would do. Longer (8h) bills 4x as much for no additional
@@ -220,7 +220,7 @@ proves the public port is not directly reachable, which is the observable
 that matters.
 
 **A deployment setting for the idle/max window.** Rejected (ADR-0062):
-the right number is derived against the billed rate and the grant, not
+the right number is derived against the billed rate and the spend ceiling, not
 against the deployment's hardware or network. A domain constant with its
 derivation written beside it is what lets a reviewer question it.
 

@@ -8,7 +8,7 @@
 
 ## Problem Statement
 
-The brief says every flow except authentication and billing must be complete, and
+Every flow except authentication and billing is meant to be complete, and
 the failure paths are flows. They are also the flows this product currently
 handles worst, and the reason is structural: **there is no way to make a failure
 happen on purpose.**
@@ -217,7 +217,7 @@ this spec extends that vocabulary rather than replacing it.
 **The verification clause.** Not done until every failure in the second tier has
 been caused on real hardware and the recovery observed through the interface. A
 recovery path proven only against the double is explicitly not done, and any
-that cannot be exercised before submission is documented as designed and
+that cannot be exercised on real hardware yet is documented as designed and
 unexercised, in those words.
 
 ## Out of Scope

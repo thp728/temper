@@ -27,8 +27,7 @@ Trainable-parameter counting is exact, not approximate: LoRA at rank `r`
 targets all seven linear layers (report-b.md's `all-linear`), each
 contributing `r x (in_features + out_features)` per layer. Verified against
 both real Qwen3 configs -- Qwen3-4B gives 33,030,144 at r=16, Qwen3-8B gives
-43,646,976, and both match the by-hand arithmetic in the private vault's
-`wiki/lora-and-peft.md` exactly.
+43,646,976, and both match the by-hand arithmetic exactly.
 
 **The fixed cost is calibrated, not derived.** The four pools above sum to
 roughly 2.85 GB for the one configuration this project has actually measured

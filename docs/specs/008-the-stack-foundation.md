@@ -34,8 +34,8 @@ the shape now costs:
   job and a machine cannot be reassembled from them.
 
 None of these is urgent for a demonstration and all of them are the difference
-between a working pipeline and a platform. The repository is the work sample,
-read by a company whose product is the infrastructure underneath this one.
+between a working pipeline and a platform. The orchestration layer is this
+project's core, and it deserves production foundations.
 
 ## Solution
 
@@ -224,9 +224,8 @@ that reason, and the ordering rule is worth restating: **nothing here starts
 while a band 1 spec is unproven on hardware.**
 
 The counter-argument, which is why it is in scope at all: the orchestration layer
-is the work sample, the reader's own product is the infrastructure underneath
-this one, and *"a thread in the web process, a local file, and a directory"* is
-not a production answer to any question that will be asked about it. The
+is this project's core, and *"a thread in the web process, a local file, and a
+directory"* is not a production answer to any question asked about durability. The
 mitigation for its cost is that the migration is bounded by seams built for it —
 and if that turns out to be untrue in practice, that finding is worth recording
 prominently, because a claim about a design that did not survive contact is
