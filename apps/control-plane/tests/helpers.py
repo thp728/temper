@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import time
 
-
 _IN_PROGRESS_STATUSES = ("importing", "validating")
 
 

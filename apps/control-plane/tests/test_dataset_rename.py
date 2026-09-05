@@ -37,7 +37,9 @@ def test_a_dataset_can_be_renamed(client):
     ds_id = upload_dataset(client)
     before = db.get_dataset(ds_id)
 
-    r = client.patch(f"/v1/datasets/{ds_id}", json={"filename": "renamed.jsonl"})
+    r = client.patch(
+        f"/v1/datasets/{ds_id}", json={"filename": "renamed.jsonl"}
+    )
 
     assert r.status_code == 200
     body = r.json()

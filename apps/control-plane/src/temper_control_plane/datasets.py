@@ -355,7 +355,7 @@ def _import_in_background(ds_id: str, key: str, source) -> None:
             )
             return
         except HTTPException as e:
-            detail = e.detail if isinstance(e.detail, dict) else {}
+            detail: dict = e.detail if isinstance(e.detail, dict) else {}
             db.finish_dataset(
                 ds_id,
                 _synthetic_invalid_report(
@@ -432,7 +432,11 @@ def rename_dataset(ds_id: str, filename: str) -> dict:
             404, {"code": "not_found", "message": "No such dataset."}
         )
     db.rename_dataset(ds_id, filename)
-    return db.get_dataset(ds_id)
+    renamed = db.get_dataset(ds_id)
+    assert renamed is not None, (
+        "renaming touches only the row just confirmed to exist"
+    )
+    return renamed
 
 
 def delete_dataset(ds_id: str) -> None:
