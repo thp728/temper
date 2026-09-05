@@ -135,11 +135,18 @@ def digest_of(image: str, tag: str) -> str:
     Read from the daemon's record of what was pushed (`RepoDigests`), filtered
     to the image name being published, so the reference the contract records
     is the one the registry accepted -- not a locally-invented string.
+
+    The braces are doubled because that is what a Go template needs. Written
+    once as `{json .RepoDigests}`, docker treated it as a literal and printed
+    the string back verbatim, so this raised `JSONDecodeError` at character 1
+    on every run -- after the build and the push had both already succeeded.
+    That is why the image was never published despite the expensive half of
+    the work completing each time.
     """
     out = _run(
         "docker",
         "inspect",
-        "--format={json .RepoDigests}",
+        "--format={{json .RepoDigests}}",
         f"{image}:{tag}",
     ).stdout.strip()
     digests = json.loads(out)

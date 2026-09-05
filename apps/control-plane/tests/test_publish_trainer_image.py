@@ -53,6 +53,31 @@ def test_digest_of_reads_the_pushed_repo_digest(monkeypatch):
     assert publish.digest_of(image, "main-x") == digests[0]
 
 
+def test_digest_of_asks_docker_for_a_real_go_template(monkeypatch):
+    """The format argument must be a Go template, not a literal.
+
+    Written once as `{json .RepoDigests}`, docker printed the string back
+    verbatim and the publish died parsing it -- every time, after the build
+    and the push had already succeeded, which is why the image went
+    unpublished while the expensive half of the work kept completing. The
+    other tests here stub `_run` and hand back valid JSON, so they assert the
+    parsing and never the argument; this asserts the argument.
+    """
+    image = "ghcr.io/acme/temper/trainer"
+    seen: list[tuple[str, ...]] = []
+
+    def record(*args: str) -> subprocess.CompletedProcess:
+        seen.append(args)
+        return subprocess.CompletedProcess(
+            list(args), 0, stdout=json.dumps([f"{image}@sha256:{'a' * 64}"])
+        )
+
+    monkeypatch.setattr(publish, "_run", record)
+    publish.digest_of(image, "main-x")
+    fmt = next(a for a in seen[0] if a.startswith("--format="))
+    assert fmt == "--format={{json .RepoDigests}}"
+
+
 def test_digest_of_refuses_an_image_with_no_repo_digest(monkeypatch):
     monkeypatch.setattr(
         publish,
