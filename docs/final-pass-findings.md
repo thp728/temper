@@ -113,6 +113,72 @@ more than it delivers, which is the kind of thing that fails under questioning.
 
 **Status: open. Either mount a key and forward the agent, or narrow the claim.**
 
+## The reconciler destroys machines it should own
+
+The worst finding here, and it costs real money each time it fires.
+
+A run died with `orphaned_machine` while its job sat in `preparing` with the
+machine id already on the row. The pass logged `listed: 1, owned: 0`. Every
+half of that checks out in isolation: the ownership query returns the id when
+asked directly, and `set_state` persists it. The disagreement only exists at
+runtime, so a read-only probe (`scripts/reconciler_probe.py`) printed both
+sides on an interval until it caught the moment:
+
+```
+11:05:59 machine=498686 type=int status='running' owned_set=[] matches=False
+11:06:06 machine=498686 type=int status='running' owned_set=[] matches=False
+11:06:11 machine=498686 type=int status='running' owned_set=[498686] matches=True
+```
+
+For about twelve seconds the machine is created, listed and billing while no
+job row claims it. The reconciler runs every thirty seconds and destroys
+whatever it cannot account for, so a pass landing in that window kills a live
+machine mid-provision. Two of five real runs hit it.
+
+The cause is structural. `provider.create` blocks until the SDK returns, but
+the instance exists at the provider the moment the call lands, and the
+orchestrator only learns its id from the return value. So it cannot record
+ownership any earlier than it does. `await_ready` was deliberately split out
+of `create` so the id is recorded before readiness can fail, and that
+reasoning is right; the window *inside* `create` is the part nothing covers.
+
+The machine is already named `temper-{job_id[:12]}` when it is created, so
+the name carries ownership from the first instant the instance exists. If
+`Machine` carried that name and the reconciler matched on it as well as the
+id, the window closes. That is a change to the seam, the reconciler and its
+tests in a money-critical path, so it is proposed here rather than applied.
+
+A grace period would also work and is weaker: a genuine orphan then bills for
+the length of the grace.
+
+**Status: open, diagnosed, reproduced, fix proposed.**
+
+## Smaller things from the hardware pass
+
+- **SSH readiness is one successful probe.** `await_ready` returns on the
+  first `ssh true` that exits zero. A freshly booted machine's sshd commonly
+  accepts one connection and then restarts, and the very next connection was
+  reset: a run died with `source_upload_failed` and
+  `kex_exchange_identification: Connection reset` seconds after readiness
+  passed. Transient, since a later run got past it, but the check asserts
+  reachability where it means stability.
+
+- **A diagnosable failure got a laundered code.** A missing object came back
+  as `internal_error` with the message `ObjectNotFound:
+  'datasets/ds_....jsonl'`. The condition is specific and the message says so;
+  the code does not, against this repo's own rule that every error keeps a
+  stable one.
+
+- **Switching storage backends silently orphans existing datasets.** Bytes
+  written under the filesystem backend are not in the S3 bucket, and the only
+  signal is a run that fails after provisioning. Nothing warns at launch that
+  a dataset's object is not in the store the job will read from.
+
+- **A test reads developer environment.**
+  `test_the_module_singleton_follows_the_configured_backend` asserts the
+  default backend, so it fails for anyone whose `.env` selects another one.
+  It should pin the configuration it asserts.
+
 ## Navigation
 
 - **Models** is a top-level sidebar entry leading to a page that says the model
@@ -153,11 +219,32 @@ measured and which derived. The evaluation tab runs a general-capability smoke
 test, flags a regression, and states its own standard error and sample size
 rather than presenting eight questions as a benchmark.
 
-## Not yet exercised
+## What the hardware pass actually proved
 
-Everything below needs the trainer image published first:
+Real runs on a real L4, once the trainer image was published:
 
-- a real run on an L4, start to teardown
+- provisioning, image pull by published digest, weights download, Axolotl
+  loading 398 shards and training, teardown confirmed by listing, and cost
+  accounting against the frozen rate
+- the live job stream, after the compression fix: the page moved itself from
+  `PREPARING` to `TRAINING` with progress, where before it froze on "waiting
+  for SSH" for an entire eleven-minute run
+- every refusal path, at no cost: invalid datasets, unsupported
+  hyperparameters, unknown models, an unpublished image, an undeliverable
+  artifact
+- Hugging Face import against two real repositories
+
+Total spend across the pass: about twelve rupees. Every machine was destroyed
+and every teardown confirmed by listing; the account ended with none.
+
+## Still not exercised
+
 - the delivery formats, merged and quantised
 - the serving endpoint and an inference round trip
-- cancel mid-run, and retry on a failed job
+- cancel mid-run
+
+Retry needs no hardware and turns out not to exist as a general control: the
+API offers a retry only for `training_diverged`, at half the learning rate,
+and the interface offers it in exactly that case. That is a deliberate
+design, and it means an infrastructure failure leaves the user re-entering
+the wizard rather than re-running the job.
