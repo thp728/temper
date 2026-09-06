@@ -311,16 +311,38 @@ failing open. Thinking stays on and nothing says so.
 **Status: fixed in `serve.py`**, which now spreads the value as a keyword so
 it reaches the render context on any version.
 
-**Open, and worth more than the fix.** The trainer's own comparison uses the
-same `chat_template_kwargs=` shape (`entrypoint._ModelGenerator.generate`,
-`template_probe._tokenise`). If the image's transformers does not recognise
-that parameter, then every side-by-side comparison this platform has shown
-was rendered under a template the run did not train with, and
-`build_config`'s own comment says the same value must be applied at serving.
-One observation from the serving path is not proof about the training path.
-What settles it is rendering one conversation both ways inside the pinned
-image and diffing the two strings. That is nearly free on the next machine
-that exists, and it has not been run.
+**Settled, at no hardware cost, and fixed.** The trainer's own comparison
+used the same `chat_template_kwargs=` shape
+(`entrypoint._ModelGenerator.generate`, `template_probe._tokenise`). This
+did not need a GPU to answer: `docker run --rm <pinned digest> python -c
+...` against the exact image the trainer runs, on CPU, rendered one
+conversation both ways. Wrapped (`chat_template_kwargs={"enable_thinking":
+False}`) produced no thinking directive at all; spread
+(`enable_thinking=False`) produced the correct
+`<think>\n\n</think>\n\n`. Confirmed on transformers 5.14.1, the version
+this image actually ships.
+
+Training itself turned out fine: Axolotl's own `chat_template.py` builds
+its `chat_template_kwargs` dict from config and spreads it with `**` before
+calling the tokenizer -- the correct form, already. The bug was isolated to
+this platform's two post-training uses of the same tokenizer call: the
+held-out base-vs-tuned comparison shown on every job's results page, and
+the export-time template-divergence probe that exists specifically to catch
+a training/serving template mismatch. Both silently dropped
+`enable_thinking`, so the probe could not have caught the exact class of
+bug it was built for, and every comparison on every finished job to date
+was rendered with thinking mode not applied, whatever the dataset's
+detected setting said.
+
+**Status: fixed.** Both call sites now spread the kwargs, matching
+`serve.py`'s fix and Axolotl's own pattern. The test double in
+`test_template_probe.py` modelled the wrapped form as if it worked, which is
+why nothing here had ever failed; it now only recognises the spread form,
+and a new test (`test_a_thinking_mode_mismatch_on_an_identical_template_fails`)
+asserts the probe catches a thinking-mode divergence on an otherwise
+identical template. Reverting the fix and rerunning that one test
+reproduces exactly this failure: `ok=True` where two renders that should
+differ don't.
 
 ### The interface shows nothing while it warms
 

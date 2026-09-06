@@ -46,10 +46,14 @@ class FakeTokenizer:
         *,
         tokenize: bool,
         chat_template: str | None = None,
-        chat_template_kwargs: dict | None = None,
+        **kwargs,
     ):
+        # Kwargs arrive spread, exactly as the real tokenizer requires: on
+        # the pinned image's transformers, a `chat_template_kwargs={...}`
+        # dict is not merged into the render context, so this double must
+        # only recognise the spread form or it would hide the same bug the
+        # spread call was written to avoid.
         tpl = self.chat_template if chat_template is None else chat_template
-        kwargs = chat_template_kwargs or {}
         mode = "think" if kwargs.get("enable_thinking") else "nothink"
         text = "\n".join(
             [tpl, mode, *[f"{m['role']}:{m['content']}" for m in conversation]]
@@ -116,6 +120,26 @@ def test_the_failure_message_names_what_differs():
     # ...and says where the tokenisation first disagrees
     assert outcome.first_id_index is not None
     assert "id" in outcome.message
+
+
+def test_a_thinking_mode_mismatch_on_an_identical_template_fails():
+    """The probe must catch a divergence in `enable_thinking` alone, not
+    only a divergence in the template string. A regression back to
+    `chat_template_kwargs={...}` (wrapped rather than spread) would make
+    both sides of the fake render identically regardless of this kwarg --
+    exactly the bug that reached real hardware and went undetected, because
+    the same wrapped shape looked correct here until the fake modelled the
+    real tokenizer's behaviour."""
+    tokenizer = FakeTokenizer()
+    outcome = template_probe.run_probe(
+        tokenizer,
+        training_template=tokenizer.chat_template,
+        training_kwargs={"enable_thinking": True},
+        serialised_template=tokenizer.chat_template,
+        serialised_kwargs={"enable_thinking": False},
+    )
+    assert outcome.ok is False
+    assert outcome.serialised_id_count != outcome.training_id_count
 
 
 def test_an_override_template_can_be_the_serialised_template():
