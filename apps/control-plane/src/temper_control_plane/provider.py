@@ -95,6 +95,24 @@ def fetch_command(path: str) -> str:
     return f"{FETCH_PREFIX}{path}"
 
 
+def machine_name(job_id: str) -> str:
+    """The provider-side name a job's machine is created under.
+
+    Ownership that exists from the instant the machine does. The job row can
+    only record a machine id once `create` returns, and the instance is
+    listed and billing before that -- a measured twelve-second window in
+    which the reconciler sees a machine no job claims and destroys it. The
+    name is chosen by the caller and set at creation, so it identifies the
+    owner during that window and closes it.
+
+    Defined once and read three times: the orchestrator names the machine
+    with it, the reconciler derives the names it expects from live jobs, and
+    the tests assert against it. If those drifted, the reconciler would stop
+    recognising machines it is meant to protect and would destroy live ones.
+    """
+    return f"temper-{job_id[:12]}"
+
+
 def container_name(job_id: str) -> str:
     """The container's name for one job, defined once and read twice.
 
@@ -166,6 +184,11 @@ class Machine:
     machine_id: int
     handle: str = ""
     status: str = "running"
+    # The provider-side name, when the provider reports one. Ownership the
+    # reconciler can read before the owning job has recorded an id (see
+    # `machine_name`). Empty when a provider does not surface names, which
+    # simply leaves id matching as the only test.
+    name: str = ""
 
 
 class Provider(Protocol):
@@ -344,7 +367,9 @@ class JarvisLabsProvider:
             storage=storage_gb,
             name=name,
         )
-        return Machine(created.machine_id, created.ssh_command or "")
+        return Machine(
+            created.machine_id, created.ssh_command or "", name=name
+        )
 
     def await_ready(self, machine: Machine) -> str:
         """Poll until sshd answers.
@@ -653,7 +678,13 @@ class JarvisLabsProvider:
         for inst in self._client.instances.list():
             raw = getattr(inst, "status", None) or getattr(inst, "state", None)
             status = normalize_status(str(raw) if raw else None)
-            machines.append(Machine(machine_id=inst.machine_id, status=status))
+            machines.append(
+                Machine(
+                    machine_id=inst.machine_id,
+                    status=status,
+                    name=str(getattr(inst, "name", "") or ""),
+                )
+            )
         return machines
 
     def list_machine_ids(self) -> list[int]:

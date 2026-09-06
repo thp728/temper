@@ -82,6 +82,7 @@ from .provider import (
     Machine,
     Provider,
     container_name,
+    machine_name,
     new_provider,
     normalize_status,
 )
@@ -1757,7 +1758,7 @@ def _attempt(
         plan.gpu_type,
         plan.device_count,
         disk_plan.provisioned_gb,
-        f"temper-{job_id[:12]}",
+        machine_name(job_id),
     )
     machines.append(machine)
     db.set_state(

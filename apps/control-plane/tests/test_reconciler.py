@@ -40,6 +40,7 @@ from temper_control_plane.fake_provider import (
     FakeProvider,
     completed_run,
 )
+from temper_control_plane.provider import Machine, machine_name
 from temper_worker.reconciler import reconcile_once
 
 pytestmark = pytest.mark.usefixtures("isolated")
@@ -169,6 +170,72 @@ def test_a_machine_owned_by_a_provisioning_or_preparing_job_is_matched(
     assert report["destroyed"] == []
     assert provider.destroy_attempts == 0
     assert db.get_job(job_id)["status"] == "preparing"
+
+
+def test_a_machine_named_for_a_live_job_is_matched_before_the_id_lands(
+    fast_teardown,
+):
+    """The window that cost a real machine, closed.
+
+    A job cannot record its machine id until `provider.create` returns, but
+    the instance is listed and billing before that. Measured against the real
+    provider with a read-only probe, that gap ran about twelve seconds
+    against a thirty-second pass:
+
+        11:05:59 machine=498686 owned_set=[]        matches=False
+        11:06:11 machine=498686 owned_set=[498686]  matches=True
+
+    A pass landing inside it destroyed a live machine, and the orchestrator
+    then spent its full SSH timeout polling a host that no longer existed.
+    The name is set at creation from the job id, so it identifies the owner
+    for the whole window.
+    """
+    ds_id = _finished_dataset("ds_window")
+    job_id = db.create_job(ds_id, "qwen3-4b", {})
+    # Exactly the window: provisioning, and no machine_id recorded yet.
+    db.set_state(job_id, "provisioning", "creating the machine")
+    assert db.list_non_terminal_machine_ids() == []
+
+    named = Machine(4242, status="running", name=machine_name(job_id))
+    provider = FakeProvider(list_sequence=[[named]])
+    report = reconcile_once(provider)
+
+    assert report["owned"] == 1
+    assert report["destroyed"] == []
+    assert provider.destroy_attempts == 0
+    assert db.get_job(job_id)["status"] == "provisioning"
+
+
+def test_a_machine_named_for_a_finished_job_is_still_destroyed(fast_teardown):
+    """Name matching must not become a way to leak a machine forever. Once
+    the owning job is terminal the name stops meaning ownership, and the
+    machine is an orphan like any other."""
+    ds_id = _finished_dataset("ds_window_done")
+    job_id = db.create_job(ds_id, "qwen3-4b", {})
+    db.set_state(job_id, "failed", "over", error_code="whatever")
+
+    named = Machine(4242, status="running", name=machine_name(job_id))
+    provider = FakeProvider(list_sequence=[[named], [], [], []])
+    report = reconcile_once(provider)
+
+    assert report["owned"] == 0
+    assert report["destroyed"] == [4242]
+
+
+def test_an_unnamed_machine_is_not_protected_by_name_matching(fast_teardown):
+    """An empty name is not ownership. A provider that reports no name must
+    leave id matching as the only test, rather than protecting every unnamed
+    machine at once."""
+    ds_id = _finished_dataset("ds_unnamed")
+    job_id = db.create_job(ds_id, "qwen3-4b", {})
+    db.set_state(job_id, "provisioning", "creating the machine")
+
+    unnamed = Machine(4242, status="running", name="")
+    provider = FakeProvider(list_sequence=[[unnamed], [], [], []])
+    report = reconcile_once(provider)
+
+    assert report["owned"] == 0
+    assert report["destroyed"] == [4242]
 
 
 def test_a_served_endpoints_machine_is_left_alone(fast_teardown):

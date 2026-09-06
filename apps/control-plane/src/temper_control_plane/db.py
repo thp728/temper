@@ -1195,6 +1195,28 @@ def list_jobs(limit: int | None = 50) -> list[dict]:
     ]
 
 
+def list_non_terminal_job_ids() -> list[str]:
+    """The ids of jobs that are not in a terminal state.
+
+    The reconciler's second ownership half. A machine is created with a name
+    derived from its job (`provider.machine_name`) and carries that name from
+    the instant it exists, whereas the job row cannot record a machine id
+    until `create` returns -- a measured twelve-second window during which a
+    live machine looks unowned by id alone. Matching names as well closes it.
+
+    Ids rather than names, so the one definition of the name lives in
+    `provider.machine_name` and this query stays about job state.
+    """
+    states = tuple(sorted(TERMINAL_STATES))
+    placeholders = ", ".join(["%s"] * len(states))
+    with connect() as c:
+        rows = c.execute(
+            f"SELECT id FROM jobs WHERE status NOT IN ({placeholders})",
+            states,
+        ).fetchall()
+    return [str(r["id"]) for r in rows]
+
+
 def list_non_terminal_machine_ids() -> list[int]:
     """The machine ids owned by jobs that are not in a terminal state.
 

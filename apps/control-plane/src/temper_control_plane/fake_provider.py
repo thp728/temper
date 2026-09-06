@@ -269,7 +269,9 @@ class FakeProvider:
         self._enter("create")
         self.create_calls.append((gpu_type, num_gpus, storage_gb, name))
         machine = Machine(
-            MACHINE_ID + self._created_count, handle=f"fake://{name}"
+            MACHINE_ID + self._created_count,
+            handle=f"fake://{name}",
+            name=name,
         )
         self._created_count += 1
         self.created.append(machine)
@@ -596,6 +598,7 @@ class FakeProvider:
                             item.machine_id,
                             handle=item.handle,
                             status=normalize_status(item.status),
+                            name=item.name,
                         )
                     )
                 elif isinstance(item, int):

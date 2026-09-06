@@ -194,7 +194,11 @@ def reconcile_once(provider=None) -> dict:
     missing credential surfaces; tests pass the fake.
     """
     from temper_control_plane import db
-    from temper_control_plane.provider import new_provider, normalize_status
+    from temper_control_plane.provider import (
+        machine_name,
+        new_provider,
+        normalize_status,
+    )
 
     owns_provider = provider is None
     if provider is None:
@@ -231,6 +235,21 @@ def reconcile_once(provider=None) -> dict:
         # accounted for and left alone.
         owned_by_job = set(db.list_non_terminal_machine_ids())
         owned_by_endpoint = set(db.list_active_endpoint_machine_ids())
+        # The third half, and the one that closes the window. A job cannot
+        # record its machine id until `provider.create` returns, but the
+        # instance is listed and billing before that -- measured at about
+        # twelve seconds against a thirty-second pass, which is how a live
+        # machine came to be destroyed as an orphan. The name is set at
+        # creation from the job id, so it identifies the owner throughout
+        # that window. Derived from live job ids through the one definition
+        # both sides read (`machine_name`), never rebuilt from a format
+        # string here.
+        # An empty name is never ownership: a provider that reports no
+        # name must leave id matching as the only test, not protect every
+        # unnamed machine at once.
+        owned_names = {
+            machine_name(job_id) for job_id in db.list_non_terminal_job_ids()
+        } - {""}
 
         for machine in machines:
             status = normalize_status(getattr(machine, "status", None))
@@ -241,7 +260,11 @@ def reconcile_once(provider=None) -> dict:
                 # still recorded, so it is visible rather than silently
                 # dropped, but no second destroy is issued.
                 report["destroying"] += 1
-                if mid not in owned_by_job and mid not in owned_by_endpoint:
+                if (
+                    mid not in owned_by_job
+                    and mid not in owned_by_endpoint
+                    and getattr(machine, "name", "") not in owned_names
+                ):
                     db.record_reconciliation(
                         mid,
                         ACTION_SKIPPED_DESTROYING,
@@ -249,7 +272,14 @@ def reconcile_once(provider=None) -> dict:
                         status=status,
                     )
                 continue
-            if mid in owned_by_job or mid in owned_by_endpoint:
+            if (
+                mid in owned_by_job
+                or mid in owned_by_endpoint
+                or (
+                    bool(getattr(machine, "name", ""))
+                    and getattr(machine, "name", "") in owned_names
+                )
+            ):
                 report["owned"] += 1
                 continue
             _destroy_orphan(provider, mid, status, report)
