@@ -611,12 +611,45 @@ machines both immediately after and on a second check later. ADR-0003's
 claim — cancelling destroys the machine, produces no adapter, and is not a
 failure — holds on real hardware.
 
+## A fourth run confirms the delivery gate and the template fix together
+
+`job_613caee67086`, `merged` delivery only, launched after the
+producibility gate (ADR-0077) and the `chat_template_kwargs` fix both
+landed. Every part of the launch that had just been built or fixed held on
+real hardware:
+
+- The gate let `merged` through without a second look — only `quantised`
+  would have been refused, and that path is already covered without
+  hardware.
+- The comparison rendered under the fixed, spread form of
+  `chat_template_kwargs`. Neither the base nor the tuned generation opened
+  a thinking block, matching this dataset's detected setting -- the
+  behaviour the wrapped form left to chance and the spread form enforces.
+- Reconciler passes read `listed: 1, owned: 1` throughout, as they should.
+- Teardown confirmed by listing: the account showed no machines
+  immediately after completion.
+
+```
+duration_s: 1774.4, cost_minor: 2036 (INR 20.36)
+stages: provisioning 14.4s, preparing 47.6s, training 1710.3s, packaging: not measured separately
+predicted: duration [168.5, 437.6]s, cost [INR 1.94, INR 5.03]
+```
+
+A fourth data point on the quote's blind spot: **4.05x the predicted high on
+both duration and cost**, in the same direction as the 2.7x and 3.45x
+already on record, and for the same reason -- `packaging` still has no
+phase in the quote. The gap between "training" (1710s measured) and
+Axolotl's actual training time is the same story as the delivery-formats
+run: the comparison, the capability check and the merge all run inside a
+stage the quote calls "training" and prices as if it were only that.
+
 ## Still not exercised
 
-Three ran on hardware this pass: the served endpoint answered a real prompt,
-a launch with both delivery formats ticked found the quote's blind spot and
-an unproducible format, and cancel mid-run tore down cleanly. What each one
-found is recorded above.
+Four ran on hardware this pass: the served endpoint answered a real
+prompt, a launch with both delivery formats ticked found the quote's blind
+spot and an unproducible format, cancel mid-run tore down cleanly, and a
+`merged`-only launch confirmed the producibility gate and the template fix
+together. What each one found is recorded above.
 
 Retry needs no hardware and turns out not to exist as a general control: the
 API offers a retry only for `training_diverged`, at half the learning rate,
