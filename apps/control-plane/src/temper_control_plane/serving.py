@@ -49,6 +49,7 @@ import time
 from typing import Any
 
 from temper_core import serving as core_serving
+from temper_core.disk import PLATFORM_MIN_DISK_GB
 from temper_core.errors import OrchestratorError
 
 from . import db
@@ -501,11 +502,19 @@ def start_endpoint(
     # assumes.
     gpu_type = job.get("gpu_type") or "L4"
     device_count = int(job.get("device_count") or 1)
-    # Disk is not critical for serving a 4B model: 20 GB is ample and well
-    # below the 50 GB floor some providers enforce, so the request is safe
-    # on any VM-capable type. The value is small by construction, not a
-    # constant two components must agree on.
-    disk_gb = 20
+    # The platform's own minimum, not a size chosen for the model. Serving a
+    # 4B adapter needs far less, and asking for less is refused outright:
+    #
+    #   Instance creation failed: Disk size must be at least 100 GB for V2
+    #   VM instances. Requested: 20 GB (code=400)
+    #
+    # This asked for 20 GB, on the reasoning that the value was "small by
+    # construction, not a constant two components must agree on". It is
+    # exactly such a constant -- the floor belongs to the provider, not to
+    # the workload -- and every endpoint failed against real hardware
+    # because of it, while the training path had the floor right all along
+    # (`disk.plan` raises below it). One definition, read here too.
+    disk_gb = PLATFORM_MIN_DISK_GB
     try:
         machine = provider.create(
             gpu_type, device_count, disk_gb, f"temper-endpoint-{job_id[:8]}"

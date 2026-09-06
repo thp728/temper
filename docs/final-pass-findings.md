@@ -202,6 +202,71 @@ destroyed, and an unnamed machine staying unprotected.
   default backend, so it fails for anyone whose `.env` selects another one.
   It should pin the configuration it asserts.
 
+## "Try your model" bills for a GPU and serves a template
+
+The most serious finding here, because it is not a bug so much as a feature
+that is not there.
+
+Starting an endpoint provisions a real L4 at 41.31 INR/hr. Inference then
+returns:
+
+```
+[qwen3-4b] tuned response to: How do I connect my weather station to Wi-Fi?
+[qwen3-4b] tuned response to: What is the capital of France?
+```
+
+The prompt echoed inside a template. The model is never loaded. The machine
+exists, bills, and does nothing but hold the string together.
+
+`serving.py` says so itself:
+
+> The generation: a canned completion in the fake tier, the real inference
+> path on real hardware. [...] A real implementation would `provider.stream`
+> or `provider.fetch_stream` a generation from the machine's inference server
+> here.
+
+There is no branch. The canned line runs unconditionally, so the comment's
+"the real inference path on real hardware" describes something that does not
+exist. Anyone reading the source to check would be told the opposite of the
+truth, which is worse than the missing feature.
+
+Either implement the generation, or stop provisioning a machine for it and
+say plainly on the screen that serving is not built yet. Spending a user's
+money to return their own prompt is the one outcome that cannot be defended,
+and the comment claiming otherwise is what turns a gap into a
+misrepresentation.
+
+**Status: open. Not fixed here -- real inference is a feature, not a
+correction -- but the code comment should not be left as it is.**
+
+## The endpoint could never have worked, and the UI hid the reason
+
+Two bugs stacked, both fixed.
+
+Provisioning refused every time:
+
+```
+Instance creation failed: Disk size must be at least 100 GB for V2 VM
+instances. Requested: 20 GB (code=400)
+```
+
+`serving.py` hardcoded 20 GB, reasoning that "the value is small by
+construction, not a constant two components must agree on" and that 20 GB sat
+"well below the 50 GB floor some providers enforce" -- a guessed floor, and
+the wrong one. It is exactly such a constant: `temper_core.disk` already
+holds `PLATFORM_MIN_DISK_GB = 100`, measured in spike 5, and the training
+path enforces it. Serving now reads the same definition.
+
+And the failure was invisible. The section polls `GET .../endpoint` every
+fifteen seconds and called `setError(null)` on the 404 that means "no
+endpoint yet" -- the ordinary state of every unserved job. So a failed start
+displayed `endpoint_provision_failed` and had it wiped within fifteen
+seconds, leaving a button that appeared to do nothing at all. The poll no
+longer clears an error it did not cause; only a user action does.
+
+That combination is why this was never caught: the feature failed on every
+real launch, and the interface erased the evidence each time.
+
 ## Navigation
 
 - **Models** is a top-level sidebar entry leading to a page that says the model
