@@ -168,7 +168,13 @@ tests in a money-critical path, so it is proposed here rather than applied.
 A grace period would also work and is weaker: a genuine orphan then bills for
 the length of the grace.
 
-**Status: open, diagnosed, reproduced, fix proposed.**
+**Status: fixed.** `Machine` carries the provider-side name, `machine_name`
+defines it once for the orchestrator and the reconciler to read, and a machine
+whose name belongs to a live job is matched even before its id lands. An empty
+name is explicitly not ownership, so a provider that reports no name leaves id
+matching as the only test rather than protecting every unnamed machine at
+once. Three tests cover the window, a terminal job's named machine still being
+destroyed, and an unnamed machine staying unprotected.
 
 ## Smaller things from the hardware pass
 
