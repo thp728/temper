@@ -113,6 +113,18 @@ def machine_name(job_id: str) -> str:
     return f"temper-{job_id[:12]}"
 
 
+def endpoint_machine_name(job_id: str) -> str:
+    """The provider-side name a job's *serving* machine is created under.
+
+    The same reasoning as `machine_name` and a separate name on purpose: a
+    job can have a finished training machine and a live serving machine, and
+    a reconciler that could not tell them apart would spare or destroy the
+    wrong one. Read by the code that creates the machine and by the
+    reconciler that spares it, so the two cannot drift.
+    """
+    return f"temper-endpoint-{job_id[:12]}"
+
+
 def container_name(job_id: str) -> str:
     """The container's name for one job, defined once and read twice.
 

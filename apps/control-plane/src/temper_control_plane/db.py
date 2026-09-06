@@ -1495,8 +1495,21 @@ def _present(row: dict | None) -> dict:
 # serving endpoints (issue #78): temporary authenticated endpoints
 # --------------------------------------------------------------------------
 
-ENDPOINT_STATUSES = ("running", "stopped", "expired")
+ENDPOINT_STATUSES = ("starting", "running", "stopped", "expired")
 ENDPOINT_ACTIVE = "running"
+
+# The row exists before the machine does. `start_endpoint` provisions a
+# machine, ships a model server to it and waits for the weights to load
+# before it mints a key -- minutes, on real hardware. The reconciler
+# destroys any machine no live job or endpoint claims, so an endpoint that
+# only became a row *after* that wait would have its own machine destroyed
+# underneath it, which is the race ADR-0068 closed for training machines
+# reappearing here at a hundred times the width.
+#
+# So the row is inserted first, in this status, and promoted to `running`
+# when the key is minted. A `starting` row has no key, no timers and cannot
+# serve; all it does is say the machine is spoken for.
+ENDPOINT_STARTING = "starting"
 
 
 def create_endpoint(
@@ -1511,6 +1524,7 @@ def create_endpoint(
     machine_handle: str | None = None,
     price_per_hour: float | None = None,
     currency: str | None = None,
+    status: str = ENDPOINT_ACTIVE,
 ) -> None:
     """Insert one endpoint row. The key is stored hashed, never plaintext.
 
@@ -1529,7 +1543,7 @@ def create_endpoint(
             (
                 endpoint_id,
                 job_id,
-                ENDPOINT_ACTIVE,
+                status,
                 api_key_hash,
                 api_key_prefix,
                 created_at,
@@ -1601,8 +1615,78 @@ def active_endpoints() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def list_active_endpoint_machine_ids() -> list[int]:
-    """The machine ids of running (served) endpoints.
+def claim_endpoint_machine(
+    endpoint_id: str, machine_id: int, machine_handle: str
+) -> None:
+    """Record the machine an endpoint just provisioned, as early as possible.
+
+    Called the instant `provider.create` returns, before readiness or the
+    model server. The row already existed (that is what `starting` is for),
+    so this only narrows the unclaimed window to the inside of `create`
+    itself -- the twelve seconds ADR-0068 measured, which name matching
+    covers.
+    """
+    with connect() as c:
+        c.execute(
+            "UPDATE endpoints SET machine_id=%s, machine_handle=%s "
+            "WHERE id=%s",
+            (machine_id, machine_handle, endpoint_id),
+        )
+
+
+def activate_endpoint(
+    endpoint_id: str,
+    api_key_hash: str,
+    api_key_prefix: str,
+    now: float,
+    expires_at: float,
+    max_expires_at: float,
+) -> None:
+    """Promote a `starting` endpoint to serving, with its key and its clocks.
+
+    The expiry windows start here rather than at insert: an endpoint that
+    spent eight minutes loading weights would otherwise be most of the way
+    through its idle grace before it could answer anything.
+    """
+    with connect() as c:
+        c.execute(
+            "UPDATE endpoints SET status=%s, api_key_hash=%s, "
+            "api_key_prefix=%s, created_at=%s, last_used_at=%s, "
+            "expires_at=%s, max_expires_at=%s WHERE id=%s",
+            (
+                ENDPOINT_ACTIVE,
+                api_key_hash,
+                api_key_prefix,
+                now,
+                now,
+                expires_at,
+                max_expires_at,
+                endpoint_id,
+            ),
+        )
+
+
+def list_live_endpoint_job_ids(starting_grace_s: float = 0.0) -> list[str]:
+    """Job ids whose endpoint is serving or still starting.
+
+    The reconciler derives the machine names it must spare from these, which
+    is what covers the window inside `provider.create` where the id does not
+    exist yet but the instance already bills.
+    """
+    cutoff = time.time() - starting_grace_s
+    with connect() as c:
+        rows = c.execute(
+            "SELECT job_id FROM endpoints WHERE status=%s "
+            "OR (status=%s AND created_at >= %s)",
+            (ENDPOINT_ACTIVE, ENDPOINT_STARTING, cutoff),
+        ).fetchall()
+    return [str(r["job_id"]) for r in rows]
+
+
+def list_active_endpoint_machine_ids(
+    starting_grace_s: float = 0.0,
+) -> list[int]:
+    """The machine ids of live (served or starting) endpoints.
 
     The reconciler's (issue #61) other ownership half: a served endpoint is
     a billed, warm machine the control plane provisions and arms with idle
@@ -1610,12 +1694,23 @@ def list_active_endpoint_machine_ids() -> list[int]:
     non-terminal jobs alone would treat it as an orphan and destroy it while
     a user is actively serving. A machine in this set is accounted for and
     left alone.
+
+    `starting` rows count too, but only for `starting_grace_s` after they
+    were created. A start that never finishes -- the control plane was
+    killed mid-warm-up -- must not protect its machine forever, or a crash
+    would produce an orphan the reconciler is forbidden to collect, which is
+    worse than the race this status exists to prevent. Past the grace the
+    machine is unowned again and gets destroyed, which is the correct
+    outcome for a machine nothing is going to serve from.
     """
+    cutoff = time.time() - starting_grace_s
     with connect() as c:
         rows = c.execute(
             "SELECT machine_id FROM endpoints "
-            "WHERE status=%s AND machine_id IS NOT NULL",
-            (ENDPOINT_ACTIVE,),
+            "WHERE machine_id IS NOT NULL AND ("
+            "  status=%s OR (status=%s AND created_at >= %s)"
+            ")",
+            (ENDPOINT_ACTIVE, ENDPOINT_STARTING, cutoff),
         ).fetchall()
     return [int(r["machine_id"]) for r in rows]
 

@@ -11,6 +11,7 @@ timer, and that a busy endpoint still dies at the hard ceiling.
 from __future__ import annotations
 
 import json
+import threading
 import time
 
 import pytest
@@ -781,6 +782,108 @@ def test_a_model_that_never_loads_costs_no_key_and_no_machine(
     assert r.json()["detail"]["code"] == "endpoint_model_not_ready"
     assert db.get_endpoint_by_job(job_id) is None
     # Teardown confirmed by listing, never by the destroy call's return.
+    assert provider.list_machine_ids() == []
+
+
+def test_the_reconciler_spares_a_machine_that_is_still_loading_its_model(
+    client, tmp_path, monkeypatch
+):
+    """The window this whole `starting` status exists to close.
+
+    Loading a model takes minutes. The reconciler destroys any machine no
+    live job or endpoint claims, and the job that owns a serving machine is
+    `complete` and therefore terminal, so before this the machine spent its
+    entire warm-up unclaimed. A pass landing in that window destroyed a
+    machine that was doing exactly what it had been asked to -- ADR-0068's
+    race, at a hundred times the width.
+    """
+    from temper_worker import reconciler
+
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _remote_provider(monkeypatch, _RemoteFake(healthy_after=10**6))
+    seen = threading.Event()
+    report = {}
+
+    def reconcile_during_warmup():
+        # Wait until the machine exists, then run a pass against it, which
+        # is precisely when the old code lost one.
+        while not provider.create_calls:
+            time.sleep(0.01)
+        report.update(reconciler.reconcile_once(provider=provider))
+        seen.set()
+
+    from temper_control_plane import serving
+
+    # Long enough that the pass above lands inside the warm-up.
+    monkeypatch.setattr(serving, "SERVE_READY_TIMEOUT_S", 3.0)
+    monkeypatch.setattr(serving, "SERVE_READY_POLL_S", 0.05)
+    watcher = threading.Thread(target=reconcile_during_warmup, daemon=True)
+    watcher.start()
+    client.post(f"/v1/jobs/{job_id}/endpoint")
+    assert seen.wait(30)
+
+    assert report["destroyed"] == [], report
+    assert report["owned"] >= 1, report
+
+
+def test_a_start_that_never_finished_stops_protecting_its_machine(
+    client, tmp_path, monkeypatch
+):
+    """The grace is bounded, and that bound is the point.
+
+    A control plane killed mid-start leaves a `starting` row behind. An
+    ownership claim that never expired would make that row a permanent
+    licence for a machine nobody will ever serve from -- an orphan the
+    reconciler is forbidden to collect, which is worse than the race the
+    status exists to prevent.
+    """
+    from temper_control_plane import db as db_mod
+
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    endpoint_id = db_mod.new_id("ep")
+    long_ago = time.time() - 10_000
+    db_mod.create_endpoint(
+        endpoint_id,
+        job_id,
+        api_key_hash="",
+        api_key_prefix="",
+        created_at=long_ago,
+        expires_at=long_ago,
+        max_expires_at=long_ago,
+        machine_id=4242,
+        machine_handle="fake://stale",
+        status=db_mod.ENDPOINT_STARTING,
+    )
+    assert db_mod.list_active_endpoint_machine_ids(1800.0) == []
+    assert db_mod.list_live_endpoint_job_ids(1800.0) == []
+    # Inside the grace it is owned, which is the other half of the claim.
+    assert db_mod.list_active_endpoint_machine_ids(20_000.0) == [4242]
+
+
+def test_a_failed_start_leaves_no_row_claiming_a_destroyed_machine(
+    client, tmp_path, monkeypatch
+):
+    """The record says why it never opened, and stops claiming the machine.
+
+    A `starting` row left behind after its machine was destroyed would have
+    the reconciler sparing an id the provider has already forgotten, and
+    would leave the job looking like it has an endpoint on the way.
+    """
+    from temper_control_plane import db as db_mod
+    from temper_control_plane import serving
+
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _remote_provider(monkeypatch, _RemoteFake(healthy_after=10**6))
+    monkeypatch.setattr(serving, "SERVE_READY_TIMEOUT_S", 0.05)
+
+    r = client.post(f"/v1/jobs/{job_id}/endpoint")
+    assert r.status_code == 409, r.text
+
+    row = db_mod.get_endpoint_by_job(job_id, status=None)
+    assert row["status"] == "stopped"
+    assert row["stop_reason"] == "endpoint_model_not_ready"
+    assert db_mod.list_active_endpoint_machine_ids(1800.0) == []
+    # And a second attempt is not blocked by the abandoned one.
     assert provider.list_machine_ids() == []
 
 

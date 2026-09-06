@@ -68,7 +68,12 @@ from temper_core.disk import PLATFORM_MIN_DISK_GB
 from temper_core.errors import OrchestratorError
 
 from . import db, storage
-from .provider import Machine, Provider, new_provider
+from .provider import (
+    Machine,
+    Provider,
+    endpoint_machine_name,
+    new_provider,
+)
 
 # How often the sweep thread looks for expired endpoints when not driven
 # by per-endpoint timers. Domain constant with derivation, not a
@@ -472,6 +477,25 @@ def preview_for_job(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _abandon(endpoint_id: str, reason: str) -> None:
+    """Close out a `starting` endpoint whose machine has been destroyed.
+
+    The row stops claiming a machine that no longer exists, so the next pass
+    does not spare an id the provider has already forgotten, and the reason
+    it never opened stays on the record rather than the row simply
+    vanishing. Best-effort: a start that already failed must not fail twice.
+    """
+    try:
+        db.set_endpoint_status(
+            endpoint_id,
+            "stopped",
+            stopped_at=time.time(),
+            stop_reason=reason,
+        )
+    except Exception:  # noqa: S110
+        pass
+
+
 def start_endpoint(
     job_id: str, provider: Provider | None = None
 ) -> dict[str, Any]:
@@ -494,13 +518,14 @@ def start_endpoint(
             f"Job is '{job.get('status')}'; only a complete job can be "
             "served. No endpoint was started.",
         )
-    existing = db.get_endpoint_by_job(job_id)
-    if existing is not None:
-        raise OrchestratorError(
-            "endpoint_already_running",
-            f"Job {job_id} already has a running endpoint {existing['id']}. "
-            "Stop it before starting another.",
-        )
+    for status in (db.ENDPOINT_ACTIVE, db.ENDPOINT_STARTING):
+        existing = db.get_endpoint_by_job(job_id, status=status)
+        if existing is not None:
+            raise OrchestratorError(
+                "endpoint_already_running",
+                f"Job {job_id} already has an endpoint {existing['id']} "
+                f"({status}). Stop it before starting another.",
+            )
     # The price the endpoint will bill at is the job's own frozen rate --
     # the same rate the spend accounting uses, so the endpoint is visible to
     # that accounting rather than becoming a second, unmetered way to spend.
@@ -545,15 +570,53 @@ def start_endpoint(
     # because of it, while the training path had the floor right all along
     # (`disk.plan` raises below it). One definition, read here too.
     disk_gb = PLATFORM_MIN_DISK_GB
+    # The row goes in before the machine exists, and this is a money rule
+    # rather than bookkeeping. Loading a model takes minutes; the reconciler
+    # destroys any machine no live job or endpoint claims, and the job that
+    # owns this one is `complete` and therefore terminal. An endpoint that
+    # only became a row after the warm-up would have its own machine
+    # destroyed underneath it -- ADR-0068's race, at a hundred times the
+    # width. The name closes the remaining window, the one inside `create`
+    # where the instance bills and no id has come back yet.
+    endpoint_id = db.new_id("ep")
+    started_at = time.time()
+    db.create_endpoint(
+        endpoint_id,
+        job_id,
+        api_key_hash="",
+        api_key_prefix="",
+        created_at=started_at,
+        expires_at=started_at,
+        max_expires_at=started_at,
+        price_per_hour=float(price),
+        currency=str(currency),
+        status=db.ENDPOINT_STARTING,
+    )
+    db.add_event(
+        job_id,
+        "log",
+        f"Endpoint {endpoint_id} starting: provisioning a {gpu_type} and "
+        "loading the model. No key is issued until it answers.",
+    )
     try:
         machine = provider.create(
-            gpu_type, device_count, disk_gb, f"temper-endpoint-{job_id[:8]}"
+            gpu_type, device_count, disk_gb, endpoint_machine_name(job_id)
         )
     except Exception as e:  # noqa: S110
+        db.set_endpoint_status(
+            endpoint_id,
+            "stopped",
+            stopped_at=time.time(),
+            stop_reason="provision_failed",
+        )
         raise OrchestratorError(
             "endpoint_provision_failed",
             f"Could not provision serving machine: {e}",
         ) from e
+    # As early as the id can possibly be recorded.
+    db.claim_endpoint_machine(
+        endpoint_id, int(machine.machine_id), str(machine.handle or "")
+    )
     # Reachability verification from outside (the control plane), not from
     # on the machine. If the check says the inference port *is* directly
     # reachable, the firewall did not hold and handing out a key would be
@@ -574,6 +637,7 @@ def start_endpoint(
                 orch_teardown(provider, job_id, machine)
             except Exception:  # noqa: S110
                 pass
+            _abandon(endpoint_id, "endpoint_reachable")
             raise OrchestratorError(
                 "endpoint_reachable",
                 "The serving machine's inference port is directly reachable "
@@ -587,6 +651,7 @@ def start_endpoint(
             provider.destroy(machine.machine_id)
         except Exception:  # noqa: S110
             pass
+        _abandon(endpoint_id, "endpoint_verification_failed")
         raise OrchestratorError(
             "endpoint_verification_failed",
             f"Could not verify endpoint isolation: {e}",
@@ -614,6 +679,12 @@ def start_endpoint(
                     provider.destroy(machine.machine_id)
                 except Exception:  # noqa: S110
                     pass
+            _abandon(
+                endpoint_id,
+                e.code
+                if isinstance(e, OrchestratorError)
+                else "endpoint_model_not_ready",
+            )
             if isinstance(e, OrchestratorError):
                 raise
             raise OrchestratorError(
@@ -621,31 +692,24 @@ def start_endpoint(
                 f"Could not start the model server: {e}",
             ) from e
 
-    # Mint the key and store its hash, never the key itself.
+    # Mint the key and store its hash, never the key itself. The clocks start
+    # here, not at the insert above: an endpoint that spent eight minutes
+    # loading weights would otherwise be most of the way through its idle
+    # grace before it could answer anything.
     raw_key = core_serving.generate_api_key()
     key_hash = core_serving.hash_api_key(raw_key)
     prefix = core_serving.key_prefix(raw_key)
     now = time.time()
     expires_at = now + core_serving.ENDPOINT_IDLE_TIMEOUT_S
     max_expires_at = now + core_serving.ENDPOINT_MAX_LIFETIME_S
-    endpoint_id = db.new_id("ep")
-    db.create_endpoint(
-        endpoint_id,
-        job_id,
-        key_hash,
-        prefix,
-        now,
-        expires_at,
-        max_expires_at,
-        machine_id=int(machine.machine_id),
-        machine_handle=str(machine.handle or ""),
-        price_per_hour=float(price),
-        currency=str(currency),
+    db.activate_endpoint(
+        endpoint_id, key_hash, prefix, now, expires_at, max_expires_at
     )
     db.add_event(
         job_id,
         "log",
-        f"Endpoint {endpoint_id} started for job {job_id}, machine "
+        f"Endpoint {endpoint_id} ready after {now - started_at:.0f}s for job "
+        f"{job_id}, machine "
         f"{machine.machine_id}, expires at {expires_at:.0f} "
         f"(idle {core_serving.ENDPOINT_IDLE_TIMEOUT_S:.0f}s, "
         f"max {core_serving.ENDPOINT_MAX_LIFETIME_S:.0f}s)",

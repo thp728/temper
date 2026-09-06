@@ -57,6 +57,22 @@ logger = get_logger(__name__)
 # tests patch it directly when they need a faster loop.
 RECONCILE_INTERVAL_S = 30.0
 
+# How long a *starting* endpoint's machine is spared. An endpoint start
+# provisions a machine, ships a model server to it and waits for the weights
+# to load before it mints a key, and that wait is minutes; a pass landing in
+# it would destroy a machine that is doing exactly what it was asked to.
+#
+# Bounded rather than open, and that bound is the point. If the control
+# plane is killed mid-start, the row stays `starting` forever, and an
+# ownership claim that never expires would produce an orphan this pass is
+# forbidden to collect -- worse than the race it exists to prevent. Past the
+# grace the machine is unowned again and gets destroyed, which is right: no
+# one is going to serve from it.
+#
+# Derived from the readiness timeout the start itself honours, plus room for
+# provisioning and the image pull before that clock begins.
+ENDPOINT_STARTING_GRACE_S = 1800.0
+
 # The stable code and plain reason a job is marked failed with when the
 # reconciler destroys the machine it owns as an unowned orphan. A job whose
 # current machine has been destroyed cannot continue, and leaving it in a
@@ -195,6 +211,7 @@ def reconcile_once(provider=None) -> dict:
     """
     from temper_control_plane import db
     from temper_control_plane.provider import (
+        endpoint_machine_name,
         machine_name,
         new_provider,
         normalize_status,
@@ -234,7 +251,9 @@ def reconcile_once(provider=None) -> dict:
         # and served endpoints (ADR-0065). A machine in either set is
         # accounted for and left alone.
         owned_by_job = set(db.list_non_terminal_machine_ids())
-        owned_by_endpoint = set(db.list_active_endpoint_machine_ids())
+        owned_by_endpoint = set(
+            db.list_active_endpoint_machine_ids(ENDPOINT_STARTING_GRACE_S)
+        )
         # The third half, and the one that closes the window. A job cannot
         # record its machine id until `provider.create` returns, but the
         # instance is listed and billing before that -- measured at about
@@ -247,9 +266,19 @@ def reconcile_once(provider=None) -> dict:
         # An empty name is never ownership: a provider that reports no
         # name must leave id matching as the only test, not protect every
         # unnamed machine at once.
-        owned_names = {
-            machine_name(job_id) for job_id in db.list_non_terminal_job_ids()
-        } - {""}
+        owned_names = (
+            {machine_name(job_id) for job_id in db.list_non_terminal_job_ids()}
+            # And the serving half. A served endpoint's machine has its own
+            # name, because a job can have a finished training machine and a
+            # live serving machine and sparing the wrong one is as bad as
+            # destroying the wrong one.
+            | {
+                endpoint_machine_name(job_id)
+                for job_id in db.list_live_endpoint_job_ids(
+                    ENDPOINT_STARTING_GRACE_S
+                )
+            }
+        ) - {""}
 
         for machine in machines:
             status = normalize_status(getattr(machine, "status", None))

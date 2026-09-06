@@ -26,7 +26,7 @@ Spending a user's money to return their own prompt is the one outcome that
 cannot be defended. The comment claiming otherwise is what turned a missing
 feature into a misrepresentation.
 
-Closing it took six decisions, and none of them is obvious.
+Closing it took seven decisions, and none of them is obvious.
 
 ## Decision
 
@@ -78,6 +78,26 @@ is refused with `endpoint_artifact_unreachable` before anything is
 provisioned. That is the same asymmetry `grants_are_remotely_redeemable`
 already names and the launch already refuses with `artifact_undeliverable`,
 and it stays true rather than being papered over with a push fallback.
+
+**The endpoint row exists before its machine does.** `start_endpoint`
+inserts a `starting` row, then provisions, then records the machine id the
+instant `create` returns, and only promotes the row to `running` when the
+key is minted. This is a money rule, not bookkeeping. The reconciler
+destroys any machine no live job or endpoint claims, and the job that owns
+a serving machine is `complete` and therefore terminal, so an endpoint that
+became a row only *after* the warm-up would have its own machine destroyed
+underneath it. That is ADR-0068's race, at a hundred times the width: the
+window there was a measured twelve seconds inside `provider.create`, and a
+model load is minutes. The machine also carries `endpoint_machine_name`,
+defined beside `machine_name` and read by both the creator and the
+reconciler, which covers the part of the window where the id does not exist
+yet.
+
+The grace on a `starting` row is bounded at thirty minutes, and the bound is
+the point. A control plane killed mid-start leaves the row behind; an
+ownership claim that never expired would turn it into a permanent licence
+for a machine nobody will serve from, which is an orphan the reconciler is
+forbidden to collect and worse than the race the status prevents.
 
 **The endpoint stores its machine's SSH handle** (migration
 `0008_endpoint_machine_handle`). A training run holds its `Machine` in
@@ -152,7 +172,11 @@ on each screen.
   dropped rather than classified into events, and curl's stderr is
   suppressed because its failure messages quote the URL it was handed. A
   grant in the events table would be a credential on the finished-job page.
-- Sixteen tests cover this, including the one that would have caught the
+- The interface shows nothing during the warm-up: `GET .../endpoint`
+  answers 404 for a `starting` row, which is the same answer as "no
+  endpoint yet". The job's event log does carry a line saying one is
+  starting, so the state is visible, just not on the endpoint panel.
+- Nineteen tests cover this, including the one that would have caught the
   original defect: a completion from a remote provider must not contain the
   prompt. None of it has run against real hardware yet, and until it has,
   "implemented" means the tests pass and nothing more.
