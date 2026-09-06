@@ -17,6 +17,7 @@ import pytest
 from helpers import wait_validated
 
 from temper_control_plane import db
+from temper_control_plane.fake_provider import FakeProvider
 from temper_core import serving as core_serving
 
 
@@ -433,3 +434,326 @@ def test_unparsable_handle_does_not_get_a_key(client, tmp_path, monkeypatch):
     # No endpoint was persisted and the machine was destroyed (no orphan).
     assert db.get_endpoint_by_job(job_id) is None
     assert provider.destroyed is True or provider.destroy_attempts >= 1
+
+
+# ---------------------------------------------------------------------------
+# real inference: the branch that makes the billed machine worth holding
+# ---------------------------------------------------------------------------
+#
+# The endpoint provisioned an L4 at 41.31 INR/hr and answered every prompt
+# with `[qwen3-4b] tuned response to: <prompt>`, having never loaded a model,
+# while the comment beside that line claimed a real path existed on real
+# hardware. Nothing exercised it, which is why it survived. These tests turn
+# on `is_remote`, the same switch the code branches on.
+
+
+class _RemoteFake(FakeProvider):
+    """A fake that reports itself remote and answers as the model server would.
+
+    Subclassed rather than written fresh so provisioning, teardown and the
+    destroy confirmation stay identical to the simulated tier: what these
+    tests vary is the serving branch and nothing else. `stream` is the one
+    channel the serving path uses, so this reads the script it is handed and
+    answers the way `apps/trainer/serve.py` would.
+    """
+
+    is_remote = True
+
+    def __init__(self, *, healthy_after=0, completion="Paris.", raw=None):
+        super().__init__()
+        self.scripts: list[str] = []
+        self.health_probes = 0
+        self._healthy_after = healthy_after
+        self._completion = completion
+        self._raw = raw
+
+    def stream(self, machine, script):
+        text = script.decode("utf-8")
+        self.scripts.append(text)
+        if "/health" in text:
+            self.health_probes += 1
+            yield json.dumps(
+                {"ready": self.health_probes > self._healthy_after}
+            )
+        elif "/generate" in text:
+            if self._raw is not None:
+                yield self._raw
+            else:
+                yield json.dumps({"completion": self._completion})
+        else:
+            yield "started"
+
+
+def _remote_provider(monkeypatch, provider):
+    """Install `provider` as the one every serving path resolves.
+
+    `config.FAKE_PROVIDER` stays False on purpose: the branch under test is
+    the provider's own `is_remote`, and pointing the switch the other way
+    would let a bug that reads the switch instead pass unnoticed.
+    """
+    from temper_control_plane import serving
+
+    monkeypatch.setattr(serving, "new_provider", lambda: provider)
+    monkeypatch.setattr(serving, "SERVE_READY_POLL_S", 0.01)
+    return provider
+
+
+def test_a_remote_endpoint_answers_from_the_model_not_a_template(
+    client, tmp_path, monkeypatch
+):
+    """The completion comes from the machine's model server.
+
+    The assertion that matters is the negative one: the old template echoed
+    the prompt back, so a completion that still contains it would mean the
+    branch never ran.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _remote_provider(
+        monkeypatch, _RemoteFake(completion="The capital of France is Paris.")
+    )
+    created = client.post(f"/v1/jobs/{job_id}/endpoint").json()
+
+    r = client.post(
+        f"/v1/jobs/{job_id}/endpoint/infer",
+        json={"prompt": "What is the capital of France?"},
+        headers={"X-API-Key": created["api_key"]},
+    )
+    assert r.status_code == 200, r.text
+    completion = r.json()["completion"]
+    assert completion == "The capital of France is Paris."
+    assert "tuned response to" not in completion
+    assert "What is the capital of France?" not in completion
+    # The prompt reached the server as a JSON body on the generate path.
+    generate = [s for s in provider.scripts if "/generate" in s]
+    assert len(generate) == 1
+    assert (
+        json.dumps({"prompt": "What is the capital of France?"})
+        in (generate[0])
+    )
+
+
+def test_starting_a_remote_endpoint_ships_the_server_and_the_adapter(
+    client, tmp_path, monkeypatch
+):
+    """The key is minted only after the model answers.
+
+    An endpoint that hands out a key and then cannot answer has taken the
+    user's money for nothing, so readiness is settled before the key exists.
+    """
+    from temper_control_plane import serving, storage
+
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _remote_provider(monkeypatch, _RemoteFake(healthy_after=2))
+
+    r = client.post(f"/v1/jobs/{job_id}/endpoint")
+    assert r.status_code == 201, r.text
+    assert r.json()["api_key"]
+
+    pushed = dict(provider.pushed)
+    assert pushed[serving.SERVE_SCRIPT_PATH] == serving._serve_source()
+    for name in storage.ARTIFACT_MEMBERS:
+        assert f"{serving.SERVE_ADAPTER_DIR}/{name}" in pushed
+    assert pushed[f"{serving.SERVE_ADAPTER_DIR}/adapter_config.json"] == (
+        b'{"r":16}'
+    )
+    # It waited rather than assuming: three probes, the first two not ready.
+    assert provider.health_probes == 3
+
+
+def test_the_machine_is_told_the_repository_not_the_catalog_id(
+    client, tmp_path, monkeypatch
+):
+    """`qwen3-4b` is a catalog id. `Qwen/Qwen3-4B` is what loads.
+
+    A job row stores the id, and `from_pretrained` cannot resolve it. Getting
+    this wrong fails on the machine, minutes into a paid start, with an error
+    that reads like a network problem -- the class of bug that only shows up
+    on hardware, which is exactly why it is asserted here.
+    """
+    from temper_core import catalog
+
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _remote_provider(monkeypatch, _RemoteFake())
+    assert client.post(f"/v1/jobs/{job_id}/endpoint").status_code == 201
+
+    model = catalog.get(catalog.DEFAULT_MODEL)
+    run = next(s for s in provider.scripts if "docker run" in s)
+    assert f"TEMPER_BASE_MODEL={model.repo}" in run
+    assert f"TEMPER_BASE_REVISION={model.revision}" in run
+    assert f"TEMPER_BASE_MODEL={catalog.DEFAULT_MODEL}" not in run
+
+
+def test_the_port_that_serves_is_the_port_the_isolation_check_probes(
+    client, tmp_path, monkeypatch
+):
+    """One number, or the check asserts a property of nothing.
+
+    `verify_not_reachable` connects to `INFERENCE_PORT` on the machine's
+    public host and refuses to mint a key if it answers. A server listening
+    on some other port would leave that check passing while the port that
+    actually serves went unexamined.
+    """
+    from temper_control_plane import serving
+
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _remote_provider(monkeypatch, _RemoteFake())
+    assert client.post(f"/v1/jobs/{job_id}/endpoint").status_code == 201
+
+    port = serving.INFERENCE_PORT
+    run = next(s for s in provider.scripts if "docker run" in s)
+    assert f"TEMPER_SERVE_PORT={port}" in run
+    for script in provider.scripts:
+        if "curl" in script:
+            assert f"127.0.0.1:{port}/" in script
+
+
+def test_the_endpoint_serves_under_the_thinking_mode_the_run_trained_with(
+    client, tmp_path, monkeypatch
+):
+    """The same value at training and at serving, or the answers are junk.
+
+    `entrypoint.build_config` says it beside the value it sets: Qwen3 emits
+    thinking blocks through its template by default, the trainer detects
+    from the dataset whether the training rows had them, and the SAME value
+    must be applied at serving. Rendering under the other one produces
+    plausible-looking output, which is why nothing downstream would catch it.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    result = dict(db.get_job(job_id)["result"] or {})
+    result["thinking"] = {"enable_thinking": True, "assistant_turns": 12}
+    db.set_state(job_id, "complete", "done", result_json=result)
+
+    provider = _remote_provider(monkeypatch, _RemoteFake())
+    assert client.post(f"/v1/jobs/{job_id}/endpoint").status_code == 201
+    run = next(s for s in provider.scripts if "docker run" in s)
+    assert "TEMPER_ENABLE_THINKING=1" in run
+
+
+def test_a_run_that_did_not_think_does_not_serve_as_though_it_had(
+    client, tmp_path, monkeypatch
+):
+    """The other direction, which is the one a default would get wrong.
+
+    Qwen3's template thinks by default, so an endpoint that passed nothing
+    would serve a non-thinking run under a thinking template and look fine.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    result = dict(db.get_job(job_id)["result"] or {})
+    result["thinking"] = {"enable_thinking": False, "assistant_turns": 12}
+    db.set_state(job_id, "complete", "done", result_json=result)
+
+    provider = _remote_provider(monkeypatch, _RemoteFake())
+    assert client.post(f"/v1/jobs/{job_id}/endpoint").status_code == 201
+    run = next(s for s in provider.scripts if "docker run" in s)
+    assert "TEMPER_ENABLE_THINKING=0" in run
+
+
+def test_a_model_that_never_loads_costs_no_key_and_no_machine(
+    client, tmp_path, monkeypatch
+):
+    """The machine is destroyed and the start refuses.
+
+    This is the money path. A server that never comes up would otherwise
+    leave a GPU billing for an endpoint that could never have answered.
+    """
+    from temper_control_plane import serving
+
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    # Never ready: the health probe answers `false` for every attempt.
+    provider = _remote_provider(monkeypatch, _RemoteFake(healthy_after=10**6))
+    monkeypatch.setattr(serving, "SERVE_READY_TIMEOUT_S", 0.05)
+
+    r = client.post(f"/v1/jobs/{job_id}/endpoint")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "endpoint_model_not_ready"
+    assert db.get_endpoint_by_job(job_id) is None
+    # Teardown confirmed by listing, never by the destroy call's return.
+    assert provider.list_machine_ids() == []
+
+
+def test_a_server_that_answers_nonsense_is_not_passed_off_as_a_completion(
+    client, tmp_path, monkeypatch
+):
+    """A traceback on stdout is not a completion.
+
+    502 rather than 400: the request was well formed and authorised, and the
+    thing that failed was the machine behind it.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    _remote_provider(
+        monkeypatch, _RemoteFake(raw="Traceback (most recent call last):")
+    )
+    created = client.post(f"/v1/jobs/{job_id}/endpoint").json()
+
+    r = client.post(
+        f"/v1/jobs/{job_id}/endpoint/infer",
+        json={"prompt": "hello"},
+        headers={"X-API-Key": created["api_key"]},
+    )
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"]["code"] == "endpoint_generation_failed"
+
+
+def test_the_endpoint_records_the_route_to_its_own_machine(
+    client, tmp_path, monkeypatch
+):
+    """The handle is stored, because inference is a different request.
+
+    A training run holds its `Machine` in memory for the whole run. An
+    endpoint is started by one request and asked for a completion by
+    another, and `list_machines` reports ids and names, not handles, so a
+    handle that is not written down cannot be recovered.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    _remote_provider(monkeypatch, _RemoteFake())
+    created = client.post(f"/v1/jobs/{job_id}/endpoint").json()
+
+    ep = db.get_endpoint(created["id"])
+    assert ep["machine_handle"].startswith("fake://")
+
+    # An endpoint whose route was never recorded refuses, rather than
+    # handing `ssh` an empty destination and reporting what that fails with.
+    with db.connect() as c:
+        c.execute(
+            "UPDATE endpoints SET machine_handle=NULL WHERE id=%s",
+            (created["id"],),
+        )
+    r = client.post(
+        f"/v1/jobs/{job_id}/endpoint/infer",
+        json={"prompt": "hello"},
+        headers={"X-API-Key": created["api_key"]},
+    )
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"]["code"] == "endpoint_machine_unreachable"
+
+
+def test_the_endpoint_decodes_the_way_the_comparison_did():
+    """One prompt, one answer, whichever screen asked it.
+
+    `serve.py` restates the decoding settings as a literal because it is
+    pushed to the machine rather than imported with the package.
+    `comparison.COMPARISON_DECODING` is the definition, and this is what
+    keeps the copy honest: without it an endpoint could answer at a
+    temperature the prediction-versus-actual panel never used.
+    """
+    import importlib.util
+    import sys
+
+    from temper_control_plane import trainer_build
+
+    def load(name, path):
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    from temper_control_plane import serving
+
+    trainer = trainer_build.TRAINER_DIR
+    comparison = load("_comparison_for_serve", trainer / "comparison.py")
+    serve = load("_serve_for_decoding", trainer / "serve.py")
+    assert serve.DECODING == comparison.COMPARISON_DECODING
+    # Same argument, same file: the port it falls back to when nobody passes
+    # one is the port the isolation check probes.
+    assert serve.PORT == serving.INFERENCE_PORT

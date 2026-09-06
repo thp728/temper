@@ -1508,15 +1508,24 @@ def create_endpoint(
     expires_at: float,
     max_expires_at: float,
     machine_id: int | None = None,
+    machine_handle: str | None = None,
     price_per_hour: float | None = None,
     currency: str | None = None,
 ) -> None:
-    """Insert one endpoint row. The key is stored hashed, never plaintext."""
+    """Insert one endpoint row. The key is stored hashed, never plaintext.
+
+    `machine_handle` is how a later inference request reaches the machine
+    this endpoint holds. The id identifies the machine for billing and
+    teardown; the handle is the only thing that can run a command on it, and
+    the request that starts an endpoint is never the request that asks it
+    for a completion.
+    """
     with connect() as c:
         c.execute(
             "INSERT INTO endpoints (id, job_id, status, api_key_hash, api_key_prefix, "
             "created_at, expires_at, last_used_at, max_expires_at, machine_id, "
-            "price_per_hour, currency) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "machine_handle, price_per_hour, currency) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 endpoint_id,
                 job_id,
@@ -1528,6 +1537,7 @@ def create_endpoint(
                 created_at,
                 max_expires_at,
                 machine_id,
+                machine_handle,
                 price_per_hour,
                 currency,
             ),

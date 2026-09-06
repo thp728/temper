@@ -407,6 +407,27 @@ def _down_0007(cur: psycopg.Cursor) -> None:
     cur.execute("ALTER TABLE datasets DROP COLUMN updated_at")
 
 
+def _up_0008(cur: psycopg.Cursor) -> None:
+    """The serving machine's SSH handle, kept with the endpoint (ADR-0065).
+
+    A training run holds its `Machine` in memory for the whole run, so the
+    handle never needed a home. An endpoint does not: it is started by one
+    request and asked for a completion by another, and the completion is
+    produced by running a command on the machine. Without the handle the
+    inference request has a machine id and no way to reach it, which is the
+    state that let the endpoint bill for a GPU and answer from a template.
+
+    Nullable, and empty for a simulated endpoint that has no machine to
+    reach. Existing rows keep NULL, which is honest: those endpoints could
+    not have carried a handle.
+    """
+    cur.execute("ALTER TABLE endpoints ADD COLUMN machine_handle TEXT")
+
+
+def _down_0008(cur: psycopg.Cursor) -> None:
+    cur.execute("ALTER TABLE endpoints DROP COLUMN machine_handle")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     ("0001_baseline", _up_0001, _down_0001),
     ("0002_phase_b_tables", _up_0002, _down_0002),
@@ -415,6 +436,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     ("0005_machine_reconciliation", _up_0005, _down_0005),
     ("0006_job_claim_lease", _up_0006, _down_0006),
     ("0007_dataset_updated_at", _up_0007, _down_0007),
+    ("0008_endpoint_machine_handle", _up_0008, _down_0008),
 )
 
 

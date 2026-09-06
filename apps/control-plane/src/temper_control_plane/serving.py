@@ -38,11 +38,26 @@ prove. A process restart re-reads the `endpoints` table and re-arms
 timers for any still-running endpoints, or stops those already past their
 deadline, so an endpoint that survives a restart without a timer is an
 endpoint that never stops.
+
+The generation is real, and that is newer than the rest of this module
+(ADR-0076). `start_endpoint` pushes `apps/trainer/serve.py` to the machine,
+runs it under the published trainer image, and waits for it to report the
+weights loaded before any key exists; `infer` then asks that server for a
+completion over the same channel. The simulated tier has no machine to load
+anything on and answers from a canned line, so the branch is `is_remote`.
+
+Until this landed the canned line ran unconditionally, on real hardware
+too, while the comment beside it described a real path. The endpoint billed
+at the GPU's hourly rate to echo the prompt back inside a template. Both
+halves are worth remembering: the missing feature, and the comment that
+made reading the source misleading rather than merely incomplete.
 """
 
 from __future__ import annotations
 
 import hmac
+import json
+import shlex
 import socket
 import threading
 import time
@@ -52,7 +67,7 @@ from temper_core import serving as core_serving
 from temper_core.disk import PLATFORM_MIN_DISK_GB
 from temper_core.errors import OrchestratorError
 
-from . import db
+from . import db, storage
 from .provider import Machine, Provider, new_provider
 
 # How often the sweep thread looks for expired endpoints when not driven
@@ -561,6 +576,36 @@ def start_endpoint(
             "endpoint_verification_failed",
             f"Could not verify endpoint isolation: {e}",
         ) from e
+    # Load the model before the key exists. An endpoint that hands out a key
+    # and then cannot answer has taken the user's money for nothing, so a
+    # machine that fails to come up is destroyed here and the start refuses.
+    #
+    # Only a remote provider has a machine to load anything on. The simulated
+    # tier answers from a canned line (see `infer`), and waiting there for a
+    # model server nothing ever starts would hang every hardware-free journey
+    # for the full readiness timeout.
+    if provider.is_remote:
+        try:
+            provider.await_ready(machine)
+            _start_model_server(provider, machine, job)
+            _await_model_ready(provider, machine)
+        except Exception as e:  # noqa: BLE001 - every failure must tear down
+            try:
+                from .orchestrator import _teardown as orch_teardown
+
+                orch_teardown(provider, job_id, machine)
+            except Exception:  # noqa: S110
+                try:
+                    provider.destroy(machine.machine_id)
+                except Exception:  # noqa: S110
+                    pass
+            if isinstance(e, OrchestratorError):
+                raise
+            raise OrchestratorError(
+                "endpoint_model_not_ready",
+                f"Could not start the model server: {e}",
+            ) from e
+
     # Mint the key and store its hash, never the key itself.
     raw_key = core_serving.generate_api_key()
     key_hash = core_serving.hash_api_key(raw_key)
@@ -578,6 +623,7 @@ def start_endpoint(
         expires_at,
         max_expires_at,
         machine_id=int(machine.machine_id),
+        machine_handle=str(machine.handle or ""),
         price_per_hour=float(price),
         currency=str(currency),
     )
@@ -609,6 +655,245 @@ def start_endpoint(
         "idle_timeout_s": float(core_serving.ENDPOINT_IDLE_TIMEOUT_S),
         "max_lifetime_s": float(core_serving.ENDPOINT_MAX_LIFETIME_S),
     }
+
+
+# Where the pushed pieces land on the serving machine. Read by the script
+# that starts the server and by the ones that talk to it -- if they drifted
+# the endpoint would provision, bill, and answer nothing.
+#
+# The port is `INFERENCE_PORT` above, not a second constant with the same
+# value: that is the number `verify_not_reachable` probes from outside, and
+# a server listening on a different one would make the isolation check an
+# assertion about a port nothing serves.
+SERVE_SCRIPT_PATH = "/tmp/serve/serve.py"
+SERVE_ADAPTER_DIR = "/tmp/serve/adapter"
+SERVE_CONTAINER = "temper-serve"
+
+# How long to wait for the weights to load before calling the start failed.
+# Estimated, not measured: a 4B base is roughly 8 GB to pull and load, which
+# on the L4s seen here should be minutes rather than a quarter of an hour.
+# Past this the machine is billing for a server that never came up, so the
+# start refuses and tears down rather than handing out a key to nothing.
+# Replace the estimate with the first real measurement.
+SERVE_READY_TIMEOUT_S = 900.0
+
+# How long to leave between health probes. Each probe is an SSH round trip,
+# so this is not free; ten seconds against a load measured in minutes costs
+# a handful of connections and bounds the wasted wait to the same ten.
+SERVE_READY_POLL_S = 10.0
+
+
+def _serve_source() -> bytes:
+    """The model server that ships to the machine.
+
+    Read from the repository rather than baked into the trainer image, so
+    serving works against the published digest without waiting on a
+    republish (see the note at the top of `apps/trainer/serve.py`). When it
+    moves into `TRAINER_SOURCES` this function and its push go away.
+    """
+    from .trainer_build import TRAINER_DIR
+
+    return (TRAINER_DIR / "serve.py").read_bytes()
+
+
+def _base_of(job: dict[str, Any]) -> tuple[str, str]:
+    """The repository and revision the job trained against.
+
+    A job row stores the catalog id (`qwen3-4b`), not the Hugging Face
+    repository (`Qwen/Qwen3-4B`), so the id has to be resolved through the
+    same seam the orchestrator resolves it through. Handing the catalog id
+    to `from_pretrained` would fail on the machine, minutes into a paid
+    start, for a reason that reads like a network problem.
+
+    A model that no longer resolves refuses here rather than falling back to
+    the catalog default. The orchestrator's fallback is safe because a job
+    that reached it has already been validated against the catalog; serving
+    a *different* base under this job's adapter is not a degraded answer but
+    a confident wrong one, and nothing downstream could tell.
+    """
+    from . import admission
+
+    model = admission.get(str(job.get("base_model") or ""))
+    if model is None:
+        raise OrchestratorError(
+            "endpoint_model_unknown",
+            f"Base model {job.get('base_model')!r} is no longer in the "
+            "catalog, so the adapter cannot be applied to the model it was "
+            "trained against.",
+        )
+    revision = job.get("base_revision") or model.revision or ""
+    return str(model.repo), str(revision)
+
+
+def _thinking_of(job: dict[str, Any]) -> bool:
+    """Whether the run trained under thinking mode.
+
+    Qwen3 emits thinking blocks through its own template by default, and the
+    trainer detects from the dataset whether the training rows had them.
+    `entrypoint.build_config` says it plainly beside the value it sets: "the
+    SAME value must be applied at serving." Serve under the other one and
+    every answer comes from a template the model was never tuned against --
+    a mismatch that produces plausible-looking output, so nothing downstream
+    would flag it.
+
+    The run's own record is preferred over the dataset's flag, because it is
+    what the run actually did. A job with neither predates the record and
+    falls back to False, which is `build_config`'s own default for the same
+    unknown.
+    """
+    result = job.get("result") or {}
+    recorded = (result.get("thinking") or {}).get("enable_thinking")
+    if isinstance(recorded, bool):
+        return recorded
+    dataset_id = job.get("dataset_id")
+    if dataset_id:
+        dataset = db.get_dataset(str(dataset_id)) or {}
+        if isinstance(dataset.get("enable_thinking"), bool):
+            return bool(dataset["enable_thinking"])
+    return False
+
+
+def _start_model_server(
+    provider: Provider, machine: Machine, job: dict[str, Any]
+) -> None:
+    """Load the job's tuned model on the machine and leave it serving.
+
+    The adapter travels the way the dataset travels to a training machine:
+    read from the storage seam and pushed over the provider's stream, so the
+    control plane never holds it whole. The container then runs with the
+    published trainer image -- which already carries torch, transformers and
+    peft -- and binds the server to localhost only.
+    """
+    from .orchestrator import _trainer_reference
+
+    reference = _trainer_reference()
+    job_id = str(job["id"])
+    provider.push_stream(machine, [_serve_source()], SERVE_SCRIPT_PATH)
+    # The artifact's own member list, not a second copy of those names: the
+    # adapter the endpoint serves has to be the adapter the run delivered.
+    for name in storage.ARTIFACT_MEMBERS:
+        provider.push_stream(
+            machine,
+            storage.STORE.get_stream(storage.artifact_key(job_id, name)),
+            f"{SERVE_ADAPTER_DIR}/{name}",
+        )
+    repo, revision = _base_of(job)
+    # Assembled as a list so no single line grows past what a person can
+    # read; `--network host` is what puts the server on the machine's own
+    # loopback, where the isolation check and the generate call both expect
+    # it, rather than on a published port.
+    run = " ".join(
+        [
+            "sudo docker run -d --rm --gpus all --network host",
+            f"--name {SERVE_CONTAINER}",
+            f"-v {SERVE_SCRIPT_PATH}:/serve.py:ro",
+            f"-v {SERVE_ADAPTER_DIR}:/adapter:ro",
+            "-e HF_HOME=/tmp/hf -e PYTHONUNBUFFERED=1",
+            f"-e TEMPER_BASE_MODEL={shlex.quote(str(repo))}",
+            f"-e TEMPER_BASE_REVISION={shlex.quote(str(revision))}",
+            "-e TEMPER_ADAPTER_DIR=/adapter",
+            f"-e TEMPER_ENABLE_THINKING={int(_thinking_of(job))}",
+            f"-e TEMPER_SERVE_PORT={INFERENCE_PORT}",
+            f"--entrypoint python {reference} /serve.py 1>&2",
+        ]
+    )
+    script = "\n".join(
+        [
+            "set -euo pipefail",
+            f"sudo docker rm -f {SERVE_CONTAINER} >/dev/null 2>&1 || true",
+            f"sudo docker pull {reference} 1>&2",
+            run,
+            "echo started",
+            "",
+        ]
+    )
+    for _ in provider.stream(machine, script.encode("utf-8")):
+        pass
+
+
+def _await_model_ready(provider: Provider, machine: Machine) -> None:
+    """Block until the model server answers, or refuse the start.
+
+    Readiness is asked of the server itself rather than timed: the weights
+    download and load on the machine, and how long that takes depends on the
+    base model and the network, so a sleep would either waste the user's
+    money or hand out a key before the endpoint could answer.
+    """
+    deadline = time.time() + SERVE_READY_TIMEOUT_S
+    probe = f"curl -sf --max-time 5 http://127.0.0.1:{INFERENCE_PORT}/health || true"
+    last = ""
+    while time.time() < deadline:
+        last = ""
+        for line in provider.stream(machine, probe.encode("utf-8")):
+            last += line
+        if '"ready": true' in last.replace("'", '"'):
+            return
+        time.sleep(SERVE_READY_POLL_S)
+    raise OrchestratorError(
+        "endpoint_model_not_ready",
+        "The serving machine never finished loading the model within "
+        f"{SERVE_READY_TIMEOUT_S:.0f}s, so no key was issued and the "
+        f"machine was destroyed. Last health reply: {last.strip()[:200]!r}",
+    )
+
+
+def _endpoint_machine(ep: dict[str, Any]) -> Machine:
+    """The machine an endpoint holds, as the provider needs it.
+
+    Both halves are stored because neither is derivable from the other: the
+    id is what teardown and billing name, and the handle is the only thing
+    that can run a command there. `list_machines` reports ids and names, not
+    handles, so a lost handle cannot be recovered from the provider.
+
+    A row without one predates the column (migration 0008) and has no route
+    to its machine, so it refuses here rather than handing `ssh` an empty
+    destination and reporting whatever that fails with.
+    """
+    machine_id = ep.get("machine_id")
+    handle = str(ep.get("machine_handle") or "")
+    if machine_id is None or not handle:
+        raise OrchestratorError(
+            "endpoint_machine_unreachable",
+            "This endpoint has no recorded route to its serving machine, so "
+            "it cannot answer prompts. Stop it and start a new one.",
+        )
+    return Machine(machine_id=int(machine_id), handle=handle)
+
+
+def _generate_on_machine(
+    provider: Provider, machine: Machine, prompt: str
+) -> str:
+    """Ask the machine's model server for one completion.
+
+    Over the provider's own channel rather than a public port: the endpoint's
+    isolation check refuses to issue a key if the inference port answers from
+    outside, so reaching it any other way would contradict the property that
+    check enforces.
+    """
+    body = json.dumps({"prompt": prompt})
+    script = (
+        f"curl -sf --max-time 300 -X POST "
+        f"http://127.0.0.1:{INFERENCE_PORT}/generate "
+        f"-H 'Content-Type: application/json' "
+        f"-d {shlex.quote(body)}"
+    )
+    out = ""
+    for line in provider.stream(machine, script.encode("utf-8")):
+        out += line
+    try:
+        answer = json.loads(out.strip() or "{}")
+    except json.JSONDecodeError:
+        raise OrchestratorError(
+            "endpoint_generation_failed",
+            f"The model server did not answer with JSON: {out.strip()[:200]!r}",
+        ) from None
+    completion = answer.get("completion")
+    if not isinstance(completion, str):
+        raise OrchestratorError(
+            "endpoint_generation_failed",
+            f"The model server reported: {answer.get('error', answer)!r}",
+        )
+    return completion
 
 
 def get_endpoint(job_id: str) -> dict[str, Any] | None:
@@ -685,10 +970,10 @@ def infer(
     is returned. A busy endpoint that is kept alive by traffic still dies at
     the max, because the extension is capped.
 
-    The generation itself is a stub in the test/fake tier: it returns a
-    canned completion that names the job and the prompt, so the endpoint
-    answers prompts without needing a real model warm. On real hardware the
-    branch would reach the machine over SSH and run the model there.
+    The generation is a canned completion in the simulated tier, so the
+    journeys can answer prompts without a model. On real hardware it reaches
+    the machine over the provider's own channel and asks the model server
+    that `start_endpoint` left running for a real completion.
     """
     ep = db.get_endpoint_by_job(job_id)
     if ep is None:
@@ -730,14 +1015,36 @@ def infer(
     fresh = db.get_endpoint(ep["id"])
     if fresh is not None:
         _arm_timers(fresh, provider=provider)
-    # The generation: a canned completion in the fake tier, the real
-    # inference path on real hardware. The canned text is intentionally
-    # simple so tests can assert on it without needing a model.
-    # A real implementation would `provider.stream` or `provider.fetch_stream`
-    # a generation from the machine's inference server here.
+    # The generation. The simulated provider answers with a canned line so
+    # the journeys and the component tests can assert on it without a model;
+    # a real machine is asked for a real completion by its own model server.
+    #
+    # This used to return the canned line unconditionally -- on real hardware
+    # too, while the comment beside it claimed otherwise -- so the endpoint
+    # billed at the GPU's hourly rate to echo the prompt back inside a
+    # template. The branch is the feature.
     job = db.get_job(job_id)
-    model_id = job.get("base_model") if job else "unknown"
-    completion = f"[{model_id}] tuned response to: {prompt}"
+    model_id = (job.get("base_model") if job else None) or "unknown"
+    # Which branch runs is asked of the provider (`is_remote`) rather than of
+    # the configuration switch, because the two can disagree: the suite
+    # injects a simulated provider while the environment variable is unset,
+    # and a real completion attempted against an in-process fake would fail
+    # for a reason that has nothing to do with the model.
+    #
+    # A provider built here is closed again below. An inference must not
+    # leave a client open for the life of the process.
+    owns_provider = provider is None
+    active = provider if provider is not None else new_provider()
+    try:
+        if active.is_remote:
+            completion = _generate_on_machine(
+                active, _endpoint_machine(ep), prompt
+            )
+        else:
+            completion = f"[{model_id}] tuned response to: {prompt}"
+    finally:
+        if owns_provider:
+            active.close()
     db.add_event(
         job_id,
         "log",

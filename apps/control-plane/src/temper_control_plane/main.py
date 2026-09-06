@@ -1624,6 +1624,10 @@ def create_endpoint(job_id: str):
                 "endpoint_already_running",
                 "endpoint_provision_failed",
                 "endpoint_reachable",
+                # The machine was provisioned and then destroyed again
+                # because its model never loaded, so no key exists and the
+                # start is refused -- the same shape as the two above it.
+                "endpoint_model_not_ready",
             )
             else 400
         )
@@ -1706,9 +1710,9 @@ def infer_endpoint(
     The key is verified against the stored hash (constant-time), the expiry
     is checked and extended on success (capped by the max), and a completion
     is returned. A busy endpoint that is kept alive by traffic still dies at
-    the max, because the extension is capped. The generation itself is a
-    stub in the fake tier; on real hardware it would reach the machine over
-    SSH and run the model there.
+    the max, because the extension is capped. The generation is canned in the
+    simulated tier; on real hardware it reaches the machine and runs the
+    model there.
     """
     if not db.get_job(job_id):
         raise HTTPException(
@@ -1749,6 +1753,16 @@ def infer_endpoint(
         if e.code == "endpoint_expired":
             raise HTTPException(
                 410, {"code": e.code, "message": str(e)}
+            ) from e
+        # The request was well formed and authorised; the machine behind it
+        # could not answer. 400 would tell the caller to change their prompt,
+        # which would not help.
+        if e.code in (
+            "endpoint_generation_failed",
+            "endpoint_machine_unreachable",
+        ):
+            raise HTTPException(
+                502, {"code": e.code, "message": str(e)}
             ) from e
         raise HTTPException(400, {"code": e.code, "message": str(e)}) from e
 

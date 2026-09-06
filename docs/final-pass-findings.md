@@ -236,8 +236,23 @@ money to return their own prompt is the one outcome that cannot be defended,
 and the comment claiming otherwise is what turns a gap into a
 misrepresentation.
 
-**Status: open. Not fixed here -- real inference is a feature, not a
-correction -- but the code comment should not be left as it is.**
+**Status: fixed, and unproven on hardware.** The generation is
+implemented (ADR-0076): `start_endpoint` pushes `apps/trainer/serve.py` to
+the machine, runs it under the published trainer image with the job's
+adapter applied to its base, and waits for the server to report the weights
+loaded *before* any key is minted -- a machine that never gets there is
+destroyed through the confirmed teardown path and the start refuses with
+`endpoint_model_not_ready`. `infer` branches on `provider.is_remote` and
+asks that server for the completion; the canned line now belongs to the
+simulated tier alone. The endpoint also stores its machine's SSH handle
+(migration 0008), without which an inference request had a machine id and
+no way to reach the machine.
+
+Six tests cover it, including the one that would have caught the original
+defect: a completion from a remote provider must not contain the prompt.
+None of it has run against a real L4 yet -- the round trip is the next
+thing to prove, and until it does, "implemented" here means the tests pass
+and nothing more.
 
 ## The endpoint could never have worked, and the UI hid the reason
 
@@ -354,7 +369,8 @@ than a quick tunnel.
 ## Still not exercised
 
 - the delivery formats, merged and quantised
-- the serving endpoint and an inference round trip
+- the serving endpoint and an inference round trip, now that there is a
+  real generation to exercise
 - cancel mid-run
 
 Retry needs no hardware and turns out not to exist as a general control: the

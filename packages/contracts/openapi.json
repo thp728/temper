@@ -4075,7 +4075,7 @@
     },
     "/v1/jobs/{job_id}/endpoint/infer": {
       "post": {
-        "description": "Answer a prompt via the job's active endpoint. Requires the endpoint's key.\n\nThe key is verified against the stored hash (constant-time), the expiry\nis checked and extended on success (capped by the max), and a completion\nis returned. A busy endpoint that is kept alive by traffic still dies at\nthe max, because the extension is capped. The generation itself is a\nstub in the fake tier; on real hardware it would reach the machine over\nSSH and run the model there.",
+        "description": "Answer a prompt via the job's active endpoint. Requires the endpoint's key.\n\nThe key is verified against the stored hash (constant-time), the expiry\nis checked and extended on success (capped by the max), and a completion\nis returned. A busy endpoint that is kept alive by traffic still dies at\nthe max, because the extension is capped. The generation is canned in the\nsimulated tier; on real hardware it reaches the machine and runs the\nmodel there.",
         "operationId": "infer_endpoint_v1_jobs__job_id__endpoint_infer_post",
         "parameters": [
           {
