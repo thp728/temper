@@ -18,6 +18,7 @@ from helpers import wait_validated
 
 from temper_control_plane import db
 from temper_control_plane.fake_provider import FakeProvider
+from temper_control_plane.storage import FilesystemStorage
 from temper_core import serving as core_serving
 
 
@@ -484,15 +485,44 @@ class _RemoteFake(FakeProvider):
             yield "started"
 
 
+class _GrantableStore(FilesystemStorage):
+    """A local store that can hand a machine an address it could fetch.
+
+    The serving path refuses outright on a store whose grants only this
+    process can redeem -- that refusal is the subject of its own test below.
+    Every other remote test needs a store on the far side of that question,
+    and standing up S3 for them would be exercising boto3 rather than
+    serving. The url is a stand-in and is never fetched; what the tests read
+    is which key was granted and where the command puts it.
+    """
+
+    grants_are_remotely_redeemable = True
+
+    def mint_read_grant(self, key, expires_in_s):
+        from temper_control_plane import storage
+
+        return storage.ReadGrant(
+            url=f"https://store.example/{key}?sig=stand-in",
+            key=key,
+            expires_at=time.time() + expires_in_s,
+        )
+
+
 def _remote_provider(monkeypatch, provider):
     """Install `provider` as the one every serving path resolves.
 
     `config.FAKE_PROVIDER` stays False on purpose: the branch under test is
     the provider's own `is_remote`, and pointing the switch the other way
     would let a bug that reads the switch instead pass unnoticed.
-    """
-    from temper_control_plane import serving
 
+    The store is swapped for one that can grant reads, because a remote
+    endpoint on a local-only store is refused before it provisions.
+    """
+    from temper_control_plane import serving, storage
+
+    monkeypatch.setattr(
+        storage, "STORE", _GrantableStore(root=storage.STORE._root)
+    )
     monkeypatch.setattr(serving, "new_provider", lambda: provider)
     monkeypatch.setattr(serving, "SERVE_READY_POLL_S", 0.01)
     return provider
@@ -549,13 +579,17 @@ def test_starting_a_remote_endpoint_ships_the_server_and_the_adapter(
     assert r.status_code == 201, r.text
     assert r.json()["api_key"]
 
+    # The server script is the only thing this process moves; it is a few
+    # kilobytes. The adapter is a hundred-odd megabytes and is fetched by
+    # the machine, so it must not appear here.
     pushed = dict(provider.pushed)
+    assert list(pushed) == [serving.SERVE_SCRIPT_PATH]
     assert pushed[serving.SERVE_SCRIPT_PATH] == serving._serve_source()
+
+    start = next(s for s in provider.scripts if "docker run" in s)
     for name in storage.ARTIFACT_MEMBERS:
-        assert f"{serving.SERVE_ADAPTER_DIR}/{name}" in pushed
-    assert pushed[f"{serving.SERVE_ADAPTER_DIR}/adapter_config.json"] == (
-        b'{"r":16}'
-    )
+        assert f"artifacts/{job_id}/{name}" in start
+        assert f"-o {serving.SERVE_ADAPTER_DIR}/{name} " in start
     # It waited rather than assuming: three probes, the first two not ready.
     assert provider.health_probes == 3
 
@@ -602,9 +636,12 @@ def test_the_port_that_serves_is_the_port_the_isolation_check_probes(
     port = serving.INFERENCE_PORT
     run = next(s for s in provider.scripts if "docker run" in s)
     assert f"TEMPER_SERVE_PORT={port}" in run
-    for script in provider.scripts:
-        if "curl" in script:
-            assert f"127.0.0.1:{port}/" in script
+    # Every call the control plane makes to the machine's own loopback goes
+    # to that port: the readiness probe and the generation both.
+    loopback = [s for s in provider.scripts if "127.0.0.1" in s]
+    assert loopback
+    for script in loopback:
+        assert f"127.0.0.1:{port}/" in script
 
 
 def test_the_endpoint_serves_under_the_thinking_mode_the_run_trained_with(
@@ -646,6 +683,82 @@ def test_a_run_that_did_not_think_does_not_serve_as_though_it_had(
     assert client.post(f"/v1/jobs/{job_id}/endpoint").status_code == 201
     run = next(s for s in provider.scripts if "docker run" in s)
     assert "TEMPER_ENABLE_THINKING=0" in run
+
+
+def test_a_local_only_store_never_provisions_a_serving_machine(
+    client, tmp_path, monkeypatch
+):
+    """Refused before the money, not after it.
+
+    The filesystem backend's grants are tokens only this process redeems, so
+    a machine has nowhere to fetch the adapter from. That is the same
+    asymmetry the launch refuses with `artifact_undeliverable`, and it was
+    learned from a paid run that trained for eleven minutes and delivered
+    nothing. The refusal has to land before `provider.create`.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _RemoteFake()
+    from temper_control_plane import serving
+
+    monkeypatch.setattr(serving, "new_provider", lambda: provider)
+    # The `isolated` fixture's store is a plain FilesystemStorage, which is
+    # exactly the backend under test here.
+
+    r = client.post(f"/v1/jobs/{job_id}/endpoint")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "endpoint_artifact_unreachable"
+    # Nothing was asked for, so nothing is billing. `create_calls` is the
+    # assertion and not `list_machine_ids`: the fake lists a machine from
+    # the start whether or not anyone created one.
+    assert provider.create_calls == []
+
+
+def test_the_grant_the_machine_gets_reads_one_key_and_expires(
+    client, tmp_path, monkeypatch
+):
+    """One key, and a lifetime no longer than the wait it serves.
+
+    A grant is a credential. This one exists to let the machine pull one
+    adapter member during the readiness window; anything broader would be
+    authority nobody needed.
+    """
+    from temper_control_plane import serving, storage
+
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    _remote_provider(monkeypatch, _RemoteFake())
+    granted = []
+    original = storage.STORE.mint_read_grant
+
+    def record(key, expires_in_s):
+        granted.append((key, expires_in_s))
+        return original(key, expires_in_s)
+
+    monkeypatch.setattr(storage.STORE, "mint_read_grant", record)
+    assert client.post(f"/v1/jobs/{job_id}/endpoint").status_code == 201
+
+    assert [k for k, _ in granted] == [
+        storage.artifact_key(job_id, name) for name in storage.ARTIFACT_MEMBERS
+    ]
+    assert {ttl for _, ttl in granted} == {serving.SERVE_GRANT_TTL_S}
+
+
+def test_the_signed_url_never_reaches_the_job_s_event_log(
+    client, tmp_path, monkeypatch
+):
+    """A grant in the events table is a credential on the finished-job page.
+
+    The start script carries signed URLs and its output is dropped rather
+    than classified into events. This asserts the whole log, not just the
+    lines the start writes, because the leak would be equally bad wherever
+    it landed.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    _remote_provider(monkeypatch, _RemoteFake())
+    assert client.post(f"/v1/jobs/{job_id}/endpoint").status_code == 201
+
+    logged = " ".join(str(e) for e in db.get_events(job_id))
+    assert "sig=" not in logged
+    assert "store.example" not in logged
 
 
 def test_a_model_that_never_loads_costs_no_key_and_no_machine(

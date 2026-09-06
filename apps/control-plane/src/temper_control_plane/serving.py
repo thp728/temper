@@ -511,6 +511,21 @@ def start_endpoint(
         currency = "INR"
     if provider is None:
         provider = new_provider()
+    # Refuse before anything is provisioned, not after. The machine fetches
+    # the adapter from the object store itself (ADR-0076), so a store whose
+    # grants only this process can redeem has nothing to offer it -- the same
+    # asymmetry the launch already refuses with `artifact_undeliverable`, and
+    # for the same reason: a machine billed in full that delivers nothing.
+    if provider.is_remote and not storage.STORE.grants_are_remotely_redeemable:
+        raise OrchestratorError(
+            "endpoint_artifact_unreachable",
+            "The configured object store hands out grants only this process "
+            "can redeem, so the serving machine would have nowhere to fetch "
+            "the adapter from. No machine was provisioned. Set "
+            "TEMPER_STORAGE_BACKEND=s3 with a bucket the machine can reach "
+            "(TEMPER_S3_BUCKET, TEMPER_S3_ENDPOINT_URL), or run with "
+            "TEMPER_FAKE_PROVIDER=1, which spends nothing.",
+        )
     # Provision the serving machine. Reuse the job's GPU type when known so
     # the endpoint can actually load the model; otherwise provision the
     # cheapest VM-capable type (L4), the same type the idle/max derivation
@@ -677,6 +692,11 @@ SERVE_CONTAINER = "temper-serve"
 # Replace the estimate with the first real measurement.
 SERVE_READY_TIMEOUT_S = 900.0
 
+# How long the adapter's read grant stays valid. The download happens once,
+# immediately, inside the readiness window, so there is no reason for the
+# grant to outlive the wait for the server it feeds.
+SERVE_GRANT_TTL_S = SERVE_READY_TIMEOUT_S
+
 # How long to leave between health probes. Each probe is an SSH round trip,
 # so this is not free; ten seconds against a load measured in minutes costs
 # a handful of connections and bounds the wasted wait to the same ten.
@@ -753,16 +773,39 @@ def _thinking_of(job: dict[str, Any]) -> bool:
     return False
 
 
+def _fetch_command(grant: storage.ReadGrant, dest: str) -> str:
+    """One line that pulls one granted object onto the machine.
+
+    The bytes go store-to-machine and never through this process. That is
+    ADR-0009's reasoning applied to the read: the control plane's uplink is
+    not on the path, so an endpoint start does not slow to the speed of
+    whatever connection the operator happens to have.
+
+    curl's own stderr is dropped because its failure messages quote the URL
+    it was handed, and that URL is a credential. What replaces it names the
+    file and nothing else, which is what a reader needs anyway.
+    """
+    name = grant.key.rsplit("/", 1)[-1]
+    return (
+        f"curl -sSfL --retry 3 --retry-delay 5 --max-time 900 "
+        f"-o {shlex.quote(dest)} {shlex.quote(grant.url)} 2>/dev/null "
+        f'|| {{ echo "could not fetch {name}" >&2; exit 1; }}'
+    )
+
+
 def _start_model_server(
     provider: Provider, machine: Machine, job: dict[str, Any]
 ) -> None:
     """Load the job's tuned model on the machine and leave it serving.
 
-    The adapter travels the way the dataset travels to a training machine:
-    read from the storage seam and pushed over the provider's stream, so the
-    control plane never holds it whole. The container then runs with the
-    published trainer image -- which already carries torch, transformers and
-    peft -- and binds the server to localhost only.
+    Only the server script is pushed, and it is a few kilobytes. The adapter
+    is fetched by the machine from the object store under a read grant, the
+    mirror of the write grant the training machine used to put it there --
+    the control plane hands over an address, not a hundred megabytes.
+
+    The container then runs the published trainer image, which already
+    carries torch, transformers and peft, and binds the server to the
+    machine's loopback only.
     """
     from .orchestrator import _trainer_reference
 
@@ -771,12 +814,15 @@ def _start_model_server(
     provider.push_stream(machine, [_serve_source()], SERVE_SCRIPT_PATH)
     # The artifact's own member list, not a second copy of those names: the
     # adapter the endpoint serves has to be the adapter the run delivered.
-    for name in storage.ARTIFACT_MEMBERS:
-        provider.push_stream(
-            machine,
-            storage.STORE.get_stream(storage.artifact_key(job_id, name)),
+    fetches = [
+        _fetch_command(
+            storage.STORE.mint_read_grant(
+                storage.artifact_key(job_id, name), SERVE_GRANT_TTL_S
+            ),
             f"{SERVE_ADAPTER_DIR}/{name}",
         )
+        for name in storage.ARTIFACT_MEMBERS
+    ]
     repo, revision = _base_of(job)
     # Assembled as a list so no single line grows past what a person can
     # read; `--network host` is what puts the server on the machine's own
@@ -800,6 +846,8 @@ def _start_model_server(
     script = "\n".join(
         [
             "set -euo pipefail",
+            f"mkdir -p {SERVE_ADAPTER_DIR}",
+            *fetches,
             f"sudo docker rm -f {SERVE_CONTAINER} >/dev/null 2>&1 || true",
             f"sudo docker pull {reference} 1>&2",
             run,
@@ -807,6 +855,9 @@ def _start_model_server(
             "",
         ]
     )
+    # The output is consumed and dropped rather than turned into events:
+    # this script carries signed URLs, and a grant that reaches the event
+    # log is a credential in a table the finished-job page renders.
     for _ in provider.stream(machine, script.encode("utf-8")):
         pass
 

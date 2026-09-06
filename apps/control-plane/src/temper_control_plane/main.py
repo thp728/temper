@@ -1628,6 +1628,10 @@ def create_endpoint(job_id: str):
                 # because its model never loaded, so no key exists and the
                 # start is refused -- the same shape as the two above it.
                 "endpoint_model_not_ready",
+                # And the one that refuses before provisioning: the store
+                # this deployment is on has no address the machine could
+                # fetch the adapter from.
+                "endpoint_artifact_unreachable",
             )
             else 400
         )

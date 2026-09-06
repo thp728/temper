@@ -26,7 +26,7 @@ Spending a user's money to return their own prompt is the one outcome that
 cannot be defended. The comment claiming otherwise is what turned a missing
 feature into a misrepresentation.
 
-Closing it took five decisions, and none of them is obvious.
+Closing it took six decisions, and none of them is obvious.
 
 ## Decision
 
@@ -54,6 +54,30 @@ refused as `endpoint_model_not_ready`. Readiness is asked of the server
 rather than timed: how long weights take to download and load depends on
 the base model and the network, so a sleep would either waste the user's
 money or hand out a key the endpoint cannot honour.
+
+**The machine fetches the adapter from the store, not from the control
+plane.** `mint_read_grant` is the missing half of `mint_write_grant`: the
+training machine wrote the adapter to the store under a scoped write grant
+(ADR-0009), and the serving machine reads the same object back under a
+scoped read grant. The control plane hands over an address, not a hundred
+megabytes.
+
+This was decided on where the bytes belong, not on whether the other way
+would have worked. The alternative was to stream the artifact through this
+process and push it over SSH, and the previous session measured this
+machine sustaining 70 MB to R2 in 40.4s (about 1.75 MB/s), so the 132 MB
+adapter would probably have squeaked under `PUSH_TIMEOUT_S`'s 180-second
+bound. The reason to reject it is that it puts the operator's uplink on the
+path of every endpoint start for no benefit, and reverses a separation
+ADR-0009 made deliberately. Someone re-measuring on a faster connection
+would find the push adequate and the decision unchanged.
+
+The filesystem backend cannot mint a read grant -- there is no server on
+this host for a machine to fetch from -- so a remote endpoint start on it
+is refused with `endpoint_artifact_unreachable` before anything is
+provisioned. That is the same asymmetry `grants_are_remotely_redeemable`
+already names and the launch already refuses with `artifact_undeliverable`,
+and it stays true rather than being papered over with a push fallback.
 
 **The endpoint stores its machine's SSH handle** (migration
 `0008_endpoint_machine_handle`). A training run holds its `Machine` in
@@ -124,7 +148,11 @@ on each screen.
 - `serve.py` is not in `TRAINER_SOURCES`, so it is the one piece of trainer
   code not pinned by the image digest. What runs on a serving machine is the
   file in the working tree of the control plane that started it.
-- Nine tests cover this, including the one that would have caught the
+- The start script carries signed URLs, so its output is consumed and
+  dropped rather than classified into events, and curl's stderr is
+  suppressed because its failure messages quote the URL it was handed. A
+  grant in the events table would be a credential on the finished-job page.
+- Sixteen tests cover this, including the one that would have caught the
   original defect: a completion from a remote provider must not contain the
   prompt. None of it has run against real hardware yet, and until it has,
   "implemented" means the tests pass and nothing more.
