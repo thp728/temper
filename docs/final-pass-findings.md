@@ -133,7 +133,24 @@ sides on an interval until it caught the moment:
 For about twelve seconds the machine is created, listed and billing while no
 job row claims it. The reconciler runs every thirty seconds and destroys
 whatever it cannot account for, so a pass landing in that window kills a live
-machine mid-provision. Two of five real runs hit it.
+machine mid-provision. One run in six hit it.
+
+**And the record then hides it.** That run's final `error_code` is
+`ssh_unreachable`, not `orphaned_machine`, because two writers raced for the
+job's terminal state and the less accurate one won:
+
+```
+05:29:03  reconciler destroys 498681 as unowned, marks the job orphaned_machine
+05:29-32  the orchestrator, unaware, keeps polling SSH on a machine that is gone
+05:32:42  destroy attempt 1/3 -- Instance 498681 not found
+05:32:53  destroy refused after 3 attempts
+05:32:58  gives up after the full 300s SSH timeout, overwrites with ssh_unreachable
+```
+
+Only the reconciliation log still names the real cause. Anyone reading the job
+record sees a machine that would not accept SSH, and would go looking at the
+network or the key. Three hundred seconds of a paid machine's timeout were
+also spent waiting for a host that had already been destroyed.
 
 The cause is structural. `provider.create` blocks until the SDK returns, but
 the instance exists at the provider the moment the call lands, and the
@@ -236,6 +253,32 @@ Real runs on a real L4, once the trainer image was published:
 
 Total spend across the pass: about twelve rupees. Every machine was destroyed
 and every teardown confirmed by listing; the account ended with none.
+
+## Artifact delivery is still unproven, and the tunnel was the wrong tool
+
+The last run trained to completion on a real L4 and then failed on delivery:
+
+```
+05:49:14  [trainer] comparison: 1 held-out prompt(s) through base and chosen checkpoint (step 5)
+05:49:27  [trainer] capability: 8 general question(s) through base and chosen checkpoint (step 5)
+05:52:08  [trainer] training complete in 116.9s
+05:54:32  client_loop: send disconnect: Connection reset
+```
+
+Training, the held-out comparison and the capability check all ran. Then two
+and a half minutes of silence -- the upload window -- and the connection
+reset. Nothing but the dataset ever reached the bucket.
+
+The cause was the tunnel, not the platform. A cloudflared quick tunnel cannot
+carry an artifact: 70 MB returned 503, and on retest even 5 MB timed out at
+524. The probe that "proved" the tunnel worked had pushed 27 bytes, which is
+the kind of test that proves nothing -- an upload path has to be probed at
+the size it will actually carry. The adapter here is roughly 66 MB (33M
+trainable parameters in bf16).
+
+Real delivery needs storage the machine can reach that will accept a
+hundred-megabyte PUT: an S3 bucket, R2, or MinIO behind something sturdier
+than a quick tunnel.
 
 ## Still not exercised
 
