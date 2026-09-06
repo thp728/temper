@@ -712,11 +712,23 @@ def _consume(job_id: str, lines) -> dict:
             resume_logic.INTERRUPTED_CODE,
             resume_logic.INTERRUPTED_MESSAGE,
         )
+    document = "\n".join(result_lines)
     try:
-        return json.loads("\n".join(result_lines))
+        return json.loads(document)
     except json.JSONDecodeError as e:
+        # What could not be parsed goes in the message. Without it this
+        # says only *that* the document was malformed, at a byte offset
+        # into text nothing kept -- and the machine that produced it has
+        # been destroyed by the time anyone reads this, so the evidence
+        # is gone with it. A real run hit exactly that: "Expecting ','
+        # delimiter: line 1 column 4 (char 3)" against a document nobody
+        # could see, on a run that had already cost 17 rupees. Bounded,
+        # because a result document carries a resolved chat template and
+        # can be long.
         raise OrchestratorError(
-            "training_failed", f"Trainer's result document did not parse: {e}"
+            "training_failed",
+            f"Trainer's result document did not parse: {e}. The document "
+            f"began: {document[:400]!r}",
         ) from e
 
 

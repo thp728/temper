@@ -442,13 +442,130 @@ Real delivery needs storage the machine can reach that will accept a
 hundred-megabyte PUT: an S3 bucket, R2, or MinIO behind something sturdier
 than a quick tunnel.
 
+## The delivery formats: the estimate was wrong and the image cannot make one
+
+Run on a real L4, 2026-09-06: `job_6c459c2cfbd1`, a 12-row dataset with
+`merged` and `quantised` ticked at launch. It failed after 25 minutes and
+INR 17.36, and it was worth every paisa.
+
+### The quote ignores packaging, confirmed
+
+Predicted before the run, from reading: `quote_for_launch` receives
+`dataset_id`, `base_model`, `hyperparameters` and `overrides` — the
+launch's `delivery_request` goes to `jobs.create` and never reaches the
+quote — and `quote.PHASES` ends at `teardown`. Measured after it:
+
+```
+phases the quote priced: ['provisioning', 'readiness', 'image_pull',
+                          'model_download', 'training', 'teardown']
+packaging priced: False
+```
+
+The job's own actuals carry a `packaging` stage the quote has no
+counterpart for. So this is not a coefficient that is off; there is no
+phase to be off.
+
+| | predicted | actual |
+| --- | --- | --- |
+| duration | 168–438s | 1513s |
+| cost | INR 1.94–5.03 | INR 17.36 |
+
+**3.5x the high end on duration, 3.45x on cost**, against a cold run's
+2.7x already recorded above. Two multiplicative misses, and this one grows
+with the model: merging is proportional to the base, so a bigger model
+makes the estimate worse rather than better.
+
+The arithmetic underneath is more embarrassing than the ratio. Axolotl
+reported `train_runtime: 17.37` — seventeen seconds of actual training
+inside a 1455-second "training" stage. Everything else was the held-out
+comparison, the capability check, the merge and the delivery attempt, none
+of which the estimate models at all.
+
+### The image cannot produce the quantised format
+
+```
+[trainer] ERROR: DeliveryFailure: the GGUF converter is not on the image's
+PATH; this export cannot produce the quantised local format. Refusing
+rather than shipping a file that is not the format its name claims.
+```
+
+`quantised` is offered in the launch UI, described in `/v1/jobs/spec` as
+"the 'run it on your own machine' format", accepted by the launch, priced
+at nothing, and then cannot be produced by the published image. The merge
+succeeded first — "Writing model shards: 100%" — so the run got all the way
+to the last step before discovering it.
+
+The refusal itself is exactly right, and says so: it will not ship a file
+that is not the format its name claims. What is wrong is where it happens.
+Nothing between the checkbox and the GPU asks whether the image can honour
+the request, so the user pays for a full run to find out. `/v1/jobs/spec`
+already publishes `trainer_image_published` and `artifact_deliverable`
+before a launch; the producible formats belong in the same answer.
+
+**Status: open.** Either put the converter in the image, or have the spec
+publish which formats the pinned image can actually produce and refuse the
+rest before provisioning.
+
+### The failure reached the user as `training_failed`
+
+The job record says:
+
+```
+training_failed — Trainer's result document did not parse:
+Expecting ',' delimiter: line 1 column 4 (char 3)
+```
+
+Training succeeded. It took seventeen seconds and converged (loss 5.46 to
+2.54, held-out 6.76 to 3.99). What failed was a delivery format, and the
+trainer named it precisely. That diagnosis then died in transit: the result
+document did not parse, so the orchestrator raised its own generic code and
+the real reason survives only in the event log.
+
+This is the third instance of one shape in this document — a specific,
+already-diagnosed failure arriving under a generic name — and the second
+found on hardware today.
+
+**Worse, the parse error discarded its own evidence.** A byte offset into
+text nobody kept, on a machine destroyed before anyone read the record.
+Two paid runs would be needed to learn what the first one already knew.
+
+**Status: partly fixed.** The parse failure now quotes what it could not
+parse, so the next occurrence is diagnosable from the record it leaves. The
+laundering of the delivery failure into `training_failed` is not fixed: a
+result document that fails to parse is not a training failure, and a
+delivery refusal deserves its own stable code.
+
+### Merging is silent for twelve minutes, against a fifteen-minute limit
+
+```
+Output resumed after 738s of silence (stall limit 900s)
+```
+
+The merge writes nothing while it runs. It came within 162 seconds of
+tripping the stall detector, which would have destroyed a machine that was
+working correctly. The margin is not a design; it is where a 4B model
+happens to land. A 7B would trip it.
+
+**Status: open.** The stall limit is a training-shaped constant applied to a
+phase that is not training.
+
+### The chat template is dumped into the job log
+
+Roughly 190 events of raw Jinja, twice, one line per template line. It is
+the resolved template being logged, and it drowns the run it belongs to —
+the events API caps at 500, so on this run the template alone consumed most
+of the readable history.
+
+**Status: open. Cosmetic, and it makes every other finding harder to find.**
+
 ## Still not exercised
 
-- the delivery formats, merged and quantised
 - cancel mid-run
 
-The serving endpoint came off this list on 2026-09-06: a real L4 loaded the
-model and answered a real prompt, and what that run found is recorded above.
+Two came off this list on 2026-09-06. A real L4 loaded a tuned model and
+answered a real prompt; another ran a launch with both delivery formats
+ticked. Neither went cleanly, and what they found is recorded above --
+which is the point of running them.
 
 Retry needs no hardware and turns out not to exist as a general control: the
 API offers a retry only for `training_diverged`, at half the learning rate,
