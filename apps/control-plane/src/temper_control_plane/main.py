@@ -769,12 +769,21 @@ def get_job_spec_preview(dataset_id: str):
     image_published = (
         config.FAKE_PROVIDER or trainer_build.published_reference() is not None
     )
+    # And whether the machine could upload what it produces. The filesystem
+    # backend's grants are tokens only this process redeems, so a real run on
+    # it is billed in full and delivers nothing; the orchestrator refuses
+    # with `artifact_undeliverable`, and saying so here means the launch
+    # screen can refuse before the money rather than after it.
+    artifact_deliverable = (
+        config.FAKE_PROVIDER or storage.STORE.grants_are_remotely_redeemable
+    )
     return {
         "dataset": ds,
         "hyperparameters": hyperparams.effective({}),
         "warning": warn,
         "delivery_formats": delivery_formats,
         "trainer_image_published": image_published,
+        "artifact_deliverable": artifact_deliverable,
     }
 
 

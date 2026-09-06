@@ -684,6 +684,7 @@ export default function NewJobWizard({
   // Absent means an older control plane that does not publish the field;
   // treat that as published so a missing field never blocks a launch.
   const imagePublished = preview?.trainer_image_published ?? true;
+  const artifactDeliverable = preview?.artifact_deliverable ?? true;
   const preflight = (() => {
     if (!preview) return [];
     const vramPass =
@@ -726,6 +727,16 @@ export default function NewJobWizard({
           ? "Published — the machine can pull the image this job runs"
           : "image_not_published — publish the trainer image before launching",
         pass: imagePublished,
+      },
+      // The other end of the same rule. A store whose grants only the
+      // control plane can redeem leaves the machine nowhere to upload to,
+      // and the run is billed in full before anyone finds out.
+      {
+        title: "Artifact delivery",
+        detail: artifactDeliverable
+          ? "The machine can upload the adapter it produces"
+          : "artifact_undeliverable — the object store is not reachable from the machine",
+        pass: artifactDeliverable,
       },
     ];
   })();
@@ -2006,7 +2017,8 @@ export default function NewJobWizard({
               // before it provisions anything, so pressing Launch can only
               // produce a failed job. Refusing here costs the user a click
               // instead of a job record; the pre-flight row above says why.
-              disabled: busy || !preview || !imagePublished,
+              disabled:
+                busy || !preview || !imagePublished || !artifactDeliverable,
             }}
             secondary={{ label: "Back to hardware", onClick: () => go(3) }}
           />

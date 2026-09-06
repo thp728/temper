@@ -171,6 +171,18 @@ class Machine:
 class Provider(Protocol):
     """Everything the orchestrator is allowed to know about compute."""
 
+    # Whether this provider runs work on another machine. The simulated one
+    # executes in-process and crosses no network, and several guards only
+    # make sense against a machine that is genuinely elsewhere -- notably
+    # whether the object store's grants can be redeemed from it.
+    #
+    # Declared on the protocol rather than inferred from `config.FAKE_PROVIDER`
+    # because the switch and the object can disagree: the suite injects a
+    # simulated provider directly while the environment variable is unset,
+    # and a guard keyed on the variable then fires against a run that never
+    # leaves the process.
+    is_remote: bool
+
     def gpu_availability(self) -> Sequence[GpuAvailability]:
         """What the provider has free right now, filtered to machine-capable
         types -- `workload_type == "vm"`, since container-only capacity is a
@@ -278,6 +290,8 @@ def _ssh(handle: str) -> list[str]:
 
 class JarvisLabsProvider:
     """The real thing. Constructing one requires credentials."""
+
+    is_remote = True
 
     def __init__(self) -> None:
         from . import config

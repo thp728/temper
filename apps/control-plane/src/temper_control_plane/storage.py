@@ -158,6 +158,20 @@ class GrantInvalid(Exception):
 class Storage(Protocol):
     """What every backend promises. This protocol *is* the seam."""
 
+    # Whether a grant this backend mints can be redeemed from another
+    # machine. It is part of the seam because it decides whether a real run
+    # can deliver anything at all: the trainer uploads its artifact by
+    # redeeming a grant from the GPU, so a backend whose grants only the
+    # control plane can resolve cannot receive one.
+    #
+    # Learned from a paid run. Eleven minutes of real training on an L4 ended
+    # in `artifact_unverified`, with the machine reporting `unknown url type:
+    # temper-local` -- the filesystem backend's grant scheme, which is not a
+    # network URL. Everything was billed and nothing was delivered, and no
+    # test caught it because the fake provider writes artifacts locally and
+    # never redeems a grant across a network.
+    grants_are_remotely_redeemable: bool
+
     def put(self, key: str, data: bytes) -> None:
         """Store one object whole. Overwrites an existing object at the key."""
         ...
@@ -234,6 +248,10 @@ class FilesystemStorage:
     """Keys under one root directory. The default backend."""
 
     scheme = "temper-local"
+
+    # `temper-local:` is a token this process signs and redeems, not a URL
+    # anything can fetch. Only the control plane can honour it.
+    grants_are_remotely_redeemable = False
 
     def __init__(self, root: Path, secret: bytes | None = None):
         self._root = root
@@ -356,6 +374,12 @@ class S3Storage:
     is injectable because the tests build one against an in-process mock and
     constructing a real one here would couple the seam to the network.
     """
+
+    # Grants are presigned HTTPS URLs, so a machine holding one can PUT to it
+    # without credentials of its own. Whether the endpoint is reachable from
+    # a particular machine is a deployment question this cannot answer; what
+    # it asserts is that the grant is a URL rather than a private token.
+    grants_are_remotely_redeemable = True
 
     def __init__(
         self,

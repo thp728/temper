@@ -129,6 +129,9 @@ def simulated_limits(
 
 
 class FakeProvider:
+    # Runs in-process: no machine, no network, nothing to reach it from.
+    is_remote = False
+
     def __init__(
         self,
         *,

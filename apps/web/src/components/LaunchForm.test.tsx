@@ -417,6 +417,24 @@ describe("LaunchForm", () => {
     expect(createJobMock).not.toHaveBeenCalled();
   });
 
+  // The other end of the same rule: a store the machine cannot upload to
+  // means a run that is billed in full and delivers nothing.
+  it("refuses to launch when the artifact could not be delivered", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview({ artifact_deliverable: false })}
+        surface={null}
+      />,
+    );
+    await goToReview(user);
+    expect(screen.getByText(/artifact_undeliverable/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Launch job" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).not.toHaveBeenCalled();
+  });
+
   // A control plane that does not publish the field must not block a launch:
   // an absent check passes open, like the other four.
   it("launches when the published field is absent", async () => {

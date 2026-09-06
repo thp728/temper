@@ -547,6 +547,12 @@ class JobSpecPreview(BaseModel):
     condition that actually blocks a real run, beside the four it already
     checks. Always true under the simulated provider, which pulls no image.
 
+    `artifact_deliverable` is the same guarantee for the other end of the
+    run: whether the object store hands out grants a machine could actually
+    upload to. The filesystem backend's are tokens only this process can
+    redeem, so a real run on it trains for its full duration and then fails
+    with `artifact_undeliverable` having delivered nothing.
+
     Deliberately quote-free: the plan page renders immediately and fetches the
     quote for the selected model afterwards, because an estimate never blocks
     the surface it appears on (spec 005)."""
@@ -556,6 +562,7 @@ class JobSpecPreview(BaseModel):
     warning: FeasibilityWarning | None = None
     delivery_formats: list[DeliveryFormatOption] = Field(default_factory=list)
     trainer_image_published: bool = True
+    artifact_deliverable: bool = True
 
 
 class DeliveryFormatOption(BaseModel):
