@@ -578,10 +578,32 @@ Output resumed after 738s of silence (stall limit 900s)
 The merge writes nothing while it runs. It came within 162 seconds of
 tripping the stall detector, which would have destroyed a machine that was
 working correctly. The margin is not a design; it is where a 4B model
-happens to land. A 7B would trip it.
+happens to land. A 7B would trip it -- and did.
 
-**Status: open.** The stall limit is a training-shaped constant applied to a
-phase that is not training.
+**Confirmed on hardware, 2026-09-06.** A launch against a real Llama-2-7B
+(`unsloth/llama-2-7b-chat`, admitted through the compatibility probe with no
+findings) and a 300-row customer-service dataset, `merged` delivery only,
+ran QLoRA training to completion -- the job's own events show the merge's
+`Loading weights: 100%` and `Writing model shards: 100%` lines -- and was
+then killed by the reconciler-adjacent guard: `failed (gpu_stalled)`,
+"The job produced no output for 900s and was treated as stalled." The
+model shards finished writing at 22:41:34; the next event was the failure
+itself. The merge and the artifact upload for a real 7B model produced zero
+output for longer than the stall budget, and the guard did exactly what it
+is built to do: destroy a machine it cannot tell from a wedged one. Cost:
+INR 27.41, four minutes short of the training-only run's total.
+
+**Status: fixed.** `apps/trainer/delivery.py` gains a `heartbeat` context
+manager: while the merge (or quantise) conversion runs and while each
+format's upload runs, a background thread logs progress every 120 seconds
+-- comfortably inside the 900-second budget -- so a slow-but-healthy export
+keeps talking instead of going silent. `run_delivery` and the canonical
+artifact's own upload in `entrypoint.py` both take the same `log`. A test
+proves it: a merge and upload each stubbed to run past one fast heartbeat
+interval must emit their message; reverting the wrapping (verified) makes
+that test fail with `assert False` in exactly the way the hardware run
+did. Not yet re-verified on hardware -- that needs a second 7B run, and the
+fix is provable without one.
 
 ### The chat template is dumped into the job log
 

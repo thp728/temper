@@ -48,7 +48,7 @@ import capability as capability_step
 import checkpoints as checkpoint_upload
 import comparison as comparison_step
 from checkpoint import select_best_checkpoint
-from delivery import DeliveryFailure, run_delivery
+from delivery import DeliveryFailure, heartbeat, run_delivery
 from split import held_out_split
 from template_probe import (
     PROBE_UNAVAILABLE_CODE,
@@ -1875,9 +1875,10 @@ def main() -> int:
             # training.
             grant_block = job.get("artifact_upload")
             if isinstance(grant_block, dict) and grant_block.get("url"):
-                result["artifact_upload"] = upload_artifact(
-                    grant_block["url"], OUT_DIR / result["artifact_path"]
-                )
+                with heartbeat(log, "uploading the canonical artifact"):
+                    result["artifact_upload"] = upload_artifact(
+                        grant_block["url"], OUT_DIR / result["artifact_path"]
+                    )
             else:
                 result["artifact_upload"] = {
                     "ok": False,
@@ -1902,6 +1903,7 @@ def main() -> int:
                 probe=probe_export,
                 cfg=cfg,
                 grants=job.get("delivery_grants"),
+                log=log,
             )
             if delivery_records:
                 result["delivery"] = delivery_records

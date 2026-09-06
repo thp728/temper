@@ -48,7 +48,10 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from collections.abc import Callable
+import threading
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +60,48 @@ from typing import Any
 # data the core module reads and re-derives the order from it; the host suite
 # pins this trainer's order to the core module's so the two cannot drift.
 CONVERSION_ORDER = ("merge", "quantise")
+
+# How often a heartbeat reports, well under the control plane's stall
+# timeout (15 minutes by default -- `temper_control_plane.config.
+# STALL_TIMEOUT_S`). Found on real hardware, 2026-09-06: a 7B model's merge
+# (load two copies of the base, merge, save 13.5 GB to disk, tar it) and its
+# upload ran silent long enough to trip the stall detector and destroy a
+# healthy machine mid-export. `upload_artifact`'s own docstring says a
+# wedged upload is "already caught by the job's stall detector" -- true only
+# if a *healthy* one keeps talking. This is what makes that true.
+HEARTBEAT_INTERVAL_S = 120.0
+
+
+@contextmanager
+def heartbeat(
+    log: Callable[[str], None] | None, message: str
+) -> Iterator[None]:
+    """Log `message` on an interval while the wrapped block runs silently.
+
+    A no-op when `log` is `None`, so callers that do not care about the
+    stall detector (the host test suite, a standalone run) pay nothing. The
+    thread is a daemon and stopped in `finally`, so an exception from the
+    wrapped block still stops it and still propagates.
+    """
+    if log is None:
+        yield
+        return
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def _beat() -> None:
+        while not stop.wait(HEARTBEAT_INTERVAL_S):
+            log(f"{message} ({time.monotonic() - started:.0f}s elapsed)")
+
+    thread = threading.Thread(
+        target=_beat, daemon=True, name="delivery-heartbeat"
+    )
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1.0)
 
 
 def _contract_path() -> Path:
@@ -437,6 +482,7 @@ def run_delivery(
     cfg: dict | None = None,
     load_verify: Callable[[Path, str], dict] = verify_loaded,
     grants: list[dict] | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> list[dict]:
     """Produce the job's requested delivery formats, in order, verified.
 
@@ -447,6 +493,10 @@ def run_delivery(
     format, minted by the control plane, same shape as the artifact's). Every
     step's outcome is recorded, so result.json says what was produced, what
     was verified, and what reached storage.
+
+    `log`, when given, wraps each conversion and each upload in a heartbeat
+    (see `heartbeat` above): both can run silent for minutes on a large
+    model, and a healthy-but-slow run must not read as the stall it is not.
 
     Returns the per-format records, in delivery order, ready for result.json.
     """
@@ -468,8 +518,9 @@ def run_delivery(
             probe,
             load_verify,
             lambda: merge_adapter(job, out_dir),
+            log,
         )
-        _upload(rec, upload, out_dir, grants_by_format.get("merged"))
+        _upload(rec, upload, out_dir, grants_by_format.get("merged"), log)
         records.append(rec)
         produced["merged"] = out_dir / rec["path"]
 
@@ -492,8 +543,9 @@ def run_delivery(
             probe,
             load_verify,
             lambda: quantise_merged(merged_archive, out_dir),
+            log,
         )
-        _upload(rec, upload, out_dir, grants_by_format.get("quantised"))
+        _upload(rec, upload, out_dir, grants_by_format.get("quantised"), log)
         records.append(rec)
 
     return records
@@ -508,6 +560,7 @@ def _produce_and_verify(
     probe: Callable[[dict, dict, Any], Any],
     load_verify: Callable[[Path, str], dict],
     produce: Callable[[], dict],
+    log: Callable[[str], None] | None = None,
 ) -> dict:
     """Run one conversion, verify its result by loading it, and probe it.
 
@@ -520,7 +573,8 @@ def _produce_and_verify(
     without it would be recorded as "unknown format" and never served. A value
     two components must agree on is written once, here, and read there.
     """
-    record = produce()
+    with heartbeat(log, f"producing {format_id}"):
+        record = produce()
     record["format"] = format_id
     path = out_dir / record["path"]
     verdict = load_verify(path, format_id)
@@ -536,7 +590,11 @@ def _produce_and_verify(
 
 
 def _upload(
-    record: dict, upload: UploadFn, out_dir: Path, grant: dict | None
+    record: dict,
+    upload: UploadFn,
+    out_dir: Path,
+    grant: dict | None,
+    log: Callable[[str], None] | None = None,
 ) -> None:
     """PUT one produced format to its scoped grant, and record the outcome.
 
@@ -551,4 +609,6 @@ def _upload(
             "on the machine",
         }
         return
-    record["upload"] = upload(grant["url"], out_dir / record["path"])
+    format_id = record.get("format", "delivery format")
+    with heartbeat(log, f"uploading {format_id}"):
+        record["upload"] = upload(grant["url"], out_dir / record["path"])
