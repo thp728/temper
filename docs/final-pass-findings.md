@@ -248,11 +248,87 @@ simulated tier alone. The endpoint also stores its machine's SSH handle
 (migration 0008), without which an inference request had a machine id and
 no way to reach the machine.
 
-Six tests cover it, including the one that would have caught the original
-defect: a completion from a remote provider must not contain the prompt.
-None of it has run against a real L4 yet -- the round trip is the next
-thing to prove, and until it does, "implemented" here means the tests pass
-and nothing more.
+**Proven on a real L4, 2026-09-06.** Machine 498869, nine minutes of
+warm-up, one prompt, teardown confirmed by listing. About 7 rupees.
+
+```
+[15:25:10] starting endpoint (provisions an L4 and loads the model)
+[15:34:17] start -> 201 after 547s
+[15:34:26] {"completion": "<think>\nOkay, the user is asking for the
+           capital of France. I need to make sure I provide the correct an...
+[15:35:13] listing 1/10: []  teardown CONFIRMED
+```
+
+That is the model, not the template, and it is the first time this
+platform's endpoint has answered with something it generated.
+
+The run bought three findings that no amount of reading had produced.
+
+### The answer arrived and was thrown away
+
+The 547-second start succeeded and the inference returned **502
+`endpoint_generation_failed`** against a completion sitting right there in
+the message. `provider.stream` folds stderr into stdout by design, one
+ordered channel being what the transport delivers, so `ssh` saying
+
+```
+Warning: Permanently added '217.18.55.26' (ED25519) to the list of known hosts.
+```
+
+lands in the same text as the reply, and parsing the whole stream as JSON
+refused a genuine answer.
+
+The readiness probe went through the same banner unharmed, because it tests
+for the substring `"ready": true` rather than parsing. Two calls on one
+channel, one strict and one not, and only the strict one broke.
+
+**Status: fixed.** The generation is preceded by a marker line and only what
+follows it is parsed, which is how the trainer's own result crosses this
+channel (`orchestrator.RESULT_MARKER`) for the same reason. Three tests, one
+quoting the banner from this run verbatim; with the old parse restored it
+fails with the exact message the run produced.
+
+### Thinking mode was requested off and the model thought anyway
+
+The endpoint passed `TEMPER_ENABLE_THINKING=0` for a job whose dataset
+detected `enable_thinking: false`, and the answer opened with a thinking
+block regardless.
+
+Qwen3's template, read from the pinned revision, decides on a top-level
+variable:
+
+```jinja
+{%- if enable_thinking is defined and enable_thinking is false %}
+```
+
+`is defined` is the whole difficulty. `serve.py` passed the value as
+`chat_template_kwargs={"enable_thinking": False}`. Newer transformers merges
+that into the render context; older transformers forwards it as a template
+variable *of that name*, leaving `enable_thinking` undefined and the test
+failing open. Thinking stays on and nothing says so.
+
+**Status: fixed in `serve.py`**, which now spreads the value as a keyword so
+it reaches the render context on any version.
+
+**Open, and worth more than the fix.** The trainer's own comparison uses the
+same `chat_template_kwargs=` shape (`entrypoint._ModelGenerator.generate`,
+`template_probe._tokenise`). If the image's transformers does not recognise
+that parameter, then every side-by-side comparison this platform has shown
+was rendered under a template the run did not train with, and
+`build_config`'s own comment says the same value must be applied at serving.
+One observation from the serving path is not proof about the training path.
+What settles it is rendering one conversation both ways inside the pinned
+image and diffing the two strings. That is nearly free on the next machine
+that exists, and it has not been run.
+
+### The interface shows nothing while it warms
+
+Nine minutes of `GET .../endpoint` answering 404, because a `starting` row
+and "no endpoint yet" are the same answer to that route. The job's event log
+does carry a line saying an endpoint is starting, so the state is recorded,
+just not where someone waiting would look.
+
+**Status: open.**
 
 ## The endpoint could never have worked, and the UI hid the reason
 
@@ -369,9 +445,10 @@ than a quick tunnel.
 ## Still not exercised
 
 - the delivery formats, merged and quantised
-- the serving endpoint and an inference round trip, now that there is a
-  real generation to exercise
 - cancel mid-run
+
+The serving endpoint came off this list on 2026-09-06: a real L4 loaded the
+model and answered a real prompt, and what that run found is recorded above.
 
 Retry needs no hardware and turns out not to exist as a general control: the
 API offers a retry only for `training_diverged`, at half the learning rate,

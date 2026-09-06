@@ -461,17 +461,33 @@ class _RemoteFake(FakeProvider):
 
     is_remote = True
 
-    def __init__(self, *, healthy_after=0, completion="Paris.", raw=None):
+    def __init__(
+        self,
+        *,
+        healthy_after=0,
+        completion="Paris.",
+        raw=None,
+        banner=None,
+    ):
         super().__init__()
         self.scripts: list[str] = []
         self.health_probes = 0
         self._healthy_after = healthy_after
         self._completion = completion
         self._raw = raw
+        # What the connection says before the command does. `provider.stream`
+        # folds stderr into stdout, so this arrives in the same text as the
+        # reply -- which is how a real completion came to be refused.
+        self._banner = banner
 
     def stream(self, machine, script):
         text = script.decode("utf-8")
         self.scripts.append(text)
+        if self._banner:
+            yield self._banner
+        for line in text.splitlines():
+            if line.strip().startswith("echo "):
+                yield line.strip()[len("echo ") :]
         if "/health" in text:
             self.health_probes += 1
             yield json.dumps(
@@ -885,6 +901,80 @@ def test_a_failed_start_leaves_no_row_claiming_a_destroyed_machine(
     assert db_mod.list_active_endpoint_machine_ids(1800.0) == []
     # And a second attempt is not blocked by the abandoned one.
     assert provider.list_machine_ids() == []
+
+
+def test_a_real_completion_survives_ssh_talking_over_it(
+    client, tmp_path, monkeypatch
+):
+    """The first paid endpoint answered, and the answer was thrown away.
+
+    `provider.stream` folds stderr into stdout on purpose: one ordered
+    channel is what the transport delivers. So `ssh` saying
+
+        Warning: Permanently added '217.18.55.26' (ED25519) to the list of
+        known hosts.
+
+    lands in the same text as the reply, and parsing the whole stream as
+    JSON refused a genuine `{"completion": "<think>\\nOkay, the user is
+    asking for the capital of France..."}`. The banner here is the one the
+    machine actually sent, quoted from that run.
+    """
+    banner = (
+        "Warning: Permanently added '217.18.55.26' (ED25519) to the list "
+        "of known hosts."
+    )
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    _remote_provider(
+        monkeypatch, _RemoteFake(completion="Paris.", banner=banner)
+    )
+    created = client.post(f"/v1/jobs/{job_id}/endpoint").json()
+
+    r = client.post(
+        f"/v1/jobs/{job_id}/endpoint/infer",
+        json={"prompt": "What is the capital of France?"},
+        headers={"X-API-Key": created["api_key"]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["completion"] == "Paris."
+
+
+def test_the_readiness_probe_also_survives_it(client, tmp_path, monkeypatch):
+    """The probe asks one yes-or-no question and must not be strict.
+
+    It answered correctly through the same banner on real hardware, because
+    it tests for a substring rather than parsing. That is deliberate rather
+    than lucky, and this keeps it that way.
+    """
+    banner = "Warning: Permanently added 'x' (ED25519) to the list of hosts."
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    provider = _remote_provider(
+        monkeypatch, _RemoteFake(healthy_after=1, banner=banner)
+    )
+    assert client.post(f"/v1/jobs/{job_id}/endpoint").status_code == 201
+    assert provider.health_probes == 2
+
+
+def test_a_banner_with_no_answer_behind_it_is_still_diagnosable(
+    client, tmp_path, monkeypatch
+):
+    """What could not be parsed reaches the user, not an empty string.
+
+    A marker that never arrived means the whole text is the best evidence
+    there is, and hiding it would leave someone debugging a blank message.
+    """
+    job_id = _complete_job(client, tmp_path, monkeypatch)
+    _remote_provider(
+        monkeypatch, _RemoteFake(raw="curl: (7) Failed to connect")
+    )
+    created = client.post(f"/v1/jobs/{job_id}/endpoint").json()
+
+    r = client.post(
+        f"/v1/jobs/{job_id}/endpoint/infer",
+        json={"prompt": "hello"},
+        headers={"X-API-Key": created["api_key"]},
+    )
+    assert r.status_code == 502
+    assert "Failed to connect" in r.json()["detail"]["message"]
 
 
 def test_a_server_that_answers_nonsense_is_not_passed_off_as_a_completion(

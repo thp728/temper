@@ -857,6 +857,38 @@ def _fetch_command(grant: storage.ReadGrant, dest: str) -> str:
     )
 
 
+# What the machine's answer starts on. `provider.stream` folds stderr into
+# stdout on purpose -- one ordered channel is what the transport delivers --
+# so anything the connection says lands in the same text as the reply. The
+# first real endpoint run answered a genuine completion and it was refused,
+# because `ssh` had prefixed the JSON with
+#
+#   Warning: Permanently added '217.18.55.26' (ED25519) to the list of
+#   known hosts.
+#
+# and the whole stream would not parse. A marker is how the trainer's own
+# result crosses the same channel (`orchestrator.RESULT_MARKER`), and the
+# reason is identical: a channel that carries narration cannot also be
+# assumed to carry only a document.
+GENERATION_MARKER = "---GENERATION---"
+
+
+def _after_marker(output: str, marker: str) -> str:
+    """Everything after the last `marker` line, or the whole text if absent.
+
+    The last, not the first: a retry or a reconnect can put a second banner
+    in front of a second attempt, and the answer that matters is the one the
+    command actually ended with. Falling back to the whole text keeps a
+    provider that never emits the marker diagnosable -- the caller reports
+    what it could not parse, which is more use than an empty string.
+    """
+    lines = output.splitlines()
+    for index in range(len(lines) - 1, -1, -1):
+        if lines[index].strip() == marker:
+            return "\n".join(lines[index + 1 :])
+    return output
+
+
 def _start_model_server(
     provider: Provider, machine: Machine, job: dict[str, Any]
 ) -> None:
@@ -938,9 +970,12 @@ def _await_model_ready(provider: Provider, machine: Machine) -> None:
     probe = f"curl -sf --max-time 5 http://127.0.0.1:{INFERENCE_PORT}/health || true"
     last = ""
     while time.time() < deadline:
-        last = ""
-        for line in provider.stream(machine, probe.encode("utf-8")):
-            last += line
+        # A substring test rather than a parse, and deliberately so: this
+        # asks one yes-or-no question of a channel that also carries the
+        # connection's own narration, and it does not care what else came
+        # along. The generation cannot be so relaxed -- it needs the
+        # document -- which is what the marker is for.
+        last = "\n".join(provider.stream(machine, probe.encode("utf-8")))
         if '"ready": true' in last.replace("'", '"'):
             return
         time.sleep(SERVE_READY_POLL_S)
@@ -986,21 +1021,30 @@ def _generate_on_machine(
     check enforces.
     """
     body = json.dumps({"prompt": prompt})
-    script = (
-        f"curl -sf --max-time 300 -X POST "
-        f"http://127.0.0.1:{INFERENCE_PORT}/generate "
-        f"-H 'Content-Type: application/json' "
-        f"-d {shlex.quote(body)}"
+    # The marker goes out first and on its own line, so whatever the
+    # connection has already said is behind it. The reply then gets a
+    # newline of its own, because `provider.stream` strips them and a
+    # caller joining the lines back up must not fuse the banner to the JSON.
+    script = "\n".join(
+        [
+            f"echo {GENERATION_MARKER}",
+            (
+                f"curl -sf --max-time 300 -X POST "
+                f"http://127.0.0.1:{INFERENCE_PORT}/generate "
+                f"-H 'Content-Type: application/json' "
+                f"-d {shlex.quote(body)}"
+            ),
+            "",
+        ]
     )
-    out = ""
-    for line in provider.stream(machine, script.encode("utf-8")):
-        out += line
+    lines = list(provider.stream(machine, script.encode("utf-8")))
+    out = _after_marker("\n".join(lines), GENERATION_MARKER).strip()
     try:
-        answer = json.loads(out.strip() or "{}")
+        answer = json.loads(out or "{}")
     except json.JSONDecodeError:
         raise OrchestratorError(
             "endpoint_generation_failed",
-            f"The model server did not answer with JSON: {out.strip()[:200]!r}",
+            f"The model server did not answer with JSON: {out[:200]!r}",
         ) from None
     completion = answer.get("completion")
     if not isinstance(completion, str):

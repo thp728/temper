@@ -45,6 +45,21 @@ DECODING = {"do_sample": True, "temperature": 0.7, "max_new_tokens": 128}
 # The thinking mode the run trained under, passed in rather than guessed.
 # Absent means False, which is `entrypoint.build_config`'s own default for
 # the same unknown.
+#
+# Spread into `apply_chat_template` as a keyword rather than handed to it as
+# `chat_template_kwargs=`. Qwen3's template reads a top-level variable:
+#
+#     {%- if enable_thinking is defined and enable_thinking is false %}
+#
+# and `is defined` is the whole difficulty. A keyword lands in the render
+# context on every version of transformers; `chat_template_kwargs` is a
+# newer parameter, and where it is not recognised it becomes a template
+# variable of that name while `enable_thinking` stays undefined -- the test
+# above then fails open and thinking stays on, silently.
+#
+# Measured, not reasoned: the first real endpoint was told
+# TEMPER_ENABLE_THINKING=0 and its answer opened with a thinking block all
+# the same. See docs/final-pass-findings.md.
 ENABLE_THINKING = {
     "enable_thinking": os.environ.get("TEMPER_ENABLE_THINKING") == "1"
 }
@@ -143,7 +158,7 @@ class _Handler(BaseHTTPRequestHandler):
             [{"role": "user", "content": prompt}],
             tokenize=False,
             add_generation_prompt=True,
-            chat_template_kwargs=ENABLE_THINKING,
+            **ENABLE_THINKING,
         )
         inputs = self.tokenizer(rendered, return_tensors="pt").to(
             self.model.device
