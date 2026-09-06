@@ -1211,11 +1211,16 @@
         "type": "object"
       },
       "DeliveryFormatOption": {
-        "description": "One delivery format a launch may ask for, with its plain-language\npurpose. `id` is the request value the launch sends; `what_for` is the\nsentence a user chooses by, defined once in the domain (issue #74).",
+        "description": "One delivery format a launch may ask for, with its plain-language\npurpose. `id` is the request value the launch sends; `what_for` is the\nsentence a user chooses by, defined once in the domain (issue #74).\n\n`producible` is whether the *published image* can actually make one,\nwhich is a different question from whether the format exists. Defaults\nto true so an older control plane that does not report it never greys\nout a format that would have worked.",
         "properties": {
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "producible": {
+            "default": true,
+            "title": "Producible",
+            "type": "boolean"
           },
           "what_for": {
             "title": "What For",

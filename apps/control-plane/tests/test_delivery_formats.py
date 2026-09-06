@@ -86,6 +86,19 @@ def _set_published_reference(monkeypatch):
     )
 
 
+def _allow_quantised(monkeypatch):
+    """The checked-in image contract records that the real digest cannot
+    produce `quantised` (its converter is not on the image's PATH). These
+    tests exercise the delivery pipeline against the simulated tier, not
+    that producibility gate, so they need every format to read as
+    producible the way an unset contract would."""
+    from temper_control_plane import trainer_build
+
+    monkeypatch.setattr(
+        trainer_build, "producible_delivery_formats", lambda: None
+    )
+
+
 # --- creation: the request is validated and frozen ----------------------------
 
 
@@ -104,7 +117,71 @@ def test_the_spec_preview_offers_the_delivery_formats_with_their_purpose(
         assert fmt["what_for"].strip()
 
 
-def test_a_delivery_request_is_accepted_and_frozen(client, tmp_path):
+def test_the_spec_preview_marks_a_format_the_image_cannot_produce(
+    client, tmp_path, monkeypatch
+):
+    """A published image that cannot produce `quantised` is reflected in the
+    spec so the wizard can grey the checkbox out before anyone tries to
+    launch with it -- the failure this closes cost a full paid run because
+    nothing between the checkbox and the GPU asked the image first."""
+    from temper_control_plane import trainer_build
+
+    monkeypatch.setattr(
+        trainer_build,
+        "producible_delivery_formats",
+        lambda: frozenset({"adapter", "merged"}),
+    )
+    ds = _valid_dataset(client, tmp_path)
+    r = client.get("/v1/jobs/spec", params={"dataset_id": ds})
+    formats = {d["id"]: d for d in r.json()["delivery_formats"]}
+    assert formats["adapter"]["producible"] is True
+    assert formats["merged"]["producible"] is True
+    assert formats["quantised"]["producible"] is False
+
+
+def test_the_spec_preview_treats_an_unset_contract_as_every_format_producible(
+    client, tmp_path, monkeypatch
+):
+    """An older control plane, or one whose contract predates this field,
+    says nothing about producibility -- absence must not silently block a
+    launch it used to allow."""
+    from temper_control_plane import trainer_build
+
+    monkeypatch.setattr(
+        trainer_build, "producible_delivery_formats", lambda: None
+    )
+    ds = _valid_dataset(client, tmp_path)
+    r = client.get("/v1/jobs/spec", params={"dataset_id": ds})
+    formats = {d["id"]: d for d in r.json()["delivery_formats"]}
+    assert all(f["producible"] for f in formats.values())
+
+
+def test_a_launch_requesting_an_unproducible_format_is_refused(
+    client, tmp_path, monkeypatch
+):
+    """The refusal happens at launch, before anything is provisioned -- the
+    same failure that previously surfaced only after training, merging, and
+    a full bill."""
+    from temper_control_plane import trainer_build
+
+    monkeypatch.setattr(
+        trainer_build,
+        "producible_delivery_formats",
+        lambda: frozenset({"adapter", "merged"}),
+    )
+    ds = _valid_dataset(client, tmp_path)
+    r = client.post(
+        "/v1/jobs", json={"dataset_id": ds, "delivery": ["quantised"]}
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "delivery_format_not_producible"
+    assert r.json()["detail"]["format"] == "quantised"
+
+
+def test_a_delivery_request_is_accepted_and_frozen(
+    client, tmp_path, monkeypatch
+):
+    _allow_quantised(monkeypatch)
     job = _job_request(client, tmp_path, delivery=["merged", "quantised"])
     # Frozen at creation, like the hyperparameters: the run says what it was
     # asked to produce.
@@ -137,6 +214,7 @@ def test_verified_delivery_formats_are_recorded_and_published(
     from temper_control_plane.fake_provider import completed_run
 
     _set_published_reference(monkeypatch)
+    _allow_quantised(monkeypatch)
     job = _job_request(
         client,
         tmp_path,
@@ -174,6 +252,7 @@ def test_each_delivery_format_downloads_with_a_manifest_describing_itself(
     from temper_control_plane.fake_provider import completed_run
 
     _set_published_reference(monkeypatch)
+    _allow_quantised(monkeypatch)
     job = _job_request(
         client,
         tmp_path,

@@ -170,10 +170,21 @@ def verify_pullable(reference: str) -> None:
     _run("docker", "manifest", "inspect", reference)
 
 
-def contract_document(image: str, tag: str, reference: str) -> dict:
-    """The contract document for one publish. Deterministic for its inputs."""
+def contract_document(
+    image: str, tag: str, reference: str, *, previous: dict | None = None
+) -> dict:
+    """The contract document for one publish.
+
+    Deterministic for its inputs, except for `delivery_formats` and
+    `_delivery_comment`: which formats a digest can produce is measured on
+    real hardware, not derived from the build, so a publish that rebuilds
+    the same trainer source carries the previous contract's answer forward
+    rather than silently reverting to "every format producible" the moment
+    a new digest lands. `previous` is the contract this publish replaces;
+    pass `None` for the first publish, which has nothing to carry forward.
+    """
     digest = reference.split("@", 1)[1] if "@" in reference else reference
-    return {
+    document = {
         "_comment": _CONTRACT_COMMENT,
         "image": image,
         "published": True,
@@ -181,11 +192,22 @@ def contract_document(image: str, tag: str, reference: str) -> dict:
         "digest": digest,
         "reference": reference,
     }
+    if previous is not None:
+        if "delivery_formats" in previous:
+            document["delivery_formats"] = previous["delivery_formats"]
+        if "_delivery_comment" in previous:
+            document["_delivery_comment"] = previous["_delivery_comment"]
+    return document
 
 
 def write_contract(image: str, tag: str, reference: str) -> Path:
     """Rewrite `packages/contracts/trainer-image.json` for this publish."""
-    document = contract_document(image, tag, reference)
+    previous = (
+        json.loads(CONTRACT.read_text(encoding="utf-8"))
+        if CONTRACT.exists()
+        else None
+    )
+    document = contract_document(image, tag, reference, previous=previous)
     CONTRACT.write_text(
         json.dumps(document, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

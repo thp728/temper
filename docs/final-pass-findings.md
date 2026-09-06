@@ -3,7 +3,8 @@
 A pre-submission walk of the whole UI against the real provider, 2026-09-05.
 The database was wiped first so nothing here is contaminated by e2e leftovers.
 
-Two of these are fixed in the same branch as this file; the rest are recorded
+Most of these are fixed in the same branch as this file, several of them
+proven on real hardware afterward; the ones still marked open are recorded
 and not yet touched.
 
 ## Blockers
@@ -502,9 +503,20 @@ the request, so the user pays for a full run to find out. `/v1/jobs/spec`
 already publishes `trainer_image_published` and `artifact_deliverable`
 before a launch; the producible formats belong in the same answer.
 
-**Status: open.** Either put the converter in the image, or have the spec
-publish which formats the pinned image can actually produce and refuse the
-rest before provisioning.
+**Status: fixed.** `trainer-image.json` now records `producible_formats` for
+the published image (`adapter`, `merged`; not `quantised`, since the GGUF
+converter isn't on its PATH). `/v1/jobs/spec` publishes a `producible` flag
+per delivery format, `jobs.create` refuses a launch that requests a format
+the image can't produce with `delivery_format_not_producible` before
+anything is provisioned, and the wizard disables the checkbox with the
+reason in place of letting the click reach the API. Verified in the browser
+against the real control plane: the spec's `producible` map came back
+`{adapter: true, merged: true, quantised: false}`, the quantised checkbox
+rendered disabled with "the published trainer image cannot produce this
+format, so asking for it would train, bill, and fail at the last step",
+merged stayed tickable, and Launch stayed enabled with merged ticked alone.
+No GPU needed for this one — the whole point is that the refusal now
+happens before a machine exists.
 
 ### The failure reached the user as `training_failed`
 
@@ -558,14 +570,31 @@ of the readable history.
 
 **Status: open. Cosmetic, and it makes every other finding harder to find.**
 
+## Cancel mid-run is a clean pass
+
+The third hardware run, and the first one today that went exactly as
+designed. `job_a8d08080fdd1` launched, was cancelled once it reached
+`training` (a machine already running, not a queued job — a cancel that
+lands before a machine exists proves nothing about teardown), and settled at
+`cancelled` with no `error_code` and no artifact:
+
+```
+duration_s: 106.0
+cost_minor: 122  (INR 1.22)
+stages: provisioning 13.8s, preparing 47.7s, training 42.2s, packaging: never reached
+```
+
+Teardown confirmed by listing, independently, twice: the account showed no
+machines both immediately after and on a second check later. ADR-0003's
+claim — cancelling destroys the machine, produces no adapter, and is not a
+failure — holds on real hardware.
+
 ## Still not exercised
 
-- cancel mid-run
-
-Two came off this list on 2026-09-06. A real L4 loaded a tuned model and
-answered a real prompt; another ran a launch with both delivery formats
-ticked. Neither went cleanly, and what they found is recorded above --
-which is the point of running them.
+Three ran on hardware this pass: the served endpoint answered a real prompt,
+a launch with both delivery formats ticked found the quote's blind spot and
+an unproducible format, and cancel mid-run tore down cleanly. What each one
+found is recorded above.
 
 Retry needs no hardware and turns out not to exist as a general control: the
 API offers a retry only for `training_diverged`, at half the learning rate,

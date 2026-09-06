@@ -568,10 +568,16 @@ class JobSpecPreview(BaseModel):
 class DeliveryFormatOption(BaseModel):
     """One delivery format a launch may ask for, with its plain-language
     purpose. `id` is the request value the launch sends; `what_for` is the
-    sentence a user chooses by, defined once in the domain (issue #74)."""
+    sentence a user chooses by, defined once in the domain (issue #74).
+
+    `producible` is whether the *published image* can actually make one,
+    which is a different question from whether the format exists. Defaults
+    to true so an older control plane that does not report it never greys
+    out a format that would have worked."""
 
     id: str
     what_for: str
+    producible: bool = True
 
 
 class StageActual(BaseModel):

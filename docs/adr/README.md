@@ -109,6 +109,7 @@ fails under questioning.
 | [0074](0074-dataset-ingestion-recognises-exactly-one-schema.md) | Dataset ingestion recognises exactly one schema — the OpenAI-style chat `messages` list — on purpose, not by accident | accepted | 2026-09-04 |
 | [0075](0075-hyperparameters-edit-in-place-and-explanations-open-on-demand.md) | Hyperparameters edit in place, and explanations open on demand — cards own the only editors, reasons and failure modes sit behind "?", sliders/selects rejected for lack of published bounds | accepted | 2026-09-05 |
 | [0076](0076-the-served-endpoint-loads-the-model-before-it-mints-a-key.md) | The served endpoint loads the model before it mints a key — the server is pushed rather than baked, reached over SSH rather than published, and a machine whose model never loads is destroyed with the start refused | accepted | 2026-09-06 |
+| [0077](0077-a-delivery-format-is-offered-only-if-the-published-image-can-make-it.md) | A delivery format is offered only if the published image can make it — the contract records what the digest can produce, absence reads as producible, and a republish carries the record forward | accepted | 2026-09-06 |
 
 Spec 003 refers to the fp32 decision as "ADR-0003", its position in the
 original decision ordering; in this directory it is [0008](0008-adapters-ship-as-fp32.md).

@@ -14,7 +14,7 @@ from collections.abc import Sequence
 
 from fastapi import HTTPException
 
-from temper_control_plane import admission, config, db
+from temper_control_plane import admission, config, db, trainer_build
 from temper_core import (
     delivery,
     divergence,
@@ -268,6 +268,32 @@ def create(
                         "format": fmt,
                     },
                 ) from None
+        # Known is not the same as producible. The vocabulary says the
+        # format exists; the published image says whether it can make one.
+        # A run asked for `quantised`, trained, merged, and only then
+        # refused on the GPU -- "the GGUF converter is not on the image's
+        # PATH" -- having billed the whole way to discover something the
+        # image knew before it started. This refuses at the launch instead,
+        # where it costs nothing. The zero-cost tier pulls no image, so like
+        # the spec preview it treats every format as producible.
+        producible = trainer_build.producible_delivery_formats()
+        if not config.FAKE_PROVIDER and producible is not None:
+            for fmt in delivery_request:
+                if fmt in producible:
+                    continue
+                raise HTTPException(
+                    400,
+                    {
+                        "code": "delivery_format_not_producible",
+                        "message": (
+                            f"The published trainer image cannot produce the "
+                            f"'{fmt}' format, so this launch would train, "
+                            f"bill, and fail at the last step. It can produce: "
+                            f"{', '.join(sorted(producible))}."
+                        ),
+                        "format": fmt,
+                    },
+                )
         frozen_delivery = list(delivery_request)
 
     # Issue #65: the mixture-of-experts label travels with the job so a

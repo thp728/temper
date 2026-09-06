@@ -753,10 +753,23 @@ def get_job_spec_preview(dataset_id: str):
     # domain vocabulary -- the launch screen offers each by what it is for,
     # exactly as the finished page does, so the two cannot drift about what a
     # format is.
+    # Each carries whether the *published image* can actually make one.
+    # The vocabulary says a format exists; that is a different fact from
+    # whether this digest can produce it, and conflating them cost a full
+    # paid run -- `quantised` was offered, accepted, trained and merged, and
+    # then refused on the GPU because the GGUF converter is not on the
+    # image's PATH. The launch refuses it now, and saying so here lets the
+    # screen grey it out instead of letting someone tick it.
+    producible = trainer_build.producible_delivery_formats()
     delivery_formats = [
         {
             "id": fmt.id,
             "what_for": fmt.what_for,
+            "producible": (
+                config.FAKE_PROVIDER
+                or producible is None
+                or fmt.id in producible
+            ),
         }
         for fmt in delivery.FORMATS.values()
     ]

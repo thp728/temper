@@ -486,6 +486,52 @@ describe("LaunchForm", () => {
     );
   });
 
+  it("greys out a format the published image cannot produce (issue #74 follow-up)", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview({
+          delivery_formats: [
+            {
+              id: "merged",
+              what_for:
+                "The base model with your trained change built into its full weights. Serve it directly.",
+              producible: true,
+            },
+            {
+              id: "quantised",
+              what_for:
+                "A compact local-inference version of the merged model. Run it on your own machine.",
+              producible: false,
+            },
+          ],
+        })}
+        surface={null}
+      />,
+    );
+    createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await goToReview(user);
+
+    const merged = screen.getByRole("checkbox", { name: /Merged model/ });
+    const quantised = screen.getByRole("checkbox", {
+      name: /Quantised local format/,
+    });
+    expect(merged).toBeEnabled();
+    expect(quantised).toBeDisabled();
+    expect(
+      screen.getByText(/cannot produce this format/),
+    ).toBeInTheDocument();
+
+    // Ticking the producible format alone still launches -- the gate blocks
+    // one checkbox, not the whole step.
+    await user.click(merged);
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).toHaveBeenCalledWith(
+      expect.objectContaining({ delivery: ["merged"] }),
+    );
+  });
+
   it("launches with a model chosen after arrival", async () => {
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);

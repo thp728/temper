@@ -267,6 +267,10 @@ export default function NewJobWizard({
       id: d.id,
       name: d.id === "merged" ? "Merged model" : "Quantised local format",
       whatFor: d.what_for,
+      // Whether the published trainer image can actually produce one. Absent
+      // means producible, so an older control plane never greys out a format
+      // that would have worked -- the same pass-open rule the API follows.
+      producible: d.producible ?? true,
     }));
   const [quoteLoading, setQuoteLoading] = useState(initialPreview !== null);
   const lastGood = useRef<{
@@ -1959,7 +1963,15 @@ export default function NewJobWizard({
                     >
                       <Input
                         type="checkbox"
-                        checked={delivery.includes(option.id)}
+                        checked={
+                          option.producible && delivery.includes(option.id)
+                        }
+                        // A format the published image cannot produce is not
+                        // offered: the launch refuses it before provisioning,
+                        // so letting it be ticked would trade a greyed-out
+                        // box for a refused launch after a "6 of 6 verified"
+                        // review page.
+                        disabled={!option.producible}
                         onChange={(e) =>
                           setDelivery(
                             e.target.checked
@@ -1976,6 +1988,13 @@ export default function NewJobWizard({
                         <span className="text-muted-foreground">
                           {option.whatFor}
                         </span>
+                        {!option.producible && (
+                          <span className="block text-muted-foreground">
+                            Not available: the published trainer image cannot
+                            produce this format, so asking for it would train,
+                            bill, and fail at the last step.
+                          </span>
+                        )}
                       </span>
                     </Label>
                   ))}
