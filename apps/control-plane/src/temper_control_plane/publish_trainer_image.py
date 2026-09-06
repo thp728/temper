@@ -91,8 +91,26 @@ def _tag() -> str:
 
 
 def _run(*args: str) -> subprocess.CompletedProcess:
-    """One docker/registry command, failing loudly on a nonzero exit."""
-    return subprocess.run(args, check=True, capture_output=True, text=True)
+    """One docker/registry command, failing loudly on a nonzero exit.
+
+    Loudly means *with the reason*. `CalledProcessError`'s own message names
+    the command and the exit code and nothing else, so a captured build that
+    failed printed a traceback ending in the docker command line while the
+    error docker actually reported -- the missing base, the exhausted disk,
+    the refused push -- stayed in the captured stderr nobody read. Two
+    publish runs were diagnosed as "docker build exited 1" because of it.
+    The output is captured (these commands are chatty and the caller prints
+    what matters), so failure has to re-raise it deliberately.
+    """
+    try:
+        return subprocess.run(args, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        detail = "\n".join(
+            part.strip() for part in (exc.stdout, exc.stderr) if part
+        )
+        raise RuntimeError(
+            f"{' '.join(args)} exited {exc.returncode}\n{detail}"
+        ) from exc
 
 
 def build(tag: str) -> None:
@@ -117,11 +135,18 @@ def digest_of(image: str, tag: str) -> str:
     Read from the daemon's record of what was pushed (`RepoDigests`), filtered
     to the image name being published, so the reference the contract records
     is the one the registry accepted -- not a locally-invented string.
+
+    The braces are doubled because that is what a Go template needs. Written
+    once as `{json .RepoDigests}`, docker treated it as a literal and printed
+    the string back verbatim, so this raised `JSONDecodeError` at character 1
+    on every run -- after the build and the push had both already succeeded.
+    That is why the image was never published despite the expensive half of
+    the work completing each time.
     """
     out = _run(
         "docker",
         "inspect",
-        "--format={json .RepoDigests}",
+        "--format={{json .RepoDigests}}",
         f"{image}:{tag}",
     ).stdout.strip()
     digests = json.loads(out)
