@@ -375,3 +375,78 @@ def test_a_format_without_a_grant_is_left_on_the_machine(
     )
     assert records[0]["upload"]["ok"] is False
     assert "left on the machine" in records[0]["upload"]["error"]
+
+
+# --- the heartbeat: a slow-but-healthy export must not read as a stall ------
+
+
+def test_a_slow_merge_and_upload_each_emit_a_heartbeat(tmp_path, monkeypatch):
+    """Found on real hardware (2026-09-06): a 7B model's merge and upload
+    each ran silent long enough to trip the control plane's 900s stall
+    detector, which destroyed a healthy machine mid-export. The heartbeat
+    must fire during both the conversion and the upload, or a large model's
+    export is indistinguishable from a wedged one."""
+    import time
+
+    monkeypatch.setattr(delivery, "HEARTBEAT_INTERVAL_S", 0.02)
+    out = tmp_path / "out"
+    merged_archive = out / "delivery" / "merged.tar.gz"
+    _write_fake_merged_archive(merged_archive)
+
+    def slow_merge(job, out_dir):
+        time.sleep(0.1)
+        return {
+            "path": "delivery/merged.tar.gz",
+            "members": ["config.json"],
+            "bytes": merged_archive.stat().st_size,
+            "sha256": delivery.sha256_of(merged_archive),
+        }
+
+    def slow_upload(url, path):
+        time.sleep(0.1)
+        return {"ok": True}
+
+    monkeypatch.setattr(delivery, "merge_adapter", slow_merge)
+    messages: list[str] = []
+    job = {"delivery": ["merged"]}
+    delivery.run_delivery(
+        job,
+        out,
+        slow_upload,
+        tokenizer=None,
+        probe=lambda job, cfg, tokenizer: _ok_outcome(),
+        load_verify=_loading_loader,
+        grants=[{"format": "merged", "url": "u://g"}],
+        log=messages.append,
+    )
+    assert any("producing merged" in m for m in messages)
+    assert any("uploading merged" in m for m in messages)
+
+
+def test_no_heartbeat_fires_when_no_log_is_given(tmp_path, monkeypatch):
+    """A standalone run passes no `log`; the heartbeat must be a no-op, not
+    an error, so `run_delivery`'s existing callers are unaffected."""
+    out = tmp_path / "out"
+    merged_archive = out / "delivery" / "merged.tar.gz"
+    _write_fake_merged_archive(merged_archive)
+
+    def fake_merge(job, out_dir):
+        return {
+            "path": "delivery/merged.tar.gz",
+            "members": ["config.json"],
+            "bytes": merged_archive.stat().st_size,
+            "sha256": delivery.sha256_of(merged_archive),
+        }
+
+    monkeypatch.setattr(delivery, "merge_adapter", fake_merge)
+    job = {"delivery": ["merged"]}
+    records = delivery.run_delivery(
+        job,
+        out,
+        lambda url, path: {"ok": True},
+        tokenizer=None,
+        probe=lambda job, cfg, tokenizer: _ok_outcome(),
+        load_verify=_loading_loader,
+        grants=[{"format": "merged", "url": "u://g"}],
+    )
+    assert records[0]["verified"] is True

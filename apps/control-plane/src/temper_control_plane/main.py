@@ -38,6 +38,7 @@ from temper_control_plane import (
     remote_datasets,
     seed_demo,
     storage,
+    trainer_build,
 )
 from temper_control_plane.contracts_models import (
     AdmittedModel,
@@ -752,18 +753,50 @@ def get_job_spec_preview(dataset_id: str):
     # domain vocabulary -- the launch screen offers each by what it is for,
     # exactly as the finished page does, so the two cannot drift about what a
     # format is.
+    # Each carries whether the *published image* can actually make one.
+    # The vocabulary says a format exists; that is a different fact from
+    # whether this digest can produce it, and conflating them cost a full
+    # paid run -- `quantised` was offered, accepted, trained and merged, and
+    # then refused on the GPU because the GGUF converter is not on the
+    # image's PATH. The launch refuses it now, and saying so here lets the
+    # screen grey it out instead of letting someone tick it.
+    producible = trainer_build.producible_delivery_formats()
     delivery_formats = [
         {
             "id": fmt.id,
             "what_for": fmt.what_for,
+            "producible": (
+                config.FAKE_PROVIDER
+                or producible is None
+                or fmt.id in producible
+            ),
         }
         for fmt in delivery.FORMATS.values()
     ]
+    # Whether a real launch could pull the image it would run. The
+    # orchestrator refuses with `image_not_published` when the digest
+    # contract carries none; reporting it here lets the launch screen say so
+    # while the user can still act on it, rather than after they have
+    # committed. The simulated provider pulls no image, so it is never
+    # blocked by this.
+    image_published = (
+        config.FAKE_PROVIDER or trainer_build.published_reference() is not None
+    )
+    # And whether the machine could upload what it produces. The filesystem
+    # backend's grants are tokens only this process redeems, so a real run on
+    # it is billed in full and delivers nothing; the orchestrator refuses
+    # with `artifact_undeliverable`, and saying so here means the launch
+    # screen can refuse before the money rather than after it.
+    artifact_deliverable = (
+        config.FAKE_PROVIDER or storage.STORE.grants_are_remotely_redeemable
+    )
     return {
         "dataset": ds,
         "hyperparameters": hyperparams.effective({}),
         "warning": warn,
         "delivery_formats": delivery_formats,
+        "trainer_image_published": image_published,
+        "artifact_deliverable": artifact_deliverable,
     }
 
 
@@ -1604,6 +1637,14 @@ def create_endpoint(job_id: str):
                 "endpoint_already_running",
                 "endpoint_provision_failed",
                 "endpoint_reachable",
+                # The machine was provisioned and then destroyed again
+                # because its model never loaded, so no key exists and the
+                # start is refused -- the same shape as the two above it.
+                "endpoint_model_not_ready",
+                # And the one that refuses before provisioning: the store
+                # this deployment is on has no address the machine could
+                # fetch the adapter from.
+                "endpoint_artifact_unreachable",
             )
             else 400
         )
@@ -1686,9 +1727,9 @@ def infer_endpoint(
     The key is verified against the stored hash (constant-time), the expiry
     is checked and extended on success (capped by the max), and a completion
     is returned. A busy endpoint that is kept alive by traffic still dies at
-    the max, because the extension is capped. The generation itself is a
-    stub in the fake tier; on real hardware it would reach the machine over
-    SSH and run the model there.
+    the max, because the extension is capped. The generation is canned in the
+    simulated tier; on real hardware it reaches the machine and runs the
+    model there.
     """
     if not db.get_job(job_id):
         raise HTTPException(
@@ -1729,6 +1770,16 @@ def infer_endpoint(
         if e.code == "endpoint_expired":
             raise HTTPException(
                 410, {"code": e.code, "message": str(e)}
+            ) from e
+        # The request was well formed and authorised; the machine behind it
+        # could not answer. 400 would tell the caller to change their prompt,
+        # which would not help.
+        if e.code in (
+            "endpoint_generation_failed",
+            "endpoint_machine_unreachable",
+        ):
+            raise HTTPException(
+                502, {"code": e.code, "message": str(e)}
             ) from e
         raise HTTPException(400, {"code": e.code, "message": str(e)}) from e
 

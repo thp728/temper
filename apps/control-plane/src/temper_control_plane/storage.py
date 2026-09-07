@@ -28,6 +28,16 @@ storage process to talk to. Nothing can list, read, enumerate or reach any
 other key by holding a grant; expiry is checked on redemption, not trusted to
 the holder.
 
+**Read grants.** `mint_read_grant` is the mirror, and it exists for the same
+reason: a serving machine fetches the adapter from the store rather than
+having a hundred megabytes relayed through this process. The S3 backend
+mints a pre-signed GET. The filesystem backend refuses with
+`GrantUnavailable` -- the write side can mint a token because redemption
+comes back to this process, but a read grant has to be fetched *by* its
+holder, and there is no server here to fetch from. The asymmetry is the one
+`grants_are_remotely_redeemable` already names, and callers about to hand a
+grant to a machine consult that flag before they spend anything.
+
 Testing note, recorded rather than glossed: the S3 tests here run against an
 in-process S3 API mock (`moto`). That proves wiring, key handling and byte
 fidelity through a real boto3 client; it does **not** prove MinIO itself. The
@@ -151,12 +161,56 @@ class WriteGrant:
     expires_at: float
 
 
+@dataclass(frozen=True)
+class ReadGrant:
+    """Authority for one read of one key, expiring at `expires_at`.
+
+    The other half of `WriteGrant`, and it exists for the same reason
+    ADR-0009 gave for the write: the machine talks to the store directly
+    rather than having its bytes relayed through the control plane. A
+    training machine writes its adapter this way; a serving machine reads
+    the same adapter back this way.
+
+    Holding it confers nothing but that one read. `key` is carried alongside
+    the url so a caller can say which object a grant is for without parsing
+    a signed string.
+    """
+
+    url: str
+    key: str
+    expires_at: float
+
+
+class GrantUnavailable(Exception):
+    """This backend cannot mint the grant that was asked for.
+
+    Distinct from `GrantInvalid`, which is about a grant that exists and
+    does not confer what it claims. This is about a backend whose objects
+    have no address another machine could fetch at all --
+    `grants_are_remotely_redeemable` is the question to ask before minting.
+    """
+
+
 class GrantInvalid(Exception):
     """A presented write grant does not confer what it claims to."""
 
 
 class Storage(Protocol):
     """What every backend promises. This protocol *is* the seam."""
+
+    # Whether a grant this backend mints can be redeemed from another
+    # machine. It is part of the seam because it decides whether a real run
+    # can deliver anything at all: the trainer uploads its artifact by
+    # redeeming a grant from the GPU, so a backend whose grants only the
+    # control plane can resolve cannot receive one.
+    #
+    # Learned from a paid run. Eleven minutes of real training on an L4 ended
+    # in `artifact_unverified`, with the machine reporting `unknown url type:
+    # temper-local` -- the filesystem backend's grant scheme, which is not a
+    # network URL. Everything was billed and nothing was delivered, and no
+    # test caught it because the fake provider writes artifacts locally and
+    # never redeems a grant across a network.
+    grants_are_remotely_redeemable: bool
 
     def put(self, key: str, data: bytes) -> None:
         """Store one object whole. Overwrites an existing object at the key."""
@@ -193,6 +247,16 @@ class Storage(Protocol):
 
     def mint_write_grant(self, key: str, expires_in_s: float) -> WriteGrant:
         """Mint one-write-to-one-key authority, expiring in `expires_in_s`."""
+        ...
+
+    def mint_read_grant(self, key: str, expires_in_s: float) -> ReadGrant:
+        """Mint one-read-of-one-key authority, expiring in `expires_in_s`.
+
+        Raises `GrantUnavailable` on a backend whose objects have no address
+        another machine can fetch. Callers that are about to hand the grant
+        to a machine should consult `grants_are_remotely_redeemable` first
+        and refuse before they spend anything, the way the launch does.
+        """
         ...
 
     def ensure_ready(self) -> None:
@@ -234,6 +298,10 @@ class FilesystemStorage:
     """Keys under one root directory. The default backend."""
 
     scheme = "temper-local"
+
+    # `temper-local:` is a token this process signs and redeems, not a URL
+    # anything can fetch. Only the control plane can honour it.
+    grants_are_remotely_redeemable = False
 
     def __init__(self, root: Path, secret: bytes | None = None):
         self._root = root
@@ -315,6 +383,25 @@ class FilesystemStorage:
             url=f"{self.scheme}:{token}", key=key, expires_at=expires_at
         )
 
+    def mint_read_grant(self, key: str, expires_in_s: float) -> ReadGrant:
+        """Refuse: a file under this root has no address off this host.
+
+        The write side can mint something because the redemption comes back
+        to this process, which holds the root. A read grant would have to be
+        fetched *by* the holder, and there is no server here to fetch from.
+        Minting a `temper-local:` token anyway would hand a machine a string
+        it cannot use -- which is the failure `grants_are_remotely_redeemable`
+        exists to prevent, learned from a paid run that delivered nothing.
+        """
+        _checked(key)
+        _grant_ttl(expires_in_s)
+        raise GrantUnavailable(
+            "The filesystem backend has no address a machine can fetch from, "
+            "so it cannot mint a read grant. Set TEMPER_STORAGE_BACKEND=s3 "
+            "with a bucket the machine can reach (TEMPER_S3_BUCKET, "
+            "TEMPER_S3_ENDPOINT_URL)."
+        )
+
     def redeem(self, grant: WriteGrant, data: bytes) -> None:
         """Honour a minted grant, or refuse it loudly.
 
@@ -356,6 +443,12 @@ class S3Storage:
     is injectable because the tests build one against an in-process mock and
     constructing a real one here would couple the seam to the network.
     """
+
+    # Grants are presigned HTTPS URLs, so a machine holding one can PUT to it
+    # without credentials of its own. Whether the endpoint is reachable from
+    # a particular machine is a deployment question this cannot answer; what
+    # it asserts is that the grant is a URL rather than a private token.
+    grants_are_remotely_redeemable = True
 
     def __init__(
         self,
@@ -498,6 +591,22 @@ class S3Storage:
             ExpiresIn=ttl,
         )
         return WriteGrant(url=url, key=key, expires_at=time.time() + ttl)
+
+    def mint_read_grant(self, key: str, expires_in_s: float) -> ReadGrant:
+        """A pre-signed GET, the exact mirror of the PUT above.
+
+        Same bucket, same signing, same expiry rule. What a holder can do
+        with it is read that one key until it expires: no listing, no other
+        key, no write.
+        """
+        _checked(key)
+        ttl = _grant_ttl(expires_in_s)
+        url = self._client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=ttl,
+        )
+        return ReadGrant(url=url, key=key, expires_at=time.time() + ttl)
 
     def ensure_ready(self) -> None:
         # Fail at boot, where it is one legible line, rather than four seconds

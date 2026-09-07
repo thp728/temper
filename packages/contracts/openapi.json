@@ -1211,11 +1211,16 @@
         "type": "object"
       },
       "DeliveryFormatOption": {
-        "description": "One delivery format a launch may ask for, with its plain-language\npurpose. `id` is the request value the launch sends; `what_for` is the\nsentence a user chooses by, defined once in the domain (issue #74).",
+        "description": "One delivery format a launch may ask for, with its plain-language\npurpose. `id` is the request value the launch sends; `what_for` is the\nsentence a user chooses by, defined once in the domain (issue #74).\n\n`producible` is whether the *published image* can actually make one,\nwhich is a different question from whether the format exists. Defaults\nto true so an older control plane that does not report it never greys\nout a format that would have worked.",
         "properties": {
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "producible": {
+            "default": true,
+            "title": "Producible",
+            "type": "boolean"
           },
           "what_for": {
             "title": "What For",
@@ -2309,8 +2314,13 @@
         "type": "object"
       },
       "JobSpecPreview": {
-        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\n`delivery_formats` (issue #74) are the delivery formats a launch may ask\nfor beyond the canonical artifact, each with its plain-language purpose --\nread from the one `temper_core.delivery` vocabulary, so the launch screen\nand the finished page describe a format the same way.\n\nDeliberately quote-free: the plan page renders immediately and fetches the\nquote for the selected model afterwards, because an estimate never blocks\nthe surface it appears on (spec 005).",
+        "description": "What a launch would train with, before anything is launched.\n\nThe whole point of the launch screen is that nothing is a surprise after\ncommitting: this is that answer as one published shape. `hyperparameters`\nare the effective specification resolved exactly as the trainer resolves\noverrides -- showing anything else would describe a job the trainer will\nnot run.\n\n`delivery_formats` (issue #74) are the delivery formats a launch may ask\nfor beyond the canonical artifact, each with its plain-language purpose --\nread from the one `temper_core.delivery` vocabulary, so the launch screen\nand the finished page describe a format the same way.\n\n`trainer_image_published` is whether a real launch can pull the image it\nwould run. The orchestrator refuses a launch with `image_not_published`\nwhen the digest contract carries none, and that refusal used to arrive\nonly after the user pressed Launch -- as a failed job rather than a\ndisabled button. Publishing it here lets the launch screen assert the one\ncondition that actually blocks a real run, beside the four it already\nchecks. Always true under the simulated provider, which pulls no image.\n\n`artifact_deliverable` is the same guarantee for the other end of the\nrun: whether the object store hands out grants a machine could actually\nupload to. The filesystem backend's are tokens only this process can\nredeem, so a real run on it trains for its full duration and then fails\nwith `artifact_undeliverable` having delivered nothing.\n\nDeliberately quote-free: the plan page renders immediately and fetches the\nquote for the selected model afterwards, because an estimate never blocks\nthe surface it appears on (spec 005).",
         "properties": {
+          "artifact_deliverable": {
+            "default": true,
+            "title": "Artifact Deliverable",
+            "type": "boolean"
+          },
           "dataset": {
             "$ref": "#/components/schemas/DatasetRecord"
           },
@@ -2325,6 +2335,11 @@
             "additionalProperties": true,
             "title": "Hyperparameters",
             "type": "object"
+          },
+          "trainer_image_published": {
+            "default": true,
+            "title": "Trainer Image Published",
+            "type": "boolean"
           },
           "warning": {
             "anyOf": [
@@ -4065,7 +4080,7 @@
     },
     "/v1/jobs/{job_id}/endpoint/infer": {
       "post": {
-        "description": "Answer a prompt via the job's active endpoint. Requires the endpoint's key.\n\nThe key is verified against the stored hash (constant-time), the expiry\nis checked and extended on success (capped by the max), and a completion\nis returned. A busy endpoint that is kept alive by traffic still dies at\nthe max, because the extension is capped. The generation itself is a\nstub in the fake tier; on real hardware it would reach the machine over\nSSH and run the model there.",
+        "description": "Answer a prompt via the job's active endpoint. Requires the endpoint's key.\n\nThe key is verified against the stored hash (constant-time), the expiry\nis checked and extended on success (capped by the max), and a completion\nis returned. A busy endpoint that is kept alive by traffic still dies at\nthe max, because the extension is capped. The generation is canned in the\nsimulated tier; on real hardware it reaches the machine and runs the\nmodel there.",
         "operationId": "infer_endpoint_v1_jobs__job_id__endpoint_infer_post",
         "parameters": [
           {

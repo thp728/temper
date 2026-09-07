@@ -56,6 +56,31 @@ def published_reference() -> str | None:
     return reference
 
 
+def producible_delivery_formats() -> frozenset[str] | None:
+    """Which delivery formats the published image can actually produce.
+
+    `temper_core.delivery` is the vocabulary -- what a format is called and
+    what it is for. This is a different fact: what *this digest* can make.
+    The two were conflated, and a real run paid for the difference. It asked
+    for `quantised`, trained, merged, and then refused on the GPU with "the
+    GGUF converter is not on the image's PATH". Everything up to that point
+    was billed to discover something the image already knew.
+
+    None means the contract does not say, and every format is treated as
+    producible -- the same pass-open rule `published_reference` follows, so
+    a control plane reading an older contract never blocks a launch it
+    should have allowed.
+
+    Read at call time, like the reference, because the answer changes when
+    the pipeline publishes a new image.
+    """
+    doc = json.loads(PUBLISHED_IMAGE_CONTRACT.read_text(encoding="utf-8"))
+    formats = doc.get("delivery_formats")
+    if not isinstance(formats, list):
+        return None
+    return frozenset(str(f) for f in formats)
+
+
 # Named rather than globbed.
 #
 # Globbing the trainer directory was fine when it held nothing but the image's

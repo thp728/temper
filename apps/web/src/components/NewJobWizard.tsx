@@ -267,6 +267,10 @@ export default function NewJobWizard({
       id: d.id,
       name: d.id === "merged" ? "Merged model" : "Quantised local format",
       whatFor: d.what_for,
+      // Whether the published trainer image can actually produce one. Absent
+      // means producible, so an older control plane never greys out a format
+      // that would have worked -- the same pass-open rule the API follows.
+      producible: d.producible ?? true,
     }));
   const [quoteLoading, setQuoteLoading] = useState(initialPreview !== null);
   const lastGood = useRef<{
@@ -681,6 +685,10 @@ export default function NewJobWizard({
   // selection, the validation report, VRAM arithmetic, estimate presence.
   // A check without data passes open rather than crying wolf: an estimate
   // never refuses a launch, and neither does this banner.
+  // Absent means an older control plane that does not publish the field;
+  // treat that as published so a missing field never blocks a launch.
+  const imagePublished = preview?.trainer_image_published ?? true;
+  const artifactDeliverable = preview?.artifact_deliverable ?? true;
   const preflight = (() => {
     if (!preview) return [];
     const vramPass =
@@ -710,6 +718,29 @@ export default function NewJobWizard({
           ? `${formatMinorCostRange(quote.cost_low_minor, quote.cost_high_minor, quote.currency, quote.minor_unit)} · ${formatFriendlyDurationRange(quote.duration_low_s, quote.duration_high_s)}`
           : "No estimate — launching still works",
         pass: quote != null,
+      },
+      // The one assertion that is not advisory. The other four describe a
+      // job that would run; this one says whether it can start at all. The
+      // orchestrator refuses an unpublished image with `image_not_published`
+      // before provisioning, so without this the user learns it from a
+      // failed job instead of a disabled button. Absent (an older control
+      // plane that does not publish the field) passes open, like the rest.
+      {
+        title: "Trainer image",
+        detail: imagePublished
+          ? "Published — the machine can pull the image this job runs"
+          : "image_not_published — publish the trainer image before launching",
+        pass: imagePublished,
+      },
+      // The other end of the same rule. A store whose grants only the
+      // control plane can redeem leaves the machine nowhere to upload to,
+      // and the run is billed in full before anyone finds out.
+      {
+        title: "Artifact delivery",
+        detail: artifactDeliverable
+          ? "The machine can upload the adapter it produces"
+          : "artifact_undeliverable — the object store is not reachable from the machine",
+        pass: artifactDeliverable,
       },
     ];
   })();
@@ -1932,7 +1963,15 @@ export default function NewJobWizard({
                     >
                       <Input
                         type="checkbox"
-                        checked={delivery.includes(option.id)}
+                        checked={
+                          option.producible && delivery.includes(option.id)
+                        }
+                        // A format the published image cannot produce is not
+                        // offered: the launch refuses it before provisioning,
+                        // so letting it be ticked would trade a greyed-out
+                        // box for a refused launch after a "6 of 6 verified"
+                        // review page.
+                        disabled={!option.producible}
                         onChange={(e) =>
                           setDelivery(
                             e.target.checked
@@ -1949,6 +1988,13 @@ export default function NewJobWizard({
                         <span className="text-muted-foreground">
                           {option.whatFor}
                         </span>
+                        {!option.producible && (
+                          <span className="block text-muted-foreground">
+                            Not available: the published trainer image cannot
+                            produce this format, so asking for it would train,
+                            bill, and fail at the last step.
+                          </span>
+                        )}
                       </span>
                     </Label>
                   ))}
@@ -1986,7 +2032,12 @@ export default function NewJobWizard({
             primary={{
               label: busy ? "Launching…" : "Launch job",
               onClick: () => void launch(),
-              disabled: busy || !preview,
+              // An unpublished trainer image is refused by the orchestrator
+              // before it provisions anything, so pressing Launch can only
+              // produce a failed job. Refusing here costs the user a click
+              // instead of a job record; the pre-flight row above says why.
+              disabled:
+                busy || !preview || !imagePublished || !artifactDeliverable,
             }}
             secondary={{ label: "Back to hardware", onClick: () => go(3) }}
           />

@@ -82,6 +82,7 @@ from .provider import (
     Machine,
     Provider,
     container_name,
+    machine_name,
     new_provider,
     normalize_status,
 )
@@ -288,6 +289,44 @@ def _trainer_reference() -> str:
         "cannot launch. Run the pipeline's publish workflow "
         "(`.github/workflows/image.yml`) and merge the pull request it "
         "opens, which lands the digest this launch would pull.",
+    )
+
+
+def _check_artifact_deliverable(provider: Provider) -> None:
+    """Refuse a real run that could not deliver what it produces.
+
+    The trainer uploads its artifact and checkpoints from the machine by
+    redeeming a scoped grant (ADR-0009). The filesystem backend's grants are
+    `temper-local:` tokens this process signs and honours itself, not URLs,
+    so a machine holding one has nothing to PUT to.
+
+    Checked here, beside the image, because the cost of not checking is the
+    whole run. Measured: eleven minutes of real training on an L4 ended in
+    `artifact_unverified`, the machine reporting `unknown url type:
+    temper-local`. Every phase was billed and nothing was delivered, and the
+    failure arrived at the one point where all the money had already been
+    spent.
+
+    Asked of the provider in hand rather than of `config.FAKE_PROVIDER`,
+    because the two can disagree: the suite injects a simulated provider
+    while the environment variable is unset, and a guard keyed on the
+    variable would refuse runs that never leave the process. A simulated
+    provider redeems grants in-process and crosses no network, which is what
+    lets the browser journeys run a launch to completion on the default
+    backend.
+    """
+    if not provider.is_remote:
+        return
+    if storage.STORE.grants_are_remotely_redeemable:
+        return
+    raise OrchestratorError(
+        "artifact_undeliverable",
+        "The configured object store hands out grants only this process can "
+        "redeem, so the machine would have nowhere to upload the adapter and "
+        "the run would be billed in full and deliver nothing. Set "
+        "TEMPER_STORAGE_BACKEND=s3 with a bucket the machine can reach "
+        "(TEMPER_S3_BUCKET, TEMPER_S3_ENDPOINT_URL), or run with "
+        "TEMPER_FAKE_PROVIDER=1, which spends nothing.",
     )
 
 
@@ -673,11 +712,23 @@ def _consume(job_id: str, lines) -> dict:
             resume_logic.INTERRUPTED_CODE,
             resume_logic.INTERRUPTED_MESSAGE,
         )
+    document = "\n".join(result_lines)
     try:
-        return json.loads("\n".join(result_lines))
+        return json.loads(document)
     except json.JSONDecodeError as e:
+        # What could not be parsed goes in the message. Without it this
+        # says only *that* the document was malformed, at a byte offset
+        # into text nothing kept -- and the machine that produced it has
+        # been destroyed by the time anyone reads this, so the evidence
+        # is gone with it. A real run hit exactly that: "Expecting ','
+        # delimiter: line 1 column 4 (char 3)" against a document nobody
+        # could see, on a run that had already cost 17 rupees. Bounded,
+        # because a result document carries a resolved chat template and
+        # can be long.
         raise OrchestratorError(
-            "training_failed", f"Trainer's result document did not parse: {e}"
+            "training_failed",
+            f"Trainer's result document did not parse: {e}. The document "
+            f"began: {document[:400]!r}",
         ) from e
 
 
@@ -1642,6 +1693,10 @@ def _attempt(
     # published image exactly as it does for disk.
     reference = _trainer_reference()
 
+    # And where its result would go. Same rule, same reason: a run that
+    # cannot deliver its artifact must not be paid for first.
+    _check_artifact_deliverable(provider)
+
     # Checked at every boundary between stages, for the same reason the
     # duration ceiling is: inside a provider call nothing is interruptible, so
     # the boundaries are where a request to stop can actually be honoured. The
@@ -1715,7 +1770,7 @@ def _attempt(
         plan.gpu_type,
         plan.device_count,
         disk_plan.provisioned_gb,
-        f"temper-{job_id[:12]}",
+        machine_name(job_id),
     )
     machines.append(machine)
     db.set_state(

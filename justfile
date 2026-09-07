@@ -76,8 +76,22 @@ contracts-check: contracts
 # database reachable at the default address -- `just db-up` starts one. For
 # the whole stack -- database, control plane and web shell -- in one command,
 # use `just up`.
+#
+# The control plane serves the API but drives no jobs: orchestration lives in
+# the worker (issue #51). `just dev` alone leaves every launch sitting in
+# `queued` forever, so run `just worker` beside it.
 dev:
     uv run uvicorn temper_control_plane.main:app --reload
+
+# The worker, which claims queued jobs and drives them. The other half of
+# `just dev`: without this nothing advances a job past `queued`, and a
+# control plane restarted mid-job leaves that job non-terminal until a worker
+# picks it up again. `just up` runs both, so this is only for the host path.
+#
+# The package, not the submodule -- `python -m temper_worker.worker` imports
+# the module, defines its functions and exits 0 having done nothing.
+worker:
+    uv run python -m temper_worker
 
 # --- the database (issue #43) ------------------------------------------------
 # A named, long-lived container rather than compose: `just dev`/`just e2e` run

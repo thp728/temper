@@ -48,7 +48,7 @@ import capability as capability_step
 import checkpoints as checkpoint_upload
 import comparison as comparison_step
 from checkpoint import select_best_checkpoint
-from delivery import DeliveryFailure, run_delivery
+from delivery import DeliveryFailure, heartbeat, run_delivery
 from split import held_out_split
 from template_probe import (
     PROBE_UNAVAILABLE_CODE,
@@ -1235,11 +1235,19 @@ class _ModelGenerator:
         self._decoding = dict(decoding)
 
     def generate(self, conversation) -> str:
+        # Spread, never `chat_template_kwargs={...}`: on the pinned image's
+        # transformers (5.14.1), a dict passed under that name is not merged
+        # into the render context, so a template's `{% if enable_thinking is
+        # defined %}` sees it as undefined and falls through -- exactly the
+        # bug `serve.py` hit on real hardware and fixed the same way. Proven
+        # by rendering both ways inside the pinned image and diffing (no GPU
+        # needed): the wrapped form produced no thinking directive at all,
+        # the spread form correctly emitted `<think>\n\n</think>\n\n`.
         prompt = self._tokenizer.apply_chat_template(
             conversation,
             tokenize=False,
             chat_template=self._template,
-            chat_template_kwargs=self._kwargs,
+            **self._kwargs,
         )
         inputs = self._tokenizer(prompt, return_tensors="pt").to(
             self._model.device
@@ -1867,9 +1875,10 @@ def main() -> int:
             # training.
             grant_block = job.get("artifact_upload")
             if isinstance(grant_block, dict) and grant_block.get("url"):
-                result["artifact_upload"] = upload_artifact(
-                    grant_block["url"], OUT_DIR / result["artifact_path"]
-                )
+                with heartbeat(log, "uploading the canonical artifact"):
+                    result["artifact_upload"] = upload_artifact(
+                        grant_block["url"], OUT_DIR / result["artifact_path"]
+                    )
             else:
                 result["artifact_upload"] = {
                     "ok": False,
@@ -1894,6 +1903,7 @@ def main() -> int:
                 probe=probe_export,
                 cfg=cfg,
                 grants=job.get("delivery_grants"),
+                log=log,
             )
             if delivery_records:
                 result["delivery"] = delivery_records

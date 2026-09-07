@@ -397,6 +397,59 @@ describe("LaunchForm", () => {
     ).toBeVisible();
   });
 
+  // An unpublished trainer image is refused by the orchestrator before it
+  // provisions anything, so pressing Launch can only produce a failed job.
+  // The review step says so while the user can still act on it.
+  it("refuses to launch when the trainer image is not published", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview({ trainer_image_published: false })}
+        surface={null}
+      />,
+    );
+    await goToReview(user);
+    // The refusal keeps its stable code on the page.
+    expect(screen.getByText(/image_not_published/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Launch job" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).not.toHaveBeenCalled();
+  });
+
+  // The other end of the same rule: a store the machine cannot upload to
+  // means a run that is billed in full and delivers nothing.
+  it("refuses to launch when the artifact could not be delivered", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview({ artifact_deliverable: false })}
+        surface={null}
+      />,
+    );
+    await goToReview(user);
+    expect(screen.getByText(/artifact_undeliverable/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Launch job" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).not.toHaveBeenCalled();
+  });
+
+  // A control plane that does not publish the field must not block a launch:
+  // an absent check passes open, like the other four.
+  it("launches when the published field is absent", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview({ trainer_image_published: undefined })}
+        surface={null}
+      />,
+    );
+    await goToReview(user);
+    expect(screen.getByRole("button", { name: "Launch job" })).toBeEnabled();
+  });
+
   it("launches with the chosen model and opens the job's own page", async () => {
     const user = userEvent.setup();
     render(<LaunchForm catalog={catalog} preview={preview()} surface={null} />);
@@ -430,6 +483,52 @@ describe("LaunchForm", () => {
     await user.click(screen.getByRole("button", { name: "Launch job" }));
     expect(createJobMock).toHaveBeenCalledWith(
       expect.objectContaining({ delivery: ["merged", "quantised"] }),
+    );
+  });
+
+  it("greys out a format the published image cannot produce (issue #74 follow-up)", async () => {
+    const user = userEvent.setup();
+    render(
+      <LaunchForm
+        catalog={catalog}
+        preview={preview({
+          delivery_formats: [
+            {
+              id: "merged",
+              what_for:
+                "The base model with your trained change built into its full weights. Serve it directly.",
+              producible: true,
+            },
+            {
+              id: "quantised",
+              what_for:
+                "A compact local-inference version of the merged model. Run it on your own machine.",
+              producible: false,
+            },
+          ],
+        })}
+        surface={null}
+      />,
+    );
+    createJobMock.mockResolvedValueOnce({ id: "job_abc123" });
+    await goToReview(user);
+
+    const merged = screen.getByRole("checkbox", { name: /Merged model/ });
+    const quantised = screen.getByRole("checkbox", {
+      name: /Quantised local format/,
+    });
+    expect(merged).toBeEnabled();
+    expect(quantised).toBeDisabled();
+    expect(
+      screen.getByText(/cannot produce this format/),
+    ).toBeInTheDocument();
+
+    // Ticking the producible format alone still launches -- the gate blocks
+    // one checkbox, not the whole step.
+    await user.click(merged);
+    await user.click(screen.getByRole("button", { name: "Launch job" }));
+    expect(createJobMock).toHaveBeenCalledWith(
+      expect.objectContaining({ delivery: ["merged"] }),
     );
   });
 

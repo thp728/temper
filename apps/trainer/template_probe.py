@@ -68,7 +68,7 @@ class Tokenizer(Protocol):
         *,
         tokenize: bool,
         chat_template: str | None = ...,
-        chat_template_kwargs: dict[str, Any] | None = ...,
+        **kwargs: Any,
     ) -> str | list[int]: ...
 
 
@@ -166,17 +166,24 @@ def _tokenise(
     chat_template: str | None,
     kwargs: dict[str, Any] | None,
 ) -> Tokenisation:
+    # Spread, never `chat_template_kwargs={...}` -- see the note beside
+    # `_ModelGenerator.generate` in entrypoint.py. Wrapped, `enable_thinking`
+    # never reaches the render context on the pinned image's transformers,
+    # so both sides of this probe would render identically regardless of
+    # what `enable_thinking` says, and the probe would pass while proving
+    # nothing about it.
+    kwargs = kwargs or {}
     text = tokenizer.apply_chat_template(
         conversation,
         tokenize=False,
         chat_template=chat_template,
-        chat_template_kwargs=kwargs,
+        **kwargs,
     )
     ids = tokenizer.apply_chat_template(
         conversation,
         tokenize=True,
         chat_template=chat_template,
-        chat_template_kwargs=kwargs,
+        **kwargs,
     )
     return Tokenisation(ids=tuple(ids), text=str(text))
 

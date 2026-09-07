@@ -55,6 +55,14 @@ export default function EndpointSection({
 
   const isComplete = jobStatus === "complete";
 
+  // This poll never clears `error`. It used to, on the 404 that means "no
+  // endpoint yet" -- which is the ordinary state of every unserved job, and
+  // fires every fifteen seconds. So a failed Start showed its reason and
+  // then had it wiped by the next tick, and the button read as doing
+  // nothing at all. That is how `endpoint_provision_failed` went unnoticed
+  // against real hardware. Only a user action clears the error now, at the
+  // moment it starts; a background poll may raise one but never erases what
+  // the user was told.
   async function fetchEndpoint() {
     try {
       const res = await getEndpointV1JobsJobIdEndpointGet(jobId);
@@ -63,7 +71,6 @@ export default function EndpointSection({
       // For safety, handle both shapes
       if (data && (data as EndpointRecord).id) {
         setEndpoint(data as EndpointRecord);
-        setError(null);
       } else if ((res as unknown as EndpointRecord).id) {
         setEndpoint(res as unknown as EndpointRecord);
       }
@@ -75,7 +82,6 @@ export default function EndpointSection({
       // flow depended on it.
       if (e instanceof ApiError && (e.code === "endpoint_not_found" || e.status === 404)) {
         setEndpoint(null);
-        setError(null);
       } else {
         setError(e instanceof Error ? e.message : String(e));
       }

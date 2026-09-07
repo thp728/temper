@@ -40,6 +40,7 @@ from temper_control_plane.storage import (
     ADAPTER_CONFIG_NAME,
     ADAPTER_WEIGHTS_NAME,
     FilesystemStorage,
+    GrantUnavailable,
     ObjectNotFound,
     S3Storage,
     WriteGrant,
@@ -221,6 +222,71 @@ def test_an_object_store_grant_actually_lands_bytes_when_put_over_http():
         assert store.get("artifacts/j_9/w") == PAYLOAD
     finally:
         server.stop()
+
+
+def test_an_object_store_read_grant_is_a_presigned_get_for_one_key(s3):
+    ttl = 900
+    grant = s3.mint_read_grant("artifacts/j_1/adapter_model.safetensors", ttl)
+    parts = urlsplit(grant.url)
+    assert parts.path.endswith("/artifacts/j_1/adapter_model.safetensors")
+    query = parse_qs(parts.query)
+    assert query["X-Amz-Expires"] == [str(ttl)]
+    assert query["X-Amz-Signature"]
+    assert grant.key == "artifacts/j_1/adapter_model.safetensors"
+    assert abs(grant.expires_at - (time.time() + ttl)) < 5
+
+
+def test_a_read_grant_actually_returns_bytes_when_fetched_over_http():
+    """The mirror of the write-grant test, and the same honest limit.
+
+    A serving machine fetches its adapter this way rather than having it
+    relayed through the control plane, so what matters is that the minted
+    URL is fetchable and scoped to one key. moto's server honours the
+    request without cryptographically verifying the signature, so this pins
+    shape and wiring, not MinIO's enforcement.
+    """
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = ThreadedMotoServer("127.0.0.1", port)
+    server.start()
+    try:
+        client = boto3.client(
+            "s3",
+            endpoint_url=f"http://127.0.0.1:{port}",
+            region_name="us-east-1",
+            aws_access_key_id="testing",  # noqa: S106 - moto's fixed dummy pair
+            aws_secret_access_key="testing",  # noqa: S106 - never a credential
+            config=botocore_config(signature_version="s3v4"),
+        )
+        client.create_bucket(Bucket="temper-test")
+        store = S3Storage(bucket="temper-test", client=client)
+        store.put("artifacts/j_9/adapter_model.safetensors", PAYLOAD)
+
+        grant = store.mint_read_grant(
+            "artifacts/j_9/adapter_model.safetensors", 900
+        )
+        with urllib.request.urlopen(grant.url) as response:  # noqa: S310
+            assert response.status == 200
+            assert response.read() == PAYLOAD
+    finally:
+        server.stop()
+
+
+def test_the_filesystem_backend_refuses_to_mint_a_read_grant(fs):
+    """It has no address off this host, and says so instead of inventing one.
+
+    The write side can mint a token because redemption comes back to this
+    process, which holds the root. A read grant has to be fetched *by* its
+    holder, and there is no server here to fetch from. Minting a
+    `temper-local:` token anyway would hand a machine a string it cannot
+    use, which is the failure that cost a full paid run:
+    `grants_are_remotely_redeemable` is False here for exactly this reason.
+    """
+    assert fs.grants_are_remotely_redeemable is False
+    with pytest.raises(GrantUnavailable) as raised:
+        fs.mint_read_grant("artifacts/j_1/adapter_model.safetensors", 60)
+    assert "TEMPER_STORAGE_BACKEND=s3" in str(raised.value)
 
 
 # --- key layout: defined once, read everywhere -------------------------------

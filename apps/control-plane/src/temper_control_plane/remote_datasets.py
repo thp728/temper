@@ -53,7 +53,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -773,12 +773,26 @@ class _HuggingFaceSource(_ResolvedSource):
         # runs in the background, so a dataset published minutes ago has none
         # yet, and that must not be the difference between an import working
         # and not.
-        rows = self._parquet_rows(files) if files else self._preview_rows()
+        rows: Generator[dict[str, Any], None, None] = (
+            self._parquet_rows(files) if files else self._preview_rows()
+        )
 
         yielded = False
-        for chunk in jsonl_chunks(rows):
-            yielded = True
-            yield chunk
+        try:
+            for chunk in jsonl_chunks(rows):
+                yielded = True
+                yield chunk
+        finally:
+            # `jsonl_chunks` is a plain `for` loop over `rows`, not `yield
+            # from`, so closing *this* generator does not by itself
+            # propagate into `rows` -- the shard's temp file would then be
+            # unlinked only whenever the cyclic GC happens to collect it,
+            # which is not deterministic (found on CI: a generator closed
+            # after one `next()` left its shard on disk). `rows` is always
+            # one of the two generators above, so it always has `close()`;
+            # calling it here, in the frame that actually owns `rows`,
+            # reaches `_parquet_rows`'s own `finally` immediately.
+            rows.close()
         if not yielded:
             # The `/size` refusal in resolve is the fast path; this is the
             # ground truth. A split that streams no rows is refused with the
@@ -791,7 +805,7 @@ class _HuggingFaceSource(_ResolvedSource):
 
     def _parquet_rows(
         self, files: list[dict[str, Any]]
-    ) -> Iterator[dict[str, Any]]:
+    ) -> Generator[dict[str, Any], None, None]:
         """Every row of the split's Parquet shards, in shard then row order.
 
         One shard is downloaded at a time and deleted before the next starts,
@@ -813,7 +827,7 @@ class _HuggingFaceSource(_ResolvedSource):
                 with contextlib.suppress(OSError):
                     os.unlink(path)
 
-    def _preview_rows(self) -> Iterator[dict[str, Any]]:
+    def _preview_rows(self) -> Generator[dict[str, Any], None, None]:
         """Every row of the split, one `/rows` page at a time.
 
         The fallback for a split with no Parquet conversion (ADR-0073). It is

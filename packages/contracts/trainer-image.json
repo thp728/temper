@@ -1,5 +1,10 @@
 {
   "_comment": "The published trainer image the orchestration pulls and runs. Written only by the pipeline's publish step (`.github/workflows/image.yml`, `temper_control_plane.publish_trainer_image`), which builds the image from `trainer_build.TRAINER_SOURCES`, pushes it, and verifies it is pullable by digest. The digest is the contract and the tag is a comment, exactly like the Dockerfile's FROM line: the machine pulls `<reference>` -- image@digest -- never a tag, so what runs is exactly what was built and verified by the pipeline. A digest change is a deliberate, visible change because it lands as its own pull request. When `published` is false there is no reference and a real job refuses loudly rather than pulling a made-up image.",
+  "_delivery_comment": "Which delivery formats this published digest can actually produce, measured against it rather than assumed from the vocabulary. `temper_core.delivery` says what formats exist; this says what this image can make. On 2026-09-06 a real run asked for `quantised` and the trainer refused on the GPU after the merge had already succeeded: \"the GGUF converter is not on the image's PATH; this export cannot produce the quantised local format\". That cost a full run to discover something the image knew, so it is recorded here and the launch refuses before it provisions. An absent key means every format is producible, so an older contract never blocks a launch -- the same pass-open rule `published` follows. Restore `quantised` here when the converter is on the image's PATH and a run proves it.",
+  "delivery_formats": [
+    "adapter",
+    "merged"
+  ],
   "digest": "sha256:9176245a57203c75ea5ba4d661c4699cb8ef1393519b9adabed70aaafb4734f7",
   "image": "ghcr.io/thp728/temper/trainer",
   "published": true,

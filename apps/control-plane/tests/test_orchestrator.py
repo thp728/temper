@@ -838,6 +838,42 @@ def test_a_job_without_a_published_image_is_refused_before_provisioning(
     assert "destroy" not in provider.calls
 
 
+def test_a_job_whose_artifact_could_not_be_delivered_is_refused(
+    harness, monkeypatch
+):
+    """The other end of the same rule, and it cost a real run to find.
+
+    The filesystem backend's grants are `temper-local:` tokens this process
+    signs and redeems itself, so a machine holding one has nothing to PUT to.
+    Measured: eleven minutes of real training on an L4 ended in
+    `artifact_unverified` with the machine reporting `unknown url type:
+    temper-local` -- every phase billed, nothing delivered. Refusing before
+    provisioning is the difference between a wasted click and a wasted run.
+    """
+    from temper_control_plane import orchestrator, storage
+
+    monkeypatch.setattr(
+        storage.STORE, "grants_are_remotely_redeemable", False, raising=False
+    )
+    monkeypatch.setattr(
+        orchestrator, "published_reference", lambda: "img@sha256:abc"
+    )
+    provider = FakeProvider(
+        lines=TRAINING_LINES, result=RESULT, adapter_bytes=ADAPTER_BYTES
+    )
+    # The guard asks the provider, so a simulated one must claim to be remote
+    # for this to be the run it is about.
+    monkeypatch.setattr(provider, "is_remote", True, raising=False)
+    job_id = harness.run(provider)
+
+    job = harness.job(job_id)
+    assert job["status"] == "failed"
+    assert job["error_code"] == "artifact_undeliverable"
+    assert provider.created == [], (
+        "nothing may be provisioned when the result could not come back"
+    )
+
+
 def test_the_simulated_provider_needs_no_published_image(harness, monkeypatch):
     """ADR-0024's journeys boot with TEMPER_FAKE_PROVIDER and drive a launch
     on a machine that executes no container, so an unpublished image must not
@@ -2689,3 +2725,24 @@ def test_downloading_a_step_that_is_not_retained_refuses_with_a_stable_code(
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "checkpoint_unavailable"
     assert r.json()["detail"]["step"] == 10
+
+
+def test_an_unparsable_result_document_says_what_it_could_not_parse():
+    """The evidence must survive the machine that produced it.
+
+    A real run failed with "Expecting ',' delimiter: line 1 column 4 (char
+    3)" against a document nobody could see, on a machine already destroyed
+    by the time anyone read the record -- after 25 minutes and 17 rupees.
+    A byte offset into text that was not kept diagnoses nothing.
+    """
+    from temper_control_plane import orchestrator
+    from temper_core.errors import OrchestratorError
+
+    with pytest.raises(OrchestratorError) as raised:
+        orchestrator._consume(
+            "job_x", iter([orchestrator.RESULT_MARKER, '{"ok" true}'])
+        )
+    assert raised.value.code == "training_failed"
+    message = str(raised.value)
+    assert "did not parse" in message
+    assert '{"ok" true}' in message

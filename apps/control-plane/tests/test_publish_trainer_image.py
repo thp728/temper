@@ -130,6 +130,39 @@ def test_write_contract_is_deterministic(tmp_path, monkeypatch):
     assert doc["published"] is True
 
 
+def test_write_contract_carries_delivery_formats_forward_across_a_republish(
+    tmp_path, monkeypatch
+):
+    """Which formats a digest can produce is measured on real hardware, not
+    derived from the build -- so a republish that changes only the digest
+    must not silently revert that measurement to "everything producible".
+    """
+    target = tmp_path / "trainer-image.json"
+    target.write_text(
+        json.dumps(
+            {
+                "_comment": "x",
+                "_delivery_comment": "quantised needs the converter",
+                "delivery_formats": ["adapter", "merged"],
+                "image": "img",
+                "published": True,
+                "reference": "img@sha256:old",
+                "tag": "main-old",
+                "digest": "sha256:old",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(publish, "CONTRACT", target)
+
+    publish.write_contract("img", "main-new", "img@sha256:new")
+
+    doc = json.loads(target.read_text(encoding="utf-8"))
+    assert doc["digest"] == "sha256:new"
+    assert doc["delivery_formats"] == ["adapter", "merged"]
+    assert doc["_delivery_comment"] == "quantised needs the converter"
+
+
 def test_write_body_names_the_reference(tmp_path, monkeypatch):
     target = tmp_path / "publish-body.md"
     monkeypatch.setattr(publish, "BODY_PATH", target)
@@ -200,6 +233,8 @@ def test_the_checked_in_contract_has_the_expected_shape():
     )
     assert set(doc) == {
         "_comment",
+        "_delivery_comment",
+        "delivery_formats",
         "digest",
         "image",
         "published",
