@@ -593,17 +593,28 @@ output for longer than the stall budget, and the guard did exactly what it
 is built to do: destroy a machine it cannot tell from a wedged one. Cost:
 INR 27.41, four minutes short of the training-only run's total.
 
-**Status: fixed.** `apps/trainer/delivery.py` gains a `heartbeat` context
-manager: while the merge (or quantise) conversion runs and while each
-format's upload runs, a background thread logs progress every 120 seconds
--- comfortably inside the 900-second budget -- so a slow-but-healthy export
-keeps talking instead of going silent. `run_delivery` and the canonical
-artifact's own upload in `entrypoint.py` both take the same `log`. A test
-proves it: a merge and upload each stubbed to run past one fast heartbeat
-interval must emit their message; reverting the wrapping (verified) makes
-that test fail with `assert False` in exactly the way the hardware run
-did. Not yet re-verified on hardware -- that needs a second 7B run, and the
-fix is provable without one.
+**Status: fixed, and confirmed on hardware.** `apps/trainer/delivery.py`
+gains a `heartbeat` context manager: while the merge (or quantise)
+conversion runs and while each format's upload runs, a background thread
+logs progress every 120 seconds -- comfortably inside the 900-second
+budget -- so a slow-but-healthy export keeps talking instead of going
+silent. `run_delivery` and the canonical artifact's own upload in
+`entrypoint.py` both take the same `log`. A test proves it: a merge and
+upload each stubbed to run past one fast heartbeat interval must emit
+their message; reverting the wrapping (verified) makes that test fail
+with `assert False` in exactly the way the hardware run did.
+
+Re-run on 2026-09-07 against the republished image, the identical job that
+had died with `gpu_stalled` (`job_ac4aedcb89ea`, same Llama-2-7B, same
+customer-service dataset): the event log shows
+`[trainer] producing merged (120s elapsed)`, `(240s elapsed)`, `(360s
+elapsed)`, `(480s elapsed)`, `(600s elapsed)` -- ticking through and past
+the 900-second point the previous run never reached the far side of. The
+merge and upload together ran roughly 24 minutes this time (a bigger
+merged model than the earlier run: 10.7 GB against the delivery-formats
+run's 6.4 GB, since a 7B base merges into more bytes than a 4B one), and
+the job reached `complete` with `merged` delivered, no error, teardown
+confirmed by listing. Cost: INR 32.88.
 
 ### The chat template is dumped into the job log
 
@@ -664,6 +675,79 @@ phase in the quote. The gap between "training" (1710s measured) and
 Axolotl's actual training time is the same story as the delivery-formats
 run: the comparison, the capability check and the merge all run inside a
 stage the quote calls "training" and prices as if it were only that.
+
+## A realistic job, end to end through the UI: real dataset, real 7B model, real inference
+
+Requested explicitly as a realistic-scale test, not a smoke test: a real
+customer-service dataset (300 conversations parsed from
+`NebulaByte/E-Commerce_Customer_Support_Conversations`'s raw transcripts
+into the platform's chat schema, 995/1000 parsed cleanly) and a real
+Llama-2-7B chat model (`unsloth/llama-2-7b-chat`, admitted through the
+compatibility probe with no findings -- most Llama-2-7B mirrors ship no
+chat template at all; this one does).
+
+Two full training runs launched this way (one direct-API, one through the
+actual wizard -- `job_90fb4748b2d7`, provisioning through review with the
+producibility gate, the pre-flight's 6/6 checks, and the disabled
+`quantised` box all behaving exactly as designed) both completed cleanly
+with `merged` delivered, confirming the heartbeat fix (above) on hardware
+a second time. The UI run also surfaced one thing a direct API call would
+never have caught: **port 8000 was down from an earlier restart**, and the
+wizard's spec-preview call failed with a raw `http_500` instead of a coded
+refusal -- not a product bug, an operator error, but it is exactly the
+class of failure `AGENTS.md`'s error-code rule exists to prevent showing
+to a real user, and it was indistinguishable from one until the control
+plane's own log was checked.
+
+### Starting an endpoint is one long blocking call, and a client that gives up loses the key for good
+
+Found testing "try your model" against the trained adapter, as asked.
+`POST /v1/jobs/{id}/endpoint` does not return until the machine is
+provisioned **and** the model is fully loaded (ADR-0076's design: mint the
+key only once `/health` reports ready) -- for this 7B model, about nine
+minutes. The first UI attempt worked (eventually) because the browser tab
+was left on the page. The second showed the user this:
+
+```
+Error
+http_500: Internal Server Error
+```
+
+The control plane's own log tells the real story: the POST kept running
+for the full nine minutes and returned **201** -- the endpoint started
+successfully, machine 499448, a real charge. The request just outlived
+whatever sits between the browser and the backend (most likely Node's
+default `requestTimeout`, 300000ms = 5 minutes, since neither
+`next.config.ts` nor the workflow overrides it, and 5 minutes is short
+of what a 7B model's warm-up needs but long enough that nothing smaller
+had ever tripped it). The frontend's `EndpointSection` holds the one-time
+API key only in React component state (`created.api_key`); the request
+that would have set it never resolved client-side, so the key was shown
+to nobody and cannot be recovered -- the server stores only its hash. The
+endpoint was live, billing, and permanently unusable. Confirmed by
+listing and stopped by hand: about nine minutes, roughly INR 6.
+
+This is the same shape of bug ADR-0066 already closed once, for job
+launches: a request whose real duration is minutes, made through an API
+call that blocks until finished, is a client-timeout and a lost-work bug
+waiting for whichever request happens to run the longest. `jobs.create`
+was fixed to insert a row and return immediately, with the worker
+finishing the job out of band. `POST .../endpoint` still has the old
+shape.
+
+**Status: open, and the fix is known.** Start the endpoint the same way a
+job starts: insert a `starting` row and return immediately (the
+`starting`-row and machine-name protections ADR-0076 already built for the
+reconciler race make this a small extension, not new machinery), let the
+existing 15-second poll (`fetchEndpoint`) discover `running` the way it
+already discovers every other state, and mint the key into a field the
+poll can read once -- not only the response of the call that happens to
+still be listening when it finishes. Confirmed live inference through the
+resulting endpoint separately, by direct API call once the key was in
+hand: the tuned model answered a customer-service prompt in character
+("I'm sorry to hear that you lost the receipt... may I have your order
+number, please?"), so the serving path itself is not in question -- only
+the shape of the call that starts it.
 
 ## Still not exercised
 
