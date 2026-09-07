@@ -5,9 +5,9 @@
     "adapter",
     "merged"
   ],
-  "digest": "sha256:9176245a57203c75ea5ba4d661c4699cb8ef1393519b9adabed70aaafb4734f7",
+  "digest": "sha256:aceac4b4ae1666cac1cbdeaa5c4f435e05779db9662e574b1e7161fd1afb0e6f",
   "image": "ghcr.io/thp728/temper/trainer",
   "published": true,
-  "reference": "ghcr.io/thp728/temper/trainer@sha256:9176245a57203c75ea5ba4d661c4699cb8ef1393519b9adabed70aaafb4734f7",
-  "tag": "main-299aeca9e4ff"
+  "reference": "ghcr.io/thp728/temper/trainer@sha256:aceac4b4ae1666cac1cbdeaa5c4f435e05779db9662e574b1e7161fd1afb0e6f",
+  "tag": "main-93f3e5a68cf6"
 }
