@@ -82,6 +82,16 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
 
+      # `corepack enable` alone is not enough: a runner-image bump shipped a
+      # corepack whose shim, once it fetches a pnpm build, refuses to step
+      # back down to the pinned version ("pnpm does not switch versions when
+      # running under corepack") even though it reads the pin correctly --
+      # the same moving-target failure `apps/web/Dockerfile` already carries
+      # this fix for. `prepare --activate` makes the pinned version (read
+      # from package.json, not restated here) the shim's active one before
+      # any `corepack pnpm` command runs.
+      - run: corepack prepare "$(node -p "require('./apps/web/package.json').packageManager")" --activate
+
       # The Playwright browser download is the slowest thing in the gate that
       # caching can remove; the lockfile is the key because that is what moves
       # the browser version. `web-browsers` fills whatever is missing, so a
