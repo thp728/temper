@@ -1175,3 +1175,48 @@ def test_api_gives_up_at_the_wall_clock_deadline_even_if_urlopen_does_not(
     elapsed = remote_datasets.time.monotonic() - started
     assert exc.value.code == "fetch_failed"
     assert elapsed < 0.3
+
+
+def test_close_propagates_without_gc_help(monkeypatch):
+    """CI hit `test_a_downloaded_shard_is_deleted_whether_the_stream_finishes_
+    or_not` leaving its shard behind, twice, though it could not be
+    reproduced locally even under the same flags (coverage, random order,
+    the full suite) -- consistent with the cleanup having depended on
+    exactly when the cyclic GC ran to collect `rows`, which is timing this
+    process does not control. `stream()` now closes `rows` itself, in the
+    frame that owns it, so the guarantee no longer needs the GC's help at
+    all; disabling it here is how that independence is asserted rather than
+    hoped for."""
+    import gc
+
+    gc.disable()
+    try:
+        repo, config, split = "org/repo", "default", "train"
+        good = _parquet_bytes(
+            [{"messages": [{"role": "user", "content": "x" * 1000}]}] * 200
+        )
+        bad = b"not parquet at all"
+        urls = {
+            _shard_url(repo, config, split, "0000.parquet"): good,
+            _shard_url(repo, config, split, "0001.parquet"): bad,
+        }
+        monkeypatch.setattr(
+            remote_datasets.urllib.request,
+            "urlopen",
+            _parquet_opener(
+                _listing(
+                    repo,
+                    config,
+                    split,
+                    [("0000.parquet", good), ("0001.parquet", bad)],
+                ),
+                urls,
+            ),
+        )
+        before = _temp_shards()
+        abandoned = _source(repo, config, split).stream()
+        next(abandoned)
+        abandoned.close()
+        assert _temp_shards() == before
+    finally:
+        gc.enable()

@@ -40,6 +40,16 @@ ENV TEMPER_BACKEND_URL=$TEMPER_BACKEND_URL
 # one definition both corepack and pnpm read.
 WORKDIR /workspace/apps/web
 
+# A second, different failure of the same moving-tag problem: a later
+# base-image bump shipped a corepack whose shim, once fetched, refused to
+# step back down to the pinned 11.24.0 ("pnpm does not switch versions
+# when running under corepack") even though it read the pin correctly.
+# `corepack prepare --activate` makes the pinned version the shim's active
+# one before anything invokes it, rather than trusting per-invocation
+# resolution to fetch the right one. Read from package.json, not restated
+# here, so the version lives in the one place `pnpm-lock.yaml` and every
+# other reader of this project already agrees on.
+RUN corepack prepare "$(node -p "require('./package.json').packageManager")" --activate
 RUN corepack pnpm install --frozen-lockfile
 RUN corepack pnpm generate:client
 RUN corepack pnpm build
